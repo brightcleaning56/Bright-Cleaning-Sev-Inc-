@@ -102,6 +102,6 @@ Defects found and corrected in this pass:
 5. Hero text lost contrast when the background photo failed to load. Added a solid fallback color.
 
 Still open before production (not verified here):
-- Company domain and mailbox: the site uses `info@brightclean.net` and `www.brightclean.net` (about 32 references). Confirm the company owns them or replace them.
+- Domain and mailbox: `brightclean.net` and `info@brightclean.net` confirmed by the owner (Eric Moore) on 2026-11-01.
 - Hero and project imagery is hotlinked from Unsplash. Replace with approved company photography and host it locally.
 - Live SMTP delivery, HTTPS hosting, backups, and the operational gaps listed in README.md (e-signature, crew scheduling, customer portal, payments).
