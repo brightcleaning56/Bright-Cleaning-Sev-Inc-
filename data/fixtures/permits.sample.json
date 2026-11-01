@@ -1,0 +1,62 @@
+{
+  "_comment": "SYNTHETIC demo permits for development and tests only. They are flagged sample:true and are excluded from production unless BUILDINTEL_ALLOW_SAMPLE=1. Not real records.",
+  "records": [
+    {
+      "sample": true,
+      "permitId": "DEMO-2026-0001",
+      "projectName": "Demo Office Tower (synthetic)",
+      "propertyAddress": "100 Example Ave",
+      "city": "Des Moines",
+      "state": "IA",
+      "projectType": "office",
+      "squareFeet": 42000,
+      "permitStatus": "issued",
+      "owner": "Demo Owner LLC",
+      "gc": "Demo General Builders",
+      "architect": null,
+      "estimatedValue": null,
+      "permitDate": "2026-09-01",
+      "sourceUrl": "https://example.org/demo-permits/DEMO-2026-0001",
+      "lastVerifiedAt": "2026-10-30T12:00:00Z",
+      "confidence": "unconfirmed"
+    },
+    {
+      "sample": true,
+      "permitId": "DEMO-2026-0002",
+      "projectName": "Demo Retail Center (synthetic)",
+      "propertyAddress": "200 Sample Blvd",
+      "city": "West Des Moines",
+      "state": "IA",
+      "projectType": "retail",
+      "squareFeet": 18500,
+      "permitStatus": "approved",
+      "owner": null,
+      "gc": "Demo General Builders",
+      "architect": null,
+      "estimatedValue": null,
+      "permitDate": "2026-09-15",
+      "sourceUrl": "https://example.org/demo-permits/DEMO-2026-0002",
+      "lastVerifiedAt": "2026-10-30T12:00:00Z",
+      "confidence": "probable"
+    },
+    {
+      "sample": true,
+      "permitId": "DEMO-2026-0003",
+      "projectName": "Demo Warehouse Expansion (synthetic)",
+      "propertyAddress": "300 Test Rd",
+      "city": "Ankeny",
+      "state": "IA",
+      "projectType": "warehouse",
+      "squareFeet": null,
+      "permitStatus": "applied",
+      "owner": null,
+      "gc": null,
+      "architect": null,
+      "estimatedValue": 2500000,
+      "permitDate": "2026-10-01",
+      "sourceUrl": "https://example.org/demo-permits/DEMO-2026-0003",
+      "lastVerifiedAt": "2026-10-30T12:00:00Z",
+      "confidence": "unconfirmed"
+    }
+  ]
+}

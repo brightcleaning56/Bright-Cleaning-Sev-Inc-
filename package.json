@@ -1,0 +1,18 @@
+{
+  "name": "buildintel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BUILDINTEL - commercial construction intelligence and bid automation platform (Bright Clean Inc. first tenant)",
+  "main": "src/index.js",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js",
+    "readiness": "node src/cli.js readiness"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

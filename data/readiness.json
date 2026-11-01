@@ -1,0 +1,11 @@
+{
+  "_comment": "Owner-maintained go-live inputs. Each value is set only after the owner has actually completed the step. Do not set a value to make a gate pass.",
+  "legalEntityName": null,
+  "policiesApprovedBy": null,
+  "policiesApprovedAt": null,
+  "paymentProcessorConnected": false,
+  "insuranceBoundAt": null,
+  "backupRestoreTestedAt": null,
+  "penetrationTestAt": null,
+  "emailProviderConnected": false
+}
