@@ -25,7 +25,8 @@ function loadConfig(env = process.env) {
     dataFile: env.BUILDINTEL_DATA_FILE || path.join(root, 'data', 'state.json'),
     outboxDir: env.BUILDINTEL_OUTBOX_DIR || path.join(root, 'data', 'outbox'),
     sourcesFile: path.join(root, 'data', 'sources.json'),
-    readinessFile: path.join(root, 'data', 'readiness.json'),
+    // Owner go-live inputs. On Render this points at the persistent disk so redeploys keep them.
+    readinessFile: env.BUILDINTEL_READINESS_FILE || path.join(root, 'data', 'readiness.json'),
     adminKey: env.BUILDINTEL_ADMIN_KEY || '',
     unsubscribeSecret: env.BUILDINTEL_UNSUBSCRIBE_SECRET || '',
     publicBaseUrl: env.BUILDINTEL_PUBLIC_URL || `http://localhost:${port}`,

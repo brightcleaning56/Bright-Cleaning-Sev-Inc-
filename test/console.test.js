@@ -178,3 +178,14 @@ test('with no CORS origins configured, no cross-origin headers are sent', async 
     await s.close();
   }
 });
+
+test('owner readiness inputs can live on the persistent disk, outside the image', async () => {
+  const { env, dir } = makeEnv();
+  const file = require('path').join(dir, 'readiness.json');
+  require('fs').writeFileSync(file, JSON.stringify({ policiesApprovedBy: 'Test Attorney', policiesApprovedAt: '2026-11-01' }));
+  const { config, store } = makeStore({ ...env, BUILDINTEL_READINESS_FILE: file });
+  assert.equal(config.readinessFile, file);
+  const { evaluateReadiness } = require('../src/readiness');
+  const gate = evaluateReadiness({ store, config }).gates.find((g) => g.id === 'policies_approved');
+  assert.equal(gate.status, 'pass');
+});

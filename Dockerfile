@@ -4,7 +4,8 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080 \
     BUILDINTEL_DATA_FILE=/var/data/state.json \
-    BUILDINTEL_OUTBOX_DIR=/var/data/outbox
+    BUILDINTEL_OUTBOX_DIR=/var/data/outbox \
+    BUILDINTEL_READINESS_FILE=/var/data/readiness.json
 COPY package.json ./
 COPY src ./src
 COPY public ./public
