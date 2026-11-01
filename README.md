@@ -109,3 +109,10 @@ These are initial operational registers, not yet a full enterprise field-service
 4. Open `/admin/`, review a bid request or create an estimate, and save the proposal.
 5. Review the generated customer link before sending it. The link is a bearer link: anyone who has it can view and respond. Treat it as confidential and do not post it publicly.
 6. Confirm the estimate inputs, tax treatment, terms, exclusions and pricing with an authorized estimator before sending a binding commercial offer.
+
+## Approval handoff (added)
+When a customer approves a proposal, the system now automatically creates:
+- one **draft contract** linked to the proposal, with the proposal total as its value and signature status "Not sent"; and
+- one **Planning project** linked to that contract, using the project name and site address.
+
+Approval does not create an invoice. Invoices are still entered manually after the contract is signed. A proposal can only create one contract, even if approved again. Every automatic creation is recorded in the audit log under the "customer" actor.
