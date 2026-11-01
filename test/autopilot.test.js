@@ -112,7 +112,7 @@ test('the organisation with autopilot disabled is skipped entirely', async () =>
 test('live send mode with no provider adapter refuses to start', () => {
   const { env } = makeEnv({ BUILDINTEL_SEND_MODE: 'live' });
   const { config } = makeStore(env);
-  assert.throws(() => createTransport(config), /needs an email provider adapter/);
+  assert.throws(() => createTransport(config), /BUILDINTEL_EMAIL_PROVIDER=postmark/);
 });
 
 async function approvedBidAfterCycle() {

@@ -45,6 +45,9 @@ function loadConfig(env = process.env) {
     autopilotEnabled: env.BUILDINTEL_AUTOPILOT === 'on',
     autopilotIntervalMinutes: intervalMin,
     sendMode,
+    emailProvider: env.BUILDINTEL_EMAIL_PROVIDER || '',
+    postmarkToken: env.BUILDINTEL_POSTMARK_TOKEN || '',
+    postmarkStream: env.BUILDINTEL_POSTMARK_STREAM || 'outbound',
   };
 }
 
