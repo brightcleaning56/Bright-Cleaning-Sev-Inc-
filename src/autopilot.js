@@ -159,8 +159,15 @@ async function runCycle({ store, config, transport, now = new Date() }) {
         statusDetail: null,
       });
       orgReport.matched += 1;
-      const result = await processOpportunity({ store, config, transport, org, permit, opportunity, now });
-      orgReport.results.push({ permit: permit.permitId, ...result });
+      // One failing permit must not stop the cycle for other permits or other tenants.
+      try {
+        const result = await processOpportunity({ store, config, transport, org, permit, opportunity, now });
+        orgReport.results.push({ permit: permit.permitId, ...result });
+      } catch (err) {
+        store.update('opportunities', org.id, opportunity.id, { status: 'error', statusDetail: err.message });
+        audit(store, org.id, 'autopilot', 'opportunity.error', opportunity.id, { error: err.message });
+        orgReport.results.push({ permit: permit.permitId, opportunityId: opportunity.id, status: 'error', detail: err.message });
+      }
     }
   }
 
@@ -181,6 +188,7 @@ function summarize(report) {
     needsRecipient: count('needs_recipient'),
     blockedCompliance: count('blocked_compliance'),
     sent: count('sent'),
+    errors: count('error'),
   };
 }
 

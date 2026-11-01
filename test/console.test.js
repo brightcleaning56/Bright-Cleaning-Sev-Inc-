@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const { makeEnv, makeStore, seedBrightClean, ADMIN_KEY } = require('./helpers');
 const { createServer } = require('../src/server');
 const { createTransport } = require('../src/transport');
+const { runCycle } = require('../src/autopilot');
 
 async function start() {
   const { env } = makeEnv();
@@ -188,4 +189,31 @@ test('owner readiness inputs can live on the persistent disk, outside the image'
   const { evaluateReadiness } = require('../src/readiness');
   const gate = evaluateReadiness({ store, config }).gates.find((g) => g.id === 'policies_approved');
   assert.equal(gate.status, 'pass');
+});
+
+test('audit entries name the real actor: owner for admin-acting, user:<id> for the tenant key', async () => {
+  const s = await start();
+  try {
+    const { org, apiKey } = seedBrightClean(s.store, { autopilot: { enabled: true, autoApproveMaxTotal: 0 } });
+    // Real pipeline: the cycle creates genuine pending bids (limit 0 forces owner review).
+    await runCycle({ store: s.store, config: s.config, transport: s.transport, now: new Date('2026-11-01T12:00:00Z') });
+    const pending = s.store.list('bids', org.id, (b) => b.status === 'pending_approval');
+    assert.ok(pending.length >= 2, 'precondition: two real pending bids');
+
+    const adminRes = await fetch(`${s.base}/api/bids/${pending[0].id}/approve`, {
+      method: 'POST', headers: { 'x-admin-key': ADMIN_KEY, 'x-org-id': org.id },
+    });
+    assert.equal(adminRes.status, 200, await adminRes.text());
+    const adminAudit = s.store.list('audit', org.id).find((e) => e.action === 'bid.approved');
+    assert.equal(adminAudit.actor, 'owner');
+
+    const tenantRes = await fetch(`${s.base}/api/bids/${pending[1].id}/withdraw`, {
+      method: 'POST', headers: { 'x-org-key': apiKey },
+    });
+    assert.equal(tenantRes.status, 200, await tenantRes.text());
+    const tenantAudit = s.store.list('audit', org.id).find((e) => e.action === 'bid.withdrawn');
+    assert.equal(tenantAudit.actor, `user:${org.id}`);
+  } finally {
+    await s.close();
+  }
 });

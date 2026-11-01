@@ -88,7 +88,7 @@ function findOrgByApiKey(store, apiKey) {
   return store.list('orgs', null, (o) => safeEqual(o.apiKeyHash, hash) && o.status === 'active')[0] || null;
 }
 
-function updateProfile(store, orgId, patch) {
+function updateProfile(store, orgId, patch, actor = `user:${orgId}`) {
   const org = store.get('orgs', null, orgId);
   if (!org) throw new NotFoundError('Organisation not found');
   const allowed = {};
@@ -108,7 +108,7 @@ function updateProfile(store, orgId, patch) {
   }
   const next = { ...org.profile, ...allowed };
   const updated = store.update('orgs', null, orgId, { profile: next });
-  audit(store, orgId, `user:${orgId}`, 'profile.updated', orgId, Object.keys(allowed));
+  audit(store, orgId, actor, 'profile.updated', orgId, Object.keys(allowed));
   return publicOrg(updated);
 }
 
@@ -116,7 +116,7 @@ function updateProfile(store, orgId, patch) {
  * Rate cards are the tenant's own pricing. Each one is validated by running a
  * test estimate, so a bad rate is rejected at save time, not at bid time.
  */
-function setPricing(store, orgId, rateCards) {
+function setPricing(store, orgId, rateCards, actor = `user:${orgId}`) {
   if (!Array.isArray(rateCards)) throw new ValidationError('rateCards must be an array', ['rateCards must be an array']);
   rateCards.forEach((card, i) => {
     if (!card.service) throw new ValidationError('Invalid rate card', [`rateCards[${i}].service is required`]);
@@ -136,7 +136,7 @@ function setPricing(store, orgId, rateCards) {
     });
   });
   store.update('orgs', null, orgId, { pricing: { rateCards } });
-  audit(store, orgId, `user:${orgId}`, 'pricing.updated', orgId, { cards: rateCards.length });
+  audit(store, orgId, actor, 'pricing.updated', orgId, { cards: rateCards.length });
   return rateCards;
 }
 

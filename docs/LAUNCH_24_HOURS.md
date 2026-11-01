@@ -99,7 +99,7 @@ readiness gates are on the dashboard. The CLI and API still work for scripting.
 1. Set `BUILDINTEL_ADMIN_KEY` and `BUILDINTEL_UNSUBSCRIBE_SECRET` (both 24+ random characters).
 2. Set `BUILDINTEL_PUBLIC_URL` to the real HTTPS address and `BUILDINTEL_DATA_FILE` to a persistent,
    backed-up path. Keep `BUILDINTEL_SEND_MODE` at `dry_run`.
-3. Run `npm install` (no dependencies) and `npm test`. Expect 45 passing tests.
+3. Run `npm test` (no dependencies to install). Every test must pass before you continue.
 
 **Hours 2 to 4: Create the Bright Clean tenant.**
 1. Copy `data/examples/brightclean.org.example.json` and replace every `REPLACE` value with real details.
@@ -185,7 +185,7 @@ data/
   readiness.json        owner-entered go-live facts (set only when a step is truly done)
   fixtures/             synthetic demo permits (flagged sample, demo only)
   examples/             tenant template with REPLACE placeholders
-test/                   45 tests: estimating, sources and permits, bids and compliance,
+test/                   tests: estimating, sources and permits, bids and compliance,
                         autopilot integration, and HTTP-level tenant isolation
 ```
 

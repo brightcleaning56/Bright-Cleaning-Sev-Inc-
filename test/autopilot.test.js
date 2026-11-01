@@ -164,3 +164,20 @@ test('the store refuses cross-tenant reads: tenant data is scoped to its own org
   assert.equal(store.list('bids', 'some-other-org').length, 0);
   assert.ok(org.id);
 });
+
+test('a failing bid dispatch is isolated: the cycle completes and the error is recorded', async () => {
+  const { store, config, org } = setup();
+  const brokenTransport = {
+    mode: 'dry_run',
+    async preview() { throw new Error('disk full'); },
+    async send() { throw new Error('not used'); },
+  };
+  const report = await runCycle({ store, config, transport: brokenTransport, now: new Date('2026-11-01T12:00:00Z') });
+  const results = report.orgs[0].results;
+  assert.ok(results.length >= 2, 'every matched permit was still processed');
+  assert.ok(results.some((r) => r.status === 'error' && /disk full/.test(r.detail)));
+  const errored = store.list('opportunities', org.id, (o) => o.status === 'error');
+  assert.ok(errored.length >= 1, 'error is stored on the opportunity');
+  assert.ok(store.list('audit', org.id).some((e) => e.action === 'opportunity.error'));
+  assert.ok(report.finishedAt, 'the cycle finished and returned a report');
+});

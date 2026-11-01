@@ -70,12 +70,14 @@ function requireOrg(store, req, config) {
   if (header) {
     const org = svc.findOrgByApiKey(store, header);
     if (!org) throw new HttpError(401, 'invalid or missing organisation key');
+    req.actor = `user:${org.id}`;
     return org;
   }
   const adminKey = req.headers['x-admin-key'];
   if (config.adminKey && adminKey && safeEqual(adminKey, config.adminKey) && req.headers['x-org-id']) {
     const org = store.get('orgs', null, String(req.headers['x-org-id']));
     if (!org || org.status !== 'active') throw new NotFoundError('Organisation not found');
+    req.actor = 'owner';
     return org;
   }
   throw new HttpError(401, 'invalid or missing organisation key');
@@ -161,13 +163,13 @@ function buildRoutes({ store, config, transport }) {
     ['PUT', /^\/api\/me\/profile$/, async (req) => {
       const org = requireOrg(store, req, config);
       const body = await readJson(req);
-      return { status: 200, body: svc.updateProfile(store, org.id, body) };
+      return { status: 200, body: svc.updateProfile(store, org.id, body, req.actor) };
     }],
 
     ['PUT', /^\/api\/me\/pricing$/, async (req) => {
       const org = requireOrg(store, req, config);
       const body = await readJson(req);
-      return { status: 200, body: { rateCards: svc.setPricing(store, org.id, body.rateCards) } };
+      return { status: 200, body: { rateCards: svc.setPricing(store, org.id, body.rateCards, req.actor) } };
     }],
 
     ['POST', /^\/api\/me\/autopilot$/, async (req) => {
@@ -179,7 +181,7 @@ function buildRoutes({ store, config, transport }) {
       };
       if (!(next.autoApproveMaxTotal >= 0)) throw new ValidationError('autoApproveMaxTotal must be >= 0');
       store.update('orgs', null, org.id, { autopilot: next });
-      audit(store, org.id, `user:${org.id}`, 'autopilot.policy', org.id, next);
+      audit(store, org.id, req.actor, 'autopilot.policy', org.id, next);
       return { status: 200, body: next };
     }],
 
@@ -219,14 +221,14 @@ function buildRoutes({ store, config, transport }) {
 
     ['POST', /^\/api\/bids\/([^/]+)\/approve$/, async (req, match) => {
       const org = requireOrg(store, req, config);
-      svc.approveBid(store, org.id, match[1], `user:${org.id}`);
+      svc.approveBid(store, org.id, match[1], req.actor);
       const dispatch = await svc.dispatchBid({ store, config, transport, orgId: org.id, bidId: match[1] });
       return { status: 200, body: { dispatch, bid: bidView(store, org.id, svc.getBid(store, org.id, match[1])) } };
     }],
 
     ['POST', /^\/api\/bids\/([^/]+)\/withdraw$/, async (req, match) => {
       const org = requireOrg(store, req, config);
-      return { status: 200, body: svc.withdrawBid(store, org.id, match[1], `user:${org.id}`) };
+      return { status: 200, body: svc.withdrawBid(store, org.id, match[1], req.actor) };
     }],
 
     ['GET', /^\/api\/audit$/, async (req) => {

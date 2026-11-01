@@ -9,7 +9,7 @@ live in 24 hours, the gates, the runbook and the known gaps.
 ## Quick start
 
 ```bash
-npm test                         # 45 tests, should all pass
+npm test                         # full test suite, should all pass
 node src/cli.js readiness        # go-live gate report (exit 2 = NO-GO)
 BUILDINTEL_ADMIN_KEY=... BUILDINTEL_UNSUBSCRIBE_SECRET=... npm start
 ```
@@ -59,6 +59,8 @@ Organisation routes take the header `x-org-key: <key>`. Admin routes take `x-adm
 | GET | `/health` | none | Liveness |
 | GET | `/api/readiness` | admin | Go-live gates |
 | POST | `/api/orgs` | admin | Create a tenant (returns its API key once) |
+| GET | `/api/admin/orgs` | admin | List tenants (no key material) |
+| GET | `/api/admin/orgs/:id/overview` | admin | One tenant: profile, contacts, opportunities, bids, audit |
 | GET | `/api/me` | org | Tenant profile |
 | PUT | `/api/me/profile` | org | Territories, project types, minimum size |
 | PUT | `/api/me/pricing` | org | Rate cards (validated on save) |
