@@ -79,5 +79,5 @@ app.get('/proposal/:token',(req,res)=>res.sendFile(path.join(ROOT,'public','prop
 app.get('/api/health',(req,res)=>res.json({ok:true}));
 app.use(express.static(path.join(ROOT,'public')));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));
-app.use((err,req,res,next)=>{console.error(err);res.status(400).json({error:err.message||'Request failed'})});
+app.use((err,req,res,next)=>{if(err.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'A record with that value already exists.'});const code=err.status||err.statusCode||((err.name==='MulterError'||/Unsupported file type/.test(err.message))?400:500);if(code>=500)console.error(err);res.status(code).json({error:code<500?(err.message||'Request failed'):'Something went wrong. Please try again.'})});
 app.listen(PORT,()=>console.log(`Bright Cleaning Sev Inc. site running on http://localhost:${PORT}`));
