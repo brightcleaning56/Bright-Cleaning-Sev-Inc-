@@ -143,7 +143,7 @@ Each item says what it unblocks. Items marked **Launch** are required before any
 | E-signature and ESIGN consent records | **Not built** | E-signature provider, consent capture |
 | Subscriptions, billing, and tiers | **Not built** | Payment processor (section 3F) and pricing decisions |
 | User accounts, roles (RBAC), MFA | **Partial.** Two access levels only: owner admin key and per-tenant key. No per-user roles and no MFA. | Identity provider with MFA, then per-user roles |
-| API rate limits (blueprint section 10) | **Not built** | Add per-key rate limiting before opening access beyond the owner |
+| API rate limits (blueprint section 10) | **Built, single instance.** Fixed window per API key or IP (`src/ratelimit.js`). Multi-instance needs a shared store such as Redis. | Shared store only if you scale past one Render instance |
 | Privacy request center (access, deletion, correction, export) | **Not built** | Workflow in the owner console and API |
 | Policy library published and accepted in-app | **Documented, not in-app.** The policy list is in the launch doc. Documents not yet written. | Attorney drafts, then publish with acceptance records |
 | Marketing campaigns | **Not built.** The compliance rules for them are built and tested. | Only after counsel signs off on marketing |

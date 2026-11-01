@@ -41,6 +41,9 @@ needed in the browser.
 | `BUILDINTEL_SEND_MODE` | `dry_run` (default) or `live` (needs a provider adapter; refuses to start otherwise) | `dry_run` |
 | `BUILDINTEL_AUTOPILOT` | `on` starts the scheduled autonomous cycle | off |
 | `BUILDINTEL_AUTOPILOT_INTERVAL_MIN` | Minutes between cycles | `60` |
+| `BUILDINTEL_RATE_LIMIT_PER_MIN` | Requests per minute per caller (per API key, or per IP when no key). Health checks are exempt. | `120` |
+| `BUILDINTEL_TRUST_PROXY` | `1` only behind a trusted proxy (Render), so client IPs come from X-Forwarded-For | off |
+| `BUILDINTEL_CORS_ORIGINS` | Comma-separated browser origins allowed to call the API (the Netlify console) | none |
 | `BUILDINTEL_ALLOW_SAMPLE` | `1` enables synthetic demo permits. Never in production. | off |
 
 ## Tenant setup

@@ -18,6 +18,9 @@ function loadConfig(env = process.env) {
   if (!(intervalMin > 0)) {
     throw new Error('BUILDINTEL_AUTOPILOT_INTERVAL_MIN must be greater than 0');
   }
+  if (!(Number.isInteger(Number(env.BUILDINTEL_RATE_LIMIT_PER_MIN || 120)) && Number(env.BUILDINTEL_RATE_LIMIT_PER_MIN || 120) > 0)) {
+    throw new Error('BUILDINTEL_RATE_LIMIT_PER_MIN must be a positive integer');
+  }
   const root = path.resolve(__dirname, '..');
   return {
     root,
@@ -33,6 +36,10 @@ function loadConfig(env = process.env) {
     // Browser origins allowed to call the API cross-origin (for example the Netlify console).
     corsOrigins: String(env.BUILDINTEL_CORS_ORIGINS || '')
       .split(',').map((o) => o.trim()).filter(Boolean),
+    // Requests per minute per caller. Health checks are exempt.
+    rateLimitPerMinute: Number(env.BUILDINTEL_RATE_LIMIT_PER_MIN || 120),
+    // Set to 1 only behind a trusted proxy (Render). Otherwise client IPs can be spoofed.
+    trustProxy: env.BUILDINTEL_TRUST_PROXY === '1',
     // Sample/fixture permits are demo data. They must never reach production.
     allowSampleData: env.BUILDINTEL_ALLOW_SAMPLE === '1',
     autopilotEnabled: env.BUILDINTEL_AUTOPILOT === 'on',

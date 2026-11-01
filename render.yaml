@@ -24,3 +24,7 @@ services:
         value: "0"
       - key: BUILDINTEL_AUTOPILOT
         value: off
+      - key: BUILDINTEL_TRUST_PROXY
+        value: "1"
+      - key: BUILDINTEL_RATE_LIMIT_PER_MIN
+        value: "120"

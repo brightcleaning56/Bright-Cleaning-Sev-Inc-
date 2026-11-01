@@ -9,6 +9,8 @@ const { audit } = require('./store');
 const { runCycle, syncAllSources } = require('./autopilot');
 const { evaluateReadiness } = require('./readiness');
 const { estimate } = require('./domain/estimating');
+const { RateLimiter } = require('./ratelimit');
+const crypto = require('crypto');
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -289,12 +291,33 @@ function applyCors(config, req, res) {
   return true;
 }
 
+/** Who is calling: a hash of the API key when present, otherwise the client IP. */
+function callerKey(config, req) {
+  const key = req.headers['x-org-key'] || req.headers['x-admin-key'] || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (key) return 'key:' + crypto.createHash('sha256').update(String(key)).digest('hex');
+  let ip = req.socket.remoteAddress || 'unknown';
+  if (config.trustProxy && req.headers['x-forwarded-for']) {
+    ip = String(req.headers['x-forwarded-for']).split(',')[0].trim();
+  }
+  return 'ip:' + ip;
+}
+
 function createServer({ store, config, transport }) {
   const routes = buildRoutes({ store, config, transport });
+  const limiter = new RateLimiter({ limit: config.rateLimitPerMinute });
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     try {
       if (url.pathname.startsWith('/api/')) applyCors(config, req, res);
+      if (url.pathname !== '/health' && req.method !== 'OPTIONS') {
+        const verdict = limiter.hit(callerKey(config, req));
+        res.setHeader('X-RateLimit-Limit', String(verdict.limit));
+        res.setHeader('X-RateLimit-Remaining', String(verdict.remaining));
+        if (!verdict.allowed) {
+          res.setHeader('Retry-After', String(verdict.retryAfterSec));
+          return send(res, 429, { error: 'too many requests; slow down and retry after the Retry-After period' });
+        }
+      }
       if (req.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
         res.writeHead(204);
         return res.end();
