@@ -1,6 +1,8 @@
 # Bright Cleaning Sev Inc — Professional Commercial Website
 
 ## Brand and positioning
+Legal name: Bright Cleaning Sev Inc. (owner-confirmed).
+
 Bright Cleaning Sev Inc is presented as a commercial cleaning, construction final cleaning, and property-services provider, with the primary audience being general contractors, construction managers, commercial property owners, facility managers, and multifamily operators.
 
 ## Public website pages
@@ -69,7 +71,7 @@ The admin creation script creates a random JWT secret and a bcrypt password hash
 - Review rate limits, authentication, session handling, file access, and audit logs.
 - Use a managed secrets store; never commit `.env`.
 - Complete legal review of privacy, terms, accessibility, employment, and contract language.
-- Confirm the legal business name, mailing address, phone number, service locations, insurance, W-9, certifications, licenses, safety programs, project references, and approved photos.
+- Confirm the mailing address, phone number, service locations, insurance, W-9, certifications, licenses, safety programs, project references, and approved photos.
 - Remove or confirm custom-scope services (restroom cleaning and floor care) before claiming them as active offerings.
 - Connect CRM, proposal/estimate software, accounting, e-signature, and project scheduling if those workflows are required.
 - Perform accessibility, mobile, browser, load, penetration, upload-security, backup/restore, and end-to-end acceptance testing.
