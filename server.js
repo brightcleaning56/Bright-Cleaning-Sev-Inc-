@@ -3,7 +3,8 @@ require('dotenv').config();
 const express=require('express'),path=require('path'),fs=require('fs'),crypto=require('crypto');
 const helmet=require('helmet'),rateLimit=require('express-rate-limit'),multer=require('multer'),bcrypt=require('bcryptjs'),jwt=require('jsonwebtoken'),Database=require('better-sqlite3');
 const app=express();const PORT=process.env.PORT||3000;const ROOT=__dirname;const uploadDir=path.join(ROOT,'uploads');const dataDir=path.join(ROOT,'data');fs.mkdirSync(uploadDir,{recursive:true});fs.mkdirSync(dataDir,{recursive:true});
-if(!process.env.JWT_SECRET||process.env.JWT_SECRET.length<32)console.warn('WARNING: Set a strong JWT_SECRET (32+ characters) in .env before production.');
+if(!process.env.JWT_SECRET||process.env.JWT_SECRET.length<32){if(process.env.NODE_ENV==='production'){console.error('FATAL: JWT_SECRET must be set to at least 32 characters in production.');process.exit(1)}console.warn('WARNING: Set a strong JWT_SECRET (32+ characters) in .env before production.')}
+if(process.env.TRUST_PROXY)app.set('trust proxy',Number(process.env.TRUST_PROXY)||1);
 app.use(helmet({contentSecurityPolicy:false}));app.use(express.json({limit:'1mb'}));app.use(express.urlencoded({extended:true}));
 app.use('/api/',rateLimit({windowMs:15*60*1000,max:600,standardHeaders:true,legacyHeaders:false}));
 const db=new Database(path.join(ROOT,'data','brightclean.db'));db.pragma('journal_mode = WAL');
