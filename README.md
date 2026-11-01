@@ -14,6 +14,21 @@ node src/cli.js readiness        # go-live gate report (exit 2 = NO-GO)
 BUILDINTEL_ADMIN_KEY=... BUILDINTEL_UNSUBSCRIBE_SECRET=... npm start
 ```
 
+## Owner console (web app)
+
+Everything can be run from the browser. Open the server's root URL (for example `http://localhost:8080/`)
+and sign in with `BUILDINTEL_ADMIN_KEY`. The key is kept in this browser tab only.
+
+- **Dashboard:** readiness gates, tenant list, and a button to run the autopilot cycle now.
+- **New tenant:** create an organisation. The tenant's own API key is shown once.
+- **Tenant page:** autopilot on/off and auto-approve limit, rate cards (validated on save), contacts
+  (add, then verify with a recorded source), opportunities, bids (approve or withdraw), and audit.
+- **Approval queue:** every bid waiting for your decision, across all tenants.
+
+The console is plain HTML and JavaScript with a strict Content-Security-Policy (`script-src 'self'`,
+no inline scripts or styles). Owner actions on a tenant use the admin key plus `x-org-id`, so no tenant key is
+needed in the browser.
+
 ## Configuration (environment variables)
 
 | Variable | Purpose | Default |

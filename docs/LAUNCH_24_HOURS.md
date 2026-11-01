@@ -86,6 +86,13 @@ These are starting points for counsel, not legal advice.
 - **Electronic signatures and records.** Not built yet. Proposal acceptance needs ESIGN-compliant
   consent and an audit trail before it is offered.
 
+## Operating from the web console
+
+The owner console at the server's root URL covers the full runbook without the command line:
+sign in with the admin key, create the tenant on **New tenant**, enter rate cards and contacts on the
+tenant page, run the cycle from the **Dashboard**, and approve bids in the **Approval queue**. The
+readiness gates are on the dashboard. The CLI and API still work for scripting.
+
 ## 24-hour runbook
 
 **Hours 0 to 2: Configure the host.**

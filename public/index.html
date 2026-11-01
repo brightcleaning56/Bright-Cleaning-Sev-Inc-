@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BUILDINTEL Owner Console</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <strong>BUILDINTEL</strong>
+    <nav id="nav" hidden>
+      <a href="#/">Dashboard</a>
+      <a href="#/setup">New tenant</a>
+      <a href="#/queue">Approval queue</a>
+      <button id="signout" class="link" type="button">Sign out</button>
+    </nav>
+  </header>
+  <main id="app" aria-live="polite">
+    <p class="muted">Loading…</p>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
