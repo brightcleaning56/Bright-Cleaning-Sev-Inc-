@@ -132,3 +132,49 @@ test('the admin tenant list includes no key material', async () => {
     await s.close();
   }
 });
+
+test('CORS allows only the configured console origin and answers preflight', async () => {
+  const { env } = makeEnv({ BUILDINTEL_CORS_ORIGINS: 'https://buildintel.netlify.app, https://staging.example.org' });
+  const { store, config } = makeStore(env);
+  const server = createServer({ store, config, transport: createTransport(config) });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    assert.deepEqual(config.corsOrigins, ['https://buildintel.netlify.app', 'https://staging.example.org']);
+
+    const allowed = await fetch(`${base}/api/readiness`, {
+      headers: { origin: 'https://buildintel.netlify.app', 'x-admin-key': ADMIN_KEY },
+    });
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://buildintel.netlify.app');
+    assert.match(allowed.headers.get('vary') || '', /Origin/);
+
+    const denied = await fetch(`${base}/api/readiness`, {
+      headers: { origin: 'https://evil.example', 'x-admin-key': ADMIN_KEY },
+    });
+    assert.equal(denied.status, 200, 'the request still succeeds server-side');
+    assert.equal(denied.headers.get('access-control-allow-origin'), null, 'the browser is not told to allow it');
+
+    const pre = await fetch(`${base}/api/bids`, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://buildintel.netlify.app', 'access-control-request-method': 'POST', 'access-control-request-headers': 'x-org-id,content-type' },
+    });
+    assert.equal(pre.status, 204);
+    assert.match(pre.headers.get('access-control-allow-headers'), /x-org-id/);
+    assert.match(pre.headers.get('access-control-allow-methods'), /POST/);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test('with no CORS origins configured, no cross-origin headers are sent', async () => {
+  const s = await start();
+  try {
+    const res = await fetch(`${s.base}/api/readiness`, {
+      headers: { origin: 'https://buildintel.netlify.app', 'x-admin-key': ADMIN_KEY },
+    });
+    assert.equal(res.headers.get('access-control-allow-origin'), null);
+  } finally {
+    await s.close();
+  }
+});

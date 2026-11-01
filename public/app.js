@@ -3,6 +3,9 @@
 // BUILDINTEL owner console. Plain JavaScript, no external scripts, no inline handlers,
 // so it runs under the strict Content-Security-Policy set by the server.
 
+// API base: empty means same origin. Netlify builds set window.BUILDINTEL_API in config.js.
+const API_BASE = String(window.BUILDINTEL_API || '').replace(/\/+$/, '');
+
 const app = document.getElementById('app');
 const nav = document.getElementById('nav');
 const toastEl = document.getElementById('toast');
@@ -30,7 +33,7 @@ async function api(method, path, body, orgId) {
   const headers = { 'x-admin-key': getKey() };
   if (orgId) headers['x-org-id'] = orgId;
   if (body !== undefined) headers['content-type'] = 'application/json';
-  const res = await fetch(path, {
+  const res = await fetch(API_BASE + path, {
     method, headers, body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   let data = {};

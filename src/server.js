@@ -86,6 +86,7 @@ const STATIC_FILES = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8', csp: "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" },
   '/app.js': { file: 'app.js', type: 'application/javascript; charset=utf-8' },
   '/app.css': { file: 'app.css', type: 'text/css; charset=utf-8' },
+  '/config.js': { file: 'config.js', type: 'application/javascript; charset=utf-8' },
 };
 
 function serveStatic(config, res, pathname) {
@@ -271,11 +272,31 @@ function buildRoutes({ store, config, transport }) {
   ];
 }
 
+/**
+ * CORS for the API only. Allowed origins come from BUILDINTEL_CORS_ORIGINS.
+ * No cookies are used, so credentials are never sent cross-origin.
+ */
+function applyCors(config, req, res) {
+  const origin = req.headers.origin;
+  res.setHeader('Vary', 'Origin');
+  if (!origin || !config.corsOrigins.includes(origin)) return false;
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'content-type,x-admin-key,x-org-id,x-org-key,authorization');
+  res.setHeader('Access-Control-Max-Age', '600');
+  return true;
+}
+
 function createServer({ store, config, transport }) {
   const routes = buildRoutes({ store, config, transport });
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     try {
+      if (url.pathname.startsWith('/api/')) applyCors(config, req, res);
+      if (req.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
+        res.writeHead(204);
+        return res.end();
+      }
       if (req.method === 'GET' && STATIC_FILES[url.pathname]) {
         return serveStatic(config, res, url.pathname);
       }

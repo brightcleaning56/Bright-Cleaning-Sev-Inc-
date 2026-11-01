@@ -29,6 +29,9 @@ function loadConfig(env = process.env) {
     adminKey: env.BUILDINTEL_ADMIN_KEY || '',
     unsubscribeSecret: env.BUILDINTEL_UNSUBSCRIBE_SECRET || '',
     publicBaseUrl: env.BUILDINTEL_PUBLIC_URL || `http://localhost:${port}`,
+    // Browser origins allowed to call the API cross-origin (for example the Netlify console).
+    corsOrigins: String(env.BUILDINTEL_CORS_ORIGINS || '')
+      .split(',').map((o) => o.trim()).filter(Boolean),
     // Sample/fixture permits are demo data. They must never reach production.
     allowSampleData: env.BUILDINTEL_ALLOW_SAMPLE === '1',
     autopilotEnabled: env.BUILDINTEL_AUTOPILOT === 'on',
