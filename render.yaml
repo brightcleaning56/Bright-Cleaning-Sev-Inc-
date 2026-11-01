@@ -1,0 +1,44 @@
+# One-step web deploy: Render reads this file from the GitHub repo.
+# Connect the repo at https://dashboard.render.com > New > Blueprint.
+services:
+  - type: web
+    name: brightclean-web
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: info@brightclean.net
+      - key: FROM_EMAIL
+        value: info@brightclean.net
+      - key: NOTIFY_EMAIL
+        value: info@brightclean.net
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: info@brightclean.net
+      - key: SMTP_PASS
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: DATA_DIR
+        value: /opt/render/project/src/persist/data
+      - key: UPLOAD_DIR
+        value: /opt/render/project/src/persist/uploads
+    disk:
+      name: brightclean-persist
+      mountPath: /opt/render/project/src/persist
+      sizeGB: 5

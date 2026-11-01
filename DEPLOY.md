@@ -1,4 +1,15 @@
-# Deploying Bright Cleaning Sev Inc (brightclean.net)
+# Deploying Bright Cleaning Sev Inc. (brightclean.net)
+
+## Fastest path: web host from GitHub (Render)
+The repo includes `render.yaml`, a blueprint that creates the web service, a 5 GB persistent disk, and a health check at `/api/health`.
+1. Sign in at https://dashboard.render.com and choose New > Blueprint.
+2. Select the GitHub repo `brightcleaning56/Bright-Cleaning-Sev-Inc-` and branch `claude/bright-cleaning-rebuild-nt1y6e`.
+3. When prompted, enter `SMTP_PASS` (the Google app password for info@brightclean.net) and `ADMIN_PASSWORD_HASH` (run `npm run create-admin` locally to generate it and copy only the hash line).
+4. Deploy. `JWT_SECRET` is generated automatically.
+5. Add `brightclean.net` as a custom domain in the service settings and point DNS records as Render shows.
+6. Run the checks in the steps below against the live URL.
+
+## Other hosts or self-managed
 
 ## Requirements
 - Node.js 22 LTS, or the provided Dockerfile.

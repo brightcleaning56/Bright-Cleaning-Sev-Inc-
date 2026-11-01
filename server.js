@@ -2,12 +2,12 @@
 require('dotenv').config();
 const express=require('express'),path=require('path'),fs=require('fs'),crypto=require('crypto');
 const helmet=require('helmet'),rateLimit=require('express-rate-limit'),multer=require('multer'),bcrypt=require('bcryptjs'),jwt=require('jsonwebtoken'),Database=require('better-sqlite3');
-const app=express();const PORT=process.env.PORT||3000;const ROOT=__dirname;const uploadDir=path.join(ROOT,'uploads');const dataDir=path.join(ROOT,'data');fs.mkdirSync(uploadDir,{recursive:true});fs.mkdirSync(dataDir,{recursive:true});
+const app=express();const PORT=process.env.PORT||3000;const ROOT=__dirname;const uploadDir=process.env.UPLOAD_DIR||path.join(ROOT,'uploads');const dataDir=process.env.DATA_DIR||path.join(ROOT,'data');fs.mkdirSync(uploadDir,{recursive:true});fs.mkdirSync(dataDir,{recursive:true});
 if(!process.env.JWT_SECRET||process.env.JWT_SECRET.length<32){if(process.env.NODE_ENV==='production'){console.error('FATAL: JWT_SECRET must be set to at least 32 characters in production.');process.exit(1)}console.warn('WARNING: Set a strong JWT_SECRET (32+ characters) in .env before production.')}
 if(process.env.TRUST_PROXY)app.set('trust proxy',Number(process.env.TRUST_PROXY)||1);
 app.use(helmet({contentSecurityPolicy:false}));app.use(express.json({limit:'1mb'}));app.use(express.urlencoded({extended:true}));
 app.use('/api/',rateLimit({windowMs:15*60*1000,max:600,standardHeaders:true,legacyHeaders:false}));
-const db=new Database(path.join(ROOT,'data','brightclean.db'));db.pragma('journal_mode = WAL');
+const db=new Database(path.join(dataDir,'brightclean.db'));db.pragma('journal_mode = WAL');
 db.exec(`CREATE TABLE IF NOT EXISTS leads(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL DEFAULT 'bid',contact_name TEXT,company TEXT,email TEXT,phone TEXT,project_name TEXT,project_type TEXT,service TEXT,address TEXT,square_footage TEXT,bid_due_date TEXT,start_date TEXT,frequency TEXT,walkthrough TEXT,details TEXT,status TEXT NOT NULL DEFAULT 'New',files TEXT,created_at TEXT NOT NULL);`);
 db.exec(`
 CREATE TABLE IF NOT EXISTS estimates(id INTEGER PRIMARY KEY AUTOINCREMENT,lead_id INTEGER,customer_name TEXT NOT NULL,company TEXT,email TEXT,project_name TEXT,site_address TEXT,scope TEXT NOT NULL,area_sqft REAL DEFAULT 0,production_rate REAL DEFAULT 0,labor_hours REAL DEFAULT 0,labor_rate REAL DEFAULT 0,labor_cost REAL DEFAULT 0,supplies_cost REAL DEFAULT 0,equipment_cost REAL DEFAULT 0,other_cost REAL DEFAULT 0,overhead_pct REAL DEFAULT 0,margin_pct REAL DEFAULT 0,tax_pct REAL DEFAULT 0,total_cost REAL DEFAULT 0,proposal_total REAL DEFAULT 0,line_items TEXT,terms TEXT,status TEXT DEFAULT 'Draft',public_token TEXT UNIQUE,expires_on TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -76,6 +76,7 @@ app.get('/api/admin/financial-summary',auth,(req,res)=>{const x=db.prepare("SELE
 app.get('/api/admin/audit-log',auth,(req,res)=>res.json({events:db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT 250').all()}));
 app.get('/proposal/:token',(req,res)=>res.sendFile(path.join(ROOT,'public','proposal.html')));
 
+app.get('/api/health',(req,res)=>res.json({ok:true}));
 app.use(express.static(path.join(ROOT,'public')));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));
 app.use((err,req,res,next)=>{console.error(err);res.status(400).json({error:err.message||'Request failed'})});
