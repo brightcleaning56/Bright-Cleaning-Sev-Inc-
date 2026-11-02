@@ -34,6 +34,7 @@ module.exports = function mountCommand(app, ctx) {
     const staleLeads = one(`SELECT COUNT(*) n FROM leads WHERE kind IN ('bid','inquiry') AND status='New' AND created_at<?`, iso(new Date(now - 2 * 864e5))).n;
     const iss = one(`SELECT SUM(type='complaint') complaints, SUM(due_date IS NOT NULL AND due_date<>'' AND due_date<?) overdue FROM customer_issues WHERE status IN ('Open','In progress')`, today);
     const openComplaints = iss.complaints || 0, overdueItems = iss.overdue || 0;
+    const awaitingApproval = require('./approvals').pendingCount();
     const failedEmails = one(`SELECT COUNT(*) n FROM automation_log WHERE status='failed' AND created_at>=?`, iso(new Date(now - 7 * 864e5))).n;
 
     const pipeline = [
@@ -55,8 +56,8 @@ module.exports = function mountCommand(app, ctx) {
         won: { value: won.n, amount: won.v, change: pct(won.n, wonPrev.n) },
         collected_month: { value: collectedMonth },
         active_projects: { value: activeProjects },
-        attention: { value: overdueInvoices + lateProjects + staleLeads + failedEmails + openComplaints + overdueItems,
-          parts: { open_complaints: openComplaints, overdue_tasks: overdueItems, overdue_invoices: overdueInvoices, late_projects: lateProjects, leads_waiting_2_days: staleLeads, failed_emails_7_days: failedEmails } }
+        attention: { value: overdueInvoices + lateProjects + staleLeads + failedEmails + openComplaints + overdueItems + awaitingApproval,
+          parts: { awaiting_approval: awaitingApproval, open_complaints: openComplaints, overdue_tasks: overdueItems, overdue_invoices: overdueInvoices, late_projects: lateProjects, leads_waiting_2_days: staleLeads, failed_emails_7_days: failedEmails } }
       },
       pipeline,
       activity: db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT 6').all(),
