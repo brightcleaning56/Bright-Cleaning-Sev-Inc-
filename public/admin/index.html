@@ -224,7 +224,7 @@
     </section>
 
     <section class="view" id="v-customers">
-      <div class="pagehead"><div><h1>Customers</h1><p>Each company or contact, with all of their leads, proposals, contracts, projects and invoices.</p></div></div>
+      <div class="pagehead"><div><h1>Customers</h1><p>Your customer directory. New customers are added automatically from bid requests, inquiries, estimates and approvals.</p></div><button class="btn" id="custAdd">Add customer</button></div>
       <div class="toolbar"><input type="search" id="custSearch" placeholder="Search customers…" aria-label="Search customers"></div>
       <div class="tablewrap"><table class="t"><thead><tr><th>Customer</th><th>Contact</th><th class="num">Leads</th><th class="num">Proposals</th><th class="num">Projects</th><th class="num">Billed</th><th class="num">Open balance</th></tr></thead><tbody id="custRows"></tbody></table></div>
     </section>
@@ -244,6 +244,8 @@
         <button class="btn ghost" data-view-link="proposals">Back to proposals</button></div>
       <form id="estimateForm" class="card" novalidate>
         <input type="hidden" name="id">
+        <div class="formsection">Start from a template</div>
+        <div class="grid"><div class="f wide"><label for="eT">Service template</label><select id="eT" name="template_key"><option value="">No template</option></select><span class="hint">Fills in a standard scope and terms you can edit. Production rates stay blank until you set your own.</span></div></div>
         <div class="formsection">Customer</div>
         <div class="grid">
           <div class="f"><label for="e1">Contact name *</label><input id="e1" name="customer_name" required></div>
@@ -260,26 +262,37 @@
           <div class="f"><label for="e9">Production rate (sq ft per labor hour)</label><input id="e9" name="production_rate" type="number" min="0" step="any" value="0"><span class="hint">Labor hours = area ÷ rate.</span></div>
           <div class="f"><label for="e10">Labor hours (override)</label><input id="e10" name="labor_hours" type="number" min="0" step="any" value="0"><span class="hint">If above 0, used instead of area ÷ rate.</span></div>
           <div class="f"><label for="e11">Loaded labor cost per hour ($)</label><input id="e11" name="labor_rate" type="number" min="0" step="any" value="0"><span class="hint">Wage plus payroll taxes, insurance and benefits.</span></div>
+          <div class="f"><label for="e21">Number of visits</label><input id="e21" name="visits" type="number" min="1" step="1" value="1"><span class="hint">Labor and travel are multiplied by visits.</span></div>
+          <div class="f"><label for="e22">Crew size</label><input id="e22" name="crew_size" type="number" min="1" step="1" value="1"></div>
+          <div class="f"><label for="e23">Shift length (hours)</label><input id="e23" name="shift_hours" type="number" min="1" step="any" value="8"><span class="hint">Used to estimate crew days.</span></div>
         </div>
         <div class="formsection">Other costs and pricing</div>
         <div class="grid">
           <div class="f"><label for="e12">Supplies &amp; consumables ($)</label><input id="e12" name="supplies_cost" type="number" min="0" step="any" value="0"></div>
           <div class="f"><label for="e13">Equipment / rentals ($)</label><input id="e13" name="equipment_cost" type="number" min="0" step="any" value="0"></div>
           <div class="f"><label for="e14">Other direct costs ($)</label><input id="e14" name="other_cost" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e24">Travel per visit ($)</label><input id="e24" name="travel_cost" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e25">Mobilization ($)</label><input id="e25" name="mobilization_cost" type="number" min="0" step="any" value="0"><span class="hint">One-time setup cost.</span></div>
+          <div class="f"><label for="e26">Subcontractor ($)</label><input id="e26" name="subcontractor_cost" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e27">Disposal / haul-off ($)</label><input id="e27" name="disposal_cost" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e28">Insurance &amp; compliance (%)</label><input id="e28" name="insurance_pct" type="number" min="0" step="any" value="0"><span class="hint">Percent of direct cost.</span></div>
+          <div class="f"><label for="e29">Contingency (%)</label><input id="e29" name="contingency_pct" type="number" min="0" step="any" value="0"></div>
           <div class="f"><label for="e15">Overhead (%)</label><input id="e15" name="overhead_pct" type="number" min="0" step="any" value="10"></div>
           <div class="f"><label for="e16">Gross margin (%)</label><input id="e16" name="margin_pct" type="number" min="0" max="90" step="any" value="25"><span class="hint">Margin on the selling price, not markup on cost.</span></div>
           <div class="f"><label for="e17">Sales tax (%)</label><input id="e17" name="tax_pct" type="number" min="0" step="any" value="0"><span class="hint">Confirm whether the service is taxable.</span></div>
+          <div class="f"><label for="e30">Minimum job charge ($)</label><input id="e30" name="minimum_charge" type="number" min="0" step="any" value="0"><span class="hint">The price never goes below this.</span></div>
           <div class="f"><label for="e18">Proposal valid through</label><input id="e18" name="expires_on" type="date"></div>
         </div>
         <div class="formsection">What the customer sees</div>
         <div class="grid">
-          <div class="f wide"><label for="e19">Line items</label><textarea id="e19" name="line_items_text" placeholder="One per line:  description | amount"></textarea><span class="hint">Optional price breakdown shown on the proposal, for example “Final construction cleaning | 12500”.</span></div>
+          <div class="f wide"><label for="e19">Line items</label><textarea id="e19" name="line_items_text" placeholder="One per line:  description | amount"></textarea><span class="hint">Optional price breakdown shown on the proposal, for example “Final construction cleaning | 12500”.</span><label style="font-weight:600;margin-top:6px"><input type="checkbox" name="use_line_items" value="1"> Use the line-item total as the price (instead of the calculated price)</label></div>
           <div class="f wide"><label for="e20">Terms, assumptions &amp; exclusions</label><textarea id="e20" name="terms" placeholder="Payment terms, schedule assumptions, exclusions, change orders, site readiness"></textarea></div>
         </div>
         <div class="calc" id="calc">
           <div><span>Labor hours</span><b id="cHours">0.00</b></div>
           <div><span>Cost incl. overhead</span><b id="cCost">$0.00</b></div>
           <div><span>Gross profit</span><b id="cProfit">$0.00</b></div>
+          <div><span>Crew days</span><b id="cDays">0.0</b></div>
           <div class="total"><span>Proposal total</span><b id="cTotal">$0.00</b></div>
           <div class="warnline" id="cWarn" hidden></div>
         </div>
@@ -335,6 +348,20 @@
             <div class="formbar"><button class="btn">Give access</button><span class="msg" id="userMsg" role="status"></span></div>
           </form>
         </div>
+      </div>
+      <div class="card" id="autoCard">
+        <h2>Automation</h2>
+        <p class="msg" id="autoEmail"></p>
+        <div id="autoToggles"></div>
+        <div class="formbar"><button class="btn ghost" id="autoRun">Run automations now</button><span class="msg" id="autoMsg" role="status"></span></div>
+        <div class="formsection">Recent automation activity</div>
+        <div class="activity" id="autoLog"></div>
+      </div>
+      <div class="card" id="backupCard">
+        <h2>Database backups</h2>
+        <p class="msg">A backup is made automatically each day and the 14 newest are kept on the server. Download one regularly and store it somewhere safe off the server.</p>
+        <div class="formbar" style="margin-top:0"><button class="btn" id="backupNow">Back up now</button><span class="msg" id="backupMsg" role="status"></span></div>
+        <div id="backupList" style="margin-top:12px"></div>
       </div>
     </section>
   </main>

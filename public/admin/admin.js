@@ -157,7 +157,7 @@
       if (view === 'proposals') await loadEstimates();
       if (['contracts', 'projects', 'invoices'].includes(view)) await loadRegister(view);
       if (view === 'activity') await loadActivity();
-      if (view === 'settings') await loadUsers();
+      if (view === 'settings') await loadSettings();
     } catch (err) { if (err.message !== 'Signed out') toast(err.message, true); }
     refreshNewCount();
   }
@@ -323,29 +323,54 @@
   }
   function renderCustomers() {
     const q = $('#custSearch').value.trim().toLowerCase();
-    const rows = state.customers.filter(c => !q || [c.company, c.name, c.email, c.phone].join(' ').toLowerCase().includes(q));
-    $('#custRows').innerHTML = rows.length ? rows.map((c, i) => `<tr class="click" data-cust="${state.customers.indexOf(c)}"><td><b>${esc(c.company || c.name)}</b>${c.company && c.name ? `<small>${esc(c.name)}</small>` : ''}</td><td>${esc(c.email || '—')}<small>${esc(c.phone || '')}</small></td><td class="num">${c.leads.length}</td><td class="num">${c.proposals.length}</td><td class="num">${c.projects.length}</td><td class="num">${money(c.billed)}</td><td class="num">${c.billed - c.paid > 0 ? `<b>${money(c.billed - c.paid)}</b>` : money(0)}</td></tr>`).join('')
-      : `<tr><td class="emptyrow" colspan="7">${q ? 'No customers match your search.' : 'Customers appear here automatically from leads, proposals, contracts, projects and invoices.'}</td></tr>`;
-    $$('[data-cust]').forEach(r => r.onclick = () => openCustomer(state.customers[r.dataset.cust]));
+    const rows = state.customers.filter(c => !q || [c.company, c.name, c.email, c.phone, c.notes].join(' ').toLowerCase().includes(q));
+    $('#custRows').innerHTML = rows.length ? rows.map(c => `<tr class="click" data-cust="${c.id}"><td><b>${esc(c.company || c.name || c.email)}</b>${c.company && c.name ? `<small>${esc(c.name)}</small>` : ''}</td><td>${esc(c.email || '—')}<small>${esc(c.phone || '')}</small></td><td class="num">${c.leads.length}</td><td class="num">${c.proposals.length}</td><td class="num">${c.projects.length}</td><td class="num">${money(c.billed)}</td><td class="num">${c.billed - c.paid > 0 ? `<b>${money(c.billed - c.paid)}</b>` : money(0)}</td></tr>`).join('')
+      : `<tr><td class="emptyrow" colspan="7">${q ? 'No customers match your search.' : 'Customers are added automatically from bid requests, inquiries and estimates, or click “Add customer”.'}</td></tr>`;
+    $$('[data-cust]').forEach(r => r.onclick = () => openCustomer(state.customers.find(c => c.id === Number(r.dataset.cust))));
   }
+  $('#custAdd').addEventListener('click', () => openCustomer(null));
   function openCustomer(c) {
+    const isNew = !c;
+    c = c || { name: '', company: '', email: '', phone: '', address: '', notes: '', leads: [], proposals: [], contracts: [], projects: [], invoices: [], billed: 0, paid: 0 };
     const sec = (title, items, render) => items.length ? `<h3>${title} (${items.length})</h3><ul>${items.map(render).join('')}</ul>` : '';
     openDrawer({
-      title: c.company || c.name,
-      sub: [c.name, c.email, c.phone].filter(Boolean).join(' · '),
+      title: isNew ? 'New customer' : (c.company || c.name || c.email),
+      sub: isNew ? '' : `Customer since ${fmtDate(c.created_at)} · source: ${c.source || '—'}`,
       body: `
-        <div class="stats" style="grid-template-columns:repeat(3,1fr)"><div class="stat" style="cursor:default"><span>Billed</span><b>${money(c.billed)}</b></div><div class="stat" style="cursor:default"><span>Collected</span><b>${money(c.paid)}</b></div><div class="stat" style="cursor:default"><span>Open balance</span><b>${money(c.billed - c.paid)}</b></div></div>
-        <div class="related">
+        ${isNew ? '' : `<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div class="stat" style="cursor:default"><span>Billed</span><b>${money(c.billed)}</b></div><div class="stat" style="cursor:default"><span>Collected</span><b>${money(c.paid)}</b></div><div class="stat" style="cursor:default"><span>Open balance</span><b>${money(c.billed - c.paid)}</b></div></div>`}
+        <form id="custForm" class="grid" novalidate>
+          <div class="f"><label for="c1">Contact name</label><input id="c1" name="name" value="${esc(c.name)}"></div>
+          <div class="f"><label for="c2">Company</label><input id="c2" name="company" value="${esc(c.company)}"></div>
+          <div class="f"><label for="c3">Email</label><input id="c3" name="email" type="email" value="${esc(c.email)}"${isNew ? '' : ' readonly title="Email links this customer to their records"'}></div>
+          <div class="f"><label for="c4">Phone</label><input id="c4" name="phone" value="${esc(c.phone)}"></div>
+          <div class="f wide"><label for="c5">Address</label><input id="c5" name="address" value="${esc(c.address)}"></div>
+          <div class="f wide"><label for="c6">Notes</label><textarea id="c6" name="notes" placeholder="Billing contacts, site access, preferences">${esc(c.notes)}</textarea></div>
+        </form><p class="msg" id="custMsg" role="status"></p>
+        ${isNew ? '' : `<div class="related">
           ${sec('Leads', c.leads, x => `<li><button class="linklike" data-lead="${x.id}">${esc(KIND_LABEL[x.kind] || 'Lead')} #${x.id}${x.project_name ? ' · ' + esc(x.project_name) : ''}</button> ${badge(x.status)} <small>${fmtDate(x.created_at)}</small></li>`)}
           ${sec('Proposals', c.proposals, x => `<li><button class="linklike" data-est="${x.id}">${esc(x.project_name || 'Proposal #' + x.id)}</button> ${money(x.proposal_total)} ${badge(x.status)}</li>`)}
           ${sec('Contracts', c.contracts, x => `<li><button class="linklike" data-rec="contracts:${x.id}">${esc(x.title || 'Contract #' + x.id)}</button> ${money(x.value)} ${badge(x.status)}</li>`)}
           ${sec('Projects', c.projects, x => `<li><button class="linklike" data-rec="projects:${x.id}">${esc(x.name || 'Project #' + x.id)}</button> ${badge(x.status)} ${Number(x.progress || 0)}%</li>`)}
           ${sec('Invoices', c.invoices, x => `<li><button class="linklike" data-rec="invoices:${x.id}">${esc(x.invoice_number)}</button> ${money(x.amount)} ${badge(invoiceState(x))}</li>`)}
-        </div>`,
-      footer: `${c.email ? `<a class="btn ghost" href="mailto:${esc(c.email)}">Email</a>` : ''}<button class="btn" id="cQuote">New estimate for this customer</button>`
+        </div>`}`,
+      footer: `<button class="btn" id="cSave">${isNew ? 'Add customer' : 'Save'}</button>${isNew ? '' : `<button class="btn ghost" id="cQuote">New estimate</button>${c.email ? `<a class="btn ghost" href="mailto:${esc(c.email)}">Email</a>` : ''}<span class="grow"></span><button class="btn danger" id="cDel">Remove</button>`}`
     });
     bindOpeners($('#drawerRoot'));
-    $('#cQuote').onclick = () => { closeDrawer(); openEstimator(null, { contact_name: c.name, company: c.company, email: c.email }); };
+    $('#cSave').onclick = async () => {
+      const v = formObj($('#custForm'));
+      try {
+        if (isNew) await api('/api/admin/customers', { method: 'POST', json: v });
+        else { delete v.email; await api('/api/admin/customers/' + c.id, { method: 'PATCH', json: v }); }
+        toast(isNew ? 'Customer added' : 'Saved'); closeDrawer(); loadCustomers();
+      } catch (err) { $('#custMsg').className = 'msg err'; $('#custMsg').textContent = err.message; }
+    };
+    if (!isNew) {
+      $('#cQuote').onclick = () => { closeDrawer(); openEstimator(null, { contact_name: c.name, company: c.company, email: c.email, address: c.address }); };
+      $('#cDel').onclick = async () => {
+        if (!confirm('Remove this customer from the directory? Their leads, proposals, contracts, projects and invoices are kept.')) return;
+        try { await api('/api/admin/customers/' + c.id, { method: 'DELETE' }); toast('Removed'); closeDrawer(); loadCustomers(); } catch (err) { toast(err.message, true); }
+      };
+    }
   }
 
   // ---------- Estimates ----------
@@ -386,9 +411,13 @@
           <dt>Email</dt><dd>${esc(e.email || '— add one to email the proposal')}</dd>
           <dt>Site</dt><dd>${esc(e.site_address || '—')}</dd>
           <dt>Valid through</dt><dd>${fmtDate(e.expires_on)}</dd>
+          <dt>Crew plan</dt><dd>${Number(e.crew_days || 0).toFixed(1)} crew days · ${Number(e.visits || 1)} visit(s) · crew of ${Number(e.crew_size || 1)}</dd>
+          <dt>Sent</dt><dd>${e.sent_at ? esc(fmtWhen(e.sent_at)) : 'Not emailed yet'}</dd>
+          <dt>Customer viewed</dt><dd>${e.viewed_at ? `First ${esc(fmtWhen(e.viewed_at))}${e.view_count > 1 ? ` · ${e.view_count} views, last ${esc(fmtWhen(e.last_viewed_at))}` : ''}` : 'Not yet'}</dd>
+          ${e.decided_at ? `<dt>Decision</dt><dd>${badge(e.status)} ${esc(fmtWhen(e.decided_at))}${e.decision_ip ? ' · by the customer online' : ' · set in admin'}</dd>` : ''}
           ${e.lead_id ? `<dt>From lead</dt><dd><button class="linklike" data-lead="${e.lead_id}">Lead #${e.lead_id}</button></dd>` : ''}
         </dl>
-        <div class="grid"><div class="f"><label for="es">Status</label><select id="es">${options(STATUS.estimates, e.status)}</select><span class="hint">Updates automatically when the customer views, approves or declines.</span></div></div>
+        <div class="grid"><div class="f"><label for="es">Status</label><select id="es"${e.decision_ip ? ' disabled' : ''}>${options(STATUS.estimates, e.status)}</select><span class="hint">${e.decision_ip ? 'Locked: the customer made this decision online. Duplicate the proposal to revise it.' : 'Updates automatically when the customer views, approves or declines.'}</span></div></div>
         <div class="formsection">Scope</div><div class="pre">${esc(e.scope)}</div>
         ${items.length ? `<div class="formsection">Line items</div><table class="t"><tbody>${items.map(i => `<tr><td>${esc(i.description)}</td><td class="num">${money(i.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
         ${e.terms ? `<div class="formsection">Terms</div><div class="pre">${esc(e.terms)}</div>` : ''}
@@ -396,7 +425,7 @@
         <div class="f"><input readonly value="${esc(url)}" id="eUrl" aria-label="Customer proposal link"></div>`,
       footer: `
         <button class="btn" id="eSend"${e.email ? '' : ' disabled title="Add a customer email first"'}>Email to customer</button>
-        <a class="btn ghost" href="${esc(url)}" target="_blank" rel="noopener">Open customer view</a>
+        <a class="btn ghost" href="${esc(url)}?preview=1" target="_blank" rel="noopener">Preview customer view</a>
         <button class="btn ghost" id="eCopy">Copy link</button>
         <button class="btn ghost" id="eEdit"${e.status === 'Approved' ? ' disabled title="Approved proposals are locked. Duplicate to change."' : ''}>Edit</button>
         <button class="btn ghost" id="eDup">Duplicate</button>
@@ -428,7 +457,23 @@
 
   // Estimator form
   const ef = $('#estimateForm');
-  const DEFAULTS = { area_sqft: 0, production_rate: 0, labor_hours: 0, labor_rate: 0, supplies_cost: 0, equipment_cost: 0, other_cost: 0, overhead_pct: 10, margin_pct: 25, tax_pct: 0 };
+  const DEFAULTS = { area_sqft: 0, production_rate: 0, labor_hours: 0, labor_rate: 0, supplies_cost: 0, equipment_cost: 0, other_cost: 0, overhead_pct: 10, margin_pct: 25, tax_pct: 0, visits: 1, crew_size: 1, shift_hours: 8, travel_cost: 0, mobilization_cost: 0, subcontractor_cost: 0, disposal_cost: 0, insurance_pct: 0, contingency_pct: 0, minimum_charge: 0 };
+  const EXTRA_KEYS = ['visits', 'crew_size', 'shift_hours', 'travel_cost', 'mobilization_cost', 'subcontractor_cost', 'disposal_cost', 'insurance_pct', 'contingency_pct', 'minimum_charge', 'template_key'];
+  let templates = [];
+  async function loadTemplates() {
+    if (templates.length) return;
+    try { templates = (await api('/api/admin/templates')).templates || []; } catch { return; }
+    $('#eT').innerHTML = '<option value="">No template</option>' + templates.map(t => `<option value="${esc(t.key)}">${esc(t.name)}</option>`).join('');
+  }
+  $('#eT').addEventListener('change', () => {
+    const t = templates.find(x => x.key === $('#eT').value); if (!t) return;
+    const f = ef.elements;
+    if (f.scope.value.trim() && !confirm('Replace the current scope and terms with this template?')) return;
+    f.scope.value = t.scope || ''; f.terms.value = t.terms || '';
+    if (t.production_rate) f.production_rate.value = t.production_rate;
+    if (t.labor_rate) f.labor_rate.value = t.labor_rate;
+    calcEstimate();
+  });
 
   function openEstimator(est, lead) {
     ef.reset();
@@ -436,6 +481,8 @@
     Object.entries(DEFAULTS).forEach(([k, v]) => { ef.elements[k].value = v; });
     const d = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
     ef.elements.expires_on.value = d;
+    ef.elements.use_line_items.checked = false;
+    loadTemplates();
     if (lead) {
       Object.entries({
         lead_id: lead.id || '', customer_name: lead.contact_name || '', company: lead.company || '', email: lead.email || '',
@@ -450,6 +497,10 @@
       const derived = est.area_sqft && est.production_rate ? est.area_sqft / est.production_rate : 0;
       ef.elements.labor_hours.value = Math.abs(derived - est.labor_hours) > 0.01 ? est.labor_hours : 0;
       ef.elements.line_items_text.value = (est.line_items || []).map(i => `${i.description} | ${i.amount}`).join('\n');
+      EXTRA_KEYS.forEach(k => { if (ef.elements[k] && est[k] !== undefined && est[k] !== null) ef.elements[k].value = est[k]; });
+      ef.elements.use_line_items.checked = !!est.use_line_items;
+      if (est.visits > 1 && Math.abs(derived * est.visits - est.labor_hours) < 0.01) ef.elements.labor_hours.value = 0;
+      else if (est.visits > 1) ef.elements.labor_hours.value = +(est.labor_hours / est.visits).toFixed(2);
     }
     $('#estTitle').textContent = est ? `Edit estimate — ${est.project_name || est.customer_name}` : 'New estimate';
     $('#estSave').textContent = est ? 'Save changes' : 'Save estimate';
@@ -470,24 +521,43 @@
     });
   }
 
+  // Mirrors estimating.js on the server.
+  function estimateMath(v) {
+    const n = k => Math.max(0, Number(v[k] || 0));
+    const visits = Math.max(1, n('visits') || 1);
+    const perVisit = n('labor_hours') || (n('area_sqft') && n('production_rate') ? n('area_sqft') / n('production_rate') : 0);
+    const hours = perVisit * visits;
+    const labor = hours * n('labor_rate');
+    const direct = labor + n('supplies_cost') + n('equipment_cost') + n('other_cost') + n('travel_cost') * visits + n('mobilization_cost') + n('subcontractor_cost') + n('disposal_cost');
+    const insurance = direct * n('insurance_pct') / 100;
+    const contingency = (direct + insurance) * n('contingency_pct') / 100;
+    const overhead = (direct + insurance + contingency) * n('overhead_pct') / 100;
+    const cost = direct + insurance + contingency + overhead;
+    let price = cost / (1 - Math.min(90, n('margin_pct')) / 100);
+    const items = parseLines(v.line_items_text);
+    const itemsTotal = items.reduce((s, i) => s + i.amount, 0);
+    const useItems = !!v.use_line_items && itemsTotal > 0;
+    if (useItems) price = itemsTotal;
+    const minApplied = !useItems && n('minimum_charge') > 0 && price < n('minimum_charge');
+    if (minApplied) price = n('minimum_charge');
+    const total = price * (1 + n('tax_pct') / 100);
+    const crewDays = hours / (Math.max(1, n('crew_size') || 1) * (n('shift_hours') || 8));
+    return { hours, cost, price, total, crewDays, items, itemsTotal, useItems, minApplied, n };
+  }
   function calcEstimate() {
     const v = formObj(ef);
-    const n = k => Math.max(0, Number(v[k] || 0));
-    const hours = n('labor_hours') || (n('area_sqft') && n('production_rate') ? n('area_sqft') / n('production_rate') : 0);
-    const direct = hours * n('labor_rate') + n('supplies_cost') + n('equipment_cost') + n('other_cost');
-    const cost = direct * (1 + n('overhead_pct') / 100);
-    const price = cost / (1 - Math.min(90, n('margin_pct')) / 100);
-    const total = price * (1 + n('tax_pct') / 100);
-    $('#cHours').textContent = hours.toFixed(2);
-    $('#cCost').textContent = money(cost);
-    $('#cProfit').textContent = money(price - cost);
-    $('#cTotal').textContent = money(total);
-    const items = parseLines(v.line_items_text);
-    const sum = items.reduce((s, i) => s + i.amount, 0);
+    const m = estimateMath(v), n = m.n;
+    $('#cHours').textContent = m.hours.toFixed(2);
+    $('#cCost').textContent = money(m.cost);
+    $('#cProfit').textContent = money(m.price - m.cost);
+    $('#cTotal').textContent = money(m.total);
+    $('#cDays').textContent = m.crewDays.toFixed(1);
     const warn = [];
     if (n('area_sqft') && !n('production_rate') && !n('labor_hours')) warn.push('Enter a production rate or labor hours, or labor won’t be counted.');
-    if (hours && !n('labor_rate')) warn.push('Labor hours are set but the labor cost per hour is 0.');
-    if (items.length && Math.abs(sum - price) > 1 && Math.abs(sum - total) > 1) warn.push(`Line items add up to ${money(sum)}, but the proposal total is ${money(total)}. The customer will see both.`);
+    if (m.hours && !n('labor_rate')) warn.push('Labor hours are set but the labor cost per hour is 0.');
+    if (m.minApplied) warn.push(`The minimum job charge of ${money(n('minimum_charge'))} is being used.`);
+    if (m.useItems && m.price < m.cost) warn.push(`The line-item total (${money(m.itemsTotal)}) is below your cost (${money(m.cost)}).`);
+    if (!m.useItems && m.items.length && Math.abs(m.itemsTotal - m.price) > 1 && Math.abs(m.itemsTotal - m.total) > 1) warn.push(`Line items add up to ${money(m.itemsTotal)}, but the proposal total is ${money(m.total)}. The customer will see both. Check “Use the line-item total as the price” if the line items are the price.`);
     if (n('margin_pct') > 90) warn.push('Gross margin is capped at 90%.');
     $('#cWarn').hidden = !warn.length;
     $('#cWarn').textContent = warn.join(' ');
@@ -557,6 +627,7 @@
       fields: [
         ['invoice_number', 'Invoice number *', 'text', { required: true }], ['project_id', 'Project #', 'number'],
         ['customer_name', 'Customer contact'], ['company', 'Company'],
+        ['email', 'Billing email', 'email', { wide: true, hint: 'Needed for automatic payment reminders.' }],
         ['issue_date', 'Invoice date', 'date'], ['due_date', 'Due date', 'date'],
         ['amount', 'Amount ($) *', 'number', { required: true }], ['paid_amount', 'Paid to date ($)', 'number'],
         ['status', 'Status', 'select', { list: STATUS.invoices }],
@@ -615,7 +686,7 @@
     if (type === 'select') input = `<select id="${id}" name="${name}">${options(o.list, v || o.list[0])}</select>`;
     else if (type === 'textarea') input = `<textarea id="${id}" name="${name}">${esc(v)}</textarea>`;
     else input = `<input id="${id}" name="${name}" type="${type}"${type === 'number' ? ' step="any" min="' + (o.min ?? 0) + '"' + (o.max ? ` max="${o.max}"` : '') : ''} value="${esc(v)}"${o.required ? ' required' : ''}>`;
-    return `<div class="f${o.wide ? ' wide' : ''}"><label for="${id}">${esc(label)}</label>${input}</div>`;
+    return `<div class="f${o.wide ? ' wide' : ''}"><label for="${id}">${esc(label)}</label>${input}${o.hint ? `<span class="hint">${esc(o.hint)}</span>` : ''}</div>`;
   }
 
   async function openRecord(t, id) {
@@ -728,6 +799,43 @@
     catch (err) { m.className = 'msg err'; m.textContent = err.message; }
   });
 
+  async function loadSettings() {
+    await Promise.all([loadUsers(), loadAutomation(), loadBackups()]);
+  }
+  const AUTO = [
+    ['auto_handoff', 'Approved proposal handoff', 'When a customer approves a proposal, create a draft contract and a planning project. Nothing is scheduled or mobilized without you.'],
+    ['auto_proposal_reminders', 'Proposal follow-up emails', 'Email the customer 3 and 7 days after a sent proposal was last opened, if they have not decided. Each reminder is sent once.'],
+    ['auto_invoice_reminders', 'Invoice payment reminders', 'Email the billing contact 3 days before the due date, 1 day overdue and 7 days overdue. Each reminder is sent once.'],
+    ['auto_backup', 'Daily database backup', 'Back up the database once a day and keep the 14 newest copies.']
+  ];
+  async function loadAutomation() {
+    const d = await api('/api/admin/settings');
+    $('#autoEmail').className = 'msg' + (d.email_configured ? ' ok' : ' err');
+    $('#autoEmail').textContent = d.email_configured ? `Email is set up. Links in emails use ${d.public_base_url}.` : 'Email is not set up yet (SMTP_PASS missing in Render), so reminders are logged as skipped and nothing is sent.';
+    $('#autoToggles').innerHTML = AUTO.map(([k, label, help]) => `<label class="userrow" style="cursor:pointer;align-items:flex-start"><span><b>${esc(label)}</b><small>${esc(help)}</small></span><input type="checkbox" data-auto="${k}"${d.settings[k] ? ' checked' : ''} style="width:20px;height:20px;margin-top:4px"></label>`).join('');
+    $$('[data-auto]').forEach(cb => cb.onchange = async () => {
+      try { await api('/api/admin/settings', { method: 'PUT', json: { [cb.dataset.auto]: cb.checked } }); toast(`${AUTO.find(a => a[0] === cb.dataset.auto)[1]} ${cb.checked ? 'on' : 'off'}`); }
+      catch (err) { cb.checked = !cb.checked; toast(err.message, true); }
+    });
+    const kinds = { proposal_reminder: 'Proposal reminder', invoice_reminder: 'Invoice reminder', backup: 'Backup' };
+    $('#autoLog').innerHTML = (d.log || []).slice(0, 15).map(x => `<p><time>${esc(fmtWhen(x.created_at))}</time><span><b>${esc(kinds[x.kind] || x.kind)}</b> ${x.ref_id ? '#' + esc(x.ref_id) + ' ' : ''}${esc(x.stage || '')} · <span class="badge ${x.status === 'sent' || x.status === 'ok' ? 'green' : x.status === 'failed' ? 'red' : ''}">${esc(x.status)}</span>${x.sent_to ? ' · ' + esc(x.sent_to) : ''}${x.detail ? ' · ' + esc(x.detail) : ''}</span></p>`).join('') || '<p class="empty">Nothing has run yet. Automations run every hour.</p>';
+  }
+  $('#autoRun').addEventListener('click', async () => {
+    $('#autoMsg').className = 'msg'; $('#autoMsg').textContent = 'Running…';
+    try { const r = (await api('/api/admin/automation/run', { method: 'POST' })).result; $('#autoMsg').className = 'msg ok'; $('#autoMsg').textContent = `Done: ${r.proposal_reminders || 0} proposal reminder(s), ${r.invoice_reminders || 0} invoice reminder(s)${r.backup ? ', backup made' : ''}.`; loadAutomation(); loadBackups(); }
+    catch (err) { $('#autoMsg').className = 'msg err'; $('#autoMsg').textContent = err.message; }
+  });
+  async function loadBackups() {
+    const d = await api('/api/admin/backups');
+    const size = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+    $('#backupList').innerHTML = d.backups.length ? d.backups.map(b => `<div class="userrow"><span><b>${esc(fmtWhen(b.created_at))}</b><small>${esc(b.name)} · ${size(b.size)}</small></span><button class="btn small ghost" data-backup="${esc(b.name)}">Download</button></div>`).join('') : '<p class="empty">No backups yet.</p>';
+    $$('[data-backup]').forEach(b => b.onclick = () => downloadFile({ url: '/api/admin/backups/' + b.dataset.backup, name: b.dataset.backup }));
+  }
+  $('#backupNow').addEventListener('click', async () => {
+    $('#backupMsg').className = 'msg'; $('#backupMsg').textContent = 'Backing up…';
+    try { const r = await api('/api/admin/backups', { method: 'POST' }); $('#backupMsg').className = 'msg ok'; $('#backupMsg').textContent = 'Backup created: ' + r.name; loadBackups(); }
+    catch (err) { $('#backupMsg').className = 'msg err'; $('#backupMsg').textContent = err.message; }
+  });
   async function loadUsers() {
     const users = (await api('/api/admin/users')).users || [];
     const me = $('#whoEmail').textContent;
