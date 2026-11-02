@@ -484,6 +484,7 @@
     ef.elements.expires_on.value = d;
     ef.elements.use_line_items.checked = false;
     loadTemplates();
+    scopeLines = []; loadScopeLibrary();
     if (lead) {
       Object.entries({
         lead_id: lead.id || '', customer_name: lead.contact_name || '', company: lead.company || '', email: lead.email || '',
@@ -497,12 +498,16 @@
         .forEach(k => { if (ef.elements[k]) ef.elements[k].value = est[k] ?? ''; });
       const derived = est.area_sqft && est.production_rate ? est.area_sqft / est.production_rate : 0;
       ef.elements.labor_hours.value = Math.abs(derived - est.labor_hours) > 0.01 ? est.labor_hours : 0;
-      ef.elements.line_items_text.value = (est.line_items || []).map(i => `${i.description} | ${i.amount}`).join('\n');
+      scopeLines = (est.line_items || []).filter(i => i.scope_id);
+      ef.elements.line_items_text.value = (est.line_items || []).filter(i => !i.scope_id).map(i => `${i.description} | ${i.amount}`).join('\n');
+      $('#slCat').dataset.want = est.scope_category || '';
       EXTRA_KEYS.forEach(k => { if (ef.elements[k] && est[k] !== undefined && est[k] !== null) ef.elements[k].value = est[k]; });
       ef.elements.use_line_items.checked = !!est.use_line_items;
       if (est.visits > 1 && Math.abs(derived * est.visits - est.labor_hours) < 0.01) ef.elements.labor_hours.value = 0;
       else if (est.visits > 1) ef.elements.labor_hours.value = +(est.labor_hours / est.visits).toFixed(2);
     }
+    if (!est) $('#slCat').dataset.want = '';
+    syncScopeCat(); renderScopeLines();
     $('#estTitle').textContent = est ? `Edit estimate — ${est.project_name || est.customer_name}` : 'New estimate';
     $('#estSave').textContent = est ? 'Save changes' : 'Save estimate';
     $('#estMsg').textContent = '';
@@ -511,6 +516,64 @@
   }
   async function editEstimate(id) {
     try { openEstimator((await api('/api/admin/estimates/' + id)).estimate); } catch (err) { toast(err.message, true); }
+  }
+
+  // ---------- Scope library lines on estimates ----------
+  let scopeLines = [];
+  async function loadScopeLibrary() {
+    if (!scopeState.items.length) {
+      try { Object.assign(scopeState, await api('/api/admin/scopes')); } catch { return; }
+    }
+    syncScopeCat();
+  }
+  function syncScopeCat() {
+    const sel = $('#slCat'), want = sel.dataset.want ?? sel.value;
+    sel.innerHTML = '<option value="">Service category…</option>' + Object.entries(scopeState.categories || {}).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('');
+    sel.value = want || ''; sel.dataset.prev = sel.value; delete sel.dataset.want;
+    fillScopeItems();
+  }
+  function fillScopeItems() {
+    const cat = $('#slCat').value, sel = $('#slItem');
+    const items = scopeState.items.filter(i => i.active && i.category === cat);
+    sel.disabled = !cat;
+    sel.innerHTML = !cat ? '<option value="">Choose a category first</option>'
+      : '<option value="">Choose an item…</option>' + items.map(i => `<option value="${i.id}"${i.missing.length ? ' disabled' : ''}>${esc(i.name)} — per ${esc(i.unit)}${i.missing.length ? ' (needs rates)' : ''}</option>`).join('');
+    const ready = items.filter(i => !i.missing.length).length;
+    $('#slHint').textContent = cat && !ready ? 'No items in this category have rates yet. Add production rates and prices under Cleaning scopes to price from the library.'
+      : 'Only items from the chosen category can be used, so construction work is never priced with janitorial rates. Lines are priced from your rates in Cleaning scopes; saving re-prices them at the current rates.';
+  }
+  $('#slCat').addEventListener('change', e => {
+    const sel = e.target, other = scopeLines.filter(l => l.category !== sel.value);
+    if (other.length && !confirm(`Changing the category removes ${other.length} library line(s) from another category. Continue?`)) { sel.value = sel.dataset.prev || ''; return; }
+    scopeLines = scopeLines.filter(l => l.category === sel.value);
+    sel.dataset.prev = sel.value; fillScopeItems(); renderScopeLines(); calcEstimate();
+  });
+  function priceLine(it, qty) {
+    const hours = qty / it.production_rate;
+    const laborRate = Number(ef.elements.labor_rate.value) || 0;
+    const amount = it.pricing_method === 'hourly' ? hours * laborRate : it.pricing_method === 'lump_sum' ? it.unit_price : qty * it.unit_price;
+    const r = n => Math.round(n * 100) / 100;
+    return { scope_id: it.id, description: `${it.name} (${Number.isInteger(qty) ? qty.toLocaleString('en-US') : r(qty)} ${it.unit})`, category: it.category, unit: it.unit,
+      quantity: qty, unit_price: it.unit_price, production_rate: it.production_rate, pricing_method: it.pricing_method, hours: r(hours), amount: r(amount) };
+  }
+  function repriceHourly() {
+    scopeLines = scopeLines.map(l => { const it = scopeState.items.find(i => i.id === l.scope_id); return it && l.pricing_method === 'hourly' ? priceLine(it, l.quantity) : l; });
+    renderScopeLines();
+  }
+  $('#slAdd').addEventListener('click', () => {
+    const it = scopeState.items.find(i => i.id === Number($('#slItem').value));
+    const qty = Number(String($('#slQty').value).replace(/,/g, ''));
+    if (!it) { toast('Choose a scope item.', true); return; }
+    if (!Number.isFinite(qty) || qty <= 0) { toast('Enter a quantity above zero.', true); $('#slQty').focus(); return; }
+    scopeLines.push(priceLine(it, qty));
+    if (scopeLines.length === 1 && !parseLines(ef.elements.line_items_text.value).length) ef.elements.use_line_items.checked = true;
+    $('#slQty').value = ''; $('#slItem').value = '';
+    renderScopeLines(); calcEstimate();
+  });
+  function renderScopeLines() {
+    $('#slWrap').hidden = !scopeLines.length;
+    $('#slRows').innerHTML = scopeLines.map((l, i) => `<tr><td>${esc(l.description)}<small>${l.pricing_method === 'hourly' ? 'Hourly' : l.pricing_method === 'lump_sum' ? 'Lump sum' : money(l.unit_price) + ' / ' + esc(l.unit)} · ${Number(l.production_rate).toLocaleString()} ${esc(l.unit)}/hr</small></td><td class="num">${Number(l.quantity).toLocaleString()}</td><td class="num">${Number(l.hours).toFixed(2)}</td><td class="num">${money(l.amount)}</td><td><button type="button" class="btn ghost" data-slrm="${i}" aria-label="Remove line">Remove</button></td></tr>`).join('');
+    $$('[data-slrm]').forEach(b => b.onclick = () => { scopeLines.splice(Number(b.dataset.slrm), 1); renderScopeLines(); calcEstimate(); });
   }
 
   function parseLines(text) {
@@ -526,7 +589,8 @@
   function estimateMath(v) {
     const n = k => Math.max(0, Number(v[k] || 0));
     const visits = Math.max(1, n('visits') || 1);
-    const perVisit = n('labor_hours') || (n('area_sqft') && n('production_rate') ? n('area_sqft') / n('production_rate') : 0);
+    const scopeHours = scopeLines.reduce((t, l) => t + Number(l.hours || 0), 0);
+    const perVisit = n('labor_hours') || (n('area_sqft') && n('production_rate') ? n('area_sqft') / n('production_rate') : 0) || scopeHours;
     const hours = perVisit * visits;
     const labor = hours * n('labor_rate');
     const direct = labor + n('supplies_cost') + n('equipment_cost') + n('other_cost') + n('travel_cost') * visits + n('mobilization_cost') + n('subcontractor_cost') + n('disposal_cost');
@@ -535,7 +599,7 @@
     const overhead = (direct + insurance + contingency) * n('overhead_pct') / 100;
     const cost = direct + insurance + contingency + overhead;
     let price = cost / (1 - Math.min(90, n('margin_pct')) / 100);
-    const items = parseLines(v.line_items_text);
+    const items = [...scopeLines, ...parseLines(v.line_items_text)];
     const itemsTotal = items.reduce((s, i) => s + i.amount, 0);
     const useItems = !!v.use_line_items && itemsTotal > 0;
     if (useItems) price = itemsTotal;
@@ -554,6 +618,7 @@
     $('#cTotal').textContent = money(m.total);
     $('#cDays').textContent = m.crewDays.toFixed(1);
     const warn = [];
+    if (scopeLines.some(l => l.pricing_method === 'hourly') && !n('labor_rate')) warn.push('Some library lines are priced hourly. Enter the labor cost per hour to price them.');
     if (n('area_sqft') && !n('production_rate') && !n('labor_hours')) warn.push('Enter a production rate or labor hours, or labor won’t be counted.');
     if (m.hours && !n('labor_rate')) warn.push('Labor hours are set but the labor cost per hour is 0.');
     if (m.minApplied) warn.push(`The minimum job charge of ${money(n('minimum_charge'))} is being used.`);
@@ -563,14 +628,14 @@
     $('#cWarn').hidden = !warn.length;
     $('#cWarn').textContent = warn.join(' ');
   }
-  ef.addEventListener('input', calcEstimate);
+  ef.addEventListener('input', e => { if (e.target && e.target.name === 'labor_rate') repriceHourly(); calcEstimate(); });
 
   ef.addEventListener('submit', async e => {
     e.preventDefault();
     const msg = $('#estMsg');
     const b = formObj(ef);
     if (!b.customer_name.trim() || !b.scope.trim()) { msg.className = 'msg err'; msg.textContent = 'Contact name and scope of work are required.'; return; }
-    b.line_items = parseLines(b.line_items_text);
+    b.line_items = [...scopeLines.map(l => ({ scope_id: l.scope_id, quantity: l.quantity, description: l.description, amount: l.amount })), ...parseLines(b.line_items_text)];
     delete b.line_items_text;
     const id = b.id; delete b.id;
     msg.className = 'msg'; msg.textContent = 'Saving…';
