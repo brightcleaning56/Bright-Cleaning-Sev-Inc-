@@ -283,7 +283,7 @@
     </section>
 
     <section class="view" id="v-scopes">
-      <div class="pagehead"><div><h1>Cleaning scopes</h1><p>Your service library: what each service includes, how it is measured, production rates and pricing. Estimates use only items from the matching category, so construction work is never priced with janitorial rates.</p></div><button class="btn" id="scopeAdd">Add scope item</button></div>
+      <div class="pagehead"><div><h1>Cleaning scopes</h1><p>Your service library: what each service includes, how it is measured, production rates and pricing. Estimates use only items from the matching category, so construction work is never priced with janitorial rates.</p></div><div class="headact"><button class="btn ghost" id="scopeImport">Import price book</button><button class="btn" id="scopeAdd">Add scope item</button></div></div>
       <p class="msg" id="scopeNote" role="status"></p>
       <div class="toolbar"><input type="search" id="scopeSearch" placeholder="Search scope items…" aria-label="Search scope items">
         <select id="scopeCat" aria-label="Category"><option value="">All categories</option></select>
@@ -352,6 +352,7 @@
               <select id="slItem" aria-label="Scope item" disabled><option value="">Choose a category first</option></select>
               <input id="slQty" inputmode="decimal" placeholder="Quantity" aria-label="Quantity">
               <button type="button" class="btn ghost" id="slAdd">Add line</button></div>
+            <div id="slPhaseRow" hidden style="margin-top:8px"><button type="button" class="btn ghost" id="slPhases">Add Clean #1–#3 at building SF</button> <span class="hint">Uses the building square footage above and your Clean #1, #2 and #3 per-SF prices. Add Clean #4 (FF&amp;E) separately if it is an alternate.</span></div>
             <span class="hint" id="slHint">Only items from the chosen category can be used, so construction work is never priced with janitorial rates. Lines are priced from your rates in Cleaning scopes; saving re-prices them at the current rates.</span>
             <div class="tablewrap" id="slWrap" hidden><table class="t"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Labor hrs</th><th class="num">Amount</th><th></th></tr></thead><tbody id="slRows"></tbody></table></div>
           </div>

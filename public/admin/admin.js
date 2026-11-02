@@ -594,6 +594,7 @@
   }
   function fillScopeItems() {
     const cat = $('#slCat').value, sel = $('#slItem');
+    $('#slPhaseRow').hidden = cat !== 'construction';
     const items = scopeState.items.filter(i => i.active && i.category === cat);
     sel.disabled = !cat;
     sel.innerHTML = !cat ? '<option value="">Choose a category first</option>'
@@ -609,12 +610,12 @@
     sel.dataset.prev = sel.value; fillScopeItems(); renderScopeLines(); calcEstimate();
   });
   function priceLine(it, qty) {
-    const hours = qty / it.production_rate;
+    const hours = it.production_rate > 0 ? qty / it.production_rate : 0;
     const laborRate = Number(ef.elements.labor_rate.value) || 0;
     const amount = it.pricing_method === 'hourly' ? hours * laborRate : it.pricing_method === 'lump_sum' ? it.unit_price : qty * it.unit_price;
     const r = n => Math.round(n * 100) / 100;
     return { scope_id: it.id, description: `${it.name} (${Number.isInteger(qty) ? qty.toLocaleString('en-US') : r(qty)} ${it.unit})`, category: it.category, unit: it.unit,
-      quantity: qty, unit_price: it.unit_price, production_rate: it.production_rate, pricing_method: it.pricing_method, hours: r(hours), amount: r(amount) };
+      quantity: qty, unit_price: it.unit_price, production_rate: it.production_rate || 0, pricing_method: it.pricing_method, hours: r(hours), amount: r(amount) };
   }
   function repriceHourly() {
     scopeLines = scopeLines.map(l => { const it = scopeState.items.find(i => i.id === l.scope_id); return it && l.pricing_method === 'hourly' ? priceLine(it, l.quantity) : l; });
@@ -630,9 +631,20 @@
     $('#slQty').value = ''; $('#slItem').value = '';
     renderScopeLines(); calcEstimate();
   });
+  $('#slPhases').addEventListener('click', () => {
+    const sf = Number(String(ef.elements.area_sqft.value).replace(/,/g, ''));
+    if (!(sf > 0)) { toast('Enter the building square footage first.', true); ef.elements.area_sqft.focus(); return; }
+    const phases = ['Clean #1', 'Clean #2', 'Clean #3'].map(p => scopeState.items.find(i => i.active && i.category === 'construction' && i.name.startsWith(p) && !i.missing.length));
+    const missingPh = ['Clean #1', 'Clean #2', 'Clean #3'].filter((p, i) => !phases[i]);
+    if (missingPh.length) { toast(`Add a priced ${missingPh.join(', ')} item under Cleaning scopes first.`, true); return; }
+    scopeLines = scopeLines.filter(l => !phases.some(p => p.id === l.scope_id));
+    phases.forEach(it => scopeLines.push(priceLine(it, sf)));
+    if (!parseLines(ef.elements.line_items_text.value).length) ef.elements.use_line_items.checked = true;
+    renderScopeLines(); calcEstimate(); toast(`Added 3 phases at ${sf.toLocaleString()} SF`);
+  });
   function renderScopeLines() {
     $('#slWrap').hidden = !scopeLines.length;
-    $('#slRows').innerHTML = scopeLines.map((l, i) => `<tr><td>${esc(l.description)}<small>${l.pricing_method === 'hourly' ? 'Hourly' : l.pricing_method === 'lump_sum' ? 'Lump sum' : money(l.unit_price) + ' / ' + esc(l.unit)} · ${Number(l.production_rate).toLocaleString()} ${esc(l.unit)}/hr</small></td><td class="num">${Number(l.quantity).toLocaleString()}</td><td class="num">${Number(l.hours).toFixed(2)}</td><td class="num">${money(l.amount)}</td><td><button type="button" class="btn ghost" data-slrm="${i}" aria-label="Remove line">Remove</button></td></tr>`).join('');
+    $('#slRows').innerHTML = scopeLines.map((l, i) => `<tr><td>${esc(l.description)}<small>${l.pricing_method === 'hourly' ? 'Hourly' : l.pricing_method === 'lump_sum' ? 'Lump sum' : money(l.unit_price) + ' / ' + esc(l.unit)}${Number(l.production_rate) > 0 ? ` · ${Number(l.production_rate).toLocaleString()} ${esc(l.unit)}/hr` : ''}</small></td><td class="num">${Number(l.quantity).toLocaleString()}</td><td class="num">${Number(l.hours).toFixed(2)}</td><td class="num">${money(l.amount)}</td><td><button type="button" class="btn ghost" data-slrm="${i}" aria-label="Remove line">Remove</button></td></tr>`).join('');
     $$('[data-slrm]').forEach(b => b.onclick = () => { scopeLines.splice(Number(b.dataset.slrm), 1); renderScopeLines(); calcEstimate(); });
   }
 
@@ -1070,7 +1082,7 @@
     const n = r.summary ? r.summary.needs_rates : 0;
     $('#navScopes').hidden = !n; $('#navScopes').textContent = n;
     $('#scopeNote').className = n ? 'msg err' : 'msg';
-    $('#scopeNote').textContent = n ? `${n} of ${r.summary.total} active items still need your production rate, crew size or price. Estimates cannot price these items until they are filled in.` : '';
+    $('#scopeNote').textContent = n ? `${n} of ${r.summary.total} active items have no price yet. Estimates can only use items that have a price.` : '';
     renderScopes();
   }
   const qty = v => v == null ? '—' : Number(v).toLocaleString();
@@ -1084,6 +1096,11 @@
     $$('[data-scope]').forEach(r => r.onclick = () => openScope(scopeState.items.find(i => i.id === Number(r.dataset.scope))));
   }
   $('#scopeAdd').addEventListener('click', () => openScope(null));
+  $('#scopeImport').addEventListener('click', async () => {
+    if (!confirm('Load the Bright Clean price book (construction per-SF phases, hourly extra work, apartment units, hallways and add-ons)? Items you already priced keep your price.')) return;
+    try { const r = await api('/api/admin/scopes/import-pricebook', { method: 'POST' }); toast(`Price book: ${r.created} added, ${r.filled} prices filled, ${r.kept} kept`); loadScopes(); }
+    catch (err) { toast(err.message, true); }
+  });
   function openScope(it) {
     const isNew = !it;
     it = it || { category: $('#scopeCat').value || 'construction', name: '', unit: '', pricing_method: 'per_unit', active: 1 };
@@ -1098,8 +1115,8 @@
           <div class="f"><label for="sc2">Name</label><input id="sc2" name="name" value="${v('name')}" required></div>
           <div class="f"><label for="sc3">Measurement unit</label><input id="sc3" name="unit" value="${v('unit')}" placeholder="SF, Each, Unit, Fixture, Hour" required></div>
           <div class="f"><label for="sc4">Frequency</label><input id="sc4" name="frequency" value="${v('frequency')}" placeholder="Once, Daily, Per turn"></div>
-          <div class="f"><label for="sc5">Production rate (units per labor hour)</label><input id="sc5" name="production_rate" inputmode="decimal" value="${v('production_rate')}" placeholder="Your rate"></div>
-          <div class="f"><label for="sc6">Typical crew size</label><input id="sc6" name="crew_size" inputmode="decimal" value="${v('crew_size')}"></div>
+          <div class="f"><label for="sc5">Production rate (units per labor hour, optional)</label><input id="sc5" name="production_rate" inputmode="decimal" value="${v('production_rate')}" placeholder="Your rate"></div>
+          <div class="f"><label for="sc6">Typical crew size (optional)</label><input id="sc6" name="crew_size" inputmode="decimal" value="${v('crew_size')}"></div>
           <div class="f"><label for="sc7">Pricing method</label><select id="sc7" name="pricing_method">${opts(scopeState.pricing, it.pricing_method)}</select></div>
           <div class="f"><label for="sc8">Price per unit ($)</label><input id="sc8" name="unit_price" inputmode="decimal" value="${v('unit_price')}" placeholder="Leave blank for hourly"></div>
           ${ta('sc9', 'description', 'Description')}
