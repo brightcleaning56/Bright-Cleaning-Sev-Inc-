@@ -126,7 +126,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['overview', 'leads', 'customers', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['overview', 'leads', 'customers', 'issues', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (!VIEWS.includes(view)) view = 'overview';
     state.view = view;
@@ -156,6 +156,7 @@
       if (view === 'customers') await loadCustomers();
       if (view === 'proposals') await loadEstimates();
       if (['contracts', 'projects', 'invoices'].includes(view)) await loadRegister(view);
+      if (view === 'issues') await loadIssues();
       if (view === 'scopes') await loadScopes();
       if (view === 'activity') await loadActivity();
       if (view === 'settings') await loadSettings();
@@ -201,8 +202,8 @@
       { label: 'Won', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
       { label: 'Collected this month', value: money(k.collected_month.value), icon: 'dollar', c: '#178a4c', to: 'invoices' },
       { label: 'Active projects', value: k.active_projects.value, icon: 'cal', c: '#2563eb', to: 'projects' },
-      { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: att.overdue_invoices ? 'invoices' : att.late_projects ? 'projects' : 'leads', alert: k.attention.value > 0,
-        title: `Overdue invoices ${att.overdue_invoices} · late projects ${att.late_projects} · leads waiting 2+ days ${att.leads_waiting_2_days} · failed emails (7 days) ${att.failed_emails_7_days}` }
+      { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: (att.open_complaints || att.overdue_tasks) ? 'issues' : att.overdue_invoices ? 'invoices' : att.late_projects ? 'projects' : 'leads', alert: k.attention.value > 0,
+        title: `Open complaints ${att.open_complaints} · overdue tasks ${att.overdue_tasks} · overdue invoices ${att.overdue_invoices} · late projects ${att.late_projects} · leads waiting 2+ days ${att.leads_waiting_2_days} · failed emails (7 days) ${att.failed_emails_7_days}` }
     ];
     $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
     $$('#ccKpis .kpi').forEach(b => b.onclick = () => go(tiles[b.dataset.i].to));
@@ -390,7 +391,8 @@
           ${sec('Contracts', c.contracts, x => `<li><button class="linklike" data-rec="contracts:${x.id}">${esc(x.title || 'Contract #' + x.id)}</button> ${money(x.value)} ${badge(x.status)}</li>`)}
           ${sec('Projects', c.projects, x => `<li><button class="linklike" data-rec="projects:${x.id}">${esc(x.name || 'Project #' + x.id)}</button> ${badge(x.status)} ${Number(x.progress || 0)}%</li>`)}
           ${sec('Invoices', c.invoices, x => `<li><button class="linklike" data-rec="invoices:${x.id}">${esc(x.invoice_number)}</button> ${money(x.amount)} ${badge(invoiceState(x))}</li>`)}
-        </div>`}`,
+        </div>`}
+        ${isNew ? '' : '<div class="cardhead" style="margin-top:14px"><h3 style="margin:0">Notes, complaints &amp; tasks</h3><button class="btn ghost" id="cIssue" type="button">Add</button></div><div id="cIssues" class="related"><p class="muted">Loading…</p></div>'}`,
       footer: `<button class="btn" id="cSave">${isNew ? 'Add customer' : 'Save'}</button>${isNew ? '' : `<button class="btn ghost" id="cQuote">New estimate</button>${c.email ? `<a class="btn ghost" href="mailto:${esc(c.email)}">Email</a>` : ''}<span class="grow"></span><button class="btn danger" id="cDel">Remove</button>`}`
     });
     bindOpeners($('#drawerRoot'));
@@ -404,6 +406,12 @@
     };
     if (!isNew) {
       $('#cQuote').onclick = () => { closeDrawer(); openEstimator(null, { contact_name: c.name, company: c.company, email: c.email, address: c.address }); };
+      $('#cIssue').onclick = () => openIssue(null, c);
+      api('/api/admin/issues?status=all&customer_id=' + c.id).then(r => {
+        const box = $('#cIssues'); if (!box) return;
+        box.innerHTML = r.issues.length ? '<ul>' + r.issues.map(i => `<li><button class="linklike" data-iss="${i.id}">${esc(i.title)}</button> ${badge(r.options.types[i.type])} ${badge(i.status)}${i.overdue ? ' <span class="badge red">Overdue</span>' : ''} <small>${fmtDate(i.created_at)}</small></li>`).join('') + '</ul>' : '<p class="muted">Nothing recorded yet.</p>';
+        $$('#cIssues [data-iss]').forEach(b => b.onclick = () => openIssue(r.issues.find(i => i.id === Number(b.dataset.iss)), c));
+      }).catch(() => { const box = $('#cIssues'); if (box) box.innerHTML = '<p class="muted">Could not load.</p>'; });
       $('#cDel').onclick = async () => {
         if (!confirm('Remove this customer from the directory? Their leads, proposals, contracts, projects and invoices are kept.')) return;
         try { await api('/api/admin/customers/' + c.id, { method: 'DELETE' }); toast('Removed'); closeDrawer(); loadCustomers(); } catch (err) { toast(err.message, true); }
@@ -957,6 +965,69 @@
     try { await api('/api/admin/users', { method: 'POST', json: formObj(e.target) }); e.target.reset(); m.className = 'msg ok'; m.textContent = 'Access added.'; loadUsers(); }
     catch (err) { m.className = 'msg err'; m.textContent = err.message; }
   });
+
+  // ---------- Issues & tasks ----------
+  const issState = { issues: [], options: null };
+  ['#issStatus', '#issType', '#issMine'].forEach(sel => $(sel).addEventListener('change', () => loadIssues()));
+  $('#issSearch').addEventListener('input', () => renderIssues());
+  $('#issAdd').addEventListener('click', () => openIssue(null, null));
+  async function loadIssues() {
+    const q = new URLSearchParams({ status: $('#issStatus').value });
+    if ($('#issType').value) q.set('type', $('#issType').value);
+    if ($('#issMine').checked) q.set('assigned', 'me');
+    const r = await api('/api/admin/issues?' + q);
+    Object.assign(issState, { issues: r.issues, options: r.options, counts: r.counts });
+    const n = r.counts.open_complaints + r.counts.overdue;
+    $('#navIssues').hidden = !n; $('#navIssues').textContent = n;
+    renderIssues();
+  }
+  function renderIssues() {
+    const o = issState.options, q = $('#issSearch').value.trim().toLowerCase();
+    const rows = issState.issues.filter(i => !q || [i.title, i.description, i.property, i.customer_name, i.customer_company].join(' ').toLowerCase().includes(q));
+    $('#issRows').innerHTML = rows.length ? rows.map(i => `<tr class="click" data-issue="${i.id}"><td><b>${esc(i.title)}</b><small>${esc(i.category || '')}${i.property ? ' · ' + esc(i.property) : ''}</small></td><td>${esc(i.customer_company || i.customer_name || '—')}</td><td>${badge(o.types[i.type])}</td><td>${i.priority === 'Urgent' ? '<span class="badge red">Urgent</span>' : i.priority === 'High' ? '<span class="badge amber">High</span>' : esc(i.priority)}</td><td>${esc(i.assigned_to || '—')}</td><td class="${i.overdue ? 'late' : ''}">${i.due_date ? fmtDate(i.due_date) + (i.overdue ? ' · overdue' : '') : '—'}</td><td>${badge(i.status)}</td></tr>`).join('')
+      : `<tr><td class="emptyrow" colspan="7">${$('#issStatus').value === 'open' ? 'No open items. Nice.' : 'Nothing matches.'}</td></tr>`;
+    $$('[data-issue]').forEach(r => r.onclick = () => openIssue(issState.issues.find(i => i.id === Number(r.dataset.issue)), null));
+  }
+  async function openIssue(it, cust) {
+    if (!issState.options) { try { const r = await api('/api/admin/issues?status=open'); issState.options = r.options; } catch (e) { return toast(e.message, true); } }
+    if (!state.customers || !state.customers.length) { try { state.customers = (await api('/api/admin/customers')).customers; } catch { state.customers = []; } }
+    const o = issState.options, isNew = !it;
+    it = it || { type: 'complaint', priority: 'Normal', status: 'Open', customer_comms: 'Needs update', customer_id: cust ? cust.id : '' };
+    const opt = (list, sel, labels) => list.map(v => `<option value="${esc(v)}"${String(v) === String(sel ?? '') ? ' selected' : ''}>${esc(labels ? labels[v] : v)}</option>`).join('');
+    const v = k => esc(it[k] == null ? '' : it[k]);
+    openDrawer({
+      title: isNew ? 'New item' : it.title,
+      sub: isNew ? (cust ? (cust.company || cust.name) : 'Internal only') : `${o.types[it.type]} #${it.id} · created ${fmtDate(it.created_at)}${it.created_by ? ' by ' + esc(it.created_by) : ''}${it.resolved_at ? ' · resolved ' + fmtDate(it.resolved_at) : ''}`,
+      body: `<form id="issForm" class="grid" novalidate>
+        <div class="f"><label for="i1">Type</label><select id="i1" name="type">${opt(Object.keys(o.types), it.type, o.types)}</select></div>
+        <div class="f"><label for="i2">Category</label><select id="i2" name="category"><option value="">—</option>${opt(o.categories, it.category)}</select></div>
+        <div class="f wide"><label for="i3">Title</label><input id="i3" name="title" value="${v('title')}" placeholder="Short summary"></div>
+        <div class="f"><label for="i4">Customer</label><select id="i4" name="customer_id"><option value="">No customer</option>${state.customers.map(c => `<option value="${c.id}"${String(c.id) === String(it.customer_id ?? '') ? ' selected' : ''}>${esc(c.company || c.name || c.email)}</option>`).join('')}</select></div>
+        <div class="f"><label for="i5">Property / project</label><input id="i5" name="property" value="${v('property')}"></div>
+        <div class="f wide"><label for="i6">Description</label><textarea id="i6" name="description">${v('description')}</textarea></div>
+        <div class="f"><label for="i7">Priority</label><select id="i7" name="priority">${opt(o.priorities, it.priority)}</select></div>
+        <div class="f"><label for="i8">Assigned to</label><select id="i8" name="assigned_to"><option value="">Unassigned</option>${opt(o.users, it.assigned_to)}</select></div>
+        <div class="f"><label for="i9">Due date</label><input id="i9" name="due_date" type="date" value="${v('due_date')}"></div>
+        <div class="f"><label for="i10">Status</label><select id="i10" name="status">${opt(o.statuses, it.status)}</select></div>
+        <div class="f wide"><label for="i11">Required action</label><textarea id="i11" name="required_action" placeholder="What needs to happen next">${v('required_action')}</textarea></div>
+        <div class="f wide"><label for="i12">Resolution</label><textarea id="i12" name="resolution" placeholder="Required to close a complaint or task">${v('resolution')}</textarea></div>
+        <div class="f"><label for="i13">Customer update</label><select id="i13" name="customer_comms">${opt(o.comms, it.customer_comms)}</select></div>
+      </form><p class="msg" id="issMsg" role="status"></p>`,
+      footer: `<button class="btn" id="iSave">${isNew ? 'Add' : 'Save'}</button>${!isNew && ['Open', 'In progress'].includes(it.status) ? '<button class="btn ghost" id="iResolve">Mark resolved</button>' : ''}<span class="grow"></span>${!isNew && it.type === 'note' ? '<button class="btn danger" id="iDel">Delete note</button>' : ''}`
+    });
+    const done = () => { closeDrawer(); if (state.view === 'issues') loadIssues(); else if (state.view === 'customers') loadCustomers(); else load(state.view); };
+    const save = async extra => {
+      const body = { ...formObj($('#issForm')), ...(extra || {}) };
+      try {
+        if (isNew) await api('/api/admin/issues', { method: 'POST', json: body });
+        else await api('/api/admin/issues/' + it.id, { method: 'PATCH', json: body });
+        toast(isNew ? 'Added' : extra ? 'Resolved' : 'Saved'); done();
+      } catch (err) { $('#issMsg').className = 'msg err'; $('#issMsg').textContent = err.message; }
+    };
+    $('#iSave').onclick = () => save();
+    if ($('#iResolve')) $('#iResolve').onclick = () => save({ status: 'Resolved' });
+    if ($('#iDel')) $('#iDel').onclick = async () => { if (!confirm('Delete this note?')) return; try { await api('/api/admin/issues/' + it.id, { method: 'DELETE' }); toast('Deleted'); done(); } catch (err) { toast(err.message, true); } };
+  }
 
   // ---------- Cleaning scopes ----------
   const scopeState = { items: [], categories: {}, pricing: {} };
