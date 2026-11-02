@@ -49,7 +49,7 @@ module.exports = function mountAdminExt(app, ctx) {
     area_sqft: num(b.area_sqft), production_rate: num(b.production_rate), labor_rate: num(b.labor_rate),
     supplies_cost: num(b.supplies_cost), equipment_cost: num(b.equipment_cost), other_cost: num(b.other_cost),
     overhead_pct: num(b.overhead_pct), margin_pct: num(b.margin_pct), tax_pct: num(b.tax_pct),
-    line_items: JSON.stringify(Array.isArray(b.line_items) ? b.line_items.slice(0, 100).map(x => ({ description: clean(x.description, 500), amount: num(x.amount) })) : []),
+    line_items: JSON.stringify(require('./estimating').lineItemsOf(b)),
     terms: clean(b.terms, 5000), expires_on: clean(b.expires_on, 30)
   });
 
@@ -60,6 +60,8 @@ module.exports = function mountAdminExt(app, ctx) {
     if (['Approved'].includes(e.status)) return res.status(409).json({ error: 'This proposal was approved by the customer. Duplicate it to make changes.' });
     if (!required(b.customer_name) || !required(b.scope)) return res.status(400).json({ error: 'Customer and scope are required.' });
     if (b.email && !require('./ops').isEmail(b.email)) return res.status(400).json({ error: 'Enter a valid customer email address.' });
+    const scopeErr = require('./scopes').resolveLines(db, b);
+    if (scopeErr) return res.status(400).json({ error: scopeErr });
     const m = estimateMath(b);
     const f = { ...estimateFields(b), labor_hours: m.labor_hours, labor_cost: m.labor_cost, total_cost: m.total_cost, proposal_total: m.proposal_total, updated_at: new Date().toISOString(), id: e.id };
     db.prepare(`UPDATE estimates SET lead_id=@lead_id,customer_name=@customer_name,company=@company,email=@email,project_name=@project_name,site_address=@site_address,scope=@scope,area_sqft=@area_sqft,production_rate=@production_rate,labor_hours=@labor_hours,labor_rate=@labor_rate,labor_cost=@labor_cost,supplies_cost=@supplies_cost,equipment_cost=@equipment_cost,other_cost=@other_cost,overhead_pct=@overhead_pct,margin_pct=@margin_pct,tax_pct=@tax_pct,total_cost=@total_cost,proposal_total=@proposal_total,line_items=@line_items,terms=@terms,expires_on=@expires_on,updated_at=@updated_at WHERE id=@id`).run(f);

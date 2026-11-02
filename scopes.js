@@ -134,3 +134,43 @@ module.exports = function mountScopes(app, ctx) {
   });
 };
 module.exports.CATEGORIES = CATEGORIES;
+
+// Re-prices every scope-library line on an estimate from the library itself (amounts sent by the
+// browser are ignored) and enforces that every line belongs to the estimate's service category.
+// Returns an error message, or null when the body is valid. Rewrites body.line_items in place.
+module.exports.resolveLines = function resolveLines(db, b) {
+  let arr = b.line_items;
+  if (typeof arr === 'string') { try { arr = JSON.parse(arr || '[]'); } catch { arr = []; } }
+  if (!Array.isArray(arr)) return null;
+  const scoped = arr.filter(x => x && x.scope_id);
+  if (b.scope_category && !CATEGORIES[b.scope_category]) return 'Choose a valid service category.';
+  if (!scoped.length) { b.line_items = arr; return null; }
+  if (!CATEGORIES[b.scope_category]) return 'Choose the service category before adding items from the scope library.';
+  const round = n => Math.round(n * 100) / 100;
+  const out = [];
+  for (const x of arr) {
+    if (!x || !x.scope_id) { out.push(x); continue; }
+    const s = db.prepare('SELECT * FROM scope_items WHERE id=?').get(Number(x.scope_id));
+    if (!s || !s.active) return 'A scope item on this estimate no longer exists or was archived. Remove it and add it again.';
+    if (s.category !== b.scope_category) return `"${s.name}" is a ${CATEGORIES[s.category].toLowerCase()} item. This estimate is ${CATEGORIES[b.scope_category].toLowerCase()}, so it can only use items from that category.`;
+    const qty = Number(x.quantity);
+    if (!Number.isFinite(qty) || qty <= 0 || qty > 1e8) return `Enter a quantity above zero for "${s.name}".`;
+    if (s.production_rate == null || s.production_rate <= 0) return `"${s.name}" has no production rate yet. Add it under Cleaning scopes first.`;
+    const hours = qty / s.production_rate;
+    let amount, laborRate = 0;
+    if (s.pricing_method === 'hourly') {
+      laborRate = Number(b.labor_rate) || 0;
+      if (laborRate <= 0) return `"${s.name}" is priced hourly. Enter the loaded labor rate on the estimate first.`;
+      amount = hours * laborRate;
+    } else {
+      if (s.unit_price == null) return `"${s.name}" has no price yet. Add it under Cleaning scopes first.`;
+      amount = s.pricing_method === 'lump_sum' ? s.unit_price : qty * s.unit_price;
+    }
+    const q = Number.isInteger(qty) ? qty.toLocaleString('en-US') : String(round(qty));
+    out.push({ scope_id: s.id, description: `${s.name} (${q} ${s.unit})`, category: s.category, unit: s.unit, quantity: qty,
+      unit_price: s.unit_price, production_rate: s.production_rate, pricing_method: s.pricing_method,
+      hours: round(hours), labor_rate: laborRate, amount: round(amount) });
+  }
+  b.line_items = out;
+  return null;
+};

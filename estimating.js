@@ -1,7 +1,8 @@
 // Bright Clean estimating model (V5).
 // Shared by the server routes. The admin screen mirrors this math for its live preview.
 //
-// Labor hours  = override hours, or area / production rate, per visit, times visits
+// Labor hours  = override hours, or area / production rate, or the hours of scope-library lines,
+//                per visit, times visits
 // Direct cost  = labor + supplies + equipment + other + travel per visit x visits
 //                + mobilization + subcontractor + disposal
 // Insurance    = direct x insurance/compliance %
@@ -21,20 +22,30 @@ const EXTRA_COLUMNS = [
   ['travel_cost', 'REAL DEFAULT 0'], ['mobilization_cost', 'REAL DEFAULT 0'], ['subcontractor_cost', 'REAL DEFAULT 0'],
   ['disposal_cost', 'REAL DEFAULT 0'], ['insurance_pct', 'REAL DEFAULT 0'], ['contingency_pct', 'REAL DEFAULT 0'],
   ['minimum_charge', 'REAL DEFAULT 0'], ['use_line_items', 'INTEGER DEFAULT 0'], ['crew_days', 'REAL DEFAULT 0'],
-  ['line_items_total', 'REAL DEFAULT 0'], ['template_key', 'TEXT'],
+  ['line_items_total', 'REAL DEFAULT 0'], ['template_key', 'TEXT'], ['scope_category', 'TEXT'],
   ['sent_at', 'TEXT'], ['viewed_at', 'TEXT'], ['last_viewed_at', 'TEXT'], ['view_count', 'INTEGER DEFAULT 0'],
   ['decided_at', 'TEXT'], ['decision_ip', 'TEXT'], ['decision_agent', 'TEXT']
 ];
 
 function lineItemsOf(b) {
   const arr = Array.isArray(b.line_items) ? b.line_items : (() => { try { return JSON.parse(b.line_items || '[]'); } catch { return []; } })();
-  return arr.slice(0, 100).map(x => ({ description: String(x.description || '').trim().slice(0, 500), amount: num(x.amount) }));
+  return arr.slice(0, 100).map(x => {
+    const item = { description: String(x.description || '').trim().slice(0, 500), amount: num(x.amount) };
+    // Lines priced from the scope library keep a snapshot of the rates they were priced at.
+    if (x.scope_id) Object.assign(item, {
+      scope_id: Math.trunc(num(x.scope_id)), category: String(x.category || '').slice(0, 30), unit: String(x.unit || '').slice(0, 30),
+      quantity: num(x.quantity), unit_price: x.unit_price == null ? null : num(x.unit_price), production_rate: num(x.production_rate),
+      pricing_method: String(x.pricing_method || '').slice(0, 20), hours: num(x.hours), labor_rate: num(x.labor_rate)
+    });
+    return item;
+  });
 }
 
 function estimateMath(b) {
   const visits = Math.max(1, num(b.visits) || 1);
   const sqft = num(b.area_sqft), rate = num(b.production_rate);
-  const perVisit = num(b.labor_hours) || (sqft && rate ? sqft / rate : 0);
+  const scopeHours = lineItemsOf(b).reduce((t, i) => t + (i.scope_id ? i.hours : 0), 0);
+  const perVisit = num(b.labor_hours) || (sqft && rate ? sqft / rate : 0) || scopeHours;
   const hours = perVisit * visits;
   const labor = hours * num(b.labor_rate);
   const direct = labor + num(b.supplies_cost) + num(b.equipment_cost) + num(b.other_cost)
@@ -69,7 +80,8 @@ function extraValues(b, m) {
     travel_cost: num(b.travel_cost), mobilization_cost: num(b.mobilization_cost), subcontractor_cost: num(b.subcontractor_cost),
     disposal_cost: num(b.disposal_cost), insurance_pct: num(b.insurance_pct), contingency_pct: num(b.contingency_pct),
     minimum_charge: num(b.minimum_charge), use_line_items: m.used_line_items ? 1 : 0, crew_days: m.crew_days,
-    line_items_total: m.line_items_total, template_key: String(b.template_key || '').slice(0, 60) || null
+    line_items_total: m.line_items_total, template_key: String(b.template_key || '').slice(0, 60) || null,
+    scope_category: ['construction', 'multifamily', 'janitorial', 'specialty'].includes(b.scope_category) ? b.scope_category : null
   };
 }
 
