@@ -89,7 +89,9 @@ module.exports = function mountScopes(app, ctx) {
     if ('active' in b) out.active = b.active ? 1 : 0;
     return { out, errs };
   }
-  const missing = s => [s.production_rate == null && 'production rate', s.unit_price == null && s.pricing_method !== 'hourly' && 'price', s.crew_size == null && 'crew size'].filter(Boolean);
+  // You price by the unit (per SF, per apartment, per hallway), so a price is all an item needs.
+  // Labor hours are optional; only hourly-priced items need a production rate to know how many hours to bill.
+  const missing = s => (s.pricing_method === 'hourly' ? [(s.production_rate == null || s.production_rate <= 0) && 'production rate'] : [s.unit_price == null && 'price']).filter(Boolean);
   const decorate = s => ({ ...s, missing: missing(s) });
 
   app.get('/api/admin/scopes', auth, (req, res) => {
@@ -124,6 +126,28 @@ module.exports = function mountScopes(app, ctx) {
     res.json({ item: decorate(db.prepare('SELECT * FROM scope_items WHERE id=?').get(cur.id)) });
   });
 
+  // One-click import of the Bright Clean price book. Safe to repeat: existing items keep any price
+  // the owner has already set; only missing items are created and blank prices filled in.
+  app.post('/api/admin/scopes/import-pricebook', auth, (req, res) => {
+    const book = require('./pricebook');
+    let created = 0, filled = 0, kept = 0;
+    db.transaction(() => {
+      for (const [category, name, unit, price, description, included, frequency] of book) {
+        const cur = db.prepare('SELECT * FROM scope_items WHERE category=? AND name=?').get(category, name);
+        if (!cur) {
+          const sort = (db.prepare('SELECT MAX(sort) m FROM scope_items WHERE category=?').get(category).m ?? -1) + 1;
+          db.prepare(`INSERT INTO scope_items(category,name,unit,unit_price,pricing_method,description,included,frequency,sort,created_at,updated_at)
+            VALUES(?,?,?,?,'per_unit',?,?,?,?,?,?)`).run(category, name, unit, price, description, included, frequency, sort, now(), now());
+          created++;
+        } else if (cur.unit_price == null) {
+          db.prepare('UPDATE scope_items SET unit_price=?, updated_at=? WHERE id=?').run(price, now(), cur.id); filled++;
+        } else kept++;
+      }
+    })();
+    logAction(req, 'imported price book', 'scope item', 0, `${created} created, ${filled} prices filled, ${kept} kept as edited`);
+    res.json({ created, filled, kept, total: book.length });
+  });
+
   // Items are archived, not deleted, so past estimates that referenced them stay explainable.
   app.delete('/api/admin/scopes/:id', auth, (req, res) => {
     const cur = db.prepare('SELECT * FROM scope_items WHERE id=?').get(Number(req.params.id));
@@ -155,8 +179,9 @@ module.exports.resolveLines = function resolveLines(db, b) {
     if (s.category !== b.scope_category) return `"${s.name}" is a ${CATEGORIES[s.category].toLowerCase()} item. This estimate is ${CATEGORIES[b.scope_category].toLowerCase()}, so it can only use items from that category.`;
     const qty = Number(x.quantity);
     if (!Number.isFinite(qty) || qty <= 0 || qty > 1e8) return `Enter a quantity above zero for "${s.name}".`;
-    if (s.production_rate == null || s.production_rate <= 0) return `"${s.name}" has no production rate yet. Add it under Cleaning scopes first.`;
-    const hours = qty / s.production_rate;
+    const hasRate = s.production_rate != null && s.production_rate > 0;
+    if (s.pricing_method === 'hourly' && !hasRate) return `"${s.name}" is priced hourly but has no production rate yet. Add it under Cleaning scopes first.`;
+    const hours = hasRate ? qty / s.production_rate : 0;
     let amount, laborRate = 0;
     if (s.pricing_method === 'hourly') {
       laborRate = Number(b.labor_rate) || 0;
@@ -168,7 +193,7 @@ module.exports.resolveLines = function resolveLines(db, b) {
     }
     const q = Number.isInteger(qty) ? qty.toLocaleString('en-US') : String(round(qty));
     out.push({ scope_id: s.id, description: `${s.name} (${q} ${s.unit})`, category: s.category, unit: s.unit, quantity: qty,
-      unit_price: s.unit_price, production_rate: s.production_rate, pricing_method: s.pricing_method,
+      unit_price: s.unit_price, production_rate: s.production_rate || 0, pricing_method: s.pricing_method,
       hours: round(hours), labor_rate: laborRate, amount: round(amount) });
   }
   b.line_items = out;
