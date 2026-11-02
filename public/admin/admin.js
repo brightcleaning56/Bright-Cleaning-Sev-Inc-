@@ -217,8 +217,8 @@
     ];
     $('#ccQuick').innerHTML = QA.map(([l, ic], i) => `<button type="button" data-qa="${i}">${svg(ic)}${esc(l)}</button>`).join('');
     $$('#ccQuick [data-qa]').forEach(b => b.onclick = QA[b.dataset.qa][2]);
-    const PORTALS = [['Multifamily', 'Apartments · units · common areas', '/industries/multifamily-apartment-operators.html'], ['Construction final clean', 'New builds · punch list · windows', '/services/post-construction-final-cleaning.html'],
-      ['Commercial janitorial', 'Offices · facilities · recurring', '/services/commercial-janitorial.html'], ['Exterior services', 'Power washing · windows · parking', '/services/power-washing.html'], ['Other services', 'Unit turns · valet trash', '/services/unit-turnover-cleaning.html']];
+    const PORTALS = [['Multifamily', 'Apartments · units · common areas', '/quote.html?service=multifamily'], ['Construction final clean', 'New builds · punch list · windows', '/quote.html?service=construction_final'],
+      ['Commercial janitorial', 'Offices · facilities · recurring', '/quote.html?service=janitorial'], ['Exterior services', 'Power washing · windows · parking', '/quote.html?service=power_washing'], ['Other services', 'Unit turns · valet trash', '/quote.html?service=unit_turnover']];
     $('#ccPortals').innerHTML = PORTALS.map(([t, s2, u]) => `<a href="${u}" target="_blank" rel="noopener"><b>${esc(t)}</b><small>${esc(s2)}</small></a>`).join('');
     $('#ccMods').innerHTML = Object.values(cc.modules).map(m => `<div class="card mod"><div class="cardhead"><h2>${esc(m.label)}</h2>${m.connected ? '<span class="badge green">Ready</span>' : '<span class="badge amber">Setup needed</span>'}</div><p><b>${esc(m.status)}</b>${m.needs ? '<br>' + esc(m.needs) : ''}</p></div>`).join('');
 
@@ -298,11 +298,14 @@
     ].filter(([, v]) => v);
     const raw = new Set(['Email', 'Phone']);
     const files = (l.files || []);
+    let intake = null; try { intake = l.intake ? JSON.parse(l.intake) : null; } catch { intake = null; }
+    const flagBox = intake && intake.flags && intake.flags.length ? `<div class="formsection">Needed before pricing</div><ul class="needs">${intake.flags.map(f => `<li>${esc(f.text)}</li>`).join('')}</ul>` : (intake ? '<div class="formsection">Needed before pricing</div><p class="muted">Nothing flagged. The answers cover what is needed to price this service.</p>' : '');
     openDrawer({
       title: l.contact_name || 'Lead #' + l.id,
       sub: `${KIND_LABEL[l.kind] || 'Lead'} #${l.id}${l.company ? ' · ' + l.company : ''}`,
       body: `
         <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
+        ${flagBox}
         ${l.details ? `<div class="formsection">Details</div><div class="pre">${esc(l.details)}</div>` : ''}
         ${files.length ? `<div class="formsection">Attachments</div><div class="related"><ul>${files.map((f, i) => `<li><button class="linklike" data-file="${i}">${esc(f.name)}</button></li>`).join('')}</ul></div>` : ''}
         <div class="formsection">Follow-up</div>
@@ -520,6 +523,7 @@
     loadTemplates();
     scopeLines = []; loadScopeLibrary();
     if (lead) {
+      try { const ik = lead.intake ? JSON.parse(lead.intake) : null; if (ik && ik.category) $('#slCat').dataset.want = ik.category; } catch { /* no intake */ }
       Object.entries({
         lead_id: lead.id || '', customer_name: lead.contact_name || '', company: lead.company || '', email: lead.email || '',
         project_name: lead.project_name || '', site_address: lead.address || '',
@@ -540,7 +544,7 @@
       if (est.visits > 1 && Math.abs(derived * est.visits - est.labor_hours) < 0.01) ef.elements.labor_hours.value = 0;
       else if (est.visits > 1) ef.elements.labor_hours.value = +(est.labor_hours / est.visits).toFixed(2);
     }
-    if (!est) $('#slCat').dataset.want = '';
+    if (!est && !(lead && lead.intake)) $('#slCat').dataset.want = '';
     syncScopeCat(); renderScopeLines();
     $('#estTitle').textContent = est ? `Edit estimate — ${est.project_name || est.customer_name}` : 'New estimate';
     $('#estSave').textContent = est ? 'Save changes' : 'Save estimate';
