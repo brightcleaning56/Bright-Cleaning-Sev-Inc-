@@ -105,3 +105,22 @@ Still open before production (not verified here):
 - Domain and mailbox: `brightclean.net` and `info@brightclean.net` confirmed by the owner (Eric Moore) on 2026-11-01.
 - Hero and project imagery is hotlinked from Unsplash. Replace with approved company photography and host it locally.
 - Live SMTP delivery, HTTPS hosting, backups, and the operational gaps listed in README.md (e-signature, crew scheduling, customer portal, payments).
+
+
+## V5 integration and verification (2026-11-02)
+The V5 package supplied documentation only (runbook, automation register, QA notes). The V5 features were implemented
+on top of the live system rather than replacing it, keeping the upgraded admin portal and all existing data.
+
+Implemented: customer-decision lock on proposals; view/decision timestamps, view count and decision IP/browser;
+admin preview not counted as a customer view; server-side email validation on all forms, estimates, customers and
+invoices; expanded estimating model with templates and crew days; persistent customer directory with automatic sync;
+automation settings with opt-in proposal and invoice reminders (sent once per stage, logged); approval handoff as a
+setting; `/health` with database check; daily database backups (14 kept) with manual backup and download; production
+runbook, automation register; PUBLIC_BASE_URL for emailed links; safer admin setup script.
+
+Verified by running the application (not by reading code): `tests/run-tests.js` 58/58 and `tests/ui-tests.js` 24/24,
+each run repeatedly, plus the earlier regression suite. Results are in `tests/results.json` and `tests/ui-results.json`.
+
+Still not verified: real mailbox delivery (needs SMTP_PASS), off-site backup storage, real-device mobile testing beyond
+the live check, penetration testing, load testing and legal review. Payments, e-signature, accounting, SMS, crew
+scheduling and a customer portal are not built (see AUTOMATION_GAP_REGISTER.md).

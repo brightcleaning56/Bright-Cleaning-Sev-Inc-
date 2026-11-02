@@ -18,6 +18,8 @@ services:
         generateValue: true
       - key: ADMIN_EMAIL
         value: info@brightclean.net
+      - key: PUBLIC_BASE_URL
+        value: https://brightclean.net
       - key: FROM_EMAIL
         value: info@brightclean.net
       - key: NOTIFY_EMAIL

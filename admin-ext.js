@@ -59,8 +59,11 @@ module.exports = function mountAdminExt(app, ctx) {
     if (!e) return res.status(404).json({ error: 'Not found' });
     if (['Approved'].includes(e.status)) return res.status(409).json({ error: 'This proposal was approved by the customer. Duplicate it to make changes.' });
     if (!required(b.customer_name) || !required(b.scope)) return res.status(400).json({ error: 'Customer and scope are required.' });
-    const f = { ...estimateFields(b), ...estimateMath(b), updated_at: new Date().toISOString(), id: e.id };
+    if (b.email && !require('./ops').isEmail(b.email)) return res.status(400).json({ error: 'Enter a valid customer email address.' });
+    const m = estimateMath(b);
+    const f = { ...estimateFields(b), labor_hours: m.labor_hours, labor_cost: m.labor_cost, total_cost: m.total_cost, proposal_total: m.proposal_total, updated_at: new Date().toISOString(), id: e.id };
     db.prepare(`UPDATE estimates SET lead_id=@lead_id,customer_name=@customer_name,company=@company,email=@email,project_name=@project_name,site_address=@site_address,scope=@scope,area_sqft=@area_sqft,production_rate=@production_rate,labor_hours=@labor_hours,labor_rate=@labor_rate,labor_cost=@labor_cost,supplies_cost=@supplies_cost,equipment_cost=@equipment_cost,other_cost=@other_cost,overhead_pct=@overhead_pct,margin_pct=@margin_pct,tax_pct=@tax_pct,total_cost=@total_cost,proposal_total=@proposal_total,line_items=@line_items,terms=@terms,expires_on=@expires_on,updated_at=@updated_at WHERE id=@id`).run(f);
+    require('./estimating').saveExtras(db, e.id, b, m);
     logAction(req, 'edited', 'estimate', e.id);
     res.json({ estimate: db.prepare('SELECT * FROM estimates WHERE id=?').get(e.id) });
   });
@@ -69,7 +72,7 @@ module.exports = function mountAdminExt(app, ctx) {
     const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(id(req));
     if (!e) return res.status(404).json({ error: 'Not found' });
     const now = new Date().toISOString();
-    const copy = { ...e, id: undefined, status: 'Draft', public_token: crypto.randomBytes(24).toString('hex'), project_name: (e.project_name || 'Proposal') + ' (copy)', created_at: now, updated_at: now };
+    const copy = { ...e, id: undefined, status: 'Draft', public_token: crypto.randomBytes(24).toString('hex'), project_name: (e.project_name || 'Proposal') + ' (copy)', created_at: now, updated_at: now, sent_at: null, viewed_at: null, last_viewed_at: null, view_count: 0, decided_at: null, decision_ip: null, decision_agent: null };
     delete copy.id;
     const cols = Object.keys(copy);
     const r = db.prepare(`INSERT INTO estimates(${cols.join(',')}) VALUES(${cols.map(c => '@' + c).join(',')})`).run(copy);
@@ -126,27 +129,7 @@ module.exports = function mountAdminExt(app, ctx) {
     res.json({ number: `BC-${year}-${String(max + 1).padStart(4, '0')}` });
   });
 
-  // ---------- Customers ----------
-  app.get('/api/admin/customers', auth, (req, res) => {
-    const map = new Map();
-    const keyOf = r => (clean(r.company).toLowerCase() || clean(r.email).toLowerCase() || clean(r.customer_name || r.contact_name).toLowerCase());
-    const add = (type, r) => {
-      const k = keyOf(r); if (!k) return;
-      if (!map.has(k)) map.set(k, { key: k, company: '', name: '', email: '', phone: '', leads: [], proposals: [], contracts: [], projects: [], invoices: [], billed: 0, paid: 0, last: '' });
-      const c = map.get(k);
-      c.company = c.company || clean(r.company); c.name = c.name || clean(r.customer_name || r.contact_name);
-      c.email = c.email || clean(r.email); c.phone = c.phone || clean(r.phone);
-      c[type].push(r);
-      if (type === 'invoices' && r.status !== 'Void') { c.billed += Number(r.amount || 0); c.paid += Number(r.paid_amount || 0); }
-      if ((r.created_at || '') > c.last) c.last = r.created_at;
-    };
-    db.prepare(`SELECT id,kind,contact_name,company,email,phone,project_name,status,created_at FROM leads WHERE kind<>'career'`).all().forEach(r => add('leads', r));
-    db.prepare('SELECT id,customer_name,company,email,project_name,proposal_total,status,created_at FROM estimates').all().forEach(r => add('proposals', r));
-    db.prepare('SELECT id,customer_name,company,title,value,status,created_at FROM contracts').all().forEach(r => add('contracts', r));
-    db.prepare('SELECT id,customer_name,company,name,status,progress,due_date,created_at FROM projects').all().forEach(r => add('projects', r));
-    db.prepare('SELECT id,customer_name,company,invoice_number,amount,paid_amount,status,due_date,created_at FROM invoices').all().forEach(r => add('invoices', r));
-    res.json({ customers: [...map.values()].sort((a, b) => (b.last || '').localeCompare(a.last || '')) });
-  });
+  // Customers are served by ops.js (persistent customer directory).
 
   // ---------- Account & users ----------
   app.get('/api/admin/me', auth, (req, res) => res.json({ email: req.user && req.user.email }));
