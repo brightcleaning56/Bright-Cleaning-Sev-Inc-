@@ -44,7 +44,7 @@ module.exports = function mountCommand(app, ctx) {
       { stage: `Won (last ${days} days)`, n: won.n, v: won.v, valued: true }
     ];
 
-    const scopes = one(`SELECT COUNT(*) total, SUM(production_rate IS NULL OR (unit_price IS NULL AND pricing_method<>'hourly') OR crew_size IS NULL) missing FROM scope_items WHERE active=1`);
+    const scopes = one(`SELECT COUNT(*) total, SUM(CASE WHEN pricing_method='hourly' THEN (production_rate IS NULL OR production_rate<=0) ELSE unit_price IS NULL END) missing FROM scope_items WHERE active=1`);
     const viaPostmark = !!process.env.POSTMARK_TOKEN;
     const emailReady = viaPostmark || !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
     const aiKey = !!process.env.ANTHROPIC_API_KEY;
@@ -67,7 +67,7 @@ module.exports = function mountCommand(app, ctx) {
           needs: emailReady ? 'Inbox inside Bright Clean needs a Microsoft 365 app registration.' : 'Add POSTMARK_TOKEN in Render (Postmark server API token). The full inbox needs a Microsoft 365 app registration.' },
         calls: { connected: false, label: 'Call Center', status: 'Not connected', needs: 'A business phone provider with an API (for example Twilio, RingCentral or OpenPhone) and a call-recording disclosure policy.' },
         blueprint: { connected: false, label: 'Blueprint AI', status: aiKey ? 'Key present, module not built yet' : 'Not connected', needs: 'An Anthropic API key in Render, then the blueprint pilot on one real drawing package.' },
-        scopes: { connected: scopes.total > 0 && !scopes.missing, label: 'Cleaning scopes', status: scopes.missing ? `${scopes.missing} of ${scopes.total} items need rates` : 'All items priced', needs: scopes.missing ? 'Enter your production rates, crew sizes and prices under Cleaning scopes.' : '' }
+        scopes: { connected: scopes.total > 0 && !scopes.missing, label: 'Cleaning scopes', status: scopes.missing ? `${scopes.total - scopes.missing} of ${scopes.total} items priced` : 'All items priced', needs: scopes.missing ? `${scopes.missing} items have no price yet. Price or archive them under Cleaning scopes; import the price book for your standard rates.` : '' }
       }
     });
   });
