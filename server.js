@@ -26,7 +26,9 @@ const storage=multer.diskStorage({destination:(req,file,cb)=>cb(null,uploadDir),
 const upload=multer({storage,limits:{fileSize:15*1024*1024,files:8},fileFilter:(req,file,cb)=>{const ok=/\.(pdf|doc|docx|xls|xlsx|png|jpe?g|zip)$/i.test(file.originalname);cb(ok?null:new Error('Unsupported file type'),ok)}});
 
 let mailer=null;
-if(process.env.SMTP_HOST&&process.env.SMTP_USER&&process.env.SMTP_PASS){
+if(process.env.POSTMARK_TOKEN){
+  mailer=require('./postmark')(process.env.POSTMARK_TOKEN,{apiUrl:process.env.POSTMARK_API_URL,stream:process.env.POSTMARK_STREAM});
+}else if(process.env.SMTP_HOST&&process.env.SMTP_USER&&process.env.SMTP_PASS){
   const nodemailer=require('nodemailer');
   mailer=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:String(process.env.SMTP_SECURE)==='true',auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}});
 }

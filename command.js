@@ -45,7 +45,8 @@ module.exports = function mountCommand(app, ctx) {
     ];
 
     const scopes = one(`SELECT COUNT(*) total, SUM(production_rate IS NULL OR (unit_price IS NULL AND pricing_method<>'hourly') OR crew_size IS NULL) missing FROM scope_items WHERE active=1`);
-    const emailReady = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+    const viaPostmark = !!process.env.POSTMARK_TOKEN;
+    const emailReady = viaPostmark || !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
     const aiKey = !!process.env.ANTHROPIC_API_KEY;
 
     res.json({
@@ -62,8 +63,8 @@ module.exports = function mountCommand(app, ctx) {
       pipeline,
       activity: db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT 6').all(),
       modules: {
-        email: { connected: emailReady, label: 'Email', status: emailReady ? 'Sending enabled (outgoing only)' : 'Not set up',
-          needs: emailReady ? 'Inbox inside Bright Clean needs a Microsoft 365 app registration.' : 'Turn on Authenticated SMTP for info@brightclean.net and add SMTP_PASS in Render. The full inbox needs a Microsoft 365 app registration.' },
+        email: { connected: emailReady, label: 'Email', status: emailReady ? `Sending enabled via ${viaPostmark ? 'Postmark' : 'Microsoft 365'} (outgoing only)` : 'Not set up',
+          needs: emailReady ? 'Inbox inside Bright Clean needs a Microsoft 365 app registration.' : 'Add POSTMARK_TOKEN in Render (Postmark server API token). The full inbox needs a Microsoft 365 app registration.' },
         calls: { connected: false, label: 'Call Center', status: 'Not connected', needs: 'A business phone provider with an API (for example Twilio, RingCentral or OpenPhone) and a call-recording disclosure policy.' },
         blueprint: { connected: false, label: 'Blueprint AI', status: aiKey ? 'Key present, module not built yet' : 'Not connected', needs: 'An Anthropic API key in Render, then the blueprint pilot on one real drawing package.' },
         scopes: { connected: scopes.total > 0 && !scopes.missing, label: 'Cleaning scopes', status: scopes.missing ? `${scopes.missing} of ${scopes.total} items need rates` : 'All items priced', needs: scopes.missing ? 'Enter your production rates, crew sizes and prices under Cleaning scopes.' : '' }
