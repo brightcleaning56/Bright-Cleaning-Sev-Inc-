@@ -202,8 +202,8 @@
       { label: 'Won', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
       { label: 'Collected this month', value: money(k.collected_month.value), icon: 'dollar', c: '#178a4c', to: 'invoices' },
       { label: 'Active projects', value: k.active_projects.value, icon: 'cal', c: '#2563eb', to: 'projects' },
-      { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: (att.open_complaints || att.overdue_tasks) ? 'issues' : att.overdue_invoices ? 'invoices' : att.late_projects ? 'projects' : 'leads', alert: k.attention.value > 0,
-        title: `Open complaints ${att.open_complaints} · overdue tasks ${att.overdue_tasks} · overdue invoices ${att.overdue_invoices} · late projects ${att.late_projects} · leads waiting 2+ days ${att.leads_waiting_2_days} · failed emails (7 days) ${att.failed_emails_7_days}` }
+      { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: att.awaiting_approval ? 'proposals' : (att.open_complaints || att.overdue_tasks) ? 'issues' : att.overdue_invoices ? 'invoices' : att.late_projects ? 'projects' : 'leads', alert: k.attention.value > 0,
+        title: `Proposals awaiting approval ${att.awaiting_approval} · open complaints ${att.open_complaints} · overdue tasks ${att.overdue_tasks} · overdue invoices ${att.overdue_invoices} · late projects ${att.late_projects} · leads waiting 2+ days ${att.leads_waiting_2_days} · failed emails (7 days) ${att.failed_emails_7_days}` }
     ];
     $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
     $$('#ccKpis .kpi').forEach(b => b.onclick = () => go(tiles[b.dataset.i].to));
@@ -463,6 +463,7 @@
           ${e.decided_at ? `<dt>Decision</dt><dd>${badge(e.status)} ${esc(fmtWhen(e.decided_at))}${e.decision_ip ? ' · by the customer online' : ' · set in admin'}</dd>` : ''}
           ${e.lead_id ? `<dt>From lead</dt><dd><button class="linklike" data-lead="${e.lead_id}">Lead #${e.lead_id}</button></dd>` : ''}
         </dl>
+        <div id="apprBox"></div>
         <div class="grid"><div class="f"><label for="es">Status</label><select id="es"${e.decision_ip ? ' disabled' : ''}>${options(STATUS.estimates, e.status)}</select><span class="hint">${e.decision_ip ? 'Locked: the customer made this decision online. Duplicate the proposal to revise it.' : 'Updates automatically when the customer views, approves or declines.'}</span></div></div>
         <div class="formsection">Scope</div><div class="pre">${esc(e.scope)}</div>
         ${items.length ? `<div class="formsection">Line items</div><table class="t"><tbody>${items.map(i => `<tr><td>${esc(i.description)}</td><td class="num">${money(i.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
@@ -479,9 +480,22 @@
         <button class="btn danger" id="eDel"${e.status === 'Approved' ? ' disabled title="Approved proposals are kept for your records."' : ''}>Delete</button>`
     });
     bindOpeners($('#drawerRoot'));
+    api(`/api/admin/estimates/${e.id}/approval`).then(ap => {
+      const box = $('#apprBox'); if (!box) return;
+      if (ap.blocked) { box.innerHTML = `<div class="needs" style="background:var(--redbg);color:var(--red)"><b>Can't be sent yet:</b> ${esc(ap.blocked)}</div>`; return; }
+      if (!ap.required) { box.innerHTML = ''; return; }
+      const ok = ap.approval && ap.approval.valid;
+      box.innerHTML = `<div class="formsection">Approval</div><ul class="needs">${ap.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
+        + (ok ? `<p><span class="badge green">Approved</span> by ${esc(ap.approval.approved_by || 'owner')} ${esc(fmtWhen(ap.approval.created_at))}${ap.approval.note ? ' — ' + esc(ap.approval.note) : ''}</p>`
+          : `${ap.approval ? '<p class="muted">An earlier approval no longer applies because the proposal was edited.</p>' : ''}${ap.can_approve ? '<div class="grid"><div class="f wide"><label for="apNote">Approval note (optional)</label><input id="apNote" placeholder="Why this is OK to send"></div></div><button class="btn" type="button" id="apGo">Approve for sending</button>' : '<p class="muted">Waiting for the owner to approve.</p>'}`);
+      if ($('#apGo')) $('#apGo').onclick = async () => {
+        try { await api(`/api/admin/estimates/${e.id}/approve`, { method: 'POST', json: { note: $('#apNote').value } }); toast('Approved for sending'); openEstimate(e.id); }
+        catch (err) { toast(err.message, true); }
+      };
+    }).catch(() => { /* approval info optional */ });
     $('#es').onchange = async ev => {
       try { await api('/api/admin/estimates/' + e.id, { method: 'PATCH', json: { status: ev.target.value } }); toast('Status updated'); loadEstimates(); }
-      catch (err) { toast(err.message, true); }
+      catch (err) { ev.target.value = e.status; toast(err.message, true); }
     };
     $('#eCopy').onclick = () => navigator.clipboard.writeText(url).then(() => toast('Link copied')).catch(() => { $('#eUrl').select(); toast('Press Ctrl+C to copy'); });
     $('#eSend').onclick = async () => {
@@ -912,8 +926,23 @@
   });
 
   async function loadSettings() {
-    await Promise.all([loadUsers(), loadAutomation(), loadBackups()]);
+    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules()]);
   }
+  async function loadApprovalRules() {
+    const r = await api('/api/admin/approval-rules'), f = $('#apprCard');
+    f.elements.min_margin_pct.value = r.rules.min_margin_pct; f.elements.max_total.value = r.rules.max_total;
+    f.elements.flag_pre_pricing.checked = r.rules.flag_pre_pricing; f.elements.approve_all.checked = r.rules.approve_all;
+    [...f.elements].forEach(el => { el.disabled = !r.can_change; });
+    $('#apMsg').className = 'msg'; $('#apMsg').textContent = r.can_change ? '' : 'Only the owner can change these.';
+  }
+  $('#apprCard').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const f = ev.target;
+    try {
+      await api('/api/admin/approval-rules', { method: 'PUT', json: { min_margin_pct: f.elements.min_margin_pct.value, max_total: f.elements.max_total.value, flag_pre_pricing: f.elements.flag_pre_pricing.checked, approve_all: f.elements.approve_all.checked } });
+      $('#apMsg').className = 'msg ok'; $('#apMsg').textContent = 'Saved.';
+    } catch (err) { $('#apMsg').className = 'msg err'; $('#apMsg').textContent = err.message; }
+  });
   const AUTO = [
     ['auto_handoff', 'Approved proposal handoff', 'When a customer approves a proposal, create a draft contract and a planning project. Nothing is scheduled or mobilized without you.'],
     ['auto_proposal_reminders', 'Proposal follow-up emails', 'Email the customer 3 and 7 days after a sent proposal was last opened, if they have not decided. Each reminder is sent once.'],
@@ -1065,21 +1094,21 @@
       title: isNew ? 'New scope item' : it.name,
       sub: isNew ? '' : `${scopeState.categories[it.category] || ''} · updated ${fmtDate(it.updated_at)}`,
       body: `<form id="scopeForm" class="grid" novalidate>
-          <div class="f"><label for="s1">Category</label><select id="s1" name="category">${opts(scopeState.categories, it.category)}</select></div>
-          <div class="f"><label for="s2">Name</label><input id="s2" name="name" value="${v('name')}" required></div>
-          <div class="f"><label for="s3">Measurement unit</label><input id="s3" name="unit" value="${v('unit')}" placeholder="SF, Each, Unit, Fixture, Hour" required></div>
-          <div class="f"><label for="s4">Frequency</label><input id="s4" name="frequency" value="${v('frequency')}" placeholder="Once, Daily, Per turn"></div>
-          <div class="f"><label for="s5">Production rate (units per labor hour)</label><input id="s5" name="production_rate" inputmode="decimal" value="${v('production_rate')}" placeholder="Your rate"></div>
-          <div class="f"><label for="s6">Typical crew size</label><input id="s6" name="crew_size" inputmode="decimal" value="${v('crew_size')}"></div>
-          <div class="f"><label for="s7">Pricing method</label><select id="s7" name="pricing_method">${opts(scopeState.pricing, it.pricing_method)}</select></div>
-          <div class="f"><label for="s8">Price per unit ($)</label><input id="s8" name="unit_price" inputmode="decimal" value="${v('unit_price')}" placeholder="Leave blank for hourly"></div>
-          ${ta('s9', 'description', 'Description')}
-          ${ta('s10', 'included', 'Included work')}
-          ${ta('s11', 'exclusions', 'Exclusions')}
-          ${ta('s12', 'quality_standard', 'Quality standard')}
-          ${ta('s13', 'labor_notes', 'Labor requirements', 'Skills, supervision, shift')}
-          <div class="f"><label for="s14">Equipment</label><input id="s14" name="equipment" value="${v('equipment')}"></div>
-          <div class="f"><label for="s15">Materials</label><input id="s15" name="materials" value="${v('materials')}"></div>
+          <div class="f"><label for="sc1">Category</label><select id="sc1" name="category">${opts(scopeState.categories, it.category)}</select></div>
+          <div class="f"><label for="sc2">Name</label><input id="sc2" name="name" value="${v('name')}" required></div>
+          <div class="f"><label for="sc3">Measurement unit</label><input id="sc3" name="unit" value="${v('unit')}" placeholder="SF, Each, Unit, Fixture, Hour" required></div>
+          <div class="f"><label for="sc4">Frequency</label><input id="sc4" name="frequency" value="${v('frequency')}" placeholder="Once, Daily, Per turn"></div>
+          <div class="f"><label for="sc5">Production rate (units per labor hour)</label><input id="sc5" name="production_rate" inputmode="decimal" value="${v('production_rate')}" placeholder="Your rate"></div>
+          <div class="f"><label for="sc6">Typical crew size</label><input id="sc6" name="crew_size" inputmode="decimal" value="${v('crew_size')}"></div>
+          <div class="f"><label for="sc7">Pricing method</label><select id="sc7" name="pricing_method">${opts(scopeState.pricing, it.pricing_method)}</select></div>
+          <div class="f"><label for="sc8">Price per unit ($)</label><input id="sc8" name="unit_price" inputmode="decimal" value="${v('unit_price')}" placeholder="Leave blank for hourly"></div>
+          ${ta('sc9', 'description', 'Description')}
+          ${ta('sc10', 'included', 'Included work')}
+          ${ta('sc11', 'exclusions', 'Exclusions')}
+          ${ta('sc12', 'quality_standard', 'Quality standard')}
+          ${ta('sc13', 'labor_notes', 'Labor requirements', 'Skills, supervision, shift')}
+          <div class="f"><label for="sc14">Equipment</label><input id="sc14" name="equipment" value="${v('equipment')}"></div>
+          <div class="f"><label for="sc15">Materials</label><input id="sc15" name="materials" value="${v('materials')}"></div>
         </form><p class="msg" id="scopeMsg" role="status"></p>`,
       footer: `<button class="btn" id="sSave">${isNew ? 'Add item' : 'Save'}</button>${isNew ? '' : `<span class="grow"></span>${it.active ? '<button class="btn danger" id="sArch">Archive</button>' : '<button class="btn ghost" id="sRestore">Restore</button>'}`}`
     });

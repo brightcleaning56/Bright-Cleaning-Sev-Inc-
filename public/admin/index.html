@@ -419,6 +419,17 @@
           </form>
         </div>
       </div>
+      <form class="card" id="apprCard" novalidate>
+        <h2>Approval rules</h2>
+        <p class="muted">A proposal that meets any of these rules can't be emailed, marked Sent or opened by the customer until the owner approves it. Any later change to its price, scope or terms cancels the approval.</p>
+        <div class="grid">
+          <div class="f"><label for="ap1">Minimum gross margin (%)</label><input id="ap1" name="min_margin_pct" inputmode="decimal"></div>
+          <div class="f"><label for="ap2">Approve totals above ($, 0 = off)</label><input id="ap2" name="max_total" inputmode="decimal"></div>
+          <div class="f wide"><label class="chk"><input type="checkbox" name="flag_pre_pricing" id="ap3"> Approve when the quote request still had "needed before pricing" notes</label></div>
+          <div class="f wide"><label class="chk"><input type="checkbox" name="approve_all" id="ap4"> Approve every proposal before it goes out</label></div>
+        </div>
+        <div style="margin-top:12px"><button class="btn" id="apSave" type="submit">Save rules</button> <span class="msg" id="apMsg" role="status"></span></div>
+      </form>
       <div class="card" id="autoCard">
         <h2>Automation</h2>
         <p class="msg" id="autoEmail"></p>
