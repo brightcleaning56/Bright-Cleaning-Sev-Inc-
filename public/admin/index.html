@@ -1,14 +1,346 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bright Clean | Contractor Operations</title><link rel="stylesheet" href="/assets/site.css"><style>
-.adminwrap{max-width:1440px;margin:auto;padding:28px 22px}.adminnav{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0}.adminnav button{border:1px solid #d6dce4;background:#fff;color:#172b45;padding:11px 15px;border-radius:8px;font-weight:700}.adminnav button.active{background:#102b49;color:white}.panel{background:#fff;border:1px solid #e1e6ec;border-radius:14px;padding:22px;margin:18px 0}.gridform{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.gridform .field{margin:0}.gridform .wide{grid-column:1/-1}.gridform input,.gridform select,.gridform textarea{width:100%;padding:11px;border:1px solid #ccd5df;border-radius:7px}.estimate-total{font-size:28px;font-weight:800;color:#102b49}.muted{color:#637184}.admin-table{width:100%;border-collapse:collapse}.admin-table th,.admin-table td{padding:12px;border-bottom:1px solid #e7ebef;text-align:left;vertical-align:top}.hidden{display:none!important}.actions{display:flex;gap:8px;flex-wrap:wrap}.mini{font-size:12px}.notice{padding:12px;background:#f2f6fa;border-radius:8px}.tabpane{display:none}.tabpane.active{display:block}@media(max-width:800px){.gridform{grid-template-columns:1fr}.admin-table{font-size:13px}.panel{padding:15px;overflow:auto}}
-</style></head><body class="adminbody"><div id="login" class="adminlogin"><div class="logo"><span class="logo-mark">B</span><span>BRIGHT CLEANING SEV INC<small>CONTRACTOR OPERATIONS</small></span></div><h1>Sign in</h1><form id="loginForm"><div class="field"><label>Email</label><input name="email" type="email" required></div><div class="field"><label>Password</label><input name="password" type="password" required></div><button class="btn" style="width:100%">Sign in to operations</button><p id="loginStatus" class="form-status"></p></form><p class="hint">Admin credentials are configured through environment variables.</p></div>
-<div id="dashboard" class="adminwrap" hidden><header class="adminhead"><div><div class="kicker">Commercial services operating system</div><h1 style="color:var(--navy);margin:4px 0">Bright Clean Operations</h1><p class="muted">Estimating · Proposals · Contracts · Projects · Customers · Finance</p></div><div class="actions"><button class="btn dark" id="logout">Sign out</button></div></header>
-<nav class="adminnav"><button class="active" data-tab="overview">Overview</button><button data-tab="leads">Bid requests</button><button data-tab="estimator">Create estimate / quote</button><button data-tab="proposals">Proposals</button><button data-tab="contracts">Contracts</button><button data-tab="projects">Projects</button><button data-tab="invoices">Invoices & finance</button><button data-tab="audit">Activity log</button></nav>
-<section id="overview" class="tabpane active"><div class="admincards"><div class="metric"><span>Bid requests</span><strong id="mTotal">0</strong></div><div class="metric"><span>New requests</span><strong id="mNew">0</strong></div><div class="metric"><span>Open proposals</span><strong id="mProposals">0</strong></div><div class="metric"><span>Outstanding invoices</span><strong id="mOutstanding">$0</strong></div></div><div class="panel"><h2>Commercial workflow</h2><p class="muted">Capture an opportunity → build a cost-based estimate → generate and send a proposal → record approval → establish the contract → schedule project delivery → invoice and track collections.</p><div class="actions"><button class="btn" data-goto="estimator">Create a quote</button><button class="btn dark" data-goto="leads">Review bid requests</button></div></div></section>
-<section id="leads" class="tabpane"><div class="panel"><div class="actions"><h2 style="margin-right:auto">Incoming opportunities</h2><button class="btn" id="exportCsv">Export CSV</button></div><div style="overflow:auto"><table class="admin-table"><thead><tr><th>Received</th><th>Contact / Company</th><th>Project</th><th>Services</th><th>Status</th><th>Action</th></tr></thead><tbody id="leadRows"></tbody></table></div><div id="leadDetail" class="panel hidden"></div></div></section>
-<section id="estimator" class="tabpane"><div class="panel"><h2>Commercial estimator & proposal builder</h2><p class="muted">Enter measured area and production rate, or enter labor hours directly. Costs are calculated transparently; margin is calculated as gross margin (not simple markup).</p><form id="estimateForm" class="gridform"><div class="field"><label>Customer / contact *</label><input name="customer_name" required></div><div class="field"><label>Company</label><input name="company"></div><div class="field"><label>Customer email</label><input name="email" type="email"></div><div class="field"><label>Project name</label><input name="project_name"></div><div class="field"><label>Site address</label><input name="site_address"></div><div class="field"><label>Related bid request ID</label><input name="lead_id" type="number" min="1"></div><div class="field wide"><label>Detailed scope of work *</label><textarea name="scope" rows="4" required placeholder="Areas included, tasks, frequency, access, exclusions, assumptions..."></textarea></div><div class="field"><label>Area (square feet)</label><input name="area_sqft" type="number" min="0" step="any" value="0"></div><div class="field"><label>Production rate (sq ft / labor hour)</label><input name="production_rate" type="number" min="0" step="any" value="0"></div><div class="field"><label>Labor hours override (optional)</label><input name="labor_hours" type="number" min="0" step="any" value="0"></div><div class="field"><label>Loaded labor cost / hour ($)</label><input name="labor_rate" type="number" min="0" step="any" value="0"></div><div class="field"><label>Supplies & consumables ($)</label><input name="supplies_cost" type="number" min="0" step="any" value="0"></div><div class="field"><label>Equipment / rentals ($)</label><input name="equipment_cost" type="number" min="0" step="any" value="0"></div><div class="field"><label>Other direct costs ($)</label><input name="other_cost" type="number" min="0" step="any" value="0"></div><div class="field"><label>Overhead (%)</label><input name="overhead_pct" type="number" min="0" max="300" step="any" value="10"></div><div class="field"><label>Gross margin (%)</label><input name="margin_pct" type="number" min="0" max="90" step="any" value="25"></div><div class="field"><label>Tax (%) — verify applicability</label><input name="tax_pct" type="number" min="0" max="100" step="any" value="0"></div><div class="field"><label>Proposal valid through</label><input name="expires_on" type="date"></div><div class="field wide"><label>Line items (one per line: description | amount)</label><textarea name="line_items_text" rows="3" placeholder="Final construction cleaning | 12500&#10;Interior glass cleaning | 1800"></textarea></div><div class="field wide"><label>Commercial terms, assumptions & exclusions</label><textarea name="terms" rows="4" placeholder="Payment terms, schedule assumptions, scope exclusions, change order process, site readiness..."></textarea></div><div class="field wide notice"><div>Estimated labor hours: <b id="calcHours">0.00</b> · Direct + overhead cost: <b id="calcCost">$0.00</b></div><div class="estimate-total">Proposal total: <span id="calcTotal">$0.00</span></div><small class="muted">Estimate is a planning calculation. Confirm production rates, wage burden, supply quantities, equipment, travel, insurance allocation, taxes and scope before issuing.</small></div><div class="field wide actions"><button class="btn" type="submit">Save estimate & generate proposal</button><span id="estimateStatus" class="form-status"></span></div></form></div></section>
-<section id="proposals" class="tabpane"><div class="panel"><h2>Estimates & customer proposals</h2><div style="overflow:auto"><table class="admin-table"><thead><tr><th>Created</th><th>Customer / Project</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody id="estimateRows"></tbody></table></div></div></section>
-<section id="contracts" class="tabpane"><div class="panel"><h2>Contract register</h2><p class="muted">Create a contract record from an approved proposal. Attach final scope exhibits, PO details and renewal dates in the record notes. E-signature is not activated until a provider is connected.</p><form id="contractForm" class="gridform"><div class="field"><label>Customer</label><input name="customer_name" required></div><div class="field"><label>Company</label><input name="company"></div><div class="field"><label>Contract title</label><input name="title" required></div><div class="field wide"><label>Scope exhibit / agreement summary</label><textarea name="scope" rows="3"></textarea></div><div class="field"><label>Start date</label><input name="start_date" type="date"></div><div class="field"><label>End / renewal date</label><input name="end_date" type="date"></div><div class="field"><label>Contract value ($)</label><input name="value" type="number" min="0" step="any"></div><div class="field"><label>Related estimate ID</label><input name="estimate_id" type="number"></div><div class="field"><label>Status</label><select name="status"><option>Draft</option><option>Review</option><option>Active</option><option>Renewal Due</option><option>Closed</option></select></div><div class="field wide"><button class="btn">Create contract record</button><span id="contractStatus" class="form-status"></span></div></form><div id="contractRows"></div></div></section>
-<section id="projects" class="tabpane"><div class="panel"><h2>Project operations register</h2><p class="muted">Track accountable manager, mobilization, milestones and delivery status. Crew-level scheduling, mobile checklists, inspection evidence and customer completion reports require the next implementation phase.</p><form id="projectForm" class="gridform"><div class="field"><label>Project name</label><input name="name" required></div><div class="field"><label>Customer</label><input name="customer_name"></div><div class="field"><label>Company</label><input name="company"></div><div class="field"><label>Site address</label><input name="site_address"></div><div class="field"><label>Project manager</label><input name="manager"></div><div class="field"><label>Related contract ID</label><input name="contract_id" type="number"></div><div class="field"><label>Start date</label><input name="start_date" type="date"></div><div class="field"><label>Target completion</label><input name="due_date" type="date"></div><div class="field"><label>Status</label><select name="status"><option>Planning</option><option>Mobilization</option><option>In Progress</option><option>Quality Review</option><option>Completed</option><option>On Hold</option></select></div><div class="field"><label>Progress (%)</label><input name="progress" type="number" min="0" max="100" value="0"></div><div class="field wide"><label>Notes / site requirements</label><textarea name="notes" rows="2"></textarea></div><div class="field wide"><button class="btn">Create project</button><span id="projectStatus" class="form-status"></span></div></form><div id="projectRows"></div></div></section>
-<section id="invoices" class="tabpane"><div class="panel"><h2>Invoices & financial operations</h2><div class="admincards"><div class="metric"><span>Total billed</span><strong id="fBilled">$0</strong></div><div class="metric"><span>Collected</span><strong id="fCollected">$0</strong></div><div class="metric"><span>Outstanding</span><strong id="fOpen">$0</strong></div></div><form id="invoiceForm" class="gridform"><div class="field"><label>Customer</label><input name="customer_name" required></div><div class="field"><label>Company</label><input name="company"></div><div class="field"><label>Invoice number</label><input name="invoice_number" required></div><div class="field"><label>Project ID</label><input name="project_id" type="number"></div><div class="field"><label>Amount ($)</label><input name="amount" type="number" min="0" step="any" required></div><div class="field"><label>Paid to date ($)</label><input name="paid_amount" type="number" min="0" step="any" value="0"></div><div class="field"><label>Due date</label><input name="due_date" type="date"></div><div class="field"><label>Status</label><select name="status"><option>Draft</option><option>Sent</option><option>Partially Paid</option><option>Paid</option><option>Overdue</option><option>Void</option></select></div><div class="field wide"><button class="btn">Create invoice record</button><span id="invoiceStatus" class="form-status"></span></div></form><div id="invoiceRows"></div><p class="notice mini">This is an internal invoice and payment tracking register. It does not transmit invoices, process card/ACH payments, reconcile bank transactions or post to accounting software.</p></div></section>
-<section id="audit" class="tabpane"><div class="panel"><h2>Recent activity</h2><div id="auditRows"></div></div></section>
-</div><script src="/admin/admin.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Bright Clean | Operations</title>
+<link rel="stylesheet" href="/assets/site.css">
+<style>
+  :root { --bg:#f3f6f9; --card:#fff; --line2:#e4eaf0; --red:#b42318; --redbg:#fdecea; --amber:#9a6700; --amberbg:#fff4d6; --greenbg:#e6f4ec; --bluebg:#e8f2fb; }
+  body.adminbody { background: var(--bg); margin: 0; }
+  [hidden] { display: none !important; }
+
+  .adminlogin { max-width: 420px; margin: 9vh auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: var(--shadow); }
+  .adminlogin h1 { color: var(--navy); margin: 22px 0 14px; }
+  .adminlogin .field { margin-bottom: 14px; }
+  .adminlogin label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+  .adminlogin input { width: 100%; padding: 12px; border: 1px solid #ccd5df; border-radius: 7px; font: inherit; box-sizing: border-box; }
+
+  .shell { display: grid; grid-template-columns: 236px 1fr; min-height: 100vh; }
+  .side { background: var(--navy); color: #cfdae6; padding: 22px 14px; position: sticky; top: 0; height: 100vh; overflow-y: auto; box-sizing: border-box; }
+  .side .logo { color: #fff; font-size: 15px; margin: 0 6px 26px; }
+  .side .logo small { color: #8fc3ea; }
+  .side nav { display: flex; flex-direction: column; gap: 2px; }
+  .side nav button { all: unset; cursor: pointer; padding: 10px 12px; border-radius: 8px; font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .side nav button:hover { background: #ffffff14; color: #fff; }
+  .side nav button.active { background: #ffffff1f; color: #fff; }
+  .side nav button:focus-visible { outline: 2px solid #8fc3ea; }
+  .side nav .sep { height: 1px; background: #ffffff1a; margin: 10px 6px; }
+  .count { background: var(--blue2); color: #fff; font-size: 11px; font-weight: 800; border-radius: 99px; padding: 2px 8px; text-align: center; }
+  .side .who { margin: 24px 8px 0; font-size: 12px; color: #8fa6bd; word-break: break-all; }
+  .side .who button { all: unset; cursor: pointer; color: #fff; font-weight: 700; display: block; margin-top: 8px; }
+
+  main.content { padding: 28px 32px 60px; min-width: 0; }
+  .pagehead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .pagehead h1 { font-size: 26px; color: var(--navy); margin: 0; letter-spacing: -.4px; }
+  .pagehead p { margin: 4px 0 0; color: var(--muted); font-size: 14px; max-width: 70ch; }
+  .view { display: none; } .view.active { display: block; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .stat { background: var(--card); border: 1px solid var(--line2); border-radius: 12px; padding: 16px 18px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+  .stat:hover { border-color: var(--blue); }
+  .stat span { display: block; font-size: 13px; color: var(--muted); }
+  .stat b { display: block; font-size: 26px; color: var(--navy); margin-top: 4px; }
+  .stat.alert b { color: var(--red); }
+  .card { background: var(--card); border: 1px solid var(--line2); border-radius: 12px; padding: 18px 20px; margin-bottom: 18px; }
+  .card h2 { font-size: 16px; color: var(--navy); margin: 0 0 12px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  .attn { list-style: none; margin: 0; padding: 0; }
+  .attn li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line2); font-size: 14px; cursor: pointer; }
+  .attn li:first-child { border-top: 0; }
+  .attn li:hover b { color: var(--blue); }
+  .attn small { color: var(--muted); display: block; }
+  .attn .r { text-align: right; white-space: nowrap; }
+  .empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
+
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .toolbar input[type=search], .toolbar select { padding: 10px 12px; border: 1px solid #ccd5df; border-radius: 7px; font: inherit; font-size: 14px; background: #fff; }
+  .toolbar input[type=search] { min-width: 240px; flex: 1; max-width: 380px; }
+  .subtabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .subtabs button { border: 1px solid #d6dce4; background: #fff; color: var(--navy); padding: 8px 14px; border-radius: 99px; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .subtabs button.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+  .tablewrap { background: var(--card); border: 1px solid var(--line2); border-radius: 12px; overflow-x: auto; }
+  table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.t th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 700; padding: 12px 14px; background: #f8fafc; border-bottom: 1px solid var(--line2); white-space: nowrap; }
+  table.t td { padding: 12px 14px; border-bottom: 1px solid var(--line2); vertical-align: top; }
+  table.t tr:last-child td { border-bottom: 0; }
+  table.t tbody tr.click { cursor: pointer; }
+  table.t tbody tr.click:hover { background: #f6f9fc; }
+  table.t td.num, table.t th.num { text-align: right; white-space: nowrap; }
+  table.t td small { color: var(--muted); display: block; }
+  table.t td.emptyrow { color: var(--muted); text-align: center; padding: 28px; }
+  .rowactions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .bar { height: 6px; background: #e8eef4; border-radius: 99px; width: 90px; overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; background: var(--blue2); }
+
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 99px; font-size: 12px; font-weight: 700; background: #eef2f6; color: #344a5e; white-space: nowrap; }
+  .badge.blue { background: var(--bluebg); color: #0f5a94; }
+  .badge.green { background: var(--greenbg); color: #1d6b47; }
+  .badge.amber { background: var(--amberbg); color: var(--amber); }
+  .badge.red { background: var(--redbg); color: var(--red); }
+
+  .btn.small { padding: 7px 11px; font-size: 12px; }
+  .btn.ghost { background: #fff; color: var(--navy); border-color: #ccd5df; }
+  .btn.ghost:hover { background: #f3f6f9; }
+  .btn.danger { background: #fff; color: var(--red); border-color: #f0c4bf; }
+  .btn.danger:hover { background: var(--redbg); }
+  .btn[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .f { display: flex; flex-direction: column; gap: 6px; }
+  .f.wide { grid-column: 1 / -1; }
+  .f label { font-size: 13px; font-weight: 700; color: var(--ink); }
+  .f .hint { font-size: 12px; color: var(--muted); }
+  .f input, .f select, .f textarea { width: 100%; padding: 10px 11px; border: 1px solid #ccd5df; border-radius: 7px; font: inherit; font-size: 14px; background: #fff; box-sizing: border-box; }
+  .f textarea { min-height: 96px; resize: vertical; }
+  .f input:focus, .f select:focus, .f textarea:focus, .toolbar input:focus, .toolbar select:focus { outline: 2px solid var(--blue2); outline-offset: 0; border-color: var(--blue2); }
+  .formsection { font-size: 13px; font-weight: 800; color: var(--navy); margin: 22px 0 10px; padding-top: 16px; border-top: 1px solid var(--line2); }
+  .formsection:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+  .calc { background: #f6f9fc; border: 1px solid var(--line2); border-radius: 10px; padding: 16px; margin-top: 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .calc span { display: block; font-size: 12px; color: var(--muted); }
+  .calc b { font-size: 18px; color: var(--navy); }
+  .calc .total b { font-size: 24px; }
+  .warnline { grid-column: 1 / -1; font-size: 13px; color: var(--amber); background: var(--amberbg); padding: 8px 10px; border-radius: 7px; }
+  .formbar { display: flex; gap: 10px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
+  .msg { font-size: 14px; color: var(--muted); }
+  .msg.err { color: var(--red); }
+  .msg.ok { color: var(--green); }
+
+  .scrim { position: fixed; inset: 0; background: #0a1a2b66; z-index: 40; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(620px, 100vw); background: #fff; z-index: 41; display: flex; flex-direction: column; box-shadow: -10px 0 40px #0a1a2b33; }
+  .drawer header { padding: 18px 22px; border-bottom: 1px solid var(--line2); display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .drawer header h2 { margin: 0; font-size: 19px; color: var(--navy); }
+  .drawer header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .drawer .x { all: unset; cursor: pointer; font-size: 26px; line-height: 1; color: var(--muted); padding: 2px 8px; border-radius: 6px; }
+  .drawer .x:focus-visible { outline: 2px solid var(--blue2); }
+  .drawer .body { padding: 18px 22px; overflow-y: auto; flex: 1; }
+  .drawer footer { padding: 14px 22px; border-top: 1px solid var(--line2); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .drawer footer .grow { flex: 1; }
+  .drawer .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  dl.facts { display: grid; grid-template-columns: 140px 1fr; gap: 8px 14px; margin: 0 0 16px; font-size: 14px; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; word-break: break-word; }
+  .pre { white-space: pre-wrap; background: #f8fafc; border: 1px solid var(--line2); border-radius: 8px; padding: 12px; font-size: 14px; margin: 0 0 16px; }
+  .related h3 { font-size: 14px; color: var(--navy); margin: 18px 0 6px; }
+  .related ul { margin: 0; padding-left: 18px; font-size: 14px; }
+  .related li { margin-bottom: 4px; }
+  .linklike { all: unset; cursor: pointer; color: var(--blue); font-weight: 600; }
+  .linklike:hover { text-decoration: underline; }
+
+  .activity p { margin: 0; padding: 9px 0; border-top: 1px solid var(--line2); font-size: 14px; display: flex; gap: 12px; }
+  .activity p:first-child { border-top: 0; }
+  .activity time { color: var(--muted); white-space: nowrap; min-width: 150px; font-size: 13px; }
+
+  .userrow { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line2); font-size: 14px; align-items: center; }
+  .userrow:first-child { border-top: 0; }
+  .userrow small { color: var(--muted); display: block; }
+
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 12px 18px; border-radius: 8px; font-size: 14px; z-index: 60; box-shadow: var(--shadow); max-width: 90vw; }
+  .toast.err { background: var(--red); }
+
+  @media (max-width: 980px) {
+    .shell { grid-template-columns: 1fr; }
+    .side { position: static; height: auto; padding: 12px 14px; }
+    .side .logo { margin: 0 4px 10px; }
+    .side nav { flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 4px; }
+    .side nav button { white-space: nowrap; gap: 8px; }
+    .side nav .sep { display: none; }
+    .side .who { margin: 8px 6px 0; display: flex; justify-content: space-between; gap: 10px; }
+    .side .who button { margin: 0; }
+    main.content { padding: 18px 14px 50px; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .two, .grid, .drawer .grid { grid-template-columns: 1fr; }
+    .calc { grid-template-columns: 1fr 1fr; }
+    dl.facts { grid-template-columns: 1fr; gap: 2px; }
+    dl.facts dd { margin-bottom: 8px; }
+    .toolbar input[type=search] { min-width: 0; max-width: none; }
+    .activity p { flex-direction: column; gap: 2px; }
+  }
+</style>
+</head>
+<body class="adminbody">
+
+<div id="login" class="adminlogin" hidden>
+  <div class="logo"><span class="logo-mark">B</span><span>BRIGHT CLEANING SEV INC<small>OPERATIONS</small></span></div>
+  <h1>Sign in</h1>
+  <form id="loginForm">
+    <div class="field"><label for="le">Email</label><input id="le" name="email" type="email" autocomplete="username" required></div>
+    <div class="field"><label for="lp">Password</label><input id="lp" name="password" type="password" autocomplete="current-password" required></div>
+    <button class="btn" style="width:100%">Sign in</button>
+    <p id="loginStatus" class="msg" role="status"></p>
+  </form>
+</div>
+
+<div id="app" class="shell" hidden>
+  <aside class="side">
+    <div class="logo"><span class="logo-mark">B</span><span>BRIGHT CLEAN<small>OPERATIONS</small></span></div>
+    <nav id="nav" aria-label="Admin sections">
+      <button data-view="overview">Overview</button>
+      <div class="sep"></div>
+      <button data-view="leads">Leads <span class="count" id="navNew" hidden></span></button>
+      <button data-view="customers">Customers</button>
+      <div class="sep"></div>
+      <button data-view="proposals">Estimates &amp; proposals</button>
+      <button data-view="contracts">Contracts</button>
+      <button data-view="projects">Projects</button>
+      <button data-view="invoices">Invoices</button>
+      <div class="sep"></div>
+      <button data-view="activity">Activity log</button>
+      <button data-view="settings">Settings</button>
+    </nav>
+    <div class="who"><span id="whoEmail"></span><button id="logout">Sign out</button></div>
+  </aside>
+
+  <main class="content">
+    <section class="view" id="v-overview">
+      <div class="pagehead"><div><h1>Overview</h1><p id="todayLine"></p></div>
+        <button class="btn" data-action="new-estimate">New estimate</button></div>
+      <div class="stats" id="ovStats"></div>
+      <div class="two">
+        <div class="card"><h2>New leads</h2><ul class="attn" id="ovNew"></ul></div>
+        <div class="card"><h2>Proposals waiting on the customer</h2><ul class="attn" id="ovAwait"></ul></div>
+        <div class="card"><h2>Projects due in the next 14 days</h2><ul class="attn" id="ovDue"></ul></div>
+        <div class="card"><h2>Overdue invoices</h2><ul class="attn" id="ovOverdue"></ul></div>
+      </div>
+      <div class="card" id="ovRenewCard" hidden><h2>Contracts ending in the next 45 days</h2><ul class="attn" id="ovRenew"></ul></div>
+      <div class="card"><h2>Recent activity</h2><div class="activity" id="ovActivity"></div></div>
+    </section>
+
+    <section class="view" id="v-leads">
+      <div class="pagehead"><div><h1>Leads</h1><p>Everything that comes in from the website. Click a row to see details, add notes or start a quote.</p></div>
+        <button class="btn ghost" id="exportCsv">Export CSV</button></div>
+      <div class="subtabs" id="leadKinds">
+        <button data-kind="bid" class="active">Bid requests</button>
+        <button data-kind="inquiry">Contact messages</button>
+        <button data-kind="career">Job applications</button>
+      </div>
+      <div class="toolbar">
+        <input type="search" id="leadSearch" placeholder="Search name, company, email, project…" aria-label="Search leads">
+        <select id="leadStatusFilter" aria-label="Filter by status"></select>
+      </div>
+      <div class="tablewrap"><table class="t"><thead id="leadHead"></thead><tbody id="leadRows"></tbody></table></div>
+    </section>
+
+    <section class="view" id="v-customers">
+      <div class="pagehead"><div><h1>Customers</h1><p>Each company or contact, with all of their leads, proposals, contracts, projects and invoices.</p></div></div>
+      <div class="toolbar"><input type="search" id="custSearch" placeholder="Search customers…" aria-label="Search customers"></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Customer</th><th>Contact</th><th class="num">Leads</th><th class="num">Proposals</th><th class="num">Projects</th><th class="num">Billed</th><th class="num">Open balance</th></tr></thead><tbody id="custRows"></tbody></table></div>
+    </section>
+
+    <section class="view" id="v-proposals">
+      <div class="pagehead"><div><h1>Estimates &amp; proposals</h1><p>Build an estimate, then send the customer a proposal link they can approve online. Approval creates a draft contract and a project.</p></div>
+        <button class="btn" data-action="new-estimate">New estimate</button></div>
+      <div class="toolbar">
+        <input type="search" id="propSearch" placeholder="Search customer or project…" aria-label="Search proposals">
+        <select id="propStatusFilter" aria-label="Filter by status"></select>
+      </div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Created</th><th>Customer / project</th><th class="num">Total</th><th>Status</th><th>Valid through</th><th></th></tr></thead><tbody id="propRows"></tbody></table></div>
+    </section>
+
+    <section class="view" id="v-estimator">
+      <div class="pagehead"><div><h1 id="estTitle">New estimate</h1><p>Costs come from labor, materials, overhead and gross margin. The proposal total is what the customer sees.</p></div>
+        <button class="btn ghost" data-view-link="proposals">Back to proposals</button></div>
+      <form id="estimateForm" class="card" novalidate>
+        <input type="hidden" name="id">
+        <div class="formsection">Customer</div>
+        <div class="grid">
+          <div class="f"><label for="e1">Contact name *</label><input id="e1" name="customer_name" required></div>
+          <div class="f"><label for="e2">Company</label><input id="e2" name="company"></div>
+          <div class="f"><label for="e3">Email</label><input id="e3" name="email" type="email"><span class="hint">Needed to email the proposal.</span></div>
+          <div class="f"><label for="e4">Project name</label><input id="e4" name="project_name"></div>
+          <div class="f"><label for="e5">Site address</label><input id="e5" name="site_address"></div>
+          <div class="f"><label for="e6">From lead #</label><input id="e6" name="lead_id" inputmode="numeric"><span class="hint">Filled in automatically when you start from a lead.</span></div>
+          <div class="f wide"><label for="e7">Scope of work *</label><textarea id="e7" name="scope" placeholder="Areas included, tasks, frequency, access, exclusions, assumptions" required></textarea></div>
+        </div>
+        <div class="formsection">Labor</div>
+        <div class="grid">
+          <div class="f"><label for="e8">Area (sq ft)</label><input id="e8" name="area_sqft" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e9">Production rate (sq ft per labor hour)</label><input id="e9" name="production_rate" type="number" min="0" step="any" value="0"><span class="hint">Labor hours = area ÷ rate.</span></div>
+          <div class="f"><label for="e10">Labor hours (override)</label><input id="e10" name="labor_hours" type="number" min="0" step="any" value="0"><span class="hint">If above 0, used instead of area ÷ rate.</span></div>
+          <div class="f"><label for="e11">Loaded labor cost per hour ($)</label><input id="e11" name="labor_rate" type="number" min="0" step="any" value="0"><span class="hint">Wage plus payroll taxes, insurance and benefits.</span></div>
+        </div>
+        <div class="formsection">Other costs and pricing</div>
+        <div class="grid">
+          <div class="f"><label for="e12">Supplies &amp; consumables ($)</label><input id="e12" name="supplies_cost" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e13">Equipment / rentals ($)</label><input id="e13" name="equipment_cost" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e14">Other direct costs ($)</label><input id="e14" name="other_cost" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e15">Overhead (%)</label><input id="e15" name="overhead_pct" type="number" min="0" step="any" value="10"></div>
+          <div class="f"><label for="e16">Gross margin (%)</label><input id="e16" name="margin_pct" type="number" min="0" max="90" step="any" value="25"><span class="hint">Margin on the selling price, not markup on cost.</span></div>
+          <div class="f"><label for="e17">Sales tax (%)</label><input id="e17" name="tax_pct" type="number" min="0" step="any" value="0"><span class="hint">Confirm whether the service is taxable.</span></div>
+          <div class="f"><label for="e18">Proposal valid through</label><input id="e18" name="expires_on" type="date"></div>
+        </div>
+        <div class="formsection">What the customer sees</div>
+        <div class="grid">
+          <div class="f wide"><label for="e19">Line items</label><textarea id="e19" name="line_items_text" placeholder="One per line:  description | amount"></textarea><span class="hint">Optional price breakdown shown on the proposal, for example “Final construction cleaning | 12500”.</span></div>
+          <div class="f wide"><label for="e20">Terms, assumptions &amp; exclusions</label><textarea id="e20" name="terms" placeholder="Payment terms, schedule assumptions, exclusions, change orders, site readiness"></textarea></div>
+        </div>
+        <div class="calc" id="calc">
+          <div><span>Labor hours</span><b id="cHours">0.00</b></div>
+          <div><span>Cost incl. overhead</span><b id="cCost">$0.00</b></div>
+          <div><span>Gross profit</span><b id="cProfit">$0.00</b></div>
+          <div class="total"><span>Proposal total</span><b id="cTotal">$0.00</b></div>
+          <div class="warnline" id="cWarn" hidden></div>
+        </div>
+        <div class="formbar">
+          <button class="btn" type="submit" id="estSave">Save estimate</button>
+          <button class="btn ghost" type="button" data-view-link="proposals">Cancel</button>
+          <span class="msg" id="estMsg" role="status"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="view" id="v-contracts">
+      <div class="pagehead"><div><h1>Contracts</h1><p>Approved proposals create a draft contract here automatically. Click a contract to edit it.</p></div><button class="btn" data-new="contracts">New contract</button></div>
+      <div class="toolbar"><input type="search" data-search="contracts" placeholder="Search contracts…" aria-label="Search contracts"><select data-filter="contracts" aria-label="Filter by status"></select></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Contract</th><th>Customer</th><th>Term</th><th class="num">Value</th><th>Signature</th><th>Status</th></tr></thead><tbody id="rows-contracts"></tbody></table></div>
+    </section>
+
+    <section class="view" id="v-projects">
+      <div class="pagehead"><div><h1>Projects</h1><p>Approved proposals create a planning project here automatically. Click a project to update it.</p></div><button class="btn" data-new="projects">New project</button></div>
+      <div class="toolbar"><input type="search" data-search="projects" placeholder="Search projects…" aria-label="Search projects"><select data-filter="projects" aria-label="Filter by status"></select></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Project</th><th>Customer</th><th>Manager</th><th>Dates</th><th>Progress</th><th>Status</th></tr></thead><tbody id="rows-projects"></tbody></table></div>
+    </section>
+
+    <section class="view" id="v-invoices">
+      <div class="pagehead"><div><h1>Invoices</h1><p>Track what you’ve billed and collected. Payments are recorded here, not processed.</p></div><button class="btn" data-new="invoices">New invoice</button></div>
+      <div class="stats" id="finStats"></div>
+      <div class="toolbar"><input type="search" data-search="invoices" placeholder="Search invoices…" aria-label="Search invoices"><select data-filter="invoices" aria-label="Filter by status"></select></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Invoice</th><th>Customer</th><th>Due</th><th class="num">Amount</th><th class="num">Balance</th><th>Status</th><th></th></tr></thead><tbody id="rows-invoices"></tbody></table></div>
+    </section>
+
+    <section class="view" id="v-activity">
+      <div class="pagehead"><div><h1>Activity log</h1><p>Sign-ins, website submissions and every change made in this portal.</p></div></div>
+      <div class="card activity" id="activityRows"></div>
+    </section>
+
+    <section class="view" id="v-settings">
+      <div class="pagehead"><div><h1>Settings</h1></div></div>
+      <div class="two">
+        <form class="card" id="pwForm">
+          <h2>Change your password</h2>
+          <div class="f"><label for="s1">Current password</label><input id="s1" name="current" type="password" autocomplete="current-password" required></div>
+          <div class="f" style="margin-top:12px"><label for="s2">New password</label><input id="s2" name="next" type="password" autocomplete="new-password" minlength="14" required><span class="hint">At least 14 characters.</span></div>
+          <div class="f" style="margin-top:12px"><label for="s3">Type it again</label><input id="s3" name="confirm" type="password" autocomplete="new-password" required></div>
+          <div class="formbar"><button class="btn">Change password</button><span class="msg" id="pwMsg" role="status"></span></div>
+        </form>
+        <div class="card">
+          <h2>People with access</h2>
+          <div id="userList"></div>
+          <form id="userForm" style="margin-top:18px">
+            <div class="f"><label for="u1">Name</label><input id="u1" name="name"></div>
+            <div class="f" style="margin-top:10px"><label for="u2">Email</label><input id="u2" name="email" type="email" required></div>
+            <div class="f" style="margin-top:10px"><label for="u3">Temporary password</label><input id="u3" name="password" type="text" minlength="14" required autocomplete="off"><span class="hint">At least 14 characters. Share it privately. They can change it under Settings after signing in.</span></div>
+            <div class="formbar"><button class="btn">Give access</button><span class="msg" id="userMsg" role="status"></span></div>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="drawerRoot"></div>
+<script src="/admin/admin.js"></script>
+</body>
+</html>
