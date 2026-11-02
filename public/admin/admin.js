@@ -952,7 +952,7 @@
   async function loadAutomation() {
     const d = await api('/api/admin/settings');
     $('#autoEmail').className = 'msg' + (d.email_configured ? ' ok' : ' err');
-    $('#autoEmail').textContent = d.email_configured ? `Email is set up. Links in emails use ${d.public_base_url}.` : 'Email is not set up yet (SMTP_PASS missing in Render), so reminders are logged as skipped and nothing is sent.';
+    $('#autoEmail').textContent = d.email_configured ? `Email is set up. Links in emails use ${d.public_base_url}.` : 'Email is not set up yet (add POSTMARK_TOKEN in Render), so reminders are logged as skipped and nothing is sent.';
     $('#autoToggles').innerHTML = AUTO.map(([k, label, help]) => `<label class="userrow" style="cursor:pointer;align-items:flex-start"><span><b>${esc(label)}</b><small>${esc(help)}</small></span><input type="checkbox" data-auto="${k}"${d.settings[k] ? ' checked' : ''} style="width:20px;height:20px;margin-top:4px"></label>`).join('');
     $$('[data-auto]').forEach(cb => cb.onchange = async () => {
       try { await api('/api/admin/settings', { method: 'PUT', json: { [cb.dataset.auto]: cb.checked } }); toast(`${AUTO.find(a => a[0] === cb.dataset.auto)[1]} ${cb.checked ? 'on' : 'off'}`); }
