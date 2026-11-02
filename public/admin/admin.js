@@ -174,18 +174,53 @@
   }
 
   // ---------- Overview ----------
+  const ICON = {
+    leads: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    dollar: '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+    cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>', user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 14 0v1M19 8v6M22 11h-6"/>',
+    inv: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9.5 13.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/>',
+    layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
+    inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>'
+  };
+  const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
+  const chg = c => c === null || c === undefined ? '<small class="flat">no prior data</small>' : `<small class="${c > 0 ? 'up' : c < 0 ? 'down' : 'flat'}">${c > 0 ? '▲' : c < 0 ? '▼' : ''} ${Math.abs(c)}% vs prior</small>`;
+  $('#ccDays').addEventListener('change', () => loadOverview());
   async function loadOverview() {
-    const d = await api('/api/admin/dashboard');
-    $('#todayLine').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-    const lc = k => d.leads.find(x => x.kind === k) || { n: 0, fresh: 0, week: 0 };
-    const stats = [
-      { label: 'New bid requests', value: lc('bid').fresh || 0, to: 'leads', kind: 'bid' },
-      { label: 'Proposals waiting on customer', value: d.awaitingResponse.length, to: 'proposals' },
-      { label: 'Outstanding balance', value: money(d.finance.outstanding), to: 'invoices' },
-      { label: 'Overdue invoices', value: d.overdueInvoices.length, to: 'invoices', alert: d.overdueInvoices.length > 0 }
+    const [d, cc] = await Promise.all([api('/api/admin/dashboard'), api('/api/admin/command-center?days=' + $('#ccDays').value)]);
+    $('#todayLine').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) + ' · live figures from your records';
+    const k = cc.kpis, per = `last ${cc.days} days`;
+    const att = k.attention.parts;
+    const tiles = [
+      { label: 'New leads', sub: per, value: k.new_leads.value, change: k.new_leads.change, icon: 'leads', c: '#1f6fd1', to: 'leads' },
+      { label: 'Proposals sent', sub: per, value: k.proposals_sent.value, change: k.proposals_sent.change, icon: 'doc', c: '#2f80ed', to: 'proposals' },
+      { label: 'Won', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
+      { label: 'Collected this month', value: money(k.collected_month.value), icon: 'dollar', c: '#178a4c', to: 'invoices' },
+      { label: 'Active projects', value: k.active_projects.value, icon: 'cal', c: '#2563eb', to: 'projects' },
+      { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: att.overdue_invoices ? 'invoices' : att.late_projects ? 'projects' : 'leads', alert: k.attention.value > 0,
+        title: `Overdue invoices ${att.overdue_invoices} · late projects ${att.late_projects} · leads waiting 2+ days ${att.leads_waiting_2_days} · failed emails (7 days) ${att.failed_emails_7_days}` }
     ];
-    $('#ovStats').innerHTML = stats.map((s, i) => `<button class="stat${s.alert ? ' alert' : ''}" data-i="${i}"><span>${esc(s.label)}</span><b>${esc(s.value)}</b></button>`).join('');
-    $$('#ovStats .stat').forEach(b => b.onclick = () => { const s = stats[b.dataset.i]; if (s.kind) state.leadKind = s.kind; go(s.to); });
+    $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
+    $$('#ccKpis .kpi').forEach(b => b.onclick = () => go(tiles[b.dataset.i].to));
+    const colors = ['#1d4f91', '#2563eb', '#1497b5', '#1f9d55'];
+    $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]}"><span>${esc(p.stage)} (${p.n})</span><span>${p.valued ? money(p.v) : ''}</span></div>`).join('')
+      + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
+    $('#ccAct').innerHTML = renderActivity(cc.activity) || '<p class="empty">No activity yet.</p>';
+    const QA = [
+      ['New estimate', 'plus', () => openEstimator()], ['Add customer', 'user', () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }],
+      ['Create invoice', 'inv', () => openRecord('invoices', null)], ['Add scope item', 'layers', () => { go('scopes'); setTimeout(() => $('#scopeAdd').click(), 400); }],
+      ['Review leads', 'inbox', () => go('leads')], ['Back up now', 'save', async () => { try { const r = await api('/api/admin/backups', { method: 'POST' }); toast('Backup created: ' + r.name); } catch (e) { toast(e.message, true); } }]
+    ];
+    $('#ccQuick').innerHTML = QA.map(([l, ic], i) => `<button type="button" data-qa="${i}">${svg(ic)}${esc(l)}</button>`).join('');
+    $$('#ccQuick [data-qa]').forEach(b => b.onclick = QA[b.dataset.qa][2]);
+    const PORTALS = [['Multifamily', 'Apartments · units · common areas', '/industries/multifamily-apartment-operators.html'], ['Construction final clean', 'New builds · punch list · windows', '/services/post-construction-final-cleaning.html'],
+      ['Commercial janitorial', 'Offices · facilities · recurring', '/services/commercial-janitorial.html'], ['Exterior services', 'Power washing · windows · parking', '/services/power-washing.html'], ['Other services', 'Unit turns · valet trash', '/services/unit-turnover-cleaning.html']];
+    $('#ccPortals').innerHTML = PORTALS.map(([t, s2, u]) => `<a href="${u}" target="_blank" rel="noopener"><b>${esc(t)}</b><small>${esc(s2)}</small></a>`).join('');
+    $('#ccMods').innerHTML = Object.values(cc.modules).map(m => `<div class="card mod"><div class="cardhead"><h2>${esc(m.label)}</h2>${m.connected ? '<span class="badge green">Ready</span>' : '<span class="badge amber">Setup needed</span>'}</div><p><b>${esc(m.status)}</b>${m.needs ? '<br>' + esc(m.needs) : ''}</p></div>`).join('');
 
     const list = (el, rows, render, empty) => {
       $(el).innerHTML = rows.length ? rows.map(render).join('') : `<li class="empty" style="cursor:default">${esc(empty)}</li>`;
@@ -196,7 +231,6 @@
     list('#ovOverdue', d.overdueInvoices, i => `<li data-rec="invoices:${i.id}"><span><b>${esc(i.invoice_number)}</b><small>${esc(i.company || i.customer_name || '')}</small></span><span class="r">${money(i.amount - i.paid_amount)}<small>Due ${fmtDate(i.due_date)}</small></span></li>`, 'No overdue invoices.');
     $('#ovRenewCard').hidden = !d.renewals.length;
     list('#ovRenew', d.renewals, c => `<li data-rec="contracts:${c.id}"><span><b>${esc(c.title || 'Contract')}</b><small>${esc(c.company || c.customer_name || '')}</small></span><span class="r"><small>Ends ${fmtDate(c.end_date)}</small></span></li>`, '');
-    $('#ovActivity').innerHTML = renderActivity(d.activity) || '<p class="empty">No activity yet.</p>';
     bindOpeners($('#v-overview'));
   }
 
