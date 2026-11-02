@@ -126,7 +126,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['overview', 'leads', 'customers', 'issues', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['overview', 'leads', 'customers', 'issues', 'calls', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (!VIEWS.includes(view)) view = 'overview';
     state.view = view;
@@ -157,6 +157,11 @@
       if (view === 'proposals') await loadEstimates();
       if (['contracts', 'projects', 'invoices'].includes(view)) await loadRegister(view);
       if (view === 'issues') await loadIssues();
+      if (view === 'calls') await loadCalls();
+      if (view === 'schedule') await loadSchedule();
+      if (view === 'quality') await loadQuality();
+      if (view === 'documents') await loadDocuments();
+      if (view === 'reports') await loadReports();
       if (view === 'scopes') await loadScopes();
       if (view === 'activity') await loadActivity();
       if (view === 'settings') await loadSettings();
@@ -212,6 +217,7 @@
       + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
     $('#ccAct').innerHTML = renderActivity(cc.activity) || '<p class="empty">No activity yet.</p>';
     const QA = [
+      ['New lead', 'user', () => newLead()], ['Log call', 'inbox', () => logCall()], ['Schedule visit', 'cal', () => scheduleVisit()], ['Upload drawings', 'layers', () => uploadDocs()],
       ['New estimate', 'plus', () => openEstimator()], ['Add customer', 'user', () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }],
       ['Create invoice', 'inv', () => openRecord('invoices', null)], ['Add scope item', 'layers', () => { go('scopes'); setTimeout(() => $('#scopeAdd').click(), 400); }],
       ['Review leads', 'inbox', () => go('leads')], ['Back up now', 'save', async () => { try { const r = await api('/api/admin/backups', { method: 'POST' }); toast('Backup created: ' + r.name); } catch (e) { toast(e.message, true); } }]
@@ -221,6 +227,14 @@
     const PORTALS = [['Multifamily', 'Apartments · units · common areas', '/quote.html?service=multifamily'], ['Construction final clean', 'New builds · punch list · windows', '/quote.html?service=construction_final'],
       ['Commercial janitorial', 'Offices · facilities · recurring', '/quote.html?service=janitorial'], ['Exterior services', 'Power washing · windows · parking', '/quote.html?service=power_washing'], ['Other services', 'Unit turns · valet trash', '/quote.html?service=unit_turnover']];
     $('#ccPortals').innerHTML = PORTALS.map(([t, s2, u]) => `<a href="${u}" target="_blank" rel="noopener"><b>${esc(t)}</b><small>${esc(s2)}</small></a>`).join('');
+    api('/api/admin/calls').then(c => {
+      const t = todayISO();
+      $('#ccCalls').innerHTML = `<div class="kpis small" style="margin:6px 0 10px"><div class="kpi"><span><span>Today</span><b>${c.today.total}</b></span></div><div class="kpi"><span><span>Answered</span><b>${c.today.answered}</b></span></div><div class="kpi${c.today.missed ? ' alert' : ''}"><span><span>Missed</span><b>${c.today.missed}</b></span></div><div class="kpi${c.follow_ups_due ? ' alert' : ''}"><span><span>Follow-ups due</span><b>${c.follow_ups_due}</b></span></div></div>`
+        + (c.calls.length ? '<ul class="mini">' + c.calls.slice(0, 4).map(x => `<li><b>${esc(x.company || x.customer_company || x.contact_name || x.phone || 'Caller')}</b> · ${esc(x.purpose)}${x.follow_up_date && !x.follow_up_done && x.follow_up_date <= t ? ' · <span class="badge amber">follow up</span>' : ''}<br><small class="muted">${esc(fmtWhen(x.created_at))} · ${esc((x.summary || '').slice(0, 70))}</small></li>`).join('') + '</ul>' : '<p class="empty">No calls logged yet. Use Log call in Quick actions.</p>');
+    }).catch(() => { $('#ccCalls').innerHTML = '<p class="empty">Could not load calls.</p>'; });
+    api('/api/admin/issues?status=all').then(r => {
+      $('#ccNotes').innerHTML = r.issues.length ? '<ul class="mini">' + r.issues.slice(0, 5).map(i => `<li><b>${esc(i.customer_company || i.customer_name || 'No customer')}</b> ${badge(i.status)}${i.overdue ? ' <span class="badge red">Overdue</span>' : ''}<br><small class="muted">${esc(r.options.types[i.type])}: ${esc(i.title)} · ${esc(fmtWhen(i.created_at))}</small></li>`).join('') + '</ul>' : '<p class="empty">No notes, complaints or tasks yet.</p>';
+    }).catch(() => { $('#ccNotes').innerHTML = '<p class="empty">Could not load notes.</p>'; });
     $('#ccMods').innerHTML = Object.values(cc.modules).map(m => `<div class="card mod"><div class="cardhead"><h2>${esc(m.label)}</h2>${m.connected ? '<span class="badge green">Ready</span>' : '<span class="badge amber">Setup needed</span>'}</div><p><b>${esc(m.status)}</b>${m.needs ? '<br>' + esc(m.needs) : ''}</p></div>`).join('');
 
     const list = (el, rows, render, empty) => {
@@ -1006,6 +1020,222 @@
     try { await api('/api/admin/users', { method: 'POST', json: formObj(e.target) }); e.target.reset(); m.className = 'msg ok'; m.textContent = 'Access added.'; loadUsers(); }
     catch (err) { m.className = 'msg err'; m.textContent = err.message; }
   });
+
+  // ---------- Shared form drawer ----------
+  // defs: [{name, label, type: text|textarea|select|date|time|number|checkbox|customer|project|user|file, options, wide, hint, value}]
+  async function refs(need) {
+    const out = {};
+    if (need.customer) out.customers = state.customers && state.customers.length ? state.customers : (state.customers = (await api('/api/admin/customers')).customers || []);
+    if (need.project) out.projects = state.projects && state.projects.length ? state.projects : (state.projects = (await api('/api/admin/projects')).projects || []);
+    if (need.user) out.users = (await api('/api/admin/users')).users.map(u => u.email);
+    return out;
+  }
+  async function openForm({ title, sub, defs, values = {}, submit, after, extraFooter }) {
+    const need = { customer: defs.some(d => d.type === 'customer'), project: defs.some(d => d.type === 'project'), user: defs.some(d => d.type === 'user') };
+    let r = {}; try { r = await refs(need); } catch { /* lists optional */ }
+    const v = k => values[k] == null ? '' : values[k];
+    const opt = (list, cur, lab) => list.map(o => { const [val, l] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}"${String(val) === String(cur) ? ' selected' : ''}>${esc(lab ? lab(l) : l)}</option>`; }).join('');
+    const field = (d, i) => {
+      const id = 'ff' + i, wide = d.wide || ['textarea', 'checkbox', 'file'].includes(d.type) ? ' wide' : '';
+      let ctl;
+      if (d.type === 'textarea') ctl = `<textarea id="${id}" name="${d.name}">${esc(v(d.name))}</textarea>`;
+      else if (d.type === 'select') ctl = `<select id="${id}" name="${d.name}">${opt(d.options, v(d.name))}</select>`;
+      else if (d.type === 'customer') ctl = `<select id="${id}" name="${d.name}"><option value="">None</option>${opt((r.customers || []).map(c => [c.id, c.company || c.name || c.email]), v(d.name))}</select>`;
+      else if (d.type === 'project') ctl = `<select id="${id}" name="${d.name}"><option value="">None</option>${opt((r.projects || []).map(p => [p.id, p.name || p.customer_name]), v(d.name))}</select>`;
+      else if (d.type === 'user') ctl = `<select id="${id}" name="${d.name}"><option value="">Unassigned</option>${opt(r.users || [], v(d.name))}</select>`;
+      else if (d.type === 'checkbox') return `<div class="f wide"><label class="chk"><input type="checkbox" id="${id}" name="${d.name}" value="1"${values[d.name] ? ' checked' : ''}> ${esc(d.label)}</label>${d.hint ? `<span class="hint">${esc(d.hint)}</span>` : ''}</div>`;
+      else if (d.type === 'file') ctl = `<input id="${id}" name="${d.name}" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip">`;
+      else ctl = `<input id="${id}" name="${d.name}" type="${d.type === 'number' ? 'text" inputmode="decimal' : d.type || 'text'}" value="${esc(v(d.name))}"${d.placeholder ? ` placeholder="${esc(d.placeholder)}"` : ''}>`;
+      return `<div class="f${wide}"><label for="${id}">${esc(d.label)}</label>${ctl}${d.hint ? `<span class="hint">${esc(d.hint)}</span>` : ''}</div>`;
+    };
+    openDrawer({ title, sub: sub || '', body: `<form id="genForm" class="grid" novalidate>${defs.map(field).join('')}</form><div id="genExtra"></div><p class="msg" id="genMsg" role="status"></p>`,
+      footer: `<button class="btn" id="genSave">Save</button>${extraFooter || ''}` });
+    $('#genSave').onclick = async () => {
+      const f = $('#genForm'), body = {};
+      for (const d of defs) { const el = f.elements[d.name]; if (!el) continue; body[d.name] = d.type === 'checkbox' ? el.checked : d.type === 'file' ? el.files : el.value; }
+      try { const res = await submit(body); closeDrawer(); if (after) after(res); }
+      catch (err) { $('#genMsg').className = 'msg err'; $('#genMsg').textContent = err.message; }
+    };
+    return $('#genForm');
+  }
+  const kpiTiles = (el, tiles) => { $(el).innerHTML = tiles.map(t => `<div class="kpi${t.alert ? ' alert' : ''}"><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${t.sub ? `<small class="flat">${esc(t.sub)}</small>` : ''}</span></div>`).join(''); };
+
+  // ---------- Global search ----------
+  let gTimer = null;
+  $('#gSearch').addEventListener('input', () => { clearTimeout(gTimer); gTimer = setTimeout(runSearch, 200); });
+  $('#gSearch').addEventListener('keydown', e => { if (e.key === 'Escape') { $('#gResults').hidden = true; } if (e.key === 'ArrowDown') { const b = $('#gResults button'); if (b) { e.preventDefault(); b.focus(); } } });
+  document.addEventListener('click', e => { if (!e.target.closest('.gsearch')) $('#gResults').hidden = true; });
+  async function runSearch() {
+    const q = $('#gSearch').value.trim(), box = $('#gResults');
+    if (q.length < 2) { box.hidden = true; return; }
+    let r; try { r = await api('/api/admin/search?q=' + encodeURIComponent(q)); } catch { return; }
+    box.hidden = false;
+    box.innerHTML = r.results.length ? r.results.map((x, i) => `<button type="button" data-g="${i}"><b>${esc(x.title || '(no name)')}</b><small>${esc(x.sub)}</small></button>`).join('') : '<p class="empty" style="padding:12px">Nothing found.</p>';
+    $$('#gResults [data-g]').forEach(b => b.onclick = async () => {
+      const x = r.results[Number(b.dataset.g)]; box.hidden = true; $('#gSearch').value = '';
+      if (x.type === 'lead') { go('leads'); openLead(x.id); }
+      else if (x.type === 'customer') { go('customers'); setTimeout(() => { const c = (state.customers || []).find(c => c.id === x.id); if (c) openCustomer(c); }, 500); }
+      else if (x.type === 'estimate') { go('proposals'); openEstimate(x.id); }
+      else if (x.type === 'project') { go('projects'); openRecord('projects', x.id); }
+      else if (x.type === 'invoice') { go('invoices'); openRecord('invoices', x.id); }
+      else if (x.type === 'issue') { go('issues'); setTimeout(() => { const it = issState.issues.find(i => i.id === x.id); if (it) openIssue(it, null); }, 600); }
+      else if (x.type === 'document') go('documents');
+      else if (x.type === 'call') go('calls');
+    });
+  }
+
+  // ---------- Manual lead ----------
+  function newLead() {
+    openForm({ title: 'New lead', sub: 'For calls, walk-ins and referrals', defs: [
+      { name: 'kind', label: 'Type', type: 'select', options: [['bid', 'Bid request'], ['inquiry', 'General inquiry']] },
+      { name: 'source', label: 'Source', type: 'select', options: ['Phone call', 'Referral', 'Walk-in', 'Email', 'Bid invitation', 'Other'] },
+      { name: 'contact_name', label: 'Contact name' }, { name: 'company', label: 'Company' },
+      { name: 'email', label: 'Email', type: 'email' }, { name: 'phone', label: 'Phone', type: 'tel' },
+      { name: 'project_name', label: 'Project / property' }, { name: 'service', label: 'Service needed' },
+      { name: 'square_footage', label: 'Square footage', type: 'number' }, { name: 'bid_due_date', label: 'Bid due date', type: 'date' },
+      { name: 'address', label: 'Address', wide: true }, { name: 'details', label: 'Details', type: 'textarea' }],
+      submit: b => api('/api/admin/leads', { method: 'POST', json: b }),
+      after: res => { toast('Lead added'); go('leads'); openLead(res.id); } });
+  }
+
+  // ---------- Calls ----------
+  const callState = { calls: [], options: null };
+  $('#callsAdd').addEventListener('click', () => logCall());
+  $('#callSearch').addEventListener('input', () => renderCalls());
+  $('#callFollow').addEventListener('change', () => renderCalls());
+  async function loadCalls() {
+    const r = await api('/api/admin/calls'); Object.assign(callState, r);
+    kpiTiles('#callsKpis', [{ label: "Today's calls", value: r.today.total }, { label: 'Answered', value: r.today.answered }, { label: 'Missed / voicemail', value: r.today.missed, alert: r.today.missed > 0 }, { label: 'Follow-ups due', value: r.follow_ups_due, alert: r.follow_ups_due > 0 }]);
+    $('#navCalls').hidden = !r.follow_ups_due; $('#navCalls').textContent = r.follow_ups_due;
+    renderCalls();
+  }
+  function renderCalls() {
+    const q = $('#callSearch').value.trim().toLowerCase(), due = $('#callFollow').checked, t = todayISO();
+    const rows = callState.calls.filter(c => (!q || [c.contact_name, c.company, c.phone, c.summary, c.customer_company].join(' ').toLowerCase().includes(q)) && (!due || (!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t)));
+    $('#callsRows').innerHTML = rows.length ? rows.map(c => `<tr class="click" data-call="${c.id}"><td>${esc(fmtWhen(c.created_at))}<small>${esc(c.direction)}</small></td><td><b>${esc(c.company || c.customer_company || c.contact_name || '—')}</b><small>${esc([c.contact_name, c.phone].filter(Boolean).join(' · '))}</small></td><td>${badge(c.purpose)}</td><td>${c.outcome === 'Answered' ? esc(c.outcome) : `<span class="badge amber">${esc(c.outcome)}</span>`}</td><td>${esc((c.summary || '').slice(0, 90))}</td><td class="${!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t ? 'late' : ''}">${c.follow_up_date ? (c.follow_up_done ? 'Done' : fmtDate(c.follow_up_date)) : '—'}</td></tr>`).join('')
+      : `<tr><td class="emptyrow" colspan="6">No calls logged${q || due ? ' match' : ' yet'}.</td></tr>`;
+    $$('[data-call]').forEach(r => r.onclick = () => openCall(callState.calls.find(c => c.id === Number(r.dataset.call))));
+  }
+  async function logCall(prefill) {
+    if (!callState.options) { try { Object.assign(callState, await api('/api/admin/calls')); } catch { /* */ } }
+    const o = callState.options || { direction: ['Inbound'], outcome: ['Answered'], purpose: ['New business'] };
+    openForm({ title: 'Log a call', defs: [
+      { name: 'direction', label: 'Direction', type: 'select', options: o.direction }, { name: 'outcome', label: 'Outcome', type: 'select', options: o.outcome },
+      { name: 'contact_name', label: 'Caller name' }, { name: 'phone', label: 'Phone', type: 'tel' },
+      { name: 'company', label: 'Company' }, { name: 'customer_id', label: 'Existing customer', type: 'customer' },
+      { name: 'purpose', label: 'Purpose', type: 'select', options: o.purpose }, { name: 'follow_up_date', label: 'Follow up on', type: 'date' },
+      { name: 'summary', label: 'What was discussed', type: 'textarea' },
+      { name: 'create_lead', label: 'Create a lead from this call (new business, bid request or pricing question)', type: 'checkbox' }],
+      values: prefill || {},
+      submit: b => api('/api/admin/calls', { method: 'POST', json: b }),
+      after: res => { toast(res.lead_id ? 'Call logged and lead created' : 'Call logged'); if (state.view === 'calls') loadCalls(); else if (state.view === 'overview') loadOverview(); } });
+  }
+  function openCall(c) {
+    openDrawer({ title: c.company || c.contact_name || c.phone || 'Call', sub: `${c.direction} · ${fmtWhen(c.created_at)}${c.created_by ? ' · logged by ' + esc(c.created_by) : ''}`,
+      body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || '—')}</dd><dt>Lead</dt><dd>${c.lead_id ? `<button class="linklike" id="callLead">Lead #${c.lead_id}</button>` : '—'}</dd><dt>Follow-up</dt><dd>${c.follow_up_date ? fmtDate(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd></dl><div class="formsection">Summary</div><p>${esc(c.summary || '—')}</p>`,
+      footer: c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : '' });
+    if ($('#callLead')) $('#callLead').onclick = () => { closeDrawer(); go('leads'); openLead(c.lead_id); };
+    if ($('#callDone')) $('#callDone').onclick = async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_done: true } }); toast('Follow-up done'); closeDrawer(); loadCalls(); } catch (e) { toast(e.message, true); } };
+  }
+
+  // ---------- Schedule ----------
+  const schedState = { visits: [], options: null };
+  $('#scheduleAdd').addEventListener('click', () => scheduleVisit());
+  $('#schedRange').addEventListener('change', () => loadSchedule());
+  async function loadSchedule() {
+    const v = $('#schedRange').value, t = new Date();
+    const from = v === 'past' ? new Date(t - 30 * 864e5) : t, to = v === 'past' ? t : new Date(+t + Number(v) * 864e5);
+    const r = await api(`/api/admin/visits?from=${from.toISOString().slice(0, 10)}&to=${to.toISOString().slice(0, 10)}`); Object.assign(schedState, r);
+    const items = [...r.visits.map(x => ({ ...x, kind: 'visit' })), ...r.project_due.map(p => ({ kind: 'due', id: p.id, date: p.due_date, title: `Due: ${p.name || p.customer_name}`, status: p.status, type: 'Project due' }))].sort((a, b) => (a.date + (a.start_time || '')).localeCompare(b.date + (b.start_time || '')));
+    const week = r.visits.filter(x => x.status === 'Scheduled' && x.date <= new Date(+t + 7 * 864e5).toISOString().slice(0, 10)).length;
+    kpiTiles('#scheduleKpis', [{ label: 'Scheduled in view', value: r.visits.filter(x => x.status === 'Scheduled').length }, { label: 'Next 7 days', value: week }, { label: 'Project due dates', value: r.project_due.length }, { label: 'Done', value: r.visits.filter(x => x.status === 'Done').length }]);
+    $('#scheduleRows').innerHTML = items.length ? items.map(x => x.kind === 'due'
+      ? `<tr class="click" data-due="${x.id}"><td>${fmtDate(x.date)}</td><td>—</td><td><b>${esc(x.title)}</b><small>Project due date</small></td><td>—</td><td>—</td><td>${badge(x.status)}</td></tr>`
+      : `<tr class="click" data-visit="${x.id}"><td>${fmtDate(x.date)}</td><td>${esc([x.start_time, x.end_time].filter(Boolean).join('–') || 'Any time')}</td><td><b>${esc(x.title)}</b><small>${esc(x.type)}${x.address ? ' · ' + esc(x.address) : ''}</small></td><td>${esc(x.project_name || x.customer_company || x.customer_name || '—')}</td><td>${esc(x.assigned_to || '—')}${x.crew_size ? `<small>crew ${x.crew_size}</small>` : ''}</td><td>${badge(x.status)}</td></tr>`).join('')
+      : '<tr><td class="emptyrow" colspan="6">Nothing scheduled in this range.</td></tr>';
+    $$('[data-visit]').forEach(r => r.onclick = () => scheduleVisit(schedState.visits.find(x => x.id === Number(r.dataset.visit))));
+    $$('[data-due]').forEach(r => r.onclick = () => { go('projects'); openRecord('projects', Number(r.dataset.due)); });
+  }
+  function scheduleVisit(v) {
+    const o = schedState.options || { type: ['Site visit', 'Walkthrough', 'Cleaning phase', 'Inspection', 'Punch list', 'Other'], status: ['Scheduled', 'Done', 'Cancelled'] };
+    openForm({ title: v ? v.title : 'Schedule a visit', defs: [
+      { name: 'title', label: 'Title', wide: true, placeholder: 'Walkthrough – Ridge Office, Level 2' },
+      { name: 'type', label: 'Type', type: 'select', options: o.type }, { name: 'date', label: 'Date', type: 'date' },
+      { name: 'start_time', label: 'Start', type: 'time' }, { name: 'end_time', label: 'End', type: 'time' },
+      { name: 'customer_id', label: 'Customer', type: 'customer' }, { name: 'project_id', label: 'Project', type: 'project' },
+      { name: 'assigned_to', label: 'Assigned to', type: 'user' }, { name: 'crew_size', label: 'Crew size', type: 'number' },
+      { name: 'address', label: 'Address', wide: true }, { name: 'notes', label: 'Notes', type: 'textarea' },
+      ...(v ? [{ name: 'status', label: 'Status', type: 'select', options: o.status }] : [])],
+      values: v || { date: todayISO(), type: 'Site visit' },
+      submit: b => v ? api('/api/admin/visits/' + v.id, { method: 'PATCH', json: b }) : api('/api/admin/visits', { method: 'POST', json: b }),
+      after: () => { toast(v ? 'Saved' : 'Scheduled'); if (state.view === 'schedule') loadSchedule(); } });
+  }
+
+  // ---------- Quality & inspections ----------
+  const qState = { inspections: [], templates: {} };
+  $('#qualityAdd').addEventListener('click', () => openInspection(null));
+  async function loadQuality() {
+    const r = await api('/api/admin/inspections'); Object.assign(qState, r);
+    kpiTiles('#qualityKpis', [{ label: 'Inspections (90 days)', value: r.summary.count_90d }, { label: 'Average score', value: r.summary.average_score_90d == null ? '—' : r.summary.average_score_90d + '%' }, { label: 'Failed (90 days)', value: r.summary.failed_90d, alert: r.summary.failed_90d > 0 }, { label: 'Total recorded', value: r.inspections.length }]);
+    $('#qualityRows').innerHTML = r.inspections.length ? r.inspections.map(i => `<tr class="click" data-insp="${i.id}"><td>${fmtDate(i.date)}</td><td><b>${esc(i.area)}</b><small>${esc(i.template || '')}</small></td><td>${esc(i.project_name || i.customer_company || i.customer_name || '—')}</td><td>${esc(i.inspector || '—')}</td><td>${i.score == null ? '—' : i.score + '%'}</td><td>${i.passed == null ? badge('Not scored') : i.passed ? '<span class="badge green">Pass</span>' : '<span class="badge red">Needs rework</span>'}</td></tr>`).join('')
+      : '<tr><td class="emptyrow" colspan="6">No inspections yet.</td></tr>';
+    $$('[data-insp]').forEach(r => r.onclick = () => openInspection(qState.inspections.find(i => i.id === Number(r.dataset.insp))));
+  }
+  async function openInspection(it) {
+    if (!Object.keys(qState.templates).length) { try { Object.assign(qState, await api('/api/admin/inspections')); } catch { /* */ } }
+    let items = it ? it.items.map(x => ({ ...x })) : [];
+    await openForm({ title: it ? it.area : 'New inspection', sub: it && it.score != null ? `Score ${it.score}%` : 'Pick a checklist, then mark each item',
+      defs: [{ name: 'area', label: 'Area / room', placeholder: 'Level 2 – east wing' }, { name: 'date', label: 'Date', type: 'date' },
+        { name: 'project_id', label: 'Project', type: 'project' }, { name: 'customer_id', label: 'Customer', type: 'customer' },
+        { name: 'inspector', label: 'Inspector' }, { name: 'template', label: 'Checklist', type: 'select', options: [['', 'Choose…'], ...Object.keys(qState.templates)] },
+        { name: 'notes', label: 'Notes', type: 'textarea' }],
+      values: it || { date: todayISO() },
+      submit: b => { const body = { ...b, items: items.map((x, i) => ({ label: x.label, result: $(`#ci_r${i}`).value, note: $(`#ci_n${i}`).value })) }; return it ? api('/api/admin/inspections/' + it.id, { method: 'PATCH', json: body }) : api('/api/admin/inspections', { method: 'POST', json: body }); },
+      after: res => { const s = res.inspection.score; toast(s == null ? 'Saved' : `Saved: ${s}%`); loadQuality(); } });
+    const draw = () => { $('#genExtra').innerHTML = items.length ? `<div class="formsection">Checklist</div><table class="checklist">${items.map((x, i) => `<tr><td style="width:46%">${esc(x.label)}</td><td style="width:18%"><select id="ci_r${i}" aria-label="Result for ${esc(x.label)}">${['', 'Pass', 'Fail', 'N/A'].map(o => `<option${o === x.result ? ' selected' : ''} value="${o}">${o || '—'}</option>`).join('')}</select></td><td><input id="ci_n${i}" value="${esc(x.note || '')}" placeholder="Note (required if Fail)" aria-label="Note for ${esc(x.label)}"></td></tr>`).join('')}</table>` : '<p class="muted">Choose a checklist above to load its items.</p>'; };
+    $('#genForm').elements.template.addEventListener('change', e => { const t = qState.templates[e.target.value]; if (t && (!items.length || confirm('Replace the current checklist items?'))) { items = t.map(label => ({ label, result: '', note: '' })); draw(); } });
+    draw();
+  }
+
+  // ---------- Drawings & documents ----------
+  const docState = { documents: [], kinds: [] };
+  $('#documentsAdd').addEventListener('click', () => uploadDocs());
+  $('#docKind').addEventListener('change', () => renderDocs());
+  async function loadDocuments() {
+    const r = await api('/api/admin/documents'); Object.assign(docState, r);
+    const cur = $('#docKind').value; $('#docKind').innerHTML = '<option value="">All types</option>' + r.kinds.map(k => `<option>${esc(k)}</option>`).join(''); $('#docKind').value = cur;
+    kpiTiles('#documentsKpis', [{ label: 'Files', value: r.documents.length }, { label: 'Drawing sets', value: r.documents.filter(d => d.kind === 'Drawings').length }, { label: 'Addenda', value: r.documents.filter(d => d.kind === 'Addendum').length }, { label: 'Automatic takeoff', value: r.ai_ready ? 'Ready' : 'Needs API key', alert: !r.ai_ready }]);
+    renderDocs();
+  }
+  function renderDocs() {
+    const k = $('#docKind').value, rows = docState.documents.filter(d => !k || d.kind === k);
+    $('#documentsRows').innerHTML = rows.length ? rows.map(d => `<tr><td><button class="linklike" data-doc="${d.id}">${esc(d.title)}</button><small>${esc(d.file_name || '')}${d.size ? ' · ' + Math.round(d.size / 1024).toLocaleString() + ' KB' : ''}</small></td><td>${esc(d.kind)}</td><td>${esc(d.revision || '—')}</td><td>${esc(d.project_name || d.customer_company || d.customer_name || '—')}</td><td>${fmtDate(d.created_at)}</td><td>${badge(d.analysis_status)}</td></tr>`).join('')
+      : '<tr><td class="emptyrow" colspan="6">No files yet. Upload a drawing set to start.</td></tr>';
+    $$('#documentsRows [data-doc]').forEach(b => b.onclick = () => { const d = docState.documents.find(x => x.id === Number(b.dataset.doc)); downloadFile({ name: d.file_name || d.title, url: d.file_url }); });
+  }
+  function uploadDocs() {
+    openForm({ title: 'Upload drawings & documents', defs: [
+      { name: 'files', label: 'Files (up to 8, 15 MB each)', type: 'file' }, { name: 'kind', label: 'Type', type: 'select', options: docState.kinds.length ? docState.kinds : ['Drawings', 'Specifications', 'Addendum', 'Finish schedule', 'Photos', 'Other'] },
+      { name: 'revision', label: 'Revision', placeholder: 'e.g. IFC, Rev 3, Addendum 2' }, { name: 'title', label: 'Title (single file only)' },
+      { name: 'project_id', label: 'Project', type: 'project' }, { name: 'customer_id', label: 'Customer', type: 'customer' }],
+      submit: async b => { const fd = new FormData(); [...(b.files || [])].forEach(f => fd.append('files', f)); for (const k of ['kind', 'revision', 'title', 'project_id', 'customer_id']) fd.append(k, b[k] || ''); return api('/api/admin/documents', { method: 'POST', body: fd }); },
+      after: res => { toast(`${res.ids.length} file(s) uploaded`); go('documents'); loadDocuments(); } });
+  }
+
+  // ---------- Reports ----------
+  $('#repMonths').addEventListener('change', () => loadReports());
+  async function loadReports() {
+    const r = await api('/api/admin/reports?months=' + $('#repMonths').value);
+    const sum = a => a.reduce((t, x) => t + Number(x.v || 0), 0);
+    kpiTiles('#repKpis', [{ label: 'Win rate', value: r.win_rate == null ? '—' : r.win_rate + '%', sub: `${r.won_count} won · ${r.lost_count} lost` }, { label: 'Won value', value: money(r.won_value) }, { label: 'Average won job', value: r.avg_won == null ? '—' : money(r.avg_won) }, { label: 'Collected', value: money(sum(r.collected)) }]);
+    const mName = k => new Date(k + '-15').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    $('#repMonthsRows').innerHTML = r.months.slice().reverse().map((m, j) => { const i = r.months.length - 1 - j; return `<tr><td>${mName(m)}</td><td class="num">${r.leads[i].n}</td><td class="num">${r.sent[i].n}</td><td class="num">${r.won[i].n}</td><td class="num">${money(r.won[i].v)}</td><td class="num">${money(r.collected[i].v)}</td></tr>`; }).join('');
+    const empty = c => `<tr><td class="emptyrow" colspan="${c}">No data yet.</td></tr>`;
+    const svc = { construction: 'Construction cleaning', multifamily: 'Multifamily', janitorial: 'Commercial janitorial', specialty: 'Specialty', unspecified: 'Not categorized' };
+    $('#repSvcRows').innerHTML = r.by_service.length ? r.by_service.map(x => `<tr><td>${esc(svc[x.k] || x.k)}</td><td class="num">${x.n}</td><td class="num">${money(x.avg)}</td><td class="num">${money(x.total)}</td></tr>`).join('') : empty(4);
+    $('#repPipeRows').innerHTML = r.pipeline.length ? r.pipeline.map(x => `<tr><td>${badge(x.k)}</td><td class="num">${x.n}</td><td class="num">${money(x.v)}</td></tr>`).join('') : empty(3);
+    $('#repTopRows').innerHTML = r.top_customers.length ? r.top_customers.map(x => `<tr><td>${esc(x.k || '—')}</td><td class="num">${x.n}</td><td class="num">${money(x.billed)}</td><td class="num">${money(x.paid)}</td></tr>`).join('') : empty(4);
+  }
 
   // ---------- Issues & tasks ----------
   const issState = { issues: [], options: null };

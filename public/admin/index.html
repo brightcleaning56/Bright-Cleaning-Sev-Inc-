@@ -111,6 +111,18 @@
   .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
   .chk input { width: auto; }
   td.late { color: var(--red); font-weight: 600; }
+  .gsearch { position: relative; margin: 0 0 18px; }
+  .gsearch input { width: 100%; padding: 12px 16px; border: 1px solid #ccd5df; border-radius: 10px; font: inherit; font-size: 15px; background: #fff; }
+  .gresults { position: absolute; z-index: 30; left: 0; right: 0; top: 48px; background: #fff; border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 12px 28px rgba(16,38,62,.14); max-height: 420px; overflow: auto; }
+  .gresults button { display: block; width: 100%; text-align: left; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--line2); background: none; font: inherit; cursor: pointer; }
+  .gresults button:hover, .gresults button:focus { background: var(--bluebg); }
+  .gresults small { display: block; color: var(--muted); }
+  .kpis.small { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .kpis.small:empty { display: none; }
+  .checklist { width: 100%; border-collapse: collapse; } .checklist td { padding: 6px 4px; border-bottom: 1px solid var(--line2); vertical-align: top; }
+  .checklist select, .checklist input { width: 100%; }
+  .mini li { margin: 6px 0; font-size: 14px; }
+  @media (max-width: 760px) { .kpis.small { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -217,12 +229,17 @@
       <button data-view="leads">Leads <span class="count" id="navNew" hidden></span></button>
       <button data-view="customers">Customers</button>
       <button data-view="issues">Issues &amp; tasks <span class="count" id="navIssues" hidden></span></button>
+      <button data-view="calls">Calls <span class="count" id="navCalls" hidden></span></button>
       <div class="sep"></div>
       <button data-view="proposals">Estimates &amp; proposals</button>
       <button data-view="contracts">Contracts</button>
       <button data-view="projects">Projects</button>
       <button data-view="invoices">Invoices</button>
+      <button data-view="schedule">Schedule</button>
+      <button data-view="quality">Quality &amp; inspections</button>
+      <button data-view="documents">Drawings &amp; documents</button>
       <div class="sep"></div>
+      <button data-view="reports">Reports</button>
       <button data-view="scopes">Cleaning scopes <span class="count" id="navScopes" hidden></span></button>
       <button data-view="activity">Activity log</button>
       <button data-view="settings">Settings</button>
@@ -231,6 +248,7 @@
   </aside>
 
   <main class="content">
+    <div class="gsearch" role="search"><input type="search" id="gSearch" placeholder="Search customers, leads, proposals, projects, invoices, drawings, calls…" aria-label="Search everything" autocomplete="off"><div class="gresults" id="gResults" hidden></div></div>
     <section class="view" id="v-overview">
       <div class="pagehead"><div><h1>Command Center</h1><p id="todayLine"></p></div>
         <div class="headact"><select id="ccDays" aria-label="Period"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select>
@@ -243,6 +261,8 @@
       </div>
       <div class="card"><div class="cardhead"><h2>Request a quote — service forms</h2><small class="muted">Opens the guided quote form on your public website, set to that service.</small></div><div class="portals" id="ccPortals"></div></div>
       <div class="mods" id="ccMods"></div>
+      <div class="two"><div class="card"><div class="cardhead"><h2>Calls</h2><button class="linklike" data-view-link="calls">Call log</button></div><div id="ccCalls"></div></div>
+      <div class="card"><div class="cardhead"><h2>Customer &amp; issue notes</h2><button class="linklike" data-view-link="issues">All items</button></div><div id="ccNotes"></div></div></div>
       <div class="two">
         <div class="card"><h2>New leads</h2><ul class="attn" id="ovNew"></ul></div>
         <div class="card"><h2>Proposals waiting on the customer</h2><ul class="attn" id="ovAwait"></ul></div>
@@ -282,6 +302,38 @@
       <div class="tablewrap"><table class="t"><thead><tr><th>Item</th><th>Customer</th><th>Type</th><th>Priority</th><th>Assigned</th><th>Due</th><th>Status</th></tr></thead><tbody id="issRows"></tbody></table></div>
     </section>
 
+    <section class="view" id="v-calls">
+      <div class="pagehead"><div><h1>Calls</h1><p>Log every call so nothing falls through. Calls about new work can create a lead in one step. Automatic call capture needs a phone provider.</p></div><button class="btn" id="callsAdd">Log call</button></div>
+      <div class="kpis small" id="callsKpis"></div>
+      <div class="toolbar"><input type="search" id="callSearch" placeholder="Search calls…" aria-label="Search calls"><label class="chk"><input type="checkbox" id="callFollow"> Follow-ups due</label></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>When</th><th>Caller</th><th>Purpose</th><th>Outcome</th><th>Summary</th><th>Follow-up</th></tr></thead><tbody id="callsRows"></tbody></table></div>
+    </section>
+    <section class="view" id="v-schedule">
+      <div class="pagehead"><div><h1>Schedule</h1><p>Site visits, walkthroughs, cleaning phases and inspections, plus project due dates.</p></div><button class="btn" id="scheduleAdd">Schedule visit</button></div>
+      <div class="kpis small" id="scheduleKpis"></div>
+      <div class="toolbar"><select id="schedRange" aria-label="Range"><option value="14">Next 2 weeks</option><option value="30" selected>Next 30 days</option><option value="90">Next 90 days</option><option value="past">Past 30 days</option></select></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Time</th><th>What</th><th>Customer / project</th><th>Assigned</th><th>Status</th></tr></thead><tbody id="scheduleRows"></tbody></table></div>
+    </section>
+    <section class="view" id="v-quality">
+      <div class="pagehead"><div><h1>Quality &amp; inspections</h1><p>Walkthrough checklists with pass/fail scores. A failed item needs a note so the crew knows what to fix.</p></div><button class="btn" id="qualityAdd">New inspection</button></div>
+      <div class="kpis small" id="qualityKpis"></div>
+      
+      <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Area</th><th>Project / customer</th><th>Inspector</th><th>Score</th><th>Result</th></tr></thead><tbody id="qualityRows"></tbody></table></div>
+    </section>
+    <section class="view" id="v-documents">
+      <div class="pagehead"><div><h1>Drawings &amp; documents</h1><p>Drawing sets, specifications, addenda and photos, filed by project and customer. Automatic takeoff runs here once the Anthropic API key is added in Render.</p></div><button class="btn" id="documentsAdd">Upload files</button></div>
+      <div class="kpis small" id="documentsKpis"></div>
+      <div class="toolbar"><select id="docKind" aria-label="Type"><option value="">All types</option></select></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Title</th><th>Type</th><th>Rev</th><th>Project / customer</th><th>Uploaded</th><th>Takeoff</th></tr></thead><tbody id="documentsRows"></tbody></table></div>
+    </section>
+    <section class="view" id="v-reports">
+      <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select></div>
+      <div class="kpis small" id="repKpis"></div>
+      <div class="two"><div class="card"><h2>By month</h2><div class="tablewrap"><table class="t"><thead><tr><th>Month</th><th class="num">Leads</th><th class="num">Proposals sent</th><th class="num">Won</th><th class="num">Won value</th><th class="num">Collected</th></tr></thead><tbody id="repMonthsRows"></tbody></table></div></div>
+      <div class="card"><h2>Won work by service</h2><div class="tablewrap"><table class="t"><thead><tr><th>Service</th><th class="num">Jobs</th><th class="num">Average</th><th class="num">Total</th></tr></thead><tbody id="repSvcRows"></tbody></table></div>
+      <h2 style="margin-top:16px">Pipeline by status</h2><div class="tablewrap"><table class="t"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">Value</th></tr></thead><tbody id="repPipeRows"></tbody></table></div>
+      <h2 style="margin-top:16px">Top customers (billed)</h2><div class="tablewrap"><table class="t"><thead><tr><th>Customer</th><th class="num">Invoices</th><th class="num">Billed</th><th class="num">Paid</th></tr></thead><tbody id="repTopRows"></tbody></table></div></div></div>
+    </section>
     <section class="view" id="v-scopes">
       <div class="pagehead"><div><h1>Cleaning scopes</h1><p>Your service library: what each service includes, how it is measured, production rates and pricing. Estimates use only items from the matching category, so construction work is never priced with janitorial rates.</p></div><div class="headact"><button class="btn ghost" id="scopeImport">Import price book</button><button class="btn" id="scopeAdd">Add scope item</button></div></div>
       <p class="msg" id="scopeNote" role="status"></p>
