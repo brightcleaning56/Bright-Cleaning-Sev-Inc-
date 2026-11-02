@@ -187,6 +187,7 @@
       <button data-view="projects">Projects</button>
       <button data-view="invoices">Invoices</button>
       <div class="sep"></div>
+      <button data-view="scopes">Cleaning scopes <span class="count" id="navScopes" hidden></span></button>
       <button data-view="activity">Activity log</button>
       <button data-view="settings">Settings</button>
     </nav>
@@ -227,6 +228,15 @@
       <div class="pagehead"><div><h1>Customers</h1><p>Your customer directory. New customers are added automatically from bid requests, inquiries, estimates and approvals.</p></div><button class="btn" id="custAdd">Add customer</button></div>
       <div class="toolbar"><input type="search" id="custSearch" placeholder="Search customers…" aria-label="Search customers"></div>
       <div class="tablewrap"><table class="t"><thead><tr><th>Customer</th><th>Contact</th><th class="num">Leads</th><th class="num">Proposals</th><th class="num">Projects</th><th class="num">Billed</th><th class="num">Open balance</th></tr></thead><tbody id="custRows"></tbody></table></div>
+    </section>
+
+    <section class="view" id="v-scopes">
+      <div class="pagehead"><div><h1>Cleaning scopes</h1><p>Your service library: what each service includes, how it is measured, production rates and pricing. Estimates use only items from the matching category, so construction work is never priced with janitorial rates.</p></div><button class="btn" id="scopeAdd">Add scope item</button></div>
+      <p class="msg" id="scopeNote" role="status"></p>
+      <div class="toolbar"><input type="search" id="scopeSearch" placeholder="Search scope items…" aria-label="Search scope items">
+        <select id="scopeCat" aria-label="Category"><option value="">All categories</option></select>
+        <select id="scopeShow" aria-label="Show"><option value="active">Active</option><option value="missing">Needs rates</option><option value="archived">Archived</option></select></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Scope item</th><th>Category</th><th>Unit</th><th class="num">Units / labor hr</th><th class="num">Crew</th><th class="num">Price</th><th>Status</th></tr></thead><tbody id="scopeRows"></tbody></table></div>
     </section>
 
     <section class="view" id="v-proposals">

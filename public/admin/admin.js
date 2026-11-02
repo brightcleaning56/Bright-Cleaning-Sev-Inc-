@@ -126,7 +126,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['overview', 'leads', 'customers', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'activity', 'settings'];
+  const VIEWS = ['overview', 'leads', 'customers', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (!VIEWS.includes(view)) view = 'overview';
     state.view = view;
@@ -156,6 +156,7 @@
       if (view === 'customers') await loadCustomers();
       if (view === 'proposals') await loadEstimates();
       if (['contracts', 'projects', 'invoices'].includes(view)) await loadRegister(view);
+      if (view === 'scopes') await loadScopes();
       if (view === 'activity') await loadActivity();
       if (view === 'settings') await loadSettings();
     } catch (err) { if (err.message !== 'Signed out') toast(err.message, true); }
@@ -853,6 +854,78 @@
     try { await api('/api/admin/users', { method: 'POST', json: formObj(e.target) }); e.target.reset(); m.className = 'msg ok'; m.textContent = 'Access added.'; loadUsers(); }
     catch (err) { m.className = 'msg err'; m.textContent = err.message; }
   });
+
+  // ---------- Cleaning scopes ----------
+  const scopeState = { items: [], categories: {}, pricing: {} };
+  ['#scopeSearch', '#scopeCat', '#scopeShow'].forEach(sel => $(sel).addEventListener('input', () => renderScopes()));
+  async function loadScopes() {
+    const r = await api('/api/admin/scopes');
+    Object.assign(scopeState, { items: r.items || [], categories: r.categories || {}, pricing: r.pricing || {} });
+    const cur = $('#scopeCat').value;
+    $('#scopeCat').innerHTML = '<option value="">All categories</option>' + Object.entries(scopeState.categories).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('');
+    $('#scopeCat').value = cur;
+    const n = r.summary ? r.summary.needs_rates : 0;
+    $('#navScopes').hidden = !n; $('#navScopes').textContent = n;
+    $('#scopeNote').className = n ? 'msg err' : 'msg';
+    $('#scopeNote').textContent = n ? `${n} of ${r.summary.total} active items still need your production rate, crew size or price. Estimates cannot price these items until they are filled in.` : '';
+    renderScopes();
+  }
+  const qty = v => v == null ? '—' : Number(v).toLocaleString();
+  function renderScopes() {
+    const q = $('#scopeSearch').value.trim().toLowerCase(), cat = $('#scopeCat').value, show = $('#scopeShow').value;
+    const rows = scopeState.items.filter(i => (!cat || i.category === cat)
+      && (show === 'archived' ? !i.active : i.active && (show !== 'missing' || i.missing.length))
+      && (!q || [i.name, i.description, i.unit, i.included, i.exclusions].join(' ').toLowerCase().includes(q)));
+    $('#scopeRows').innerHTML = rows.length ? rows.map(i => `<tr class="click" data-scope="${i.id}"><td><b>${esc(i.name)}</b><small>${esc(i.frequency || '')}</small></td><td>${esc(scopeState.categories[i.category] || i.category)}</td><td>${esc(i.unit)}</td><td class="num">${qty(i.production_rate)}</td><td class="num">${qty(i.crew_size)}</td><td class="num">${i.pricing_method === 'hourly' ? 'Hourly' : i.unit_price == null ? '—' : money(i.unit_price) + ' / ' + esc(i.unit)}</td><td>${!i.active ? badge('Archived') : i.missing.length ? `<span class="badge amber" title="Missing: ${esc(i.missing.join(', '))}">Needs rates</span>` : badge('Ready')}</td></tr>`).join('')
+      : `<tr><td class="emptyrow" colspan="7">No scope items match.</td></tr>`;
+    $$('[data-scope]').forEach(r => r.onclick = () => openScope(scopeState.items.find(i => i.id === Number(r.dataset.scope))));
+  }
+  $('#scopeAdd').addEventListener('click', () => openScope(null));
+  function openScope(it) {
+    const isNew = !it;
+    it = it || { category: $('#scopeCat').value || 'construction', name: '', unit: '', pricing_method: 'per_unit', active: 1 };
+    const v = k => esc(it[k] == null ? '' : it[k]);
+    const opts = (obj, sel) => Object.entries(obj).map(([k, l]) => `<option value="${esc(k)}"${k === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
+    const ta = (id, name, label, ph) => `<div class="f wide"><label for="${id}">${label}</label><textarea id="${id}" name="${name}" placeholder="${ph || ''}">${v(name)}</textarea></div>`;
+    openDrawer({
+      title: isNew ? 'New scope item' : it.name,
+      sub: isNew ? '' : `${scopeState.categories[it.category] || ''} · updated ${fmtDate(it.updated_at)}`,
+      body: `<form id="scopeForm" class="grid" novalidate>
+          <div class="f"><label for="s1">Category</label><select id="s1" name="category">${opts(scopeState.categories, it.category)}</select></div>
+          <div class="f"><label for="s2">Name</label><input id="s2" name="name" value="${v('name')}" required></div>
+          <div class="f"><label for="s3">Measurement unit</label><input id="s3" name="unit" value="${v('unit')}" placeholder="SF, Each, Unit, Fixture, Hour" required></div>
+          <div class="f"><label for="s4">Frequency</label><input id="s4" name="frequency" value="${v('frequency')}" placeholder="Once, Daily, Per turn"></div>
+          <div class="f"><label for="s5">Production rate (units per labor hour)</label><input id="s5" name="production_rate" inputmode="decimal" value="${v('production_rate')}" placeholder="Your rate"></div>
+          <div class="f"><label for="s6">Typical crew size</label><input id="s6" name="crew_size" inputmode="decimal" value="${v('crew_size')}"></div>
+          <div class="f"><label for="s7">Pricing method</label><select id="s7" name="pricing_method">${opts(scopeState.pricing, it.pricing_method)}</select></div>
+          <div class="f"><label for="s8">Price per unit ($)</label><input id="s8" name="unit_price" inputmode="decimal" value="${v('unit_price')}" placeholder="Leave blank for hourly"></div>
+          ${ta('s9', 'description', 'Description')}
+          ${ta('s10', 'included', 'Included work')}
+          ${ta('s11', 'exclusions', 'Exclusions')}
+          ${ta('s12', 'quality_standard', 'Quality standard')}
+          ${ta('s13', 'labor_notes', 'Labor requirements', 'Skills, supervision, shift')}
+          <div class="f"><label for="s14">Equipment</label><input id="s14" name="equipment" value="${v('equipment')}"></div>
+          <div class="f"><label for="s15">Materials</label><input id="s15" name="materials" value="${v('materials')}"></div>
+        </form><p class="msg" id="scopeMsg" role="status"></p>`,
+      footer: `<button class="btn" id="sSave">${isNew ? 'Add item' : 'Save'}</button>${isNew ? '' : `<span class="grow"></span>${it.active ? '<button class="btn danger" id="sArch">Archive</button>' : '<button class="btn ghost" id="sRestore">Restore</button>'}`}`
+    });
+    const fail = err => { $('#scopeMsg').className = 'msg err'; $('#scopeMsg').textContent = err.message; };
+    $('#sSave').onclick = async () => {
+      const body = formObj($('#scopeForm'));
+      try {
+        if (isNew) await api('/api/admin/scopes', { method: 'POST', json: body });
+        else await api('/api/admin/scopes/' + it.id, { method: 'PATCH', json: body });
+        toast(isNew ? 'Scope item added' : 'Saved'); closeDrawer(); loadScopes();
+      } catch (err) { fail(err); }
+    };
+    if (!isNew && it.active) $('#sArch').onclick = async () => {
+      if (!confirm('Archive this scope item? It will no longer be offered on new estimates. Past estimates are not changed.')) return;
+      try { await api('/api/admin/scopes/' + it.id, { method: 'DELETE' }); toast('Archived'); closeDrawer(); loadScopes(); } catch (err) { fail(err); }
+    };
+    if (!isNew && !it.active) $('#sRestore').onclick = async () => {
+      try { await api('/api/admin/scopes/' + it.id, { method: 'PATCH', json: { active: true } }); toast('Restored'); closeDrawer(); loadScopes(); } catch (err) { fail(err); }
+    };
+  }
 
   // ---------- Drawer ----------
   let lastFocus = null;
