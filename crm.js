@@ -82,6 +82,11 @@ module.exports = function mountCRM(app, ctx) {
     const p = profile(c); p.role = roleOf(req); p.users = db.prepare('SELECT email FROM admin_users ORDER BY email').all().map(u => u.email).concat(adminEmail ? [adminEmail] : []).filter((v, i, a) => a.indexOf(v) === i);
     res.json(p);
   });
+  app.get('/api/admin/customers/:id/links', auth, (req, res) => {
+    const c = getCust(req.params.id); if (!c) return res.status(404).json({ error: 'Customer not found.' });
+    const p = profile(c);
+    res.json({ contacts: p.contacts.map(k => ({ id: k.id, name: k.name, phone: k.phone, email: k.email, is_primary: k.is_primary })), properties: p.properties.map(x => ({ id: x.id, name: x.name, address: x.address, status: x.status })), projects: p.projects.map(x => ({ id: x.id, name: x.name, status: x.status })) });
+  });
   // Account fields (status, owner, type, industry, tax ID) with validation and an audit trail of what changed.
   app.patch('/api/admin/customers/:id/account', auth, (req, res) => {
     const c = getCust(req.params.id); if (!c) return res.status(404).json({ error: 'Customer not found.' });

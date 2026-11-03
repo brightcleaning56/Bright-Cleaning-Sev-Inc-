@@ -91,7 +91,6 @@ require('./admin-ext')(app,{db,auth,logAction,clean,num,required,estimateMath,up
 require('./scopes')(app,{db,auth,logAction,clean});
 require('./command')(app,{db,auth});
 require('./intake')(app,{db,upload,clean,isEmail,notify,logLead,getOps:()=>ops,path,fs});
-require('./issues')(app,{db,auth,logAction,clean,adminEmail});
 require('./approvals')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./suite')(app,{db,auth,logAction,clean,upload,path,fs,getOps:()=>ops,isEmail});
 // Email Center log: record every email the system sends (or fails to send) through the configured provider.
@@ -99,6 +98,7 @@ if(mailer&&!mailer.__logged){const send=mailer.sendMail.bind(mailer);const prov=
 require('./ai')(app,{db,auth,logAction,clean,path,uploadDir,getMailer:()=>mailer,isEmail});
 require('./autobid')(app,{db,auth,logAction});
 require('./crm')(app,{db,auth,logAction,clean,isEmail,adminEmail,getMailer:()=>mailer});
+require('./issues')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public')));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));
 app.use((err,req,res,next)=>{if(err.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'A record with that value already exists.'});const code=err.status||err.statusCode||((err.name==='MulterError'||/Unsupported file type/.test(err.message))?400:500);if(code>=500)console.error(err);res.status(code).json({error:code<500?(err.message||'Request failed'):'Something went wrong. Please try again.'})});

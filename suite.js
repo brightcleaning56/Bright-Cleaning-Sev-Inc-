@@ -253,9 +253,9 @@ module.exports = function mountSuite(app, ctx) {
       visits_done: one(`SELECT COUNT(*) n FROM visits WHERE status='Done' AND date>=?`, start).n || 0,
       visits_upcoming: one(`SELECT COUNT(*) n FROM visits WHERE status='Scheduled' AND date>=?`, today).n || 0,
       inspections: one(`SELECT COUNT(*) n, ROUND(AVG(score),1) avg, SUM(passed=0) failed FROM inspections WHERE date>=?`, start),
-      complaints: one(`SELECT COUNT(*) n, SUM(status IN ('Resolved','Closed')) resolved, ROUND(AVG(CASE WHEN status IN ('Resolved','Closed') THEN julianday(updated_at)-julianday(created_at) END),1) days FROM customer_issues WHERE type='complaint' AND created_at>=?`, start),
-      tasks_open: one(`SELECT COUNT(*) n FROM customer_issues WHERE type IN ('task','follow_up') AND status IN ('Open','In progress')`).n || 0,
-      tasks_overdue: one(`SELECT COUNT(*) n FROM customer_issues WHERE status IN ('Open','In progress') AND due_date<>'' AND due_date<?`, today).n || 0,
+      complaints: one(`SELECT COUNT(*) n, SUM(status IN ('Resolved','Verified','Closed')) resolved, ROUND(AVG(CASE WHEN status IN ('Resolved','Verified','Closed') THEN julianday(updated_at)-julianday(created_at) END),1) days FROM customer_issues WHERE type='complaint' AND created_at>=?`, start),
+      tasks_open: one(`SELECT COUNT(*) n FROM customer_issues WHERE type IN ('task','follow_up') AND status NOT IN ('Resolved','Verified','Closed')`).n || 0,
+      tasks_overdue: one(`SELECT COUNT(*) n FROM customer_issues WHERE status NOT IN ('Resolved','Verified','Closed') AND due_date<>'' AND due_date<?`, today).n || 0,
       calls: one(`SELECT COUNT(*) n, SUM(outcome IN ('Missed','Voicemail')) missed, SUM(lead_id IS NOT NULL) to_leads FROM calls WHERE created_at>=?`, start)
     };
     const automation = {
@@ -411,14 +411,14 @@ module.exports = function mountSuite(app, ctx) {
     const discard = () => files.forEach(f => { try { fs.unlinkSync(f.path); } catch { /* ignore */ } });
     const errs = [];
     if (!files.length) errs.push('Choose at least one file to upload.');
-    const pid = idOrNull(b.project_id), cid = idOrNull(b.customer_id), lid = idOrNull(b.lead_id);
-    if (!exists('projects', pid) || !exists('customers', cid) || !exists('leads', lid)) errs.push('The linked project, customer or lead was not found.');
+    const pid = idOrNull(b.project_id), cid = idOrNull(b.customer_id), lid = idOrNull(b.lead_id), iid = idOrNull(b.issue_id);
+    if (!exists('projects', pid) || !exists('customers', cid) || !exists('leads', lid) || !exists('customer_issues', iid)) errs.push('The linked project, customer, lead or item was not found.');
     if (errs.length) { discard(); return res.status(400).json({ error: errs.join(' ') }); }
     const kind = pick(b.kind, KINDS, 'Drawings'), t = now(), ids = [];
     for (const f of files) {
       const title = clean(b.title, 200) && files.length === 1 ? clean(b.title, 200) : f.originalname;
-      ids.push(db.prepare(`INSERT INTO documents(project_id,customer_id,lead_id,title,kind,revision,file_name,file_url,size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(pid, cid, lid, title, kind, clean(b.revision, 40), f.originalname, '/api/files/' + path.basename(f.filename), f.size, who(req), t).lastInsertRowid);
+      ids.push(db.prepare(`INSERT INTO documents(project_id,customer_id,lead_id,issue_id,title,kind,revision,file_name,file_url,size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(pid, cid, lid, iid, title, kind, clean(b.revision, 40), f.originalname, '/api/files/' + path.basename(f.filename), f.size, who(req), t).lastInsertRowid);
     }
     logAction(req, 'uploaded', 'document', ids[0], `${ids.length} file(s): ${kind}`);
     res.status(201).json({ ids });
