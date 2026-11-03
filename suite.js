@@ -415,14 +415,14 @@ module.exports = function mountSuite(app, ctx) {
     const discard = () => files.forEach(f => { try { fs.unlinkSync(f.path); } catch { /* ignore */ } });
     const errs = [];
     if (!files.length) errs.push('Choose at least one file to upload.');
-    const pid = idOrNull(b.project_id), cid = idOrNull(b.customer_id), lid = idOrNull(b.lead_id), iid = idOrNull(b.issue_id);
-    if (!exists('projects', pid) || !exists('customers', cid) || !exists('leads', lid) || !exists('customer_issues', iid)) errs.push('The linked project, customer, lead or item was not found.');
+    const pid = idOrNull(b.project_id), cid = idOrNull(b.customer_id), lid = idOrNull(b.lead_id), iid = idOrNull(b.issue_id), qid = idOrNull(b.inspection_id);
+    if (!exists('projects', pid) || !exists('customers', cid) || !exists('leads', lid) || !exists('customer_issues', iid) || !exists('inspections', qid)) errs.push('The linked project, customer, lead or item was not found.');
     if (errs.length) { discard(); return res.status(400).json({ error: errs.join(' ') }); }
     const kind = pick(b.kind, KINDS, 'Drawings'), t = now(), ids = [];
     for (const f of files) {
       const title = clean(b.title, 200) && files.length === 1 ? clean(b.title, 200) : f.originalname;
-      ids.push(db.prepare(`INSERT INTO documents(project_id,customer_id,lead_id,issue_id,title,kind,revision,file_name,file_url,size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(pid, cid, lid, iid, title, kind, clean(b.revision, 40), f.originalname, '/api/files/' + path.basename(f.filename), f.size, who(req), t).lastInsertRowid);
+      ids.push(db.prepare(`INSERT INTO documents(project_id,customer_id,lead_id,issue_id,inspection_id,title,kind,revision,file_name,file_url,size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(pid, cid, lid, iid, qid, title, kind, clean(b.revision, 40), f.originalname, '/api/files/' + path.basename(f.filename), f.size, who(req), t).lastInsertRowid);
     }
     logAction(req, 'uploaded', 'document', ids[0], `${ids.length} file(s): ${kind}`);
     res.status(201).json({ ids });

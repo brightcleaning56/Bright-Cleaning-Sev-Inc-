@@ -159,6 +159,21 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
     } catch (e) { fail(res, e); }
   });
 
+  // AI inspection summary: explains findings and suggests corrective actions. Suggestion only; it cannot sign or pass work.
+  app.post('/api/admin/ai/qc/:id/summary', auth, async (req, res) => {
+    const r = db.prepare('SELECT * FROM inspections WHERE id=?').get(Number(req.params.id)); if (!r) return res.status(404).json({ error: 'Inspection not found.' });
+    let items = []; try { items = JSON.parse(r.items || '[]'); } catch { /* */ }
+    const history = db.prepare('SELECT date, score, items FROM inspections WHERE id<>? AND ((customer_id IS NOT NULL AND customer_id=?) OR (project_id IS NOT NULL AND project_id=?)) ORDER BY date DESC LIMIT 10').all(r.id, r.customer_id || -1, r.project_id || -1)
+      .map(h => ({ date: h.date, score: h.score, failed: (() => { try { return JSON.parse(h.items || '[]').filter(i => i.result === 'Fail').map(i => i.label); } catch { return []; } })() }));
+    try {
+      const text = await call([{ role: 'user', content: `Inspection (JSON): ${JSON.stringify({ area: r.area, date: r.date, score: r.score, threshold: r.threshold, items: items.map(i => ({ room: i.room, item: i.label, weight: i.weight, result: i.result, note: i.note })) })}\nEarlier inspections at the same customer/project: ${JSON.stringify(history)}\n\nWrite a short plain-text summary for the operations manager: 1) what failed and where, 2) any problem that repeats from earlier inspections, 3) a specific corrective action for each failed item, 4) evidence still missing (e.g. no comment, no photo). Do not say the work passed or failed overall; a person decides that. No markdown.` }],
+        'You help a commercial cleaning company review inspections. You never certify work.', 900);
+      db.prepare('UPDATE inspections SET ai_summary=? WHERE id=?').run(text, r.id);
+      logAction(req, 'summarized with AI', 'inspection', r.id, r.area);
+      res.json({ summary: text, note: 'AI suggestion. A signed-in inspector signs off on the results.' });
+    } catch (e) { fail(res, e); }
+  });
+
   // AI report assistant: answers management questions from the actual report figures only.
   app.post('/api/admin/ai/reports/ask', auth, async (req, res) => {
     const question = clean((req.body || {}).question, 500);
