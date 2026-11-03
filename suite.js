@@ -208,8 +208,8 @@ module.exports = function mountSuite(app, ctx) {
   });
 
   // ---------- Reports ----------
-  app.get('/api/admin/reports', auth, (req, res) => {
-    const months = Math.min(24, Math.max(3, Number(req.query.months) || 12));
+  function buildReport(monthsIn) {
+    const months = Math.min(24, Math.max(3, Number(monthsIn) || 12));
     const keys = []; const d = new Date(); d.setDate(1);
     for (let i = months - 1; i >= 0; i--) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); keys.push(x.toISOString().slice(0, 7)); }
     const start = keys[0] + '-01';
@@ -270,8 +270,59 @@ module.exports = function mountSuite(app, ctx) {
       approvals: one(`SELECT COUNT(*) n FROM estimate_approvals WHERE created_at>=?`, start).n || 0
     };
     const leadServices = all(`SELECT COALESCE(json_extract(intake,'$.service'), CASE kind WHEN 'bid' THEN 'bid (no form)' ELSE kind END) k, COUNT(*) n, SUM(auto_estimate_id>0) drafted FROM leads WHERE kind IN ('bid','inquiry') AND created_at>=? GROUP BY k ORDER BY n DESC`, start);
-    res.json({ months: keys, leads, sent, won, collected, calls, billed, quality, flow, receivables: recv, ops, automation, lead_services: leadServices, win_rate: w + l ? Math.round(w / (w + l) * 1000) / 10 : null,
-      won_count: w, lost_count: l, won_value: decided.wv, avg_won: w ? Math.round(decided.wv / w * 100) / 100 : null, by_service: byService, pipeline, top_customers: topCustomers });
+    // Executive figures: each financial stage is its own measure. An approved proposal is not a contract,
+    // a contract is not an invoice, and an invoice is not cash.
+    const approved = one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v, SUM(CASE WHEN total_cost>0 THEN proposal_total-total_cost END) gp, SUM(total_cost>0) costed FROM estimates WHERE status='Approved' AND COALESCE(decided_at,updated_at)>=?`, start);
+    const signed = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE signature_status IN ('Signed','Executed','Fully signed') AND created_at>=?`, start);
+    const unsigned = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE COALESCE(signature_status,'Not sent') NOT IN ('Signed','Executed','Fully signed') AND status<>'Cancelled'`);
+    const invoiced = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE status<>'Void' AND created_at>=?`, start);
+    const cash = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, start);
+    const executive = {
+      approved_proposals: { value: approved.v, count: approved.n || 0 },
+      signed_contracts: { value: signed.v, count: signed.n || 0 },
+      unsigned_contracts: { value: unsigned.v, count: unsigned.n || 0 },
+      invoiced: { value: invoiced.v, count: invoiced.n || 0 },
+      collected: { value: cash.v, count: cash.n || 0 },
+      outstanding: { value: recv.outstanding, count: one(`SELECT COUNT(*) n FROM invoices WHERE status<>'Void' AND paid_amount<amount`).n || 0 },
+      overdue: { value: recv.overdue, count: recv.overdue_n || 0 },
+      active_projects: ops.projects_active, completed_projects: ops.projects_completed,
+      est_gross_profit: { value: approved.gp == null ? null : Math.round(approved.gp * 100) / 100, based_on: approved.costed || 0, of: approved.n || 0, note: 'Estimate: approved proposal price minus estimated cost. Not recorded profit.' },
+      actual_gross_profit: { value: null, note: 'No job costs are recorded yet (labor time, supplies and expenses), so actual profit cannot be calculated.' }
+    };
+    const decidedN = w + l;
+    const win = { rate: decidedN ? Math.round(w / decidedN * 1000) / 10 : null, won: w, lost: l, sample: decidedN,
+      definition: 'Won ÷ (won + lost) for proposals the customer decided in this period. Proposals still waiting are not counted.', small_sample: decidedN < 5 };
+    // Data integrity: things that make a figure incomplete or need a decision.
+    const issues = [];
+    const uncat = all(`SELECT id, project_name, customer_name, proposal_total FROM estimates WHERE (scope_category IS NULL OR scope_category='') AND status IN ('Sent','Viewed','Approved') ORDER BY id DESC LIMIT 20`);
+    if (uncat.length) issues.push({ level: 'review', text: `${uncat.length} sent or approved proposal(s) have no service category, so service reports show them as "Not categorized".`, ids: uncat.map(x => x.id), kind: 'estimate' });
+    const apNoContract = all(`SELECT e.id FROM estimates e WHERE e.status='Approved' AND NOT EXISTS (SELECT 1 FROM contracts c WHERE c.estimate_id=e.id)`);
+    if (apNoContract.length) issues.push({ level: 'review', text: `${apNoContract.length} approved proposal(s) have no contract yet.`, ids: apNoContract.map(x => x.id), kind: 'estimate' });
+    if (unsigned.n) issues.push({ level: 'info', text: `${unsigned.n} contract(s) worth ${'$' + Number(unsigned.v).toLocaleString('en-US', { minimumFractionDigits: 2 })} are not signed, so they are not counted as signed contract value.` });
+    const projNoInv = one(`SELECT COUNT(*) n FROM projects p WHERE p.status IN ('In Progress','Completed','Quality Review') AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.project_id=p.id)`).n;
+    if (projNoInv) issues.push({ level: 'review', text: `${projNoInv} project(s) in progress or completed have no invoice.` });
+    const huge = all(`SELECT id, proposal_total, labor_hours FROM estimates WHERE labor_hours>3000*COALESCE(visits,1) OR (proposal_total>0 AND area_sqft>0 AND proposal_total/area_sqft>25)`);
+    if (huge.length) issues.push({ level: 'warning', text: `${huge.length} estimate(s) look unusual (very high labor hours or price per square foot). Check them before relying on totals.`, ids: huge.map(x => x.id), kind: 'estimate' });
+    if (!executive.collected.count && executive.approved_proposals.count) issues.push({ level: 'info', text: 'No payments are recorded for this period. Approved work is not cash until a payment is recorded on an invoice.' });
+    issues.push({ level: 'info', text: 'Not tracked yet: labor hours worked, crew utilization, supplies and expenses. Actual profit and productivity need time tracking and expense entry.' });
+    return { period: { start, end: new Date().toISOString().slice(0, 10), months }, months: keys, leads, sent, won, collected, calls, billed, quality, flow, receivables: recv, ops, automation, lead_services: leadServices, executive, win, data_issues: issues,
+      win_rate: win.rate, won_count: w, lost_count: l, won_value: decided.wv, avg_won: w ? Math.round(decided.wv / w * 100) / 100 : null, by_service: byService, pipeline, top_customers: topCustomers };
+  }
+  app.locals.bcReport = buildReport;
+  app.get('/api/admin/reports', auth, (req, res) => res.json(buildReport(req.query.months)));
+  app.get('/api/admin/reports/export.csv', auth, (req, res) => {
+    const r = buildReport(req.query.months), q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = [['Bright Clean report', `${r.period.start} to ${r.period.end}`], [], ['Measure', 'Value', 'Count'],
+      ['Approved proposal value', r.executive.approved_proposals.value, r.executive.approved_proposals.count], ['Signed contract value', r.executive.signed_contracts.value, r.executive.signed_contracts.count],
+      ['Invoiced', r.executive.invoiced.value, r.executive.invoiced.count], ['Cash collected', r.executive.collected.value, r.executive.collected.count],
+      ['Outstanding', r.executive.outstanding.value, r.executive.outstanding.count], ['Overdue', r.executive.overdue.value, r.executive.overdue.count],
+      ['Win rate %', r.win.rate ?? '', `${r.win.won} won of ${r.win.sample} decided`], [], ['Stage', 'Count'], ...r.flow.map(f => [f.k, f.n]), [],
+      ['Month', 'Calls', 'Leads', 'Proposals sent', 'Won', 'Won value', 'Billed', 'Collected', 'Inspection avg'],
+      ...r.months.map((m, i) => [m, r.calls[i].n, r.leads[i].n, r.sent[i].n, r.won[i].n, r.won[i].v, r.billed[i].v, r.collected[i].v, r.quality[i].n ? r.quality[i].v : '']), [],
+      ['Data notes'], ...r.data_issues.map(x => [x.level, x.text])];
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="bright-clean-report-${r.period.end}.csv"`);
+    res.send(rows.map(x => x.map(q).join(',')).join('\n'));
   });
 
   // ---------- Takeoffs: quantities from drawings, each with its source ----------

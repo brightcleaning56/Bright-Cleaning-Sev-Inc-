@@ -131,6 +131,23 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
     try { const r = await takeoffFromDocument(Number(req.params.id)); logAction(req, 'ran AI takeoff', 'document', Number(req.params.id), `takeoff #${r.takeoff_id}`); res.json(r); }
     catch (e) { fail(res, e); }
   });
+  // AI report assistant: answers management questions from the actual report figures only.
+  app.post('/api/admin/ai/reports/ask', auth, async (req, res) => {
+    const question = clean((req.body || {}).question, 500);
+    if (!question) return res.status(400).json({ error: 'Type a question.' });
+    if (!app.locals.bcReport) return res.status(500).json({ error: 'Reports are not available.' });
+    const r = app.locals.bcReport(req.body.months);
+    const owing = db.prepare(`SELECT invoice_number, COALESCE(NULLIF(company,''),customer_name) customer, amount, paid_amount, due_date, status FROM invoices WHERE status<>'Void' AND paid_amount<amount ORDER BY due_date LIMIT 25`).all();
+    const openProps = db.prepare(`SELECT id, COALESCE(NULLIF(company,''),customer_name) customer, project_name, proposal_total, status, sent_at, viewed_at, expires_on FROM estimates WHERE status IN ('Draft','Ready','Sent','Viewed') ORDER BY id DESC LIMIT 25`).all();
+    const facts = { period: r.period, executive: r.executive, win: r.win, flow: r.flow, operations: r.ops, receivables: r.receivables, by_service: r.by_service, pipeline: r.pipeline, top_customers: r.top_customers, unpaid_invoices: owing, open_proposals: openProps, data_notes: r.data_issues.map(x => x.text) };
+    try {
+      const answer = await call([{ role: 'user', content: `Company records (JSON, authoritative):\n${JSON.stringify(facts)}\n\nManager's question: ${question}\n\nAnswer using ONLY these records. State the reporting period, explain how each figure was calculated (which records were added up), and say plainly when the records are missing or too small to answer. Keep approved proposals, signed contracts, invoices and cash collected separate. Never estimate or invent numbers. Plain text, short paragraphs or a short list.` }],
+        'You are the reporting assistant for Bright Cleaning Sev Inc. You answer only from the records provided.', 1200);
+      logAction(req, 'asked AI', 'report', 0, question.slice(0, 200));
+      res.json({ answer, period: r.period });
+    } catch (e) { fail(res, e); }
+  });
+
   // Human-approved reply: the owner reviews the AI draft (or writes one) and clicks Send.
   app.post('/api/admin/leads/:id/reply', auth, async (req, res) => {
     const l = db.prepare('SELECT * FROM leads WHERE id=?').get(Number(req.params.id));
