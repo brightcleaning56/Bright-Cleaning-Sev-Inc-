@@ -23,7 +23,7 @@ const adminEmail=(process.env.ADMIN_EMAIL||'').toLowerCase();const adminHash=pro
 db.exec(`CREATE TABLE IF NOT EXISTS admin_users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,name TEXT,password_hash TEXT NOT NULL,created_at TEXT NOT NULL,last_login_at TEXT);`);
 for(const [table,col,type] of [['leads','notes','TEXT'],['leads','updated_at','TEXT'],['invoices','notes','TEXT'],['invoices','issue_date','TEXT'],['contracts','notes','TEXT']]){const cols=db.prepare(`PRAGMA table_info(${table})`).all().map(c=>c.name);if(!cols.includes(col))db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`)}
 const storage=multer.diskStorage({destination:(req,file,cb)=>cb(null,uploadDir),filename:(req,file,cb)=>{const ext=path.extname(file.originalname).slice(0,10).toLowerCase();cb(null,crypto.randomUUID()+ext)}});
-const upload=multer({storage,limits:{fileSize:15*1024*1024,files:8},fileFilter:(req,file,cb)=>{const ok=/\.(pdf|doc|docx|xls|xlsx|png|jpe?g|zip)$/i.test(file.originalname);cb(ok?null:new Error('Unsupported file type'),ok)}});
+const upload=multer({storage,limits:{fileSize:30*1024*1024,files:8},fileFilter:(req,file,cb)=>{const ok=/\.(pdf|doc|docx|xls|xlsx|png|jpe?g|zip)$/i.test(file.originalname);cb(ok?null:new Error('Unsupported file type'),ok)}});
 
 let mailer=null;
 if(process.env.POSTMARK_TOKEN){
@@ -103,6 +103,7 @@ require('./bids')(app,{db,auth,logAction,clean});
 require('./pm')(app,{db,auth,logAction,clean,adminEmail});
 require('./sched')(app,{db,auth,logAction,clean,adminEmail,uploadDir,getMailer:()=>mailer});
 require('./qc')(app,{db,auth,logAction,clean,adminEmail});
+require('./docs2')(app,{db,auth,logAction,clean,adminEmail,upload,uploadDir});
 app.use(express.static(path.join(ROOT,'public')));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));
 app.use((err,req,res,next)=>{if(err.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'A record with that value already exists.'});const code=err.status||err.statusCode||((err.name==='MulterError'||/Unsupported file type/.test(err.message))?400:500);if(code>=500)console.error(err);res.status(code).json({error:code<500?(err.message||'Request failed'):'Something went wrong. Please try again.'})});

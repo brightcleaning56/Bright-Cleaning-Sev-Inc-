@@ -127,6 +127,48 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
   app.post('/api/admin/ai/calls/extract', auth, async (req, res) => {
     try { res.json({ fields: await extractCall(String((req.body || {}).notes || '')) }); } catch (e) { fail(res, e); }
   });
+  // AI blueprint reading: sheet index, rooms with areas and finishes, cleaning-relevant notes and questions.
+  // Every finding must cite a sheet; anything without a sheet is dropped. Nothing is priced here.
+  app.post('/api/admin/ai/documents/:id/blueprint', auth, async (req, res) => {
+    const d = db.prepare('SELECT * FROM documents WHERE id=?').get(Number(req.params.id));
+    if (!d) return res.status(404).json({ error: 'Document not found.' });
+    const file = path.join(uploadDir, path.basename(d.file_url || ''));
+    if (!/\.pdf$/i.test(d.file_name || '') || !fs.existsSync(file)) return res.status(400).json({ error: 'Blueprint reading needs a PDF drawing set.' });
+    if (fs.statSync(file).size > 30 * 1024 * 1024) return res.status(400).json({ error: 'This PDF is over 30 MB. Split the set (for example architectural sheets only) and try again.' });
+    db.prepare("UPDATE documents SET blueprint_status='Analyzing' WHERE id=?").run(d.id);
+    try {
+      const text = await call([{ role: 'user', content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fs.readFileSync(file).toString('base64') } },
+        { type: 'text', text: `BLUEPRINT READING for a commercial cleaning contractor. Read every page of this drawing set.
+Return ONLY JSON:
+{"sheets":[{"sheet":"A1.1","title":"","discipline":"Architectural","revision":""}],
+"building_sf":number or null,"building_sf_sheet":"",
+"floors":number or null,"floors_sheet":"",
+"rooms":[{"number":"101","name":"Lobby","area_sf":number or null,"floor_finish":"","sheet":"A1.1","confidence":"High|Medium|Low"}],
+"counts":[{"item":"Restrooms|Elevators|Stairwells|Exterior glass areas|Interior glass partitions|Kitchens|Other: ...","quantity":number,"sheet":"","confidence":"High|Medium|Low"}],
+"finishes":[{"finish":"LVT|Carpet tile|Sealed concrete|Ceramic tile|Terrazzo|Other","areas":"where","sheet":""}],
+"cleaning_notes":[{"note":"anything that changes cleaning effort, e.g. high ceilings, atrium glass, exposed structure, specialty floors, phased occupancy","sheet":""}],
+"questions":["short questions for the general contractor about missing or conflicting information"]}
+Only report what you can read on a sheet, and always give the sheet. Never guess areas or counts: leave them out and ask a question instead.` }] }], 'You read construction drawings for Bright Cleaning Sev Inc. You never invent quantities.', 6000);
+      const r = parseJSON(text), sh = x => clean(x, 40), cf = x => ['High', 'Medium', 'Low'].includes(x) ? x : 'Low';
+      const bp = {
+        sheets: (r.sheets || []).slice(0, 600).map(s => ({ sheet: sh(s.sheet), title: clean(s.title, 200), discipline: clean(s.discipline, 30), revision: clean(s.revision, 30) })).filter(s => s.sheet),
+        building_sf: Number(r.building_sf) > 0 && r.building_sf_sheet ? Number(r.building_sf) : null, building_sf_sheet: sh(r.building_sf_sheet),
+        floors: Number(r.floors) > 0 && r.floors_sheet ? Number(r.floors) : null, floors_sheet: sh(r.floors_sheet),
+        rooms: (r.rooms || []).slice(0, 800).map(x => ({ number: clean(x.number, 20), name: clean(x.name, 120), area_sf: Number(x.area_sf) > 0 && Number(x.area_sf) < 1e7 ? Number(x.area_sf) : null, floor_finish: clean(x.floor_finish, 80), sheet: sh(x.sheet), confidence: cf(x.confidence) })).filter(x => x.name && x.sheet),
+        counts: (r.counts || []).slice(0, 100).map(x => ({ item: clean(x.item, 120), quantity: Number(x.quantity) || 0, sheet: sh(x.sheet), confidence: cf(x.confidence) })).filter(x => x.item && x.quantity > 0 && x.sheet),
+        finishes: (r.finishes || []).slice(0, 60).map(x => ({ finish: clean(x.finish, 80), areas: clean(x.areas, 300), sheet: sh(x.sheet) })).filter(x => x.finish && x.sheet),
+        cleaning_notes: (r.cleaning_notes || []).slice(0, 80).map(x => ({ note: clean(x.note, 400), sheet: sh(x.sheet) })).filter(x => x.note && x.sheet),
+        questions: (r.questions || []).slice(0, 60).map(q => clean(q, 300)).filter(Boolean), model: model(), at: now(), dropped_without_sheet: 0 };
+      bp.dropped_without_sheet = ((r.rooms || []).length - bp.rooms.length) + ((r.counts || []).length - bp.counts.length) + ((r.cleaning_notes || []).length - bp.cleaning_notes.length);
+      const cur = (() => { try { return JSON.parse(d.sheets || '[]'); } catch { return []; } })();
+      const disc = app.locals.docDiscipline || (() => 'Other');
+      const sheets = cur.length ? cur : bp.sheets.map(s => ({ ...s, discipline: s.discipline || disc(s.sheet), revision: s.revision || d.revision || '', source: 'AI' }));
+      db.prepare("UPDATE documents SET blueprint=?, blueprint_status='Analyzed', sheets=? WHERE id=?").run(JSON.stringify(bp), JSON.stringify(sheets), d.id);
+      logAction(req, 'read blueprint with AI', 'document', d.id, `${bp.sheets.length} sheets, ${bp.rooms.length} rooms, ${bp.questions.length} questions`);
+      res.json({ blueprint: bp });
+    } catch (e) { db.prepare("UPDATE documents SET blueprint_status='Failed' WHERE id=?").run(d.id); fail(res, e); }
+  });
   app.post('/api/admin/ai/documents/:id/takeoff', auth, async (req, res) => {
     try { const r = await takeoffFromDocument(Number(req.params.id)); logAction(req, 'ran AI takeoff', 'document', Number(req.params.id), `takeoff #${r.takeoff_id}`); res.json(r); }
     catch (e) { fail(res, e); }
