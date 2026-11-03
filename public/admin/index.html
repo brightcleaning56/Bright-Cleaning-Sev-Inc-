@@ -258,6 +258,13 @@
   .day .vis { border-left: 4px solid #1f6fd1; } .day .vis.t-Work { border-left-color: #17904c; } .day .vis.unassigned { border-left-color: #d1382f; }
   @media (max-width: 1300px) { .kpis8 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   @media (max-width: 700px) { .kpis8 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .qcharts { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 12px; margin-bottom: 12px; } .qcharts .card { margin: 0; }
+  .donut { width: 120px; height: 120px; border-radius: 50%; display: grid; place-items: center; margin: 4px auto 10px; } .donut i { width: 78px; height: 78px; border-radius: 50%; background: var(--card); display: grid; place-items: center; font-style: normal; font-weight: 800; font-size: 22px; }
+  .qtrend { display: flex; align-items: flex-end; gap: 8px; height: 150px; padding-top: 10px; } .qtrend div { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; font-size: 11px; color: var(--muted); } .qtrend b { display: block; width: 100%; background: linear-gradient(180deg, #2a8bf0, #1f6fd1); border-radius: 6px 6px 0 0; } .qtrend span { font-weight: 700; color: #10263e; font-size: 11.5px; }
+  .ring { width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; } .ring i { width: 56px; height: 56px; border-radius: 50%; background: var(--card); display: grid; place-items: center; font-style: normal; font-weight: 800; }
+  .qroom { border: 1px solid var(--line2); border-radius: 10px; margin-bottom: 8px; } .qroom summary { padding: 10px 12px; cursor: pointer; display: flex; justify-content: space-between; font-weight: 600; } .qroom ul { margin: 0; padding: 0 12px 10px; list-style: none; } .qroom li { padding: 6px 0; border-top: 1px solid var(--line2); font-size: 14px; }
+  .qrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 10px 0; border-bottom: 1px solid var(--line2); } .qrow .seg3 { display: flex; } .qrow .seg3 button { border: 1px solid #ccd5df; background: #fff; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; } .qrow .seg3 button:first-child { border-radius: 8px 0 0 8px; } .qrow .seg3 button:last-child { border-radius: 0 8px 8px 0; } .qrow .seg3 .on.p { background: #17904c; color: #fff; } .qrow .seg3 .on.f { background: #d1382f; color: #fff; } .qrow .seg3 .on.n { background: #4c637a; color: #fff; } .qrow input { grid-column: 1 / -1; padding: 8px 10px; border: 1px solid #ccd5df; border-radius: 8px; font: inherit; }
+  @media (max-width: 1100px) { .qcharts { grid-template-columns: minmax(0, 1fr); } } .qcharts .card { min-width: 0; overflow: hidden; }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -485,10 +492,15 @@
       </div><aside class="propside" id="schSide"></aside></div>
     </section>
     <section class="view" id="v-quality">
-      <div class="pagehead"><div><h1>Quality &amp; inspections</h1><p>Walkthrough checklists with pass/fail scores. A failed item needs a note so the crew knows what to fix.</p></div><button class="btn" id="qualityAdd">New inspection</button></div>
-      <div class="kpis small" id="qualityKpis"></div>
-      
-      <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Area</th><th>Project / customer</th><th>Inspector</th><th>Score</th><th>Result</th></tr></thead><tbody id="qualityRows"></tbody></table></div>
+      <div class="pagehead"><div><h1>Quality &amp; Inspections</h1><p>Ensure every job meets our standards. Track inspections, corrective actions and customer acceptance.</p></div>
+        <div class="headact"><button class="btn" id="qualityAdd"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New inspection</button><button class="btn ghost" id="qTplBtn" type="button">Inspection templates</button><button class="btn ghost" id="qCsv" type="button">Export CSV</button></div></div>
+      <div class="propgrid"><div style="min-width:0">
+        <div class="kpis6" id="qualityKpis"></div>
+        <div class="qcharts"><div class="card"><h2 style="font-size:16px">Inspection results</h2><div id="qDonut"></div></div><div class="card"><h2 style="font-size:16px">Quality score trend</h2><div class="qtrend" id="qTrend"></div></div><div class="card"><h2 style="font-size:16px">Top deficiency categories</h2><div id="qDef"></div></div></div>
+        <div class="segtabs" id="qTabs" role="tablist"></div>
+        <div class="filt"><input type="search" id="qSearch" placeholder="Search inspections…" aria-label="Search inspections"><select id="qCust" aria-label="Customer"><option value="">All customers</option></select><select id="qProj" aria-label="Project"><option value="">All projects</option></select></div>
+        <div id="qBody"><div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Date</th><th>Inspection</th><th>Property / location</th><th>Customer</th><th>Service</th><th>Inspector</th><th>Score</th><th>Result</th><th>Status</th></tr></thead><tbody id="qualityRows"></tbody></table></div></div>
+      </div><aside class="propside" id="qSide"><div class="card"><p class="muted">Select an inspection to see its details.</p></div></aside></div>
     </section>
     <section class="view" id="v-documents">
       <div class="pagehead"><div><h1>Drawings &amp; documents</h1><p>Drawing sets, specifications, addenda and photos, filed by project and customer. Automatic takeoff runs here once the Anthropic API key is added in Render.</p></div><button class="btn" id="documentsAdd">Upload files</button></div>
