@@ -252,6 +252,12 @@
   .tk { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line2); } .tk .w { color: var(--muted); font-size: 12px; } .tk.review { background: #fffaf0; }
   @media (max-width: 1300px) { .kpis4m { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   @media (max-width: 700px) { .kpis4m { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .kpis8 { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; } .kpis8 .ktile { flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; } .kpis8 .ktile b { font-size: 22px; } .kpis8 .chip { width: 32px; height: 32px; } .kpis8 .ktile.alert b { color: #d1382f; }
+  .jobcard { border: 1px solid var(--line2); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start; background: #fff; cursor: pointer; } .jobcard:hover { background: #f5f9ff; } .jobcard b { display: block; } .jobcard small { color: var(--muted); display: block; }
+  .cand li { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line2); list-style: none; } .cand { padding: 0; margin: 0; } .cand .why { font-size: 12.5px; color: var(--muted); } .cand .blk { color: #c0362d; } .cand .wrn { color: #a46a00; }
+  .day .vis { border-left: 4px solid #1f6fd1; } .day .vis.t-Work { border-left-color: #17904c; } .day .vis.unassigned { border-left-color: #d1382f; }
+  @media (max-width: 1300px) { .kpis8 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .kpis8 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -466,10 +472,17 @@
       <div class="tablewrap"><table class="t"><thead><tr><th>When</th><th>Caller</th><th>Purpose</th><th>Outcome</th><th>Summary</th><th>Follow-up</th></tr></thead><tbody id="callsRows"></tbody></table></div>
     </section>
     <section class="view" id="v-schedule">
-      <div class="pagehead"><div><h1>Schedule</h1><p>Site visits, walkthroughs, cleaning phases and inspections, plus project due dates.</p></div><button class="btn" id="scheduleAdd">Schedule visit</button></div>
-      <div class="kpis small" id="scheduleKpis"></div>
+      <div class="pagehead"><div><h1>Scheduling &amp; Dispatch Center</h1><p>Schedule crews, manage jobs, dispatch work and keep cleaning operations on track.</p></div>
+        <div class="headact"><button class="btn" id="scheduleAdd"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Schedule job</button><button class="btn ghost" id="empAdd" type="button">Add employee</button></div></div>
+      <div class="segtabs" id="schTabs" role="tablist"><button data-sp="cal" class="on">Calendar</button><button data-sp="board">Dispatch board</button><button data-sp="emp">Employees</button><button data-sp="time">Time sheets</button></div>
+      <div class="kpis8" id="scheduleKpis"></div>
+      <div class="propgrid"><div style="min-width:0">
+        <div id="sp-cal">
       <div class="toolbar"><select id="schedMode" aria-label="View"><option value="list">List</option><option value="week">Week</option></select><select id="schedRange" aria-label="Range"><option value="14">Next 2 weeks</option><option value="30" selected>Next 30 days</option><option value="90">Next 90 days</option><option value="past">Past 30 days</option></select></div>
       <div class="week" id="schedWeek" hidden></div><div class="tablewrap" id="schedTable"><table class="t"><thead><tr><th>Date</th><th>Time</th><th>What</th><th>Customer / project</th><th>Assigned</th><th>Status</th></tr></thead><tbody id="scheduleRows"></tbody></table></div>
+        </div>
+        <div id="sp-board" hidden></div><div id="sp-emp" hidden></div><div id="sp-time" hidden></div>
+      </div><aside class="propside" id="schSide"></aside></div>
     </section>
     <section class="view" id="v-quality">
       <div class="pagehead"><div><h1>Quality &amp; inspections</h1><p>Walkthrough checklists with pass/fail scores. A failed item needs a note so the crew knows what to fix.</p></div><button class="btn" id="qualityAdd">New inspection</button></div>
