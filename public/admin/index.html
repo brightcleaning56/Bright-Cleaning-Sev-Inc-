@@ -267,6 +267,8 @@
   @media (max-width: 1100px) { .qcharts { grid-template-columns: minmax(0, 1fr); } } .qcharts .card { min-width: 0; overflow: hidden; }
   .chkrow { display: flex !important; gap: 10px; align-items: center; justify-content: flex-start; font-weight: 400 !important; margin: 6px 0; text-align: left; } .chkrow input { width: 18px !important; height: 18px; flex: none; margin: 0; } .chkrow span { flex: 1; } .chkrow small { flex: none; }
   #v-reports.alt > :not(.pagehead):not(#repTabs):not(#repNew) { display: none !important; } #v-reports.alt #repCsv, #v-reports.alt #repMonths { display: none; }
+  .pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; padding: 12px; } .pipe button, .pipe div.st { border: 1px solid var(--line2); border-radius: 10px; background: #f8fbff; padding: 10px; text-align: left; font: inherit; cursor: pointer; } .pipe b { display: block; font-size: 20px; } .pipe span { font-size: 12.5px; color: var(--muted); } .pipe .on { border-color: #1f6fd1; background: #eaf3ff; } .pipe small { display: block; color: var(--muted); font-size: 12px; }
+  .kpis6 .kpi.ktile { flex-direction: column; align-items: flex-start; gap: 6px; } .kpis6 .kpi.ktile.alert b { color: #d1382f; }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -430,6 +432,8 @@
     <section class="view" id="v-leads">
       <div class="pagehead"><div><h1>Leads</h1><p>Everything that comes in from the website. Click a row to see details, add notes or start a quote.</p></div>
         <button class="btn ghost" id="exportCsv">Export CSV</button></div>
+      <div class="kpis6" id="leadKpis"></div>
+      <div class="card pipe" id="leadPipe"></div>
       <div class="subtabs" id="leadKinds">
         <button data-kind="bid" class="active">Bid requests</button>
         <button data-kind="inquiry">Contact messages</button>
@@ -439,7 +443,7 @@
         <input type="search" id="leadSearch" placeholder="Search name, company, email, project…" aria-label="Search leads">
         <select id="leadStatusFilter" aria-label="Filter by status"></select>
       </div>
-      <div class="tablewrap"><table class="t"><thead id="leadHead"></thead><tbody id="leadRows"></tbody></table></div>
+      <div class="tablewrap card" style="padding:0"><table class="t isst"><thead id="leadHead"></thead><tbody id="leadRows"></tbody></table></div>
     </section>
 
     <section class="view" id="v-customers">
@@ -650,8 +654,9 @@
 
     <section class="view" id="v-contracts">
       <div class="pagehead"><div><h1>Contracts</h1><p>Approved proposals create a draft contract here automatically. Click a contract to edit it.</p></div><button class="btn" data-new="contracts">New contract</button></div>
+      <div class="kpis6" id="regKpis-contracts"></div><div class="segtabs" id="regTabs-contracts" role="tablist"></div>
       <div class="toolbar"><input type="search" data-search="contracts" placeholder="Search contracts…" aria-label="Search contracts"><select data-filter="contracts" aria-label="Filter by status"></select></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Contract</th><th>Customer</th><th>Term</th><th class="num">Value</th><th>Signature</th><th>Status</th></tr></thead><tbody id="rows-contracts"></tbody></table></div>
+      <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Contract</th><th>Customer</th><th>Term</th><th class="num">Value</th><th>Signature</th><th>Status</th></tr></thead><tbody id="rows-contracts"></tbody></table></div>
     </section>
 
     <section class="view" id="v-projects">
@@ -672,9 +677,10 @@
 
     <section class="view" id="v-invoices">
       <div class="pagehead"><div><h1>Invoices</h1><p>Track what you’ve billed and collected. Payments are recorded here, not processed.</p></div><button class="btn" data-new="invoices">New invoice</button></div>
-      <div class="stats" id="finStats"></div>
+      <div class="kpis6" id="regKpis-invoices"></div><div class="stats" id="finStats" hidden></div>
+      <div class="card pipe" id="invAging"></div><div class="segtabs" id="regTabs-invoices" role="tablist"></div>
       <div class="toolbar"><input type="search" data-search="invoices" placeholder="Search invoices…" aria-label="Search invoices"><select data-filter="invoices" aria-label="Filter by status"></select></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Invoice</th><th>Customer</th><th>Due</th><th class="num">Amount</th><th class="num">Balance</th><th>Status</th><th></th></tr></thead><tbody id="rows-invoices"></tbody></table></div>
+      <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Invoice</th><th>Customer</th><th>Due</th><th class="num">Amount</th><th class="num">Balance</th><th>Status</th><th></th></tr></thead><tbody id="rows-invoices"></tbody></table></div>
     </section>
 
     <section class="view" id="v-activity">

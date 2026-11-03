@@ -287,6 +287,14 @@
   }
 
   function renderLeads() {
+    { const L = state.leads.filter(l => (l.kind || 'bid') === 'bid'), now = Date.now(), wk = L.filter(l => now - Date.parse(l.created_at) < 7 * 864e5).length, mo = L.filter(l => String(l.created_at).slice(0, 7) === todayISO().slice(0, 7)).length;
+      const won = L.filter(l => l.status === 'Won').length, lost = L.filter(l => l.status === 'Lost').length, open = L.filter(l => !['Won', 'Lost', 'Archived'].includes(l.status)).length;
+      const inq = state.leads.filter(l => l.kind === 'inquiry' && l.status === 'New').length, jobs = state.leads.filter(l => l.kind === 'career' && l.status === 'New').length;
+      if ($('#leadKpis')) $('#leadKpis').innerHTML = [kt('leads', 'blue', 'New bid requests', L.filter(l => l.status === 'New').length, `${wk} this week`), kt('overview', 'navy', 'Open pipeline', open, `${mo} received this month`), kt('check', 'green', 'Won', won, ''), kt('issues', 'red', 'Lost', lost, ''),
+        kt('reports', 'teal', 'Win rate', won + lost ? Math.round(won / (won + lost) * 100) + '%' : '—', won + lost ? `${won} of ${won + lost} decided` : 'no decisions yet'), kt('emails', 'amber', 'Messages & applicants', inq + jobs, `${inq} messages · ${jobs} applicants`)].join('');
+      const stages = ['New', 'In Review', 'Site Walkthrough', 'Proposal in Progress', 'Proposal Sent', 'Won', 'Lost'];
+      if ($('#leadPipe')) { $('#leadPipe').innerHTML = stages.map(st => `<button type="button" data-pipe="${esc(st)}" class="${leadStatusSel.value === st && state.leadKind === 'bid' ? 'on' : ''}"><span>${esc(st)}</span><b>${L.filter(l => l.status === st).length}</b></button>`).join('');
+        $$('#leadPipe [data-pipe]').forEach(b => b.onclick = () => { state.leadKind = 'bid'; leadStatusSel.value = leadStatusSel.value === b.dataset.pipe ? 'open' : b.dataset.pipe; renderLeads(); }); } }
     $$('#leadKinds button').forEach(b => {
       const n = state.leads.filter(l => (l.kind || 'bid') === b.dataset.kind && l.status === 'New').length;
       b.classList.toggle('active', b.dataset.kind === state.leadKind);
@@ -1053,6 +1061,7 @@
 
   function renderRegister(t) {
     const cfg = REG[t];
+    regHeader(t);
     const q = ($(`[data-search="${t}"]`).value || '').trim().toLowerCase();
     const st = $(`[data-filter="${t}"]`).value;
     const rows = state[t].filter(r => !st || (t === 'invoices' ? invoiceState(r) === st : r.status === st))
@@ -1066,6 +1075,24 @@
     });
   }
 
+  function regHeader(t) {
+    const R = state[t] || [], sel = $(`[data-filter="${t}"]`), tabs = $('#regTabs-' + t), kp = $('#regKpis-' + t);
+    if (!tabs || !kp || !sel) return;
+    const sts = t === 'invoices' ? ['Draft', 'Sent', 'Partially Paid', 'Overdue', 'Paid', 'Void'] : ['Draft', 'Review', 'Active', 'Renewal Due', 'Closed'];
+    const stOf = r => t === 'invoices' ? invoiceState(r) : r.status;
+    tabs.innerHTML = `<button data-rt="" class="${!sel.value ? 'on' : ''}">All (${R.length})</button>` + sts.map(x => `<button data-rt="${esc(x)}" class="${sel.value === x ? 'on' : ''}">${esc(x)} (${R.filter(r => stOf(r) === x).length})</button>`).join('');
+    $$('#regTabs-' + t + ' button').forEach(b => b.onclick = () => { sel.value = b.dataset.rt; renderRegister(t); });
+    if (t === 'contracts') {
+      const act = R.filter(r => r.status === 'Active'), sum = a => a.reduce((s, r) => s + (Number(r.value) || 0), 0), in60 = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
+      kp.innerHTML = [kt('contracts', 'blue', 'Active contracts', act.length, money(sum(act))), kt('money', 'navy', 'Total contracted', money(sum(R.filter(r => r.status !== 'Closed'))), 'not closed'), kt('issues', 'amber', 'Awaiting signature', R.filter(r => !['Signed', 'Executed', 'Fully signed'].includes(r.signature_status) && r.status !== 'Closed').length, ''),
+        kt('cal', 'red', 'Ending within 60 days', R.filter(r => r.status === 'Active' && r.end_date && r.end_date <= in60).length, 'plan the renewal'), kt('proposals', 'purple', 'Drafts', R.filter(r => r.status === 'Draft').length, ''), kt('check', 'green', 'Closed', R.filter(r => r.status === 'Closed').length, '')].join('');
+    } else {
+      const live = R.filter(i => i.status !== 'Void' && i.status !== 'Draft'), billed = live.reduce((s, i) => s + Number(i.amount || 0), 0), paid = live.reduce((s, i) => s + Number(i.paid_amount || 0), 0), od = live.filter(i => invoiceState(i) === 'Overdue');
+      kp.innerHTML = [kt('invoices', 'blue', 'Billed', money(billed), `${live.length} sent invoices`), kt('check', 'green', 'Collected', money(paid), billed ? Math.round(paid / billed * 100) + '% of billed' : ''), kt('money', 'navy', 'Outstanding', money(Math.max(0, billed - paid)), ''),
+        kt('issues', 'red', 'Overdue', money(od.reduce((s, i) => s + Math.max(0, i.amount - i.paid_amount), 0)), `${od.length} invoice(s)`), kt('proposals', 'purple', 'Drafts (not sent)', R.filter(i => i.status === 'Draft').length, ''), kt('check', 'teal', 'Paid in full', live.filter(i => invoiceState(i) === 'Paid').length, '')].join('');
+      if ($('#invAging') && !regHeader.agingLoading) { regHeader.agingLoading = true; api('/api/admin/reports/aging').then(a => { $('#invAging').innerHTML = `<div class="st"><span>Open balance</span><b>${money(a.total || 0)}</b><small>A/R aging</small></div>` + Object.entries(a.buckets || {}).map(([k, v]) => `<div class="st"><span>${k === 'Current' ? 'Current (not due)' : esc(k) + ' days late'}</span><b style="color:${k !== 'Current' && v > 0 ? '#c0362d' : 'inherit'}">${money(v)}</b></div>`).join(''); }).catch(() => { $('#invAging').hidden = true; }).finally(() => { regHeader.agingLoading = false; }); }
+    }
+  }
   function renderFinance() {
     const live = state.invoices.filter(i => i.status !== 'Void');
     const billed = live.reduce((s, i) => s + Number(i.amount || 0), 0);
@@ -1375,7 +1402,9 @@
     };
     return $('#genForm');
   }
-  const kpiTiles = (el, tiles) => { $(el).innerHTML = tiles.map(t => `<div class="kpi${t.alert ? ' alert' : ''}"><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${t.sub ? `<small class="flat">${esc(t.sub)}</small>` : ''}</span></div>`).join(''); };
+  const KT_ICONS = [['overview', 'blue'], ['check', 'green'], ['money', 'navy'], ['clock', 'amber'], ['reports', 'teal'], ['leads', 'purple']];
+  const kpiTiles = (el, tiles) => { const box = $(el); box.classList.add('kpis6'); box.classList.remove('small'); box.innerHTML = tiles.map((t, i) => { const [ico, tone] = t.alert ? ['issues', 'red'] : KT_ICONS[i % KT_ICONS.length];
+    return `<div class="kpi ktile${t.alert ? ' alert' : ''}"><span class="chip ${tone}">${ic(ico)}</span><div style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${t.sub ? `<small class="flat">${esc(t.sub)}</small>` : ''}</div></div>`; }).join(''); };
 
   // ---------- Global search ----------
   let gTimer = null;
