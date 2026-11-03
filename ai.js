@@ -131,6 +131,34 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
     try { const r = await takeoffFromDocument(Number(req.params.id)); logAction(req, 'ran AI takeoff', 'document', Number(req.params.id), `takeoff #${r.takeoff_id}`); res.json(r); }
     catch (e) { fail(res, e); }
   });
+  // AI estimate: drafts a priced estimate from a plain-language description, using ONLY the approved price book.
+  // The AI picks items and quantities stated in the description; the server does all pricing. Unknowns become questions.
+  app.post('/api/admin/ai/estimates/generate', auth, async (req, res) => {
+    const b = req.body || {}, description = clean(b.description, 6000);
+    if (description.length < 20) return res.status(400).json({ error: 'Describe the project: building or unit type, square footage or unit counts, and the cleaning needed.' });
+    const book = db.prepare('SELECT id, category, name, unit, unit_price FROM scope_items WHERE active=1 AND unit_price IS NOT NULL AND unit_price>0 ORDER BY category, id').all();
+    if (!book.length) return res.status(409).json({ error: 'The price book has no priced items yet. Import or price items in Cleaning Scopes first.' });
+    try {
+      const out = await call([{ role: 'user', content: `Approved Bright Clean price book (JSON):\n${JSON.stringify(book)}\n\nProject description from staff:\n${description}\n\nReturn ONLY JSON: {"project_name":"","scope_category":"construction|multifamily|janitorial|windows|exterior|other","area_sqft":0,"lines":[{"scope_id":0,"quantity":0,"basis":"where in the description this quantity comes from"}],"assumptions":[],"exclusions":[],"questions":[]}\nRules: use only scope_id values from the price book. Use only quantities stated or directly computable from the description (e.g. units x turns). Never guess square footage or counts; if a needed quantity is missing, leave that line out and add a question. Do not include prices.` }],
+        'You prepare draft cleaning estimates for Bright Cleaning Sev Inc. You never invent quantities or prices.', 1500);
+      const j = parseJSON(out) || {};
+      const byId = new Map(book.map(x => [x.id, x]));
+      const items = (Array.isArray(j.lines) ? j.lines : []).map(l => ({ s: byId.get(Number(l.scope_id)), q: Number(l.quantity), basis: clean(l.basis, 200) })).filter(x => x.s && x.q > 0 && x.q < 1e8)
+        .map(x => ({ scope_id: x.s.id, description: `${x.s.name} (${x.q.toLocaleString('en-US')} ${x.s.unit})`, category: x.s.category, unit: x.s.unit, quantity: x.q, unit_price: x.s.unit_price, amount: Math.round(x.q * x.s.unit_price * 100) / 100, basis: x.basis, source: 'AI (from description)' }));
+      const questions = (Array.isArray(j.questions) ? j.questions : []).map(q => clean(q, 300)).filter(Boolean);
+      if (!items.length) return res.json({ created: false, questions: questions.length ? questions : ['Add the square footage or unit counts so the estimate can be priced.'] });
+      const total = Math.round(items.reduce((t, i) => t + i.amount, 0) * 100) / 100, t = new Date().toISOString();
+      const scope = [description, '', 'Drafted by AI from the description using the approved price book. Every quantity lists where it came from. Review before sending.', ...(questions.length ? ['Open questions: ' + questions.join(' | ')] : [])].join('\n');
+      const id = db.prepare(`INSERT INTO estimates(customer_name,company,email,project_name,site_address,scope,area_sqft,line_items,line_items_total,use_line_items,proposal_total,status,public_token,expires_on,created_at,updated_at,scope_category,assumptions,exclusions)
+        VALUES(?,?,?,?,?,?,?,?,?,1,?,'Draft',?,?,?,?,?,?,?)`).run(clean(b.customer_name, 150) || clean(b.company, 150) || 'Customer', clean(b.company, 150), clean(b.email, 254), clean(j.project_name, 200) || 'AI draft estimate', clean(b.site_address, 300), scope,
+        Number(j.area_sqft) > 0 && Number(j.area_sqft) < 1e8 ? Number(j.area_sqft) : 0, JSON.stringify(items), total, total, require('crypto').randomBytes(24).toString('hex'), new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), t, t,
+        ['construction', 'multifamily', 'janitorial', 'windows', 'exterior', 'other'].includes(j.scope_category) ? j.scope_category : null,
+        (Array.isArray(j.assumptions) ? j.assumptions : []).map(x => clean(x, 300)).filter(Boolean).join('\n'), (Array.isArray(j.exclusions) ? j.exclusions : []).map(x => clean(x, 300)).filter(Boolean).join('\n')).lastInsertRowid;
+      logAction(req, 'drafted with AI', 'estimate', id, `$${total.toLocaleString('en-US')}, ${items.length} lines${questions.length ? `, ${questions.length} questions` : ''}`);
+      res.status(201).json({ created: true, id, total, lines: items.length, questions });
+    } catch (e) { fail(res, e); }
+  });
+
   // AI report assistant: answers management questions from the actual report figures only.
   app.post('/api/admin/ai/reports/ask', auth, async (req, res) => {
     const question = clean((req.body || {}).question, 500);
