@@ -107,6 +107,7 @@ module.exports = function mountOps(app, ctx) {
     if (!b.email && !clean(b.company)) return res.status(400).json({ error: 'Enter an email or a company so the customer can be matched to their records.' });
     const key = matchKey(b);
     if (db.prepare('SELECT id FROM customers WHERE match_key=?').get(key)) return res.status(409).json({ error: 'A customer with that email or company already exists.' });
+    { const dupe = (b.company && db.prepare('SELECT id FROM customers WHERE lower(trim(company))=lower(trim(?))').get(b.company)) || (b.email && db.prepare('SELECT id FROM customers WHERE lower(email)=lower(?)').get(b.email)); if (dupe) return res.status(409).json({ error: `A customer with that email or company already exists (#${dupe.id}).`, id: dupe.id }); }
     const id = upsertCustomer({ ...b }, 'added manually');
     if (b.notes) db.prepare('UPDATE customers SET notes=? WHERE id=?').run(clean(b.notes, 5000), id);
     logAction(req, 'created', 'customer', id, clean(b.company || b.name));
@@ -123,8 +124,18 @@ module.exports = function mountOps(app, ctx) {
     res.json({ ok: true });
   });
   app.delete('/api/admin/customers/:id', auth, (req, res) => {
-    const x = db.prepare('DELETE FROM customers WHERE id=?').run(Number(req.params.id));
-    if (!x.changes) return res.status(404).json({ error: 'Not found' });
+    const c = db.prepare('SELECT * FROM customers WHERE id=?').get(Number(req.params.id));
+    if (!c) return res.status(404).json({ error: 'Not found' });
+    const me = String((req.user && req.user.email) || '').toLowerCase(), owner = process.env.ADMIN_EMAIL || '';
+    let role = me === owner.toLowerCase() ? 'owner' : 'staff'; try { const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(me); if (r && role !== 'owner') role = r.role; } catch { /* */ }
+    if (role !== 'owner') return res.status(403).json({ error: 'Only an owner can remove a customer.' });
+    const label = c.company || c.name || c.email || '';
+    if (String((req.body || {}).confirm || '').trim().toLowerCase() !== String(label).trim().toLowerCase()) return res.status(400).json({ error: `To confirm, type the customer name exactly: ${label}` });
+    const r = related(c);
+    const linked = r.proposals.length + r.contracts.length + r.projects.length + r.invoices.length;
+    if (linked) return res.status(409).json({ error: `This customer has ${linked} linked proposal, contract, project or invoice record(s). Set the status to Inactive instead, so history is preserved.` });
+    try { db.prepare('DELETE FROM customer_contacts WHERE customer_id=?').run(c.id); db.prepare('DELETE FROM customer_properties WHERE customer_id=?').run(c.id); } catch { /* */ }
+    const x = db.prepare('DELETE FROM customers WHERE id=?').run(c.id);
     logAction(req, 'deleted', 'customer', Number(req.params.id), 'directory entry only; related records kept');
     res.json({ ok: true });
   });

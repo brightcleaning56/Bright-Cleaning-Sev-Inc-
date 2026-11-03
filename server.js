@@ -98,6 +98,7 @@ require('./suite')(app,{db,auth,logAction,clean,upload,path,fs,getOps:()=>ops,is
 if(mailer&&!mailer.__logged){const send=mailer.sendMail.bind(mailer);const prov=mailer.provider||'smtp';const rec=(o,st,err)=>{try{db.prepare('INSERT INTO email_log(to_addr,subject,body,status,error,provider,created_at) VALUES(?,?,?,?,?,?,?)').run(String([].concat(o.to||'').join(', ')).slice(0,500),String(o.subject||'').slice(0,300),String(o.text||'').slice(0,20000),st,err?String(err).slice(0,500):null,prov,new Date().toISOString())}catch(e){console.error('email log failed',e.message)}};mailer.sendMail=async o=>{try{const r=await send(o);rec(o,'sent');return r}catch(e){rec(o,'failed',e.message);throw e}};mailer.__logged=true}
 require('./ai')(app,{db,auth,logAction,clean,path,uploadDir,getMailer:()=>mailer,isEmail});
 require('./autobid')(app,{db,auth,logAction});
+require('./crm')(app,{db,auth,logAction,clean,isEmail,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public')));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));
 app.use((err,req,res,next)=>{if(err.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'A record with that value already exists.'});const code=err.status||err.statusCode||((err.name==='MulterError'||/Unsupported file type/.test(err.message))?400:500);if(code>=500)console.error(err);res.status(code).json({error:code<500?(err.message||'Request failed'):'Something went wrong. Please try again.'})});
