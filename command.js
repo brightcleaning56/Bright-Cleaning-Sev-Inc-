@@ -35,7 +35,7 @@ module.exports = function mountCommand(app, ctx) {
     const iss = one(`SELECT SUM(type='complaint') complaints, SUM(due_date IS NOT NULL AND due_date<>'' AND due_date<?) overdue FROM customer_issues WHERE status IN ('Open','In progress')`, today);
     const openComplaints = iss.complaints || 0, overdueItems = iss.overdue || 0;
     const awaitingApproval = require('./approvals').pendingCount();
-    const failedEmails = one(`SELECT COUNT(*) n FROM automation_log WHERE status='failed' AND created_at>=?`, iso(new Date(now - 7 * 864e5))).n;
+    const failedEmails = one(`SELECT COUNT(*) n FROM automation_log WHERE status='failed' AND kind NOT LIKE 'ai_%' AND created_at>=?`, iso(new Date(now - 7 * 864e5))).n;
 
     const pipeline = [
       { stage: 'Open bid requests', ...one(`SELECT COUNT(*) n, 0 v FROM leads WHERE kind='bid' AND status NOT IN ('Won','Lost','Archived')`), valued: false },
@@ -66,7 +66,7 @@ module.exports = function mountCommand(app, ctx) {
         email: { connected: emailReady, label: 'Email', status: emailReady ? `Sending enabled via ${viaPostmark ? 'Postmark' : 'Microsoft 365'} (outgoing only)` : 'Not set up',
           needs: emailReady ? 'Inbox inside Bright Clean needs a Microsoft 365 app registration.' : 'Add POSTMARK_TOKEN in Render (Postmark server API token). The full inbox needs a Microsoft 365 app registration.' },
         calls: { connected: false, label: 'Call Center', status: 'Not connected', needs: 'A business phone provider with an API (for example Twilio, RingCentral or OpenPhone) and a call-recording disclosure policy.' },
-        blueprint: { connected: false, label: 'Blueprint AI', status: aiKey ? 'Key present, module not built yet' : 'Not connected', needs: 'An Anthropic API key in Render, then the blueprint pilot on one real drawing package.' },
+        blueprint: { connected: aiKey, label: 'AI (takeoff & leads)', status: aiKey ? 'On: leads are triaged automatically; AI takeoff runs from Drawings' : 'Off', needs: aiKey ? '' : 'Add ANTHROPIC_API_KEY in Render to turn on AI lead triage, reply drafts, call notes and drawing takeoff.' },
         scopes: { connected: scopes.total > 0 && !scopes.missing, label: 'Cleaning scopes', status: scopes.missing ? `${scopes.total - scopes.missing} of ${scopes.total} items priced` : 'All items priced', needs: scopes.missing ? `${scopes.missing} items have no price yet. Price or archive them under Cleaning scopes; import the price book for your standard rates.` : '' }
       }
     });
