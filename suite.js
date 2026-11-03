@@ -125,6 +125,10 @@ module.exports = function mountSuite(app, ctx) {
     if ('type' in b) out.type = pick(b.type, VISIT.type, 'Site visit');
     if ('status' in b) out.status = pick(b.status, VISIT.status, 'Scheduled');
     for (const k of ['address', 'notes', 'assigned_to']) if (k in b) out[k] = clean(b[k], 2000);
+    for (const k of ['instructions', 'equipment']) if (k in b) out[k] = clean(b[k], 3000);
+    if ('priority' in b) out.priority = ['Low', 'Normal', 'High', 'Urgent'].includes(b.priority) ? b.priority : 'Normal';
+    if ('crew_needed' in b) { const n = b.crew_needed === '' || b.crew_needed == null ? null : Math.trunc(Number(b.crew_needed)); if (n !== null && !(n >= 1 && n <= 50)) errs.push('Crew needed must be 1 to 50.'); else out.crew_needed = n; }
+    if ('checklist' in b) { let l; try { l = typeof b.checklist === 'string' ? JSON.parse(b.checklist) : b.checklist; } catch { l = null; } if (!Array.isArray(l)) errs.push('Checklist must be a list.'); else out.checklist = JSON.stringify(l.slice(0, 60).map(x => ({ text: clean(x.text || x.title || '', 200), done: !!x.done, by: x.by || null, at: x.at || null })).filter(x => x.text)); }
     if ('crew_size' in b) out.crew_size = b.crew_size === '' || b.crew_size == null ? null : Math.max(0, Math.min(500, Math.trunc(Number(b.crew_size) || 0)));
     for (const [k, t] of [['customer_id', 'customers'], ['project_id', 'projects'], ['lead_id', 'leads']]) if (k in b) { const v = idOrNull(b[k]); if (!exists(t, v)) errs.push(`That ${t.slice(0, -1)} was not found.`); else out[k] = v; }
     return { out, errs };

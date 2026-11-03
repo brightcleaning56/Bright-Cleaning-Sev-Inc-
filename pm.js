@@ -57,9 +57,9 @@ module.exports = function mountPM(app, ctx) {
       return null;
     }
     const k = contractOf(p), why = [];
-    if (!executed(k) && !p.contract_waiver) why.push(k ? `the contract is not signed yet (${k.signature_status || 'Not sent'})` : 'there is no executed contract');
-    const r = readinessOf(p); if (!r.complete) why.push('readiness not confirmed: ' + r.missing.join(', '));
-    if (!p.dispatch_approved_by) why.push('dispatch has not been approved by an owner or manager');
+    if (!executed(k) && !p.contract_waiver) why.push(k ? `the contract is signed (it is currently "${k.signature_status || 'Not sent'}")` : 'there is an executed contract');
+    const r = readinessOf(p); if (!r.complete) why.push('readiness is confirmed (still needed: ' + r.missing.join(', ') + ')');
+    if (!p.dispatch_approved_by) why.push('an owner or manager approves dispatch');
     if (to === 'Completed') { const c = completeBlock(p); if (c) why.push(c); }
     return why.length ? `This project stays in Planning until ${why.join('; ')}.` : null;
   }
