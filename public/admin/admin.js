@@ -1045,6 +1045,7 @@
   $$('[data-search]').forEach(inp => inp.addEventListener('input', () => renderRegister(inp.dataset.search)));
 
   async function loadRegister(t) {
+    if (t === 'projects') return loadProjects();
     state[t] = (await api('/api/admin/' + t))[t] || [];
     renderRegister(t);
     if (t === 'invoices') renderFinance();
@@ -1086,6 +1087,7 @@
   }
 
   async function openRecord(t, id) {
+    if (t === 'projects' && id) return openProject(id);
     const cfg = REG[t];
     if (!state[t].length || (id && !state[t].find(r => r.id === id))) {
       try { state[t] = (await api('/api/admin/' + t))[t] || []; } catch (err) { return toast(err.message, true); }
@@ -1554,13 +1556,14 @@
     $$('#documentsRows [data-aitake]').forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = 'Reading drawings…'; try { const r = await api(`/api/admin/ai/documents/${b.dataset.aitake}/takeoff`, { method: 'POST' }); toast(`AI read ${r.analysis.sheets.length} sheets; takeoff #${r.takeoff_id} drafted for your review`); go('takeoffs'); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'AI takeoff'; } });
     $$('#documentsRows [data-totake]').forEach(b => b.onclick = () => { const d = docState.documents.find(x => x.id === Number(b.dataset.totake)); openTakeoff(null, d); });
   }
-  function uploadDocs() {
-    openForm({ title: 'Upload drawings & documents', defs: [
+  function uploadDocs(preset) {
+    preset = preset || {};
+    openForm({ title: 'Upload drawings & documents', values: preset, defs: [
       { name: 'files', label: 'Files (up to 8, 15 MB each)', type: 'file' }, { name: 'kind', label: 'Type', type: 'select', options: docState.kinds.length ? docState.kinds : ['Drawings', 'Specifications', 'Addendum', 'Finish schedule', 'Photos', 'Other'] },
       { name: 'revision', label: 'Revision', placeholder: 'e.g. IFC, Rev 3, Addendum 2' }, { name: 'title', label: 'Title (single file only)' },
       { name: 'project_id', label: 'Project', type: 'project' }, { name: 'customer_id', label: 'Customer', type: 'customer' }],
       submit: async b => { const fd = new FormData(); [...(b.files || [])].forEach(f => fd.append('files', f)); for (const k of ['kind', 'revision', 'title', 'project_id', 'customer_id']) fd.append(k, b[k] || ''); return api('/api/admin/documents', { method: 'POST', body: fd }); },
-      after: res => { toast(`${res.ids.length} file(s) uploaded`); go('documents'); loadDocuments(); } });
+      after: res => { toast(`${res.ids.length} file(s) uploaded`); if (preset.project_id && state.view === 'projects') openProject(Number(preset.project_id)); else { go('documents'); loadDocuments(); } } });
   }
 
   // ---------- Email Center ----------
@@ -1855,6 +1858,152 @@
       loadLinks();
     }
     draw();
+  }
+
+  // ---------- Project Management Center (mockup layout + workspace) ----------
+  const pj = { tab: 'all', page: 1, list: [], kpis: {}, services: {}, sel: null, wtab: 'overview', d: null };
+  const PJ_TABS = [['all', 'All projects'], ['Planning', 'Planning'], ['awaiting', 'Awaiting approval'], ['Ready to mobilize', 'Ready to mobilize'], ['In Progress', 'Active'], ['On Hold', 'On hold'], ['Completed', 'Completed'], ['Archived', 'Archived']];
+  const pjMatch = (p, t) => t === 'all' ? p.status !== 'Archived' : t === 'awaiting' ? p.awaiting_approval : t === 'In Progress' ? ['In Progress', 'Quality Review', 'Mobilization'].includes(p.status) : p.status === t;
+  ['#pjSearch', '#pjSvc', '#pjMgr'].forEach(x => $(x).addEventListener(x === '#pjSearch' ? 'input' : 'change', () => { pj.page = 1; renderProjects(); }));
+  async function loadProjects() {
+    const r = await api('/api/admin/pm/projects'); Object.assign(pj, { list: r.projects, kpis: r.kpis, services: r.services, costCats: r.cost_categories });
+    state.projects = r.projects;
+    const k = r.kpis;
+    $('#pjKpis').innerHTML = [kt('overview', 'blue', 'Active projects', k.active, ''), kt('cal', 'purple', 'Awaiting kickoff', k.kickoff, k.awaiting_approval ? `${k.awaiting_approval} awaiting approval` : 'In planning'), kt('issues', 'red', 'Behind schedule', k.behind, k.on_hold ? `${k.on_hold} on hold` : ''), kt('check', 'green', 'Completed (this month)', k.completed_month, ''),
+      kt('money', 'navy', 'Contracted value', money(k.contracted), 'Signed contracts'), kt('reports', 'blue', 'Actual cost', money(k.actual_cost), k.budget ? `Budget ${money(k.budget)}` : 'Recorded expenses only'), kt('check', 'teal', 'Gross profit', k.actual_cost ? money(k.gross_profit) : '—', k.actual_cost ? 'Projects with recorded costs' : 'No costs recorded yet')]
+      .map((h, i) => i >= 4 ? h.replace('class="ktile"', 'class="ktile money"') : h).join('');
+    $('#pjTabs').innerHTML = PJ_TABS.map(([v, l]) => `<button data-t="${esc(v)}" class="${pj.tab === v ? 'on' : ''}">${l} (${r.projects.filter(p => pjMatch(p, v)).length})</button>`).join('');
+    $$('#pjTabs button').forEach(b => b.onclick = () => { pj.tab = b.dataset.t; pj.page = 1; loadProjects(); });
+    { const c = $('#pjSvc').value; $('#pjSvc').innerHTML = '<option value="">Service: All</option>' + Object.entries(r.services).map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join(''); $('#pjSvc').value = c; }
+    { const c = $('#pjMgr').value, ms = [...new Set(r.projects.map(p => p.manager).filter(Boolean))]; $('#pjMgr').innerHTML = '<option value="">Manager: All</option>' + ms.map(m => `<option>${esc(m)}</option>`).join(''); $('#pjMgr').value = c; }
+    const steps = [['contracts', 'Contract executed'], ['proposals', 'Project planning'], ['leads', 'Staffing & resources'], ['cal', 'Scheduling & work orders'], ['projects', 'Execution'], ['quality', 'Quality inspections'], ['check', 'Customer acceptance'], ['check', 'Completed']];
+    $('#pjFlow').innerHTML = steps.map(([i, l], n) => `${n ? '<b>→</b>' : ''}<span><i>${ic(i)}</i>${l}</span>`).join('');
+    $('#pjWork').hidden = true; $('#pjList').hidden = false;
+    renderProjects();
+    if (pj.sel && r.projects.find(p => p.id === pj.sel)) drawPjSide(r.projects.find(p => p.id === pj.sel));
+  }
+  function renderProjects() {
+    const q = $('#pjSearch').value.trim().toLowerCase(), sv = $('#pjSvc').value, mg = $('#pjMgr').value;
+    const all = pj.list.filter(p => pjMatch(p, pj.tab) && (!sv || p.service === sv) && (!mg || p.manager === mg) && (!q || [p.name, p.company, p.customer_name, p.site_address, p.number].join(' ').toLowerCase().includes(q)));
+    const per = 10, pages = Math.max(1, Math.ceil(all.length / per)); pj.page = Math.min(pj.page, pages);
+    $('#rows-projects').innerHTML = all.length ? all.slice((pj.page - 1) * per, pj.page * per).map(p => `<tr class="click" data-pj="${p.id}"><td><b style="color:#1f6fd1">${esc(p.number)}</b></td><td><b>${esc(p.name || '—')}</b><small>${esc(p.site_address || '')}</small></td><td>${esc(p.company || p.customer_name || '—')}</td>
+      <td>${p.service_label ? `<span class="pill t-task">${esc(p.service_label.split(' ')[0])}</span>` : '<span class="muted">Not set</span>'}</td><td>${p.manager ? `<span class="avs"><i>${initials(p.manager)}</i>${esc(String(p.manager).split('@')[0])}</span>` : '—'}</td>
+      <td class="num">${money(p.contract_value)}</td><td>${p.start_date ? fmtDate(p.start_date) : '—'}<small>${p.due_date ? fmtDate(p.due_date) : ''}</small></td>
+      <td><b>${p.progress || 0}%</b><div class="bar2 ${p.progress >= 100 ? 'done' : ''}"><i style="width:${p.progress || 0}%"></i></div></td><td><span class="pill st-${p.status === 'Completed' ? 'Approved' : p.status === 'On Hold' ? 'Expired' : p.status === 'Planning' ? 'Draft' : 'Sent'}">${esc(p.awaiting_approval ? 'Awaiting approval' : p.status === 'In Progress' ? 'Active' : p.status)}</span>${p.behind ? '<small style="color:#d1382f">behind</small>' : ''}</td></tr>`).join('')
+      : `<tr><td class="emptyrow" colspan="9">${q || sv || mg ? 'No projects match.' : 'No projects here yet. Approved proposals create a planning project automatically.'}</td></tr>`;
+    $('#pjShowing').textContent = all.length ? `Showing ${(pj.page - 1) * per + 1} – ${Math.min(pj.page * per, all.length)} of ${all.length} projects` : '';
+    $('#pjPages').innerHTML = pages > 1 ? Array.from({ length: pages }, (_, n) => `<button class="${n + 1 === pj.page ? 'on' : ''}" data-pg="${n + 1}">${n + 1}</button>`).join('') : '';
+    $$('#pjPages button').forEach(b => b.onclick = () => { pj.page = Number(b.dataset.pg); renderProjects(); });
+    $$('#rows-projects [data-pj]').forEach(r => r.onclick = () => { pj.sel = Number(r.dataset.pj); drawPjSide(pj.list.find(p => p.id === pj.sel)); });
+  }
+  async function drawPjSide(p) {
+    let d; try { d = await api('/api/admin/pm/projects/' + p.id); } catch (e) { return toast(e.message, true); }
+    const up = d.tasks.filter(t => t.status === 'Open' && t.approved).slice(0, 4);
+    $('#pjSide').innerHTML = `<div class="card"><h2 style="font-size:18px;margin-bottom:2px">${esc(p.number)} ${badge(p.status === 'In Progress' ? 'Active' : p.status)}</h2><b>${esc(p.name || '')}</b><p class="muted" style="margin:4px 0 10px">${esc(p.site_address || '')}</p>
+      <div style="display:flex;justify-content:space-between"><b>Project progress</b><b>${p.progress || 0}%</b></div><div class="bar2" style="height:10px;margin:6px 0 12px"><i style="width:${p.progress || 0}%"></i></div>
+      <dl class="stat"><dt>Contract value</dt><dd>${money(p.contract_value)}</dd><dt>Actual cost</dt><dd>${money(p.actual_cost)}</dd><dt>Start</dt><dd>${p.start_date ? fmtDate(p.start_date) : '—'}</dd><dt>End</dt><dd>${p.due_date ? fmtDate(p.due_date) : '—'}</dd><dt>Manager</dt><dd>${esc(p.manager || '—')}</dd><dt>Gross margin</dt><dd>${p.actual_cost && p.contract_value ? ((p.contract_value - p.actual_cost) / p.contract_value * 100).toFixed(1) + '%' : '—'}</dd></dl></div>
+      <div class="card"><h2 style="font-size:16px">Services &amp; scope</h2><p>${esc(p.service_label || 'Service not set')}</p>${d.estimate ? `<p class="muted" style="white-space:pre-wrap;max-height:110px;overflow:auto">${esc(String(d.estimate.scope || '').slice(0, 400))}</p>` : ''}</div>
+      <div class="card"><h2 style="font-size:16px">Upcoming tasks</h2>${up.length ? '<ul class="mini">' + up.map(t => `<li>${esc(t.title)} <small class="${t.due_date && t.due_date < todayISO() ? 'due-late' : 'muted'}">${t.due_date ? fmtDate(t.due_date) : t.phase || ''}</small></li>`).join('') + '</ul>' : '<p class="muted">No open tasks.</p>'}${!p.readiness_complete && p.status === 'Planning' ? `<p class="muted"><b>Before dispatch:</b> ${esc(p.readiness_missing.join(', '))}</p>` : ''}</div>
+      <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button class="btn" id="pjOpen" style="grid-column:1/-1">Open project workspace</button><button class="btn ghost" data-w="schedule">Schedule work</button><button class="btn ghost" data-w="tasks">Add task</button><button class="btn ghost" data-w="comms">Log update</button><button class="btn ghost" data-w="documents">Upload file</button></div>`;
+    $('#pjOpen').onclick = () => openProject(p.id);
+    $$('#pjSide [data-w]').forEach(b => b.onclick = () => openProject(p.id, b.dataset.w));
+  }
+  $('#pjCsv').addEventListener('click', () => {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`, rows = [['Project', 'Name', 'Customer', 'Service', 'Manager', 'Status', 'Progress %', 'Contract value', 'Budget', 'Actual cost', 'Start', 'Due', 'Actual start', 'Actual end'], ...pj.list.map(p => [p.number, p.name, p.company || p.customer_name, p.service_label, p.manager, p.status, p.progress, p.contract_value, p.budget, p.actual_cost, p.start_date, p.due_date, p.actual_start, p.actual_end])];
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'projects.csv'; a.click();
+  });
+  const WTABS = [['overview', 'Overview', 'overview'], ['scope', 'Scope of work', 'proposals'], ['schedule', 'Schedule', 'cal'], ['crew', 'Crew & staffing', 'leads'], ['tasks', 'Tasks & milestones', 'check'], ['documents', 'Documents & drawings', 'documents'], ['site', 'Site information', 'pin'], ['photos', 'Photos & evidence', 'documents'], ['quality', 'Quality inspections', 'quality'], ['issues', 'Issues & risks', 'issues'], ['costs', 'Costs & budget', 'money'], ['comms', 'Customer communications', 'emails'], ['contract', 'Contract', 'contracts'], ['activity', 'Activity history', 'activity']];
+  async function openProject(id, tab) {
+    if (state.view !== 'projects') { go('projects'); await new Promise(r => setTimeout(r, 400)); }
+    try { pj.d = await api('/api/admin/pm/projects/' + id); } catch (e) { return toast(e.message, true); }
+    pj.sel = id; if (tab) pj.wtab = tab; else if (!pj.d || pj.d.project.id !== id) pj.wtab = 'overview';
+    $('#pjList').hidden = true; $('#pjWork').hidden = false; drawWork();
+  }
+  function drawWork() {
+    const d = pj.d, p = d.project, W = $('#pjWork');
+    const svcOpts = Object.entries(d.services).map(([v, l]) => `<option value="${v}"${p.service === v ? ' selected' : ''}>${esc(l)}</option>`).join('');
+    W.innerHTML = `<p><button class="linklike" id="pjBack">← All projects</button></p>
+      <div class="card cphero"><div class="bimg">${ic('projects')}</div><div style="min-width:0;flex:1"><h1>${esc(p.name || p.number)} ${badge(p.status === 'In Progress' ? 'Active' : p.status)}</h1><div class="sub">${esc(p.number)} · ${esc(p.company || p.customer_name || '')} · ${esc(p.service_label || 'Service not set')}</div>
+        <div class="cpmeta2"><div><span class="chip blue">${ic('pin')}</span><div><span>Site</span><b>${esc(p.site_address || '—')}</b></div></div><div><span class="chip blue">${ic('user')}</span><div><span>Project manager</span><b>${esc(p.manager || '—')}</b></div></div><div><span class="chip blue">${ic('cal')}</span><div><span>Planned</span><b>${p.start_date ? fmtDate(p.start_date) : '—'} – ${p.due_date ? fmtDate(p.due_date) : '—'}</b></div></div><div><span class="chip blue">${ic('clock')}</span><div><span>Actual</span><b>${p.actual_start ? fmtDate(p.actual_start) : 'not started'}${p.actual_end ? ' – ' + fmtDate(p.actual_end) : ''}</b></div></div></div></div>
+        <div class="cpbtns"><button class="btn" id="pjStatus">Change status</button><button class="btn ghost" id="pjEdit">Edit project</button></div></div>
+      <div class="fin2">${kt('check', 'blue', 'Progress', (p.progress || 0) + '%', 'from verified tasks')}${kt('contracts', 'purple', 'Contract value', money(p.contract_value), p.contract ? p.contract.signature_status || 'Not sent' : 'No contract')}${kt('reports', 'navy', 'Budget', money(p.budget), '')}${kt('money', 'teal', 'Actual cost', money(p.actual_cost), 'recorded')}${kt('check', 'green', 'Gross profit', p.actual_cost ? money(p.contract_value - p.actual_cost) : '—', p.actual_cost ? 'actual' : 'no costs yet')}${kt('cal', 'amber', 'Open tasks', p.tasks_open, p.tasks_review ? `${p.tasks_review} to review` : '')}${kt('issues', 'red', 'Open issues', d.issues.filter(i => !['Resolved', 'Verified', 'Closed'].includes(i.status)).length, '')}</div>
+      <div class="ctabs2 ctabs" role="tablist">${WTABS.map(([k, l, i]) => `<button role="tab" data-wt="${k}" class="${pj.wtab === k ? 'on' : ''}">${ic(i)}<span>${l}</span></button>`).join('')}</div><div id="pjBody"></div>`;
+    $('#pjBack').onclick = () => { $('#pjWork').hidden = true; $('#pjList').hidden = false; loadProjects(); };
+    $$('#pjWork [data-wt]').forEach(b => b.onclick = () => { pj.wtab = b.dataset.wt; drawWork(); });
+    $('#pjEdit').onclick = () => openForm({ title: 'Edit project', defs: [{ name: 'name', label: 'Project name', wide: true }, { name: 'service', label: 'Cleaning service', type: 'select', options: [['', 'Not set'], ...Object.entries(d.services)] }, { name: 'manager', label: 'Project manager' }, { name: 'site_address', label: 'Site address', wide: true }, { name: 'start_date', label: 'Planned start', type: 'date' }, { name: 'due_date', label: 'Planned completion', type: 'date' }, { name: 'budget', label: 'Budget ($)' }, { name: 'frequency', label: 'Service frequency', type: 'select', options: [['', '—'], 'once', 'daily', 'weekly', 'biweekly', 'monthly'] }],
+      values: p, submit: b => api('/api/admin/pm/projects/' + p.id, { method: 'PATCH', json: b }), after: () => { toast('Saved'); openProject(p.id); } });
+    $('#pjStatus').onclick = () => openForm({ title: 'Change status', sub: d.guard_next && p.status === 'Planning' ? d.guard_next : '', defs: [{ name: 'status', label: 'Status', type: 'select', options: ['Planning', 'Ready to mobilize', 'In Progress', 'Quality Review', 'On Hold', 'Completed', 'Archived'] }, { name: 'reason', label: 'Reason (required for On Hold)', wide: true }],
+      values: { status: p.status }, submit: b => api(`/api/admin/pm/projects/${p.id}/status`, { method: 'POST', json: b }), after: () => { toast('Status updated'); openProject(p.id); } });
+    const B = $('#pjBody'), t = pj.wtab, act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
+    const reload = () => openProject(p.id);
+    if (t === 'overview') {
+      B.innerHTML = `<div class="ov3"><div><div class="card"><h2>${ic('check')} Readiness before dispatch</h2><ul class="rdy">${d.readiness.items.map(r => `<li><input type="checkbox" data-rk="${r.key}" ${r.by ? 'checked' : ''} aria-label="${esc(r.label)}"><span><b>${esc(r.label)}</b>${r.by ? `<small> · ${esc(r.by)} ${fmtWhen(r.at)}</small>` : ''}</span></li>`).join('')}</ul>
+          <p class="muted">${p.contract ? `Contract: ${esc(p.contract.signature_status || 'Not sent')}` : 'No contract linked'}${p.contract_waiver ? ` · <b>Started without a signed contract:</b> ${esc(p.contract_waiver)}` : ''}</p>
+          ${p.dispatch_approved_by ? `<p>✅ Dispatch approved by <b>${esc(p.dispatch_approved_by)}</b> ${fmtWhen(p.dispatch_approved_at)}</p>` : `<button class="btn" id="pjApprove">Approve dispatch</button>`}</div></div>
+        <div><div class="card"><h2>${ic('cal')} Upcoming work</h2>${d.visits.filter(v => v.date >= todayISO()).slice(0, 5).map(v => `<p>${fmtDate(v.date)} · ${esc(v.title)} ${badge(v.status)}</p>`).join('') || '<p class="muted">Nothing scheduled.</p>'}</div>
+          <div class="card"><h2>${ic('activity')} Latest updates</h2>${d.updates.slice(0, 4).map(u => `<p><b>${esc(u.kind)}</b> <small class="muted">${esc(u.author || '')} ${fmtWhen(u.created_at)}</small><br>${esc(u.body.slice(0, 200))}</p>`).join('') || '<p class="muted">No updates yet.</p>'}</div></div>
+        <div><div class="card"><h2>${ic('check')} Completion</h2>${p.signoff_name ? `<p>Customer sign-off: <b>${esc(p.signoff_name)}</b>${p.signoff_title ? ', ' + esc(p.signoff_title) : ''} · ${fmtWhen(p.signoff_at)}</p>` : '<button class="btn ghost" id="pjSign">Record customer sign-off</button>'}
+          ${p.status === 'Completed' ? `<p><button class="btn ghost" id="pjCert">Completion certificate (PDF)</button></p>${p.billing_invoice_id ? `<p>Billing draft: <button class="linklike" data-rec="invoices:${p.billing_invoice_id}">invoice #${p.billing_invoice_id}</button></p>` : '<p><button class="btn" id="pjBill">Hand off to billing</button></p>'}` : '<p class="muted">Complete all tasks and record sign-off to finish the project.</p>'}</div></div></div>`;
+      $$('#pjBody [data-rk]').forEach(c => c.onchange = async () => { try { await api(`/api/admin/pm/projects/${p.id}/readiness`, { method: 'POST', json: { key: c.dataset.rk, confirmed: c.checked } }); reload(); } catch (e) { toast(e.message, true); c.checked = !c.checked; } });
+      act('#pjApprove', async () => { try { await api(`/api/admin/pm/projects/${p.id}/approve-dispatch`, { method: 'POST' }); toast('Dispatch approved'); reload(); } catch (e) { toast(e.message, true); } });
+      act('#pjSign', () => openForm({ title: 'Customer sign-off', defs: [{ name: 'name', label: 'Customer representative' }, { name: 'title', label: 'Title' }], submit: b => api(`/api/admin/pm/projects/${p.id}/signoff`, { method: 'POST', json: b }), after: () => { toast('Sign-off recorded'); reload(); } }));
+      act('#pjCert', () => downloadFile({ name: `${p.number}-completion.pdf`, url: `/api/admin/pm/projects/${p.id}/certificate` }));
+      act('#pjBill', async () => { try { const r = await api(`/api/admin/pm/projects/${p.id}/billing-handoff`, { method: 'POST' }); toast(`Draft invoice created for ${money(r.amount)} (not sent)`); reload(); } catch (e) { toast(e.message, true); } });
+      bindOpeners(B);
+    } else if (t === 'scope') {
+      const e = d.estimate;
+      B.innerHTML = `<div class="card"><h2>Contracted scope</h2>${e ? `<p class="muted">From approved proposal #${e.id} v${e.version || 1}${e.signer_name ? ` · accepted by ${esc(e.signer_name)}` : ''}</p><p style="white-space:pre-wrap">${esc(e.scope || '')}</p>${e.assumptions ? `<h3 class="secth">Assumptions</h3><p style="white-space:pre-wrap">${esc(e.assumptions)}</p>` : ''}${e.exclusions ? `<h3 class="secth">Exclusions</h3><p style="white-space:pre-wrap">${esc(e.exclusions)}</p>` : ''}<p><button class="linklike" data-est="${e.id}">Open the proposal</button></p>` : '<p class="muted">No approved proposal is linked to this project.</p>'}</div>`;
+      bindOpeners(B);
+    } else if (t === 'schedule') {
+      B.innerHTML = `<div class="card"><h2>Schedule &amp; work orders</h2><form class="inl" id="woForm"><div><label>Frequency</label><select name="frequency">${['once', 'daily', 'weekly', 'biweekly', 'monthly'].map(f => `<option${(p.frequency || 'once') === f ? ' selected' : ''}>${f}</option>`).join('')}</select></div><div><label>First date</label><input type="date" name="start" value="${esc(p.start_date || todayISO())}"></div><div><label>How many</label><input name="count" value="4" inputmode="numeric"></div><div><label>Start time</label><input type="time" name="start_time" value="08:00"></div><div><label>End time</label><input type="time" name="end_time" value="16:00"></div><div><label>Crew / lead</label><input name="assigned_to" value="${esc(p.manager || '')}"></div><div class="wide"><button class="btn">Generate work orders</button> <small class="muted">${p.dispatch_approved_by ? 'They will be Scheduled.' : 'They stay Tentative until dispatch is approved.'}</small></div></form>
+        ${rowsOr(d.visits.map(v => `<tr><td>${fmtDate(v.date)}</td><td>${esc(v.start_time || '')}–${esc(v.end_time || '')}</td><td>${esc(v.title)}</td><td>${esc(v.type)}</td><td>${esc(v.assigned_to || '—')}</td><td>${badge(v.status)}</td></tr>`), ['Date', 'Time', 'Work', 'Type', 'Crew', 'Status'], 'Nothing scheduled yet.')}</div>`;
+      $('#woForm').onsubmit = async ev => { ev.preventDefault(); try { const r = await api(`/api/admin/pm/projects/${p.id}/work-orders`, { method: 'POST', json: formObj(ev.target) }); toast(`${r.created} work order(s) created (${r.status})`); reload(); } catch (e) { toast(e.message, true); } };
+    } else if (t === 'crew') {
+      const crew = [...new Set([p.manager, ...d.tasks.map(x => x.assigned_to), ...d.visits.map(v => v.assigned_to)].filter(Boolean))];
+      B.innerHTML = `<div class="card"><h2>Crew &amp; staffing</h2>${crew.length ? '<ul class="mini">' + crew.map(c => `<li><span class="avs"><i>${initials(c)}</i>${esc(c)}</span></li>`).join('') + '</ul>' : '<p class="muted">No one assigned yet. Assign a manager, task owners or work-order crews.</p>'}<p class="muted">Employee availability, shifts and time tracking are part of Scheduling &amp; Dispatch.</p></div>`;
+    } else if (t === 'tasks') {
+      const by = {}; d.tasks.forEach(x => (by[x.phase || 'Other'] = by[x.phase || 'Other'] || []).push(x));
+      B.innerHTML = `<div class="card"><h2>Tasks &amp; milestones</h2><p class="muted">Progress = verified tasks (full weight) + done tasks (half weight). Someone other than the person who did the work verifies it.</p>
+        ${!d.tasks.length ? `<form class="inl" id="planForm"><div><label>Work plan for</label><select name="service">${svcOpts}</select></div><div class="wide"><button class="btn">Create work plan</button></div></form>` : ''}
+        ${Object.entries(by).map(([ph, ts]) => `<h3 class="secth">${esc(ph)}</h3>${ts.map(x => `<div class="tk ${x.approved ? '' : 'review'}"><span style="flex:1"><b>${esc(x.title)}</b> <span class="w">weight ${x.weight}${x.assigned_to ? ' · ' + esc(x.assigned_to) : ''}${x.due_date ? ' · due ' + fmtDate(x.due_date) : ''}${x.source === 'ai' ? ' · AI suggestion' : ''}</span>${x.verified_by ? `<small class="muted"><br>verified by ${esc(x.verified_by)} ${fmtWhen(x.verified_at)}</small>` : x.done_by ? `<small class="muted"><br>done by ${esc(x.done_by)} ${fmtWhen(x.done_at)}</small>` : ''}</span>
+          ${!x.approved ? `<button class="btn small" data-ta="${x.id}">Accept</button>` : x.status === 'Open' ? `<button class="btn small" data-ts="${x.id}" data-to="Done">Mark done</button>` : x.status === 'Done' ? `<button class="btn small" data-ts="${x.id}" data-to="Verified">Verify</button> <button class="btn small ghost" data-ts="${x.id}" data-to="Open">Reopen</button>` : '<span class="badge green">Verified</span>'}</div>`).join('')}`).join('')}
+        <form class="inl" id="tkForm"><div class="wide"><label>New task</label><input name="title" required></div><div><label>Phase</label><select name="phase">${['Planning', 'Execution', 'Quality', 'Acceptance'].map(x => `<option>${x}</option>`).join('')}</select></div><div><label>Weight</label><input name="weight" value="5" inputmode="numeric"></div><div><label>Due</label><input type="date" name="due_date"></div><div><label>Assigned to</label><input name="assigned_to"></div><div class="wide"><button class="btn">Add task</button></div></form></div>`;
+      act('#planForm', null); if ($('#planForm')) $('#planForm').onsubmit = async ev => { ev.preventDefault(); try { await api(`/api/admin/pm/projects/${p.id}/plan`, { method: 'POST', json: formObj(ev.target) }); toast('Work plan created'); reload(); } catch (e) { toast(e.message, true); } };
+      $('#tkForm').onsubmit = async ev => { ev.preventDefault(); try { await api(`/api/admin/pm/projects/${p.id}/tasks`, { method: 'POST', json: formObj(ev.target) }); toast('Task added'); reload(); } catch (e) { toast(e.message, true); } };
+      $$('#pjBody [data-ts]').forEach(b => b.onclick = async () => { try { await api('/api/admin/pm/tasks/' + b.dataset.ts, { method: 'PATCH', json: { status: b.dataset.to } }); reload(); } catch (e) { toast(e.message, true); } });
+      $$('#pjBody [data-ta]').forEach(b => b.onclick = async () => { try { await api('/api/admin/pm/tasks/' + b.dataset.ta, { method: 'PATCH', json: { approved: true } }); reload(); } catch (e) { toast(e.message, true); } });
+    } else if (t === 'documents' || t === 'photos') {
+      const docs = d.documents.filter(x => t === 'photos' ? x.kind === 'Photos' : x.kind !== 'Photos');
+      B.innerHTML = `<div class="card"><h2>${t === 'photos' ? 'Photos &amp; evidence' : 'Documents &amp; drawings'}</h2><button class="btn" id="pjUp">Upload</button>${rowsOr(docs.map(x => `<tr><td><button class="linklike" data-dl="${x.id}">${esc(x.title)}</button></td><td>${esc(x.kind)}</td><td>${esc(x.revision || '—')}</td><td>${fmtDate(x.created_at)}</td></tr>`), ['File', 'Type', 'Rev', 'Uploaded'], t === 'photos' ? 'No photos yet. Upload before-and-after photos as evidence.' : 'No documents yet.')}</div>`;
+      $('#pjUp').onclick = () => uploadDocs({ project_id: p.id, kind: t === 'photos' ? 'Photos' : 'Drawings' });
+      $$('#pjBody [data-dl]').forEach(b => b.onclick = () => { const x = d.documents.find(y => y.id === Number(b.dataset.dl)); downloadFile({ name: x.file_name || x.title, url: x.file_url }); });
+    } else if (t === 'site') {
+      const si = d.site, F = [['contact', 'Site contact (name / phone)'], ['hours', 'Working hours'], ['access', 'Access instructions (gate, keys, codes)'], ['parking', 'Parking & staging'], ['safety', 'Safety requirements (PPE, orientation)'], ['utilities', 'Water / power / disposal']];
+      B.innerHTML = `<div class="card"><h2>Site information</h2><p class="muted">Internal only. Crews see this on their work orders.</p><form class="ig" id="siteForm">${F.map(([k, l]) => `<div class="wide"><label>${l}</label><textarea name="${k}" rows="2">${esc(si[k] || '')}</textarea></div>`).join('')}<div class="wide"><button class="btn">Save site information</button></div></form></div>`;
+      $('#siteForm').onsubmit = async ev => { ev.preventDefault(); try { await api('/api/admin/pm/projects/' + p.id, { method: 'PATCH', json: { site_info: formObj(ev.target) } }); toast('Site information saved'); reload(); } catch (e) { toast(e.message, true); } };
+    } else if (t === 'quality') {
+      B.innerHTML = `<div class="card"><h2>Quality inspections</h2>${rowsOr(d.inspections.map(x => `<tr><td>${fmtDate(x.date)}</td><td>${esc(x.area)}</td><td>${esc(x.inspector || '—')}</td><td>${x.score == null ? '—' : x.score + '%'}</td><td>${x.passed ? '<span class="badge green">Passed</span>' : '<span class="badge red">Failed</span>'}</td></tr>`), ['Date', 'Area', 'Inspector', 'Score', 'Result'], 'No inspections yet.')}<button class="btn" id="pjInsp">Go to Quality &amp; inspections</button></div>`;
+      $('#pjInsp').onclick = () => go('quality');
+    } else if (t === 'issues') {
+      B.innerHTML = `<div class="card"><h2>Issues &amp; risks</h2>${rowsOr(d.issues.map(i => `<tr class="click" data-iss="${i.id}"><td>${esc(i.title)}</td><td>${esc(i.type)}</td><td>${badge(i.priority)}</td><td>${badge(i.status)}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td></tr>`), ['Item', 'Type', 'Priority', 'Status', 'Due'], 'No issues linked to this project.')}<button class="btn" id="pjIss">Create issue</button></div>`;
+      $('#pjIss').onclick = () => openIssue(null, p.customer_id ? { id: p.customer_id } : null);
+      $$('#pjBody [data-iss]').forEach(r => r.onclick = () => openIssue({ id: Number(r.dataset.iss) }, null));
+    } else if (t === 'costs') {
+      B.innerHTML = `<div class="card"><h2>Costs &amp; budget</h2><dl class="stat"><dt>Budget</dt><dd>${money(p.budget)}</dd><dt>Actual cost (recorded)</dt><dd>${money(p.actual_cost)}</dd><dt>Variance</dt><dd style="color:${p.budget && p.actual_cost > p.budget ? '#d1382f' : 'inherit'}">${p.budget ? money(p.budget - p.actual_cost) : '—'}</dd>${Object.entries(p.cost_by).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${money(v)}</dd>`).join('')}</dl>
+        <form class="inl" id="costForm"><div><label>Category</label><select name="category">${(d.cost_categories || []).map(c => `<option>${c}</option>`).join('')}</select></div><div><label>Amount ($)</label><input name="amount" inputmode="decimal" required></div><div><label>Date</label><input type="date" name="cost_date" value="${todayISO()}"></div><div class="wide"><label>Description</label><input name="description"></div><div class="wide"><button class="btn">Record cost</button></div></form>
+        ${rowsOr(d.costs.map(c => `<tr><td>${fmtDate(c.cost_date)}</td><td>${esc(c.category)}</td><td>${esc(c.description || '')}</td><td class="num">${money(c.amount)}</td><td>${esc(c.entered_by || '')}</td></tr>`), ['Date', 'Category', 'Description', 'Amount', 'Entered by'], 'No costs recorded yet. Actual profit appears once real costs are entered.')}</div>`;
+      $('#costForm').onsubmit = async ev => { ev.preventDefault(); try { await api(`/api/admin/pm/projects/${p.id}/costs`, { method: 'POST', json: formObj(ev.target) }); toast('Cost recorded'); reload(); } catch (e) { toast(e.message, true); } };
+    } else if (t === 'comms') {
+      B.innerHTML = `<div class="card"><h2>Updates &amp; customer communications</h2><form class="inl" id="upForm"><div><label>Type</label><select name="kind"><option>Update</option><option>Customer communication</option><option>Site note</option><option>Risk</option></select></div><div class="wide"><label>Note</label><textarea name="body" rows="3" required></textarea></div><div class="wide"><button class="btn">Log update</button></div></form>
+        <ul class="tl">${d.updates.map(u => `<li><span class="ty">${esc(u.kind)}</span> <small class="muted">${esc(u.author || '')} · ${fmtWhen(u.created_at)}</small><br>${esc(u.body)}</li>`).join('') || '<p class="muted">No updates yet.</p>'}</ul></div>`;
+      $('#upForm').onsubmit = async ev => { ev.preventDefault(); try { await api(`/api/admin/pm/projects/${p.id}/updates`, { method: 'POST', json: formObj(ev.target) }); toast('Logged'); reload(); } catch (e) { toast(e.message, true); } };
+    } else if (t === 'contract') {
+      B.innerHTML = `<div class="card"><h2>Contract</h2>${p.contract ? `<dl class="stat"><dt>Contract</dt><dd><button class="linklike" data-rec="contracts:${p.contract.id}">${esc(p.contract.title || 'Contract #' + p.contract.id)}</button></dd><dt>Value</dt><dd>${money(p.contract.value)}</dd><dt>Signature</dt><dd>${badge(p.contract.signature_status || 'Not sent')}</dd><dt>Status</dt><dd>${badge(p.contract.status)}</dd></dl>` : '<p class="muted">No contract linked.</p>'}
+        <h3 class="secth">Invoices</h3>${rowsOr(d.invoices.map(i => `<tr class="click" data-rec="invoices:${i.id}"><td>${esc(i.invoice_number || '#' + i.id)}</td><td class="num">${money(i.amount)}</td><td class="num">${money(i.paid_amount)}</td><td>${badge(i.status)}</td></tr>`), ['Invoice', 'Amount', 'Paid', 'Status'], 'No invoices yet.')}</div>`;
+      bindOpeners(B);
+    } else if (t === 'activity') {
+      B.innerHTML = `<div class="card"><h2>Activity history</h2><div class="activity">${renderActivity(d.activity) || '<p class="empty">No activity yet.</p>'}</div></div>`;
+    }
   }
 
   // ---------- Cleaning scopes ----------

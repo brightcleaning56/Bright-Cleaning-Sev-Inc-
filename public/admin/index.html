@@ -245,6 +245,13 @@
   .flagl li { list-style: none; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 14px; } .flagl { padding: 0; margin: 0; } .flagl .block { background: #fde8e8; color: #a52a22; } .flagl .warn { background: #fff3dc; color: #8a5a00; } .flagl .info { background: #eef2f6; color: #4c637a; }
   @media (max-width: 1300px) { .propgrid { grid-template-columns: minmax(0, 1fr); } .propside { position: static; } .kpis6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 700px) { .kpis6, .sumbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .kpis4m { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) repeat(3, minmax(0, 1.1fr)); gap: 10px; margin-bottom: 12px; } .kpis4m .ktile { flex-direction: column; align-items: flex-start; gap: 6px; } .kpis4m .ktile b { font-size: 21px; } .kpis4m .chip { width: 34px; height: 34px; } .kpis4m .money { background: linear-gradient(180deg, #f3f8ff, #fff); }
+  .bar2 { height: 8px; border-radius: 6px; background: #e6edf5; overflow: hidden; min-width: 70px; } .bar2 i { display: block; height: 100%; background: linear-gradient(90deg, #1f6fd1, #2a8bf0); } .bar2.done i { background: #17904c; }
+  .hflow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .hflow span { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; color: #34506d; text-align: center; min-width: 84px; } .hflow span i { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: #eef4fb; color: #1f6fd1; } .hflow span.done i { background: #e3f6ea; color: #17904c; } .hflow b { color: #9fb3c8; }
+  .rdy li { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line2); list-style: none; } .rdy { padding: 0; margin: 0; } .rdy small { color: var(--muted); }
+  .tk { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line2); } .tk .w { color: var(--muted); font-size: 12px; } .tk.review { background: #fffaf0; }
+  @media (max-width: 1300px) { .kpis4m { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .kpis4m { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -614,9 +621,19 @@
     </section>
 
     <section class="view" id="v-projects">
-      <div class="pagehead"><div><h1>Projects</h1><p>Approved proposals create a planning project here automatically. Click a project to update it.</p></div><button class="btn" data-new="projects">New project</button></div>
-      <div class="toolbar"><input type="search" data-search="projects" placeholder="Search projects…" aria-label="Search projects"><select data-filter="projects" aria-label="Filter by status"></select></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Project</th><th>Customer</th><th>Manager</th><th>Dates</th><th>Progress</th><th>Status</th></tr></thead><tbody id="rows-projects"></tbody></table></div>
+      <div id="pjList">
+      <div class="pagehead"><div><h1>Project Management Center</h1><p>Plan, schedule and execute commercial cleaning projects from contract to completion.</p></div>
+        <div class="headact"><button class="btn" data-new="projects"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New project</button><button class="btn ghost" id="pjCsv" type="button">Export CSV</button></div></div>
+      <div class="segtabs" id="pjTabs" role="tablist"></div>
+      <div class="propgrid"><div style="min-width:0">
+        <div class="kpis4m" id="pjKpis"></div>
+        <div class="filt"><input type="search" id="pjSearch" placeholder="Search projects, customers or locations…" aria-label="Search projects"><select id="pjSvc" aria-label="Service"><option value="">Service: All</option></select><select id="pjMgr" aria-label="Manager"><option value="">Manager: All</option></select></div>
+        <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Project #</th><th>Project / location</th><th>Customer</th><th>Service</th><th>Manager</th><th class="num">Contract value</th><th>Start – end</th><th>Progress</th><th>Status</th></tr></thead><tbody id="rows-projects"></tbody></table>
+          <div class="pager"><span class="muted" id="pjShowing"></span><div id="pjPages"></div></div></div>
+        <div class="card"><h2 style="font-size:17px">Project workflow — from contract to completion</h2><div class="hflow" id="pjFlow"></div></div>
+      </div><aside class="propside" id="pjSide"><div class="card"><p class="muted">Select a project to see its details.</p></div></aside></div>
+      </div>
+      <div id="pjWork" hidden></div>
     </section>
 
     <section class="view" id="v-invoices">
