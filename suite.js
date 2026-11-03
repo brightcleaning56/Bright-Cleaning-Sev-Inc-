@@ -115,7 +115,7 @@ module.exports = function mountSuite(app, ctx) {
   });
 
   // ---------- Schedule: site visits, walkthroughs, cleaning phases ----------
-  const VISIT = { type: ['Site visit', 'Walkthrough', 'Cleaning phase', 'Inspection', 'Punch list', 'Other'], status: ['Scheduled', 'Done', 'Cancelled'] };
+  const VISIT = { type: ['Site visit', 'Walkthrough', 'Cleaning phase', 'Inspection', 'Punch list', 'Work order', 'Other'], status: ['Tentative', 'Scheduled', 'In progress', 'Done', 'Cancelled'] };
   function visitValidate(b, cur) {
     const out = {}, errs = [];
     if (!cur || 'title' in b) { const t = clean(b.title, 200); if (!t) errs.push('A title is required.'); else out.title = t; }
