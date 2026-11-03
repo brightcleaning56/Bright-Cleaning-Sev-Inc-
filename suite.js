@@ -227,6 +227,78 @@ module.exports = function mountSuite(app, ctx) {
       won_count: w, lost_count: l, won_value: decided.wv, avg_won: w ? Math.round(decided.wv / w * 100) / 100 : null, by_service: byService, pipeline, top_customers: topCustomers });
   });
 
+  // ---------- Takeoffs: quantities from drawings, each with its source ----------
+  db.exec(`CREATE TABLE IF NOT EXISTS takeoffs(id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, project_id INTEGER, customer_id INTEGER,
+    name TEXT NOT NULL, category TEXT NOT NULL, building_sf REAL, lines TEXT NOT NULL DEFAULT '[]', questions TEXT, estimate_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'Draft', created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS email_log(id INTEGER PRIMARY KEY AUTOINCREMENT, to_addr TEXT, subject TEXT, body TEXT, status TEXT NOT NULL, error TEXT, provider TEXT, created_at TEXT NOT NULL);`);
+  const METHODS = ['Measured', 'From schedule', 'Entered', 'Inferred'];
+  const CATS = ['construction', 'multifamily', 'janitorial', 'specialty'];
+  function takeoffValidate(b, cur) {
+    const out = {}, errs = [];
+    if (!cur || 'name' in b) { const n = clean(b.name, 200); if (!n) errs.push('Name the takeoff (for example the project and drawing set).'); else out.name = n; }
+    if (!cur || 'category' in b) { if (!CATS.includes(b.category)) errs.push('Choose the service category.'); else out.category = b.category; }
+    if ('building_sf' in b) { const v = b.building_sf === '' || b.building_sf == null ? null : Number(String(b.building_sf).replace(/,/g, '')); if (v !== null && !(v > 0 && v < 1e8)) errs.push('Building square footage must be a positive number.'); else out.building_sf = v; }
+    if ('questions' in b) out.questions = clean(b.questions, 5000);
+    if ('status' in b) out.status = pick(b.status, ['Draft', 'Reviewed', 'Estimated'], 'Draft');
+    for (const [k, t] of [['document_id', 'documents'], ['project_id', 'projects'], ['customer_id', 'customers']]) if (k in b) { const v = idOrNull(b[k]); if (!exists(t, v)) errs.push(`That ${t.slice(0, -1)} was not found.`); else out[k] = v; }
+    if ('lines' in b) {
+      const cat = out.category || (cur && cur.category);
+      const lines = (Array.isArray(b.lines) ? b.lines : []).slice(0, 200).map(l => ({ scope_id: Number(l && l.scope_id), quantity: Number(String(l && l.quantity).replace(/,/g, '')),
+        sheet: clean(l && l.sheet, 60), method: pick(l && l.method, METHODS, 'Entered'), note: clean(l && l.note, 300) }));
+      for (const l of lines) {
+        const sc = db.prepare('SELECT name, category, active FROM scope_items WHERE id=?').get(l.scope_id);
+        if (!sc || !sc.active) { errs.push('A takeoff line refers to a scope item that no longer exists.'); break; }
+        if (sc.category !== cat) { errs.push(`"${sc.name}" is not a ${cat} item.`); break; }
+        if (!(l.quantity > 0)) { errs.push(`Enter a quantity for "${sc.name}".`); break; }
+        if (l.method !== 'Entered' && !l.sheet) { errs.push(`"${sc.name}" is marked ${l.method.toLowerCase()} but has no source sheet. Add the sheet number (for example A1.1).`); break; }
+      }
+      out.lines = JSON.stringify(lines);
+    }
+    return { out, errs };
+  }
+  const tRow = r => r && ({ ...r, lines: JSON.parse(r.lines || '[]') });
+  app.get('/api/admin/takeoffs', auth, (req, res) => {
+    const rows = db.prepare(`SELECT t.*, d.title document_title, d.revision document_revision, c.company customer_company, c.name customer_name FROM takeoffs t
+      LEFT JOIN documents d ON d.id=t.document_id LEFT JOIN customers c ON c.id=t.customer_id ORDER BY t.id DESC LIMIT 300`).all().map(tRow);
+    res.json({ takeoffs: rows, methods: METHODS });
+  });
+  app.post('/api/admin/takeoffs', auth, (req, res) => {
+    const { out, errs } = takeoffValidate({ lines: [], ...(req.body || {}) }, null);
+    if (errs.length) return res.status(400).json({ error: errs.join(' ') });
+    const cols = Object.keys(out), t = now();
+    const info = db.prepare(`INSERT INTO takeoffs(${cols.join(',')},created_by,created_at,updated_at) VALUES(${cols.map(() => '?').join(',')},?,?,?)`).run(...cols.map(c => out[c]), who(req), t, t);
+    logAction(req, 'created', 'takeoff', info.lastInsertRowid, out.name);
+    res.status(201).json({ takeoff: tRow(db.prepare('SELECT * FROM takeoffs WHERE id=?').get(info.lastInsertRowid)) });
+  });
+  app.patch('/api/admin/takeoffs/:id', auth, (req, res) => {
+    const cur = db.prepare('SELECT * FROM takeoffs WHERE id=?').get(Number(req.params.id)); if (!cur) return res.status(404).json({ error: 'Not found.' });
+    const b = { ...(req.body || {}) };
+    if ('category' in b && b.category !== cur.category && !('lines' in b)) b.lines = [];
+    const { out, errs } = takeoffValidate(b, cur);
+    if (errs.length) return res.status(400).json({ error: errs.join(' ') });
+    const cols = Object.keys(out);
+    if (cols.length) db.prepare(`UPDATE takeoffs SET ${cols.map(c => c + '=?').join(',')}, updated_at=? WHERE id=?`).run(...cols.map(c => out[c]), now(), cur.id);
+    logAction(req, 'updated', 'takeoff', cur.id, cols.join(', '));
+    res.json({ takeoff: tRow(db.prepare('SELECT * FROM takeoffs WHERE id=?').get(cur.id)) });
+  });
+
+  app.post('/api/admin/takeoffs/:id/link', auth, (req, res) => {
+    const cur = db.prepare('SELECT * FROM takeoffs WHERE id=?').get(Number(req.params.id)); if (!cur) return res.status(404).json({ error: 'Not found.' });
+    const eid = Number(req.body && req.body.estimate_id);
+    if (!db.prepare('SELECT 1 FROM estimates WHERE id=?').get(eid)) return res.status(400).json({ error: 'That estimate was not found.' });
+    db.prepare("UPDATE takeoffs SET estimate_id=?, status='Estimated', updated_at=? WHERE id=?").run(eid, now(), cur.id);
+    logAction(req, 'priced', 'takeoff', cur.id, 'estimate #' + eid);
+    res.json({ ok: true });
+  });
+
+  // ---------- Email Center: every email the system sends ----------
+  app.get('/api/admin/emails', auth, (req, res) => {
+    const rows = db.prepare('SELECT * FROM email_log ORDER BY id DESC LIMIT 500').all();
+    const s = db.prepare(`SELECT COUNT(*) n, SUM(status='sent') sent, SUM(status='failed') failed FROM email_log WHERE created_at>=?`).get(new Date(Date.now() - 30 * 864e5).toISOString());
+    res.json({ emails: rows, summary: { sent_30d: s.sent || 0, failed_30d: s.failed || 0, total_30d: s.n || 0 } });
+  });
+
   // ---------- Drawing and document library ----------
   const KINDS = ['Drawings', 'Specifications', 'Addendum', 'Finish schedule', 'Photos', 'Other'];
   app.get('/api/admin/documents', auth, (req, res) => {
