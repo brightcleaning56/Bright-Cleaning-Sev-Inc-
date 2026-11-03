@@ -1613,67 +1613,173 @@
     $('#repTopRows').innerHTML = r.top_customers.length ? r.top_customers.map(x => `<tr><td>${esc(x.k || '—')}</td><td class="num">${x.n}</td><td class="num">${money(x.billed)}</td><td class="num">${money(x.paid)}</td></tr>`).join('') : empty(4);
   }
 
-  // ---------- Issues & tasks ----------
-  const issState = { issues: [], options: null };
-  ['#issStatus', '#issType', '#issMine'].forEach(sel => $(sel).addEventListener('change', () => loadIssues()));
-  $('#issSearch').addEventListener('input', () => renderIssues());
+  // ---------- Issues & tasks (mockup layout) ----------
+  const issState = { issues: [], options: null, counts: {}, group: '', page: 1 };
+  const ITYPE = { complaint: ['issues', 'red', 'Issue'], service_request: ['scopes', 'green', 'Request'], incident: ['issues', 'amber', 'Incident'], task: ['cal', 'blue', 'Task'], follow_up: ['calls', 'blue', 'Follow-up'], note: ['note', 'purple', 'Note'] };
+  const initials = e => { const n = String(e || '').split('@')[0].split(/[._-]/).filter(Boolean); return ((n[0] || '?')[0] + ((n[1] || '')[0] || '')).toUpperCase(); };
+  const pillCls = s => String(s).replace(/\s+/g, '-');
+  ['#issStatus', '#issCat', '#issPri', '#issAssigned', '#issSource', '#issCust', '#issType', '#issMine'].forEach(sel => $(sel).addEventListener('change', () => { issState.page = 1; loadIssues(); }));
+  let issT; $('#issSearch').addEventListener('input', () => { clearTimeout(issT); issT = setTimeout(() => { issState.page = 1; loadIssues(); }, 250); });
   $('#issAdd').addEventListener('click', () => openIssue(null, null));
+  $('#issCsv').addEventListener('click', () => {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`, rows = [['Number', 'Type', 'Title', 'Customer', 'Contact', 'Property', 'Project', 'Category', 'Priority', 'Source', 'Assigned to', 'Due', 'Status', 'Created', 'Resolved'], ...issState.issues.map(i => [i.number, issState.options.types[i.type], i.title, i.customer_company || i.customer_name, i.contact_name, i.property_name || i.property, i.project_name, i.category, i.priority, i.source, i.assigned_to, i.due_date, i.status, i.created_at, i.resolved_at])];
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'issues-and-tasks.csv'; a.click();
+  });
   async function loadIssues() {
     const q = new URLSearchParams({ status: $('#issStatus').value });
-    if ($('#issType').value) q.set('type', $('#issType').value);
-    if ($('#issMine').checked) q.set('assigned', 'me');
+    if (issState.group) q.set('group', issState.group);
+    for (const [sel, k] of [['#issCat', 'category'], ['#issPri', 'priority'], ['#issSource', 'source'], ['#issCust', 'customer_id'], ['#issType', 'type']]) if ($(sel).value) q.set(k, $(sel).value);
+    if ($('#issAssigned').value) q.set('assigned', $('#issAssigned').value); else if ($('#issMine').checked) q.set('assigned', 'me');
+    if ($('#issSearch').value.trim()) q.set('q', $('#issSearch').value.trim());
     const r = await api('/api/admin/issues?' + q);
     Object.assign(issState, { issues: r.issues, options: r.options, counts: r.counts });
     const n = r.counts.open_complaints + r.counts.overdue;
     $('#navIssues').hidden = !n; $('#navIssues').textContent = n;
+    const fill = (sel, items, label) => { const cur = $(sel).value; $(sel).innerHTML = `<option value="">${label}</option>` + items.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join(''); $(sel).value = cur; };
+    fill('#issCat', r.options.categories.map(c => [c, c]), 'Category: All'); fill('#issSource', r.options.sources.map(c => [c, c]), 'Source: All');
+    { const cur = $('#issAssigned').value; $('#issAssigned').innerHTML = '<option value="">Assigned: All</option><option value="me">Assigned to me</option><option value="none">Unassigned</option>' + r.options.users.map(u => `<option>${esc(u)}</option>`).join(''); $('#issAssigned').value = cur; }
+    if (!state.customers || !state.customers.length) { try { state.customers = (await api('/api/admin/customers')).customers; } catch { state.customers = []; } }
+    fill('#issCust', state.customers.map(c => [c.id, c.company || c.name || c.email]), 'Customer: All');
+    const k = r.counts;
+    $('#issKpis').innerHTML = [['issues', 'red', 'Open issues', k.open, 'Awaiting resolution', ''], ['issues', 'amber', 'High priority', k.high, k.urgent ? `${k.urgent} urgent` : 'Require attention', ''], ['cal', 'blue', 'Due today', k.due_today, 'Tasks and follow-ups', ''], ['clock', 'red', 'Overdue', k.overdue, 'Past due date', k.overdue ? 'alert' : ''], ['check', 'green', 'Resolved (this month)', k.resolved_month, 'Completed records', 'good']]
+      .map(([icn, tone, l, v, sub, cls]) => kt(icn, tone, l, v, sub).replace('class="ktile"', `class="ktile ${cls}"`)).join('');
+    $('#issTabs').innerHTML = [['', 'All items', k.all_n], ['issues', 'Issues', k.n_issues], ['tasks', 'Tasks', k.n_tasks], ['notes', 'Notes', k.n_notes], ['requests', 'Requests', k.n_requests], ['incidents', 'Incidents', k.n_incidents]]
+      .map(([g, l, c]) => `<button role="tab" data-g="${g}" class="${issState.group === g ? 'on' : ''}">${l} (${c})</button>`).join('');
+    $$('#issTabs button').forEach(b => b.onclick = () => { issState.group = b.dataset.g; issState.page = 1; loadIssues(); });
     renderIssues();
   }
   function renderIssues() {
-    const o = issState.options, q = $('#issSearch').value.trim().toLowerCase();
-    const rows = issState.issues.filter(i => !q || [i.title, i.description, i.property, i.customer_name, i.customer_company].join(' ').toLowerCase().includes(q));
-    $('#issRows').innerHTML = rows.length ? rows.map(i => `<tr class="click" data-issue="${i.id}"><td><b>${esc(i.title)}</b><small>${esc(i.category || '')}${i.property ? ' · ' + esc(i.property) : ''}</small></td><td>${esc(i.customer_company || i.customer_name || '—')}</td><td>${badge(o.types[i.type])}</td><td>${i.priority === 'Urgent' ? '<span class="badge red">Urgent</span>' : i.priority === 'High' ? '<span class="badge amber">High</span>' : esc(i.priority)}</td><td>${esc(i.assigned_to || '—')}</td><td class="${i.overdue ? 'late' : ''}">${i.due_date ? fmtDate(i.due_date) + (i.overdue ? ' · overdue' : '') : '—'}</td><td>${badge(i.status)}</td></tr>`).join('')
-      : `<tr><td class="emptyrow" colspan="7">${$('#issStatus').value === 'open' ? 'No open items. Nice.' : 'Nothing matches.'}</td></tr>`;
+    const o = issState.options, per = 10, all = issState.issues, pages = Math.max(1, Math.ceil(all.length / per));
+    issState.page = Math.min(issState.page, pages);
+    const rows = all.slice((issState.page - 1) * per, issState.page * per);
+    $('#issRows').innerHTML = rows.length ? rows.map(i => { const [icn, tone] = ITYPE[i.type] || ITYPE.task; return `<tr class="click" data-issue="${i.id}">
+      <td><div class="itm"><span class="chip ${tone}">${ic(icn)}</span><span><b>${esc(i.title)}</b><small>${esc(i.number)}${i.escalated ? ' · <span style="color:#d1382f">escalated</span>' : ''}</small></span></div></td>
+      <td><b>${esc(i.customer_company || i.customer_name || '—')}</b><small>${esc(i.contact_name || '')}</small></td>
+      <td>${esc(i.property_name || i.property || '—')}<small>${esc(i.project_name || i.work_order || '')}</small></td>
+      <td><span class="pill t-${i.type}">${esc((ITYPE[i.type] || [])[2] || o.types[i.type])}</span></td><td>${esc(i.category || '—')}</td>
+      <td><span class="pill p-${i.priority}">${esc(i.priority)}</span></td>
+      <td>${i.assigned_to ? `<span class="avs"><i>${initials(i.assigned_to)}</i>${esc(i.assigned_to.split('@')[0])}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="${i.overdue ? 'due-late' : ''}">${i.due_date ? fmtDate(i.due_date) : '—'}${i.overdue ? '<small style="color:#d1382f">overdue</small>' : ''}</td>
+      <td><span class="pill s-${pillCls(i.status)}">${esc(i.status)}</span></td></tr>`; }).join('')
+      : `<tr><td class="emptyrow" colspan="9">${$('#issStatus').value === 'open' ? 'No open items. Nice.' : 'Nothing matches.'}</td></tr>`;
+    $('#issShowing').textContent = all.length ? `Showing ${(issState.page - 1) * per + 1} – ${Math.min(issState.page * per, all.length)} of ${all.length} items` : '';
+    $('#issPages').innerHTML = pages > 1 ? Array.from({ length: pages }, (_, n) => `<button class="${n + 1 === issState.page ? 'on' : ''}" data-pg="${n + 1}">${n + 1}</button>`).join('') : '';
+    $$('#issPages button').forEach(b => b.onclick = () => { issState.page = Number(b.dataset.pg); renderIssues(); });
     $$('[data-issue]').forEach(r => r.onclick = () => openIssue(issState.issues.find(i => i.id === Number(r.dataset.issue)), null));
   }
+  const TYPEPICK = [['complaint', 'issues', 'Issue / Complaint'], ['task', 'cal', 'Task / Follow-up'], ['note', 'note', 'Internal note'], ['service_request', 'scopes', 'Service request'], ['incident', 'quality', 'Incident']];
+  const SAVE_LABEL = { complaint: 'Create issue', service_request: 'Create request', incident: 'Log incident', task: 'Create task', follow_up: 'Create follow-up', note: 'Save note' };
   async function openIssue(it, cust) {
     if (!issState.options) { try { const r = await api('/api/admin/issues?status=open'); issState.options = r.options; } catch (e) { return toast(e.message, true); } }
     if (!state.customers || !state.customers.length) { try { state.customers = (await api('/api/admin/customers')).customers; } catch { state.customers = []; } }
     const o = issState.options, isNew = !it;
-    it = it || { type: 'complaint', priority: 'Normal', status: 'Open', customer_comms: 'Needs update', customer_id: cust ? cust.id : '' };
+    let det = null;
+    if (!isNew) { try { det = await api('/api/admin/issues/' + it.id); it = det.issue; } catch (e) { return toast(e.message, true); } }
+    it = it || { type: 'complaint', priority: 'Normal', status: 'Open', customer_comms: 'Needs update', customer_id: cust ? cust.id : '', source: '' };
+    let type = it.type, pri = it.priority;
     const opt = (list, sel, labels) => list.map(v => `<option value="${esc(v)}"${String(v) === String(sel ?? '') ? ' selected' : ''}>${esc(labels ? labels[v] : v)}</option>`).join('');
     const v = k => esc(it[k] == null ? '' : it[k]);
-    openDrawer({
-      title: isNew ? 'New item' : it.title,
-      sub: isNew ? (cust ? (cust.company || cust.name) : 'Internal only') : `${o.types[it.type]} #${it.id} · created ${fmtDate(it.created_at)}${it.created_by ? ' by ' + esc(it.created_by) : ''}${it.resolved_at ? ' · resolved ' + fmtDate(it.resolved_at) : ''}`,
-      body: `<form id="issForm" class="grid" novalidate>
-        <div class="f"><label for="i1">Type</label><select id="i1" name="type">${opt(Object.keys(o.types), it.type, o.types)}</select></div>
-        <div class="f"><label for="i2">Category</label><select id="i2" name="category"><option value="">—</option>${opt(o.categories, it.category)}</select></div>
-        <div class="f wide"><label for="i3">Title</label><input id="i3" name="title" value="${v('title')}" placeholder="Short summary"></div>
-        <div class="f"><label for="i4">Customer</label><select id="i4" name="customer_id"><option value="">No customer</option>${state.customers.map(c => `<option value="${c.id}"${String(c.id) === String(it.customer_id ?? '') ? ' selected' : ''}>${esc(c.company || c.name || c.email)}</option>`).join('')}</select></div>
-        <div class="f"><label for="i5">Property / project</label><input id="i5" name="property" value="${v('property')}"></div>
-        <div class="f wide"><label for="i6">Description</label><textarea id="i6" name="description">${v('description')}</textarea></div>
-        <div class="f"><label for="i7">Priority</label><select id="i7" name="priority">${opt(o.priorities, it.priority)}</select></div>
-        <div class="f"><label for="i8">Assigned to</label><select id="i8" name="assigned_to"><option value="">Unassigned</option>${opt(o.users, it.assigned_to)}</select></div>
-        <div class="f"><label for="i9">Due date</label><input id="i9" name="due_date" type="date" value="${v('due_date')}"></div>
-        <div class="f"><label for="i10">Status</label><select id="i10" name="status">${opt(o.statuses, it.status)}</select></div>
-        <div class="f wide"><label for="i11">Required action</label><textarea id="i11" name="required_action" placeholder="What needs to happen next">${v('required_action')}</textarea></div>
-        <div class="f wide"><label for="i12">Resolution</label><textarea id="i12" name="resolution" placeholder="Required to close a complaint or task">${v('resolution')}</textarea></div>
-        <div class="f"><label for="i13">Customer update</label><select id="i13" name="customer_comms">${opt(o.comms, it.customer_comms)}</select></div>
-      </form><p class="msg" id="issMsg" role="status"></p>`,
-      footer: `<button class="btn" id="iSave">${isNew ? 'Add' : 'Save'}</button>${!isNew && ['Open', 'In progress'].includes(it.status) ? '<button class="btn ghost" id="iResolve">Mark resolved</button>' : ''}<span class="grow"></span>${!isNew && it.type === 'note' ? '<button class="btn danger" id="iDel">Delete note</button>' : ''}`
-    });
-    const done = () => { closeDrawer(); if (state.view === 'issues') loadIssues(); else if (state.view === 'customers') loadCustomers(); else load(state.view); };
-    const save = async extra => {
-      const body = { ...formObj($('#issForm')), ...(extra || {}) };
-      try {
-        if (isNew) await api('/api/admin/issues', { method: 'POST', json: body });
-        else await api('/api/admin/issues/' + it.id, { method: 'PATCH', json: body });
-        toast(isNew ? 'Added' : extra ? 'Resolved' : 'Saved'); done();
-      } catch (err) { $('#issMsg').className = 'msg err'; $('#issMsg').textContent = err.message; }
+    const isOpenSt = s => !['Resolved', 'Verified', 'Closed'].includes(s);
+    const body = () => {
+      const t = type, note = t === 'note', taskish = ['task', 'follow_up'].includes(t), cx = ['complaint', 'incident'].includes(t);
+      return `${isNew ? `<div class="typepick" role="radiogroup" aria-label="Item type">${TYPEPICK.map(([k, icn, l]) => `<button type="button" role="radio" data-ty="${k}" class="${(k === t || (k === 'task' && t === 'follow_up')) ? 'on' : ''}" aria-checked="${k === t}">${ic(icn)}<span>${l}</span></button>`).join('')}</div>` : `<p class="muted" style="margin-top:0">${esc(it.number)} · ${esc(o.types[t])} · created ${fmtWhen(it.created_at)} by ${esc(it.created_by || '—')}</p>`}
+      <p class="err" id="issMsg" role="alert" hidden></p>
+      <form id="issForm" class="ig" novalidate><input type="hidden" name="type" value="${esc(t)}">
+        ${taskish ? `<div class="wide"><label>Kind</label><div class="segpri" id="tkind"><button type="button" data-k="task" class="${t === 'task' ? 'on' : ''}">Task</button><button type="button" data-k="follow_up" class="${t === 'follow_up' ? 'on' : ''}">Follow-up</button></div></div>` : ''}
+        <div><label for="i_cust">Customer${cx || t === 'service_request' ? ' *' : ''}</label><select id="i_cust" name="customer_id"><option value="">${note || taskish ? 'None (internal)' : 'Choose customer'}</option>${state.customers.map(c => `<option value="${c.id}"${String(c.id) === String(it.customer_id ?? '') ? ' selected' : ''}>${esc(c.company || c.name || c.email)}</option>`).join('')}</select></div>
+        <div><label for="i_contact">Contact</label><select id="i_contact" name="contact_id"><option value="">—</option></select></div>
+        ${note ? '' : `<div><label for="i_prop">Property / location</label><select id="i_prop" name="property_id"><option value="">—</option></select></div>
+        <div><label for="i_proj">Project</label><select id="i_proj" name="project_id"><option value="">—</option></select></div>`}
+        ${note ? '' : `<div><label for="i_src">Reported through</label><select id="i_src" name="source"><option value="">—</option>${opt(o.sources, it.source)}</select></div>`}
+        <div><label for="i_cat">Category${note ? '' : ' *'}</label><select id="i_cat" name="category"><option value="">—</option>${opt(o.categories.includes(it.category) || !it.category ? o.categories : [it.category, ...o.categories], it.category)}</select></div>
+        ${note ? '' : `<div class="${cx || t === 'service_request' ? '' : 'wide'}"><label>Priority *</label><div class="segpri" id="i_pri">${o.priorities.map(p => `<button type="button" data-p="${p}" class="${p === pri ? 'on' : ''}">${p}</button>`).join('')}</div></div>`}
+        ${t === 'incident' ? '<div><label for="i_rep">Reported by</label><input id="i_rep" name="reported_by" value="' + v('reported_by') + '"></div>' : ''}
+        <div class="wide"><label for="i_title">Title *</label><input id="i_title" name="title" maxlength="200" value="${v('title')}" required></div>
+        <div class="wide"><label for="i_desc">${note ? 'Note' : 'Details'} *</label><textarea id="i_desc" name="description" rows="3">${v('description')}</textarea></div>
+        ${note ? '' : `<div><label for="i_asg">Assigned to</label><select id="i_asg" name="assigned_to"><option value="">Unassigned</option>${opt(o.users, it.assigned_to)}</select></div>
+        <div><label for="i_due">Due date</label><input id="i_due" type="date" name="due_date" value="${v('due_date')}"></div>
+        <div><label for="i_rem">Reminder</label><input id="i_rem" type="datetime-local" name="reminder_at" value="${it.reminder_at ? new Date(new Date(it.reminder_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}"></div>
+        <div><label for="i_wo">Work order</label><input id="i_wo" name="work_order" value="${v('work_order')}" placeholder="e.g. WO-1042"></div>
+        ${taskish ? `<div><label for="i_rec">Repeat</label><select id="i_rec" name="recurrence">${opt(o.recurrence, it.recurrence, { '': 'Does not repeat', daily: 'Daily', weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly' })}</select></div>` : ''}
+        <div class="wide"><label for="i_req">Required action</label><textarea id="i_req" name="required_action" rows="2">${v('required_action')}</textarea></div>`}
+        ${!isNew && !note ? `<div><label for="i_status">Status</label><select id="i_status" name="status">${opt(o.statuses, it.status)}</select></div>
+        ${cx || t === 'service_request' ? `<div><label for="i_comms">Customer update</label><select id="i_comms" name="customer_comms">${opt(o.comms, it.customer_comms)}</select></div>` : '<div></div>'}
+        <div class="wide"><label for="i_res">Resolution</label><textarea id="i_res" name="resolution" rows="2" placeholder="What was done to resolve it">${v('resolution')}</textarea></div>
+        ${cx ? `<div class="wide"><label for="i_ca">Corrective action</label><textarea id="i_ca" name="corrective_action" rows="2" placeholder="What changes so it doesn't happen again">${v('corrective_action')}</textarea></div>
+        <div class="wide"><label for="i_vn">Verification</label>${it.verified_by ? `<p class="muted" style="margin:0">Verified by <b>${esc(it.verified_by)}</b> on ${fmtWhen(it.verified_at)}${it.verification_note ? ' — ' + esc(it.verification_note) : ''}</p>` : `<input id="i_vn" name="verification_note" placeholder="How the fix was checked (walkthrough, photo, customer sign-off)">`}</div>` : ''}` : ''}
+        <div class="wide"><label>Attachments</label><label class="drop" for="i_files">${ic('documents')}<br>Drag files here or click to upload<br><small>Photos, documents or other evidence (PDF, JPG, PNG)</small><input id="i_files" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.doc,.docx" style="display:none"></label><div id="i_flist" class="muted" style="margin-top:6px">${det && det.files.length ? det.files.map(f => `<button type="button" class="linklike" data-dl="${f.id}">${esc(f.title)}</button>`).join(' · ') : ''}</div></div>
+        ${note ? '' : `<div class="wide"><label class="switch"><input type="checkbox" id="i_esc" ${it.escalated ? 'checked' : ''}> Escalate to management</label></div>`}
+      </form>
+      ${det ? `<h3 class="secth">Comments (${det.comments.length})</h3><ul class="thread">${det.comments.map(c => `<li><b>${esc(c.author || '—')}</b> <small class="muted">${fmtWhen(c.created_at)}</small><br>${esc(c.body)}</li>`).join('')}</ul>
+        <div style="display:flex;gap:8px"><input id="i_cmt" placeholder="Add a comment…" style="flex:1;padding:10px 12px;border:1px solid #ccd5df;border-radius:9px;font:inherit"><button type="button" class="btn ghost" id="i_cmtBtn">Comment</button></div>
+        <h3 class="secth">History</h3><div class="activity">${renderActivity(det.history) || '<p class="empty">No history yet.</p>'}</div>` : ''}`;
     };
-    $('#iSave').onclick = () => save();
-    if ($('#iResolve')) $('#iResolve').onclick = () => save({ status: 'Resolved' });
-    if ($('#iDel')) $('#iDel').onclick = async () => { if (!confirm('Delete this note?')) return; try { await api('/api/admin/issues/' + it.id, { method: 'DELETE' }); toast('Deleted'); done(); } catch (err) { toast(err.message, true); } };
+    const footer = () => {
+      const open = isOpenSt(it.status), cx = ['complaint', 'incident'].includes(type);
+      return `<button class="btn ghost" data-close type="button">Cancel</button>${!isNew && type === 'note' ? '<button class="btn ghost danger" id="iDel" type="button">Delete note</button>' : ''}
+        ${!isNew && type !== 'note' && open ? '<button class="btn ghost" id="iResolve" type="button">Resolve</button>' : ''}
+        ${!isNew && cx && it.status === 'Resolved' && !it.verified_by ? '<button class="btn ghost" id="iVerify" type="button">Verify fix</button>' : ''}
+        ${!isNew && !open ? '<button class="btn ghost" id="iReopen" type="button">Reopen</button>' : ''}
+        <button class="btn" id="iSave" type="button">${isNew ? SAVE_LABEL[type] : 'Save changes'}</button>`;
+    };
+    const draw = () => {
+      const keep = $('#issForm') ? formObj($('#issForm')) : null;
+      openDrawer({ title: isNew ? 'Create new item' : it.title, body: body(), footer: footer() });
+      if (keep) { const f = $('#issForm'); Object.entries(keep).forEach(([k, val]) => { if (f.elements[k] && k !== 'type') f.elements[k].value = val; }); }
+      wire();
+    };
+    async function loadLinks() {
+      const f = $('#issForm'), cid = f.elements.customer_id.value;
+      const set = (name, items, label, sel) => { if (!f.elements[name]) return; f.elements[name].innerHTML = `<option value="">${label}</option>` + items.map(x => `<option value="${x.id}"${String(x.id) === String(sel ?? '') ? ' selected' : ''}>${esc(x.name)}${x.address ? ' – ' + esc(x.address) : ''}</option>`).join(''); };
+      if (!cid) { set('contact_id', [], '—'); set('property_id', [], '—'); set('project_id', [], '—'); return; }
+      try { const l = await api(`/api/admin/customers/${cid}/links`); set('contact_id', l.contacts, '—', it.contact_id || (isNew && (l.contacts.find(c => c.is_primary) || {}).id)); set('property_id', l.properties, '—', it.property_id); set('project_id', l.projects, '—', it.project_id); } catch { /* optional */ }
+    }
+    const msg = t => { const m = $('#issMsg'); m.textContent = t; m.hidden = !t; if (t && m.scrollIntoView) m.scrollIntoView({ block: 'nearest' }); };
+    const payload = () => {
+      const b = formObj($('#issForm')); b.type = type; if ($('#i_pri')) b.priority = pri;
+      if (b.reminder_at) b.reminder_at = new Date(b.reminder_at).toISOString();
+      if ($('#i_esc')) b.escalate = $('#i_esc').checked;
+      delete b.verification_note; if ($('#i_vn') && $('#i_vn').value.trim()) b.verification_note = $('#i_vn').value.trim();
+      return b;
+    };
+    async function uploadFiles(id) {
+      const inp = $('#i_files'); if (!inp || !inp.files.length) return;
+      const fd = new FormData(); fd.append('issue_id', id); fd.append('kind', 'Photos'); if (it.customer_id) fd.append('customer_id', it.customer_id);
+      [...inp.files].forEach(f => fd.append('files', f));
+      const r = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
+    }
+    async function save(extra) {
+      const b = { ...payload(), ...(extra || {}) };
+      if (!b.title || !b.title.trim()) return msg('Add a short title.');
+      if (!isNew || type === 'note') { /* ok */ } else if (!b.description || !b.description.trim()) return msg('Add the details.');
+      if (['complaint', 'service_request'].includes(type) && !b.customer_id) return msg('Choose the customer.');
+      if (type !== 'note' && !b.category) return msg('Choose a category.');
+      try {
+        const r = await api(isNew ? '/api/admin/issues' : '/api/admin/issues/' + it.id, { method: isNew ? 'POST' : 'PATCH', json: b });
+        await uploadFiles(r.issue.id);
+        toast(isNew ? `${r.issue.number} created` : (extra && extra.verify ? 'Verified' : extra && extra.status ? `Marked ${extra.status.toLowerCase()}` : 'Saved'));
+        closeDrawer(); loadIssues();
+        if (state.view === 'customers' && cp.id) loadCustomerPage();
+      } catch (e) { msg(e.message); }
+    }
+    function wire() {
+      $$('#drawerRoot [data-ty]').forEach(b => b.onclick = () => { type = b.dataset.ty; draw(); });
+      $$('#tkind button').forEach(b => b.onclick = () => { type = b.dataset.k; draw(); });
+      $$('#i_pri button').forEach(b => b.onclick = () => { pri = b.dataset.p; $$('#i_pri button').forEach(x => x.classList.toggle('on', x === b)); });
+      $('#i_cust').onchange = () => { it.contact_id = it.property_id = it.project_id = null; loadLinks(); };
+      $('#i_files') && ($('#i_files').onchange = () => { $('#i_flist').textContent = [...$('#i_files').files].map(f => f.name).join(', '); });
+      $$('#drawerRoot [data-dl]').forEach(b => b.onclick = () => { const f = det.files.find(x => x.id === Number(b.dataset.dl)); downloadFile({ name: f.file_name || f.title, url: f.file_url }); });
+      $('#iSave').onclick = () => save();
+      $('#iResolve') && ($('#iResolve').onclick = () => save({ status: 'Resolved' }));
+      $('#iVerify') && ($('#iVerify').onclick = () => save({ verify: true }));
+      $('#iReopen') && ($('#iReopen').onclick = () => save({ status: 'Open' }));
+      $('#iDel') && ($('#iDel').onclick = async () => { if (!confirm('Delete this note?')) return; try { await api('/api/admin/issues/' + it.id, { method: 'DELETE' }); toast('Note deleted'); closeDrawer(); loadIssues(); } catch (e) { msg(e.message); } });
+      $('#i_cmtBtn') && ($('#i_cmtBtn').onclick = async () => { const t = $('#i_cmt').value.trim(); if (!t) return; try { await api(`/api/admin/issues/${it.id}/comments`, { method: 'POST', json: { body: t } }); toast('Comment added'); openIssue(it, null); } catch (e) { msg(e.message); } });
+      $$('#drawerRoot [data-close]').forEach(el => el.onclick = closeDrawer);
+      loadLinks();
+    }
+    draw();
   }
 
   // ---------- Cleaning scopes ----------

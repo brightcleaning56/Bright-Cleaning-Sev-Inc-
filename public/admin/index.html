@@ -217,6 +217,25 @@
   @media (max-width: 1100px) { .cust2 { grid-template-columns: minmax(0, 1fr); } .custlist { position: static; max-height: 420px; } }
   @media (max-width: 980px) { .topbar { margin: 0 -14px 16px; padding: 10px 14px; flex-wrap: wrap; } .topbar .gsearch { order: 3; flex-basis: 100%; max-width: none; } .tbuser small { display: none; } }
   @media (max-width: 700px) { .fin2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ov3 { grid-template-columns: 1fr; } .cphero { flex-direction: column; } .cpbtns { margin-left: 0; } .qa6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* ---------- Issues & Tasks (mockup) ---------- */
+  .kpis5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; } .kpis5 .ktile b { font-size: 26px; } .kpis5 .ktile.alert { background: #fff6f6; border-color: #f4cfcd; } .kpis5 .ktile.alert b { color: #d1382f; } .kpis5 .ktile.good { background: #f3fbf6; }
+  .segtabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; } .segtabs button { border: 1px solid var(--line2); background: #fff; border-radius: 10px; padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; } .segtabs button.on { background: linear-gradient(180deg, #1f6fd1, #2a8bf0); color: #fff; border-color: #1f6fd1; }
+  .filt { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; } .filt input, .filt select { padding: 10px 12px; border: 1px solid #ccd5df; border-radius: 10px; font: inherit; background: #fff; } .filt input { flex: 1 1 260px; min-width: 0; } .filt select { flex: 0 1 auto; }
+  .isst td { vertical-align: middle; } .isst .itm { display: flex; gap: 10px; align-items: center; } .isst .itm .chip { width: 34px; height: 34px; border-radius: 9px; } .isst .itm b { display: block; } .isst small { display: block; color: var(--muted); }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .pill.t-complaint { background: #fde8e8; color: #c0362d; } .pill.t-task, .pill.t-follow_up { background: #e6f0fd; color: #1f6fd1; } .pill.t-note { background: #f0e9fd; color: #7a4bd8; } .pill.t-service_request { background: #e3f6ea; color: #17904c; } .pill.t-incident { background: #fff0e0; color: #c26a00; }
+  .pill.p-Urgent { background: #e5484d; color: #fff; } .pill.p-High { background: #fde8e8; color: #c0362d; } .pill.p-Normal { background: #e6f0fd; color: #1f6fd1; } .pill.p-Low { background: #eef2f6; color: #4c637a; }
+  .pill.s-Open { background: #fff3dc; color: #a46a00; } .pill.s-In-progress, .pill.s-Investigating { background: #e6f0fd; color: #1f6fd1; } .pill.s-Waiting-on-customer { background: #f0e9fd; color: #7a4bd8; } .pill.s-Resolved, .pill.s-Verified { background: #e3f6ea; color: #17904c; } .pill.s-Closed { background: #eef2f6; color: #4c637a; }
+  .avs { display: inline-flex; align-items: center; gap: 8px; } .avs i { width: 28px; height: 28px; border-radius: 50%; background: #1d3b5c; color: #fff; font-style: normal; font-size: 11px; font-weight: 700; display: grid; place-items: center; flex: none; }
+  .due-late { color: #d1382f; font-weight: 700; } .pager { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line2); flex-wrap: wrap; gap: 8px; } .pager button { min-width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line2); background: #fff; margin-left: 6px; cursor: pointer; font: inherit; } .pager button.on { background: #1f6fd1; color: #fff; border-color: #1f6fd1; }
+  .typepick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; } .typepick button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px; border: 1px solid var(--line2); border-radius: 12px; background: #fff; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; color: #34506d; text-align: center; }
+  .typepick button.on { background: #e8f1fd; border-color: #1f6fd1; color: #1f6fd1; box-shadow: inset 0 -3px 0 #1f6fd1; }
+  .segpri { display: flex; border: 1px solid #ccd5df; border-radius: 10px; overflow: hidden; } .segpri button { flex: 1; border: 0; background: #fff; padding: 10px 6px; font: inherit; cursor: pointer; border-left: 1px solid #e4eaf0; } .segpri button:first-child { border-left: 0; } .segpri button.on { background: #1f6fd1; color: #fff; font-weight: 700; }
+  .ig { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; } .ig .wide { grid-column: 1 / -1; } .ig label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 5px; } .ig input, .ig select, .ig textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ccd5df; border-radius: 9px; font: inherit; background: #fff; }
+  .drop { border: 1.5px dashed #b8c8da; border-radius: 12px; padding: 14px; text-align: center; color: var(--muted); background: #fafcff; } .switch { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .thread li { list-style: none; padding: 8px 0; border-bottom: 1px solid var(--line2); } .thread { padding: 0; margin: 0 0 8px; } .secth { font-size: 15px; margin: 18px 0 8px; color: #10263e; }
+  @media (max-width: 1100px) { .kpis5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .kpis5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .typepick { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ig { grid-template-columns: 1fr; } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -406,12 +425,22 @@
     </section>
 
     <section class="view" id="v-issues">
-      <div class="pagehead"><div><h1>Issues &amp; tasks</h1><p>Customer complaints, tasks, follow-ups and notes. Internal only: customers never see these.</p></div><button class="btn" id="issAdd">New item</button></div>
-      <div class="toolbar"><input type="search" id="issSearch" placeholder="Search title, customer, property…" aria-label="Search issues">
-        <select id="issStatus" aria-label="Status"><option value="open">Open</option><option value="overdue">Overdue</option><option value="done">Resolved / closed</option><option value="all">All</option></select>
-        <select id="issType" aria-label="Type"><option value="">All types</option><option value="complaint">Complaints</option><option value="task">Tasks</option><option value="follow_up">Follow-ups</option><option value="note">Notes</option></select>
-        <label class="chk"><input type="checkbox" id="issMine"> Assigned to me</label></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Item</th><th>Customer</th><th>Type</th><th>Priority</th><th>Assigned</th><th>Due</th><th>Status</th></tr></thead><tbody id="issRows"></tbody></table></div>
+      <div class="pagehead"><div><h1>Issues &amp; Tasks</h1><p>Manage customer complaints, service issues, internal tasks and follow-ups from one place.</p></div>
+        <div class="headact"><button class="btn" id="issAdd"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Create new item</button><button class="btn ghost" id="issCsv" type="button">Export CSV</button></div></div>
+      <div class="kpis5" id="issKpis"></div>
+      <div class="segtabs" id="issTabs" role="tablist"></div>
+      <div class="filt">
+        <input type="search" id="issSearch" placeholder="Search title, customer, property or work order…" aria-label="Search issues">
+        <select id="issStatus" aria-label="Status"><option value="open">Status: Open</option><option value="today">Due today</option><option value="overdue">Overdue</option><option value="done">Resolved / closed</option><option value="all">All statuses</option></select>
+        <select id="issCat" aria-label="Category"><option value="">Category: All</option></select>
+        <select id="issPri" aria-label="Priority"><option value="">Priority: All</option><option>Urgent</option><option>High</option><option>Normal</option><option>Low</option></select>
+        <select id="issAssigned" aria-label="Assigned"><option value="">Assigned: All</option><option value="me">Assigned to me</option><option value="none">Unassigned</option></select>
+        <select id="issSource" aria-label="Source"><option value="">Source: All</option></select>
+        <select id="issCust" aria-label="Customer"><option value="">Customer: All</option></select>
+        <select id="issType" aria-label="Type" hidden><option value=""></option></select><input type="checkbox" id="issMine" hidden>
+      </div>
+      <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Item</th><th>Customer</th><th>Property / project</th><th>Type</th><th>Category</th><th>Priority</th><th>Assigned to</th><th>Due date</th><th>Status</th></tr></thead><tbody id="issRows"></tbody></table>
+        <div class="pager"><span class="muted" id="issShowing"></span><div id="issPages"></div></div></div>
     </section>
 
     <section class="view" id="v-calls">
