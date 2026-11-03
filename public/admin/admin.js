@@ -323,6 +323,7 @@
       body: `
         <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
         ${flagBox}
+        <div id="leadAI"></div>
         ${l.details ? `<div class="formsection">Details</div><div class="pre">${esc(l.details)}</div>` : ''}
         ${files.length ? `<div class="formsection">Attachments</div><div class="related"><ul>${files.map((f, i) => `<li><button class="linklike" data-file="${i}">${esc(f.name)}</button></li>`).join('')}</ul></div>` : ''}
         <div class="formsection">Follow-up</div>
@@ -333,6 +334,7 @@
       footer: `<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
     });
     $$('[data-file]').forEach(b => b.onclick = () => downloadFile(files[b.dataset.file]));
+    renderLeadAI(l);
     $('#lSave').onclick = async () => {
       try {
         await api('/api/admin/leads/' + l.id, { method: 'PATCH', json: { status: $('#ls').value, notes: $('#ln').value } });
@@ -954,8 +956,14 @@
   });
 
   async function loadSettings() {
-    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules()]);
+    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings()]);
   }
+  async function loadAISettings() {
+    const r = await api('/api/admin/ai/status'); aiStatus = r;
+    $('#aiState').innerHTML = r.enabled ? `<span class="badge green">On</span> Model: ${esc(r.model)}` : '<span class="badge amber">Off</span> Add ANTHROPIC_API_KEY in Render (Environment) to turn it on.';
+    $('#aiAuto').checked = r.auto_triage;
+  }
+  $('#aiAuto').addEventListener('change', async e => { try { await api('/api/admin/ai/settings', { method: 'PUT', json: { auto_triage: e.target.checked } }); toast('Saved'); } catch (err) { toast(err.message, true); } });
   async function loadApprovalRules() {
     const r = await api('/api/admin/approval-rules'), f = $('#apprCard');
     f.elements.min_margin_pct.value = r.rules.min_margin_pct; f.elements.max_total.value = r.rules.max_total;
@@ -1022,6 +1030,29 @@
     try { await api('/api/admin/users', { method: 'POST', json: formObj(e.target) }); e.target.reset(); m.className = 'msg ok'; m.textContent = 'Access added.'; loadUsers(); }
     catch (err) { m.className = 'msg err'; m.textContent = err.message; }
   });
+
+  // ---------- AI ----------
+  let aiStatus = null;
+  const getAI = async () => aiStatus || (aiStatus = await api('/api/admin/ai/status').catch(() => ({ enabled: false })));
+  async function renderLeadAI(l) {
+    const box = $('#leadAI'); if (!box) return;
+    const st = await getAI();
+    let ai = null; try { ai = l.ai ? JSON.parse(l.ai) : null; } catch { ai = null; }
+    if (!st.enabled && !ai) { box.innerHTML = '<div class="formsection">AI assistant</div><p class="muted">AI is off. Add ANTHROPIC_API_KEY in Render to get an automatic summary, missing-information list and a reply draft for every new lead.</p>'; return; }
+    const run = '<button type="button" class="btn ghost" id="aiRun">' + (ai && !ai.error ? 'Re-run AI' : 'Run AI triage') + '</button>';
+    if (!ai || ai.error) { box.innerHTML = `<div class="formsection">AI assistant</div><p class="muted">${ai && ai.error ? 'Last AI run failed: ' + esc(ai.error) : 'Not analyzed yet. New leads are analyzed automatically within a minute.'}</p>${run}`; }
+    else box.innerHTML = `<div class="formsection">AI assistant</div>
+      <p><b>${esc(ai.summary)}</b></p>
+      <p>${badge(ai.category)} ${ai.priority === 'High' ? '<span class="badge red">High priority</span>' : badge(ai.priority)} <small class="muted">${esc(fmtWhen(ai.at))}</small></p>
+      ${ai.missing && ai.missing.length ? `<ul class="needs">${ai.missing.map(m => `<li>Needed: ${esc(m)}</li>`).join('')}</ul>` : ''}
+      <p><b>Next step:</b> ${esc(ai.next_step || '')}</p>
+      <div class="grid"><div class="f wide"><label for="aiSubj">Reply subject</label><input id="aiSubj" value="${esc(ai.reply_subject || '')}"></div>
+      <div class="f wide"><label for="aiBody">Reply (edit before sending)</label><textarea id="aiBody" rows="8">${esc(ai.reply_body || '')}</textarea></div></div>
+      <button type="button" class="btn" id="aiSend"${l.email ? '' : ' disabled'}>Send reply to ${esc(l.email || 'customer')}</button> ${run}
+      <p class="hint">The AI only drafts. Nothing is sent until you click Send, and replies cannot include prices.</p>`;
+    $('#aiRun').onclick = async () => { $('#aiRun').disabled = true; $('#aiRun').textContent = 'Analyzing…'; try { const r = await api(`/api/admin/ai/leads/${l.id}/triage`, { method: 'POST' }); l.ai = JSON.stringify(r.ai); renderLeadAI(l); } catch (e) { toast(e.message, true); $('#aiRun').disabled = false; $('#aiRun').textContent = 'Run AI triage'; } };
+    if ($('#aiSend')) $('#aiSend').onclick = async () => { if (!confirm(`Send this reply to ${l.email}?`)) return; try { await api(`/api/admin/leads/${l.id}/reply`, { method: 'POST', json: { subject: $('#aiSubj').value, body: $('#aiBody').value } }); toast('Reply sent'); } catch (e) { toast(e.message, true); } };
+  }
 
   // ---------- Shared form drawer ----------
   // defs: [{name, label, type: text|textarea|select|date|time|number|checkbox|customer|project|user|file, options, wide, hint, value}]
@@ -1130,8 +1161,25 @@
       { name: 'create_lead', label: 'Create a lead from this call (new business, bid request or pricing question)', type: 'checkbox' }],
       values: prefill || {},
       submit: b => api('/api/admin/calls', { method: 'POST', json: b }),
+      extraFooter: '<button type="button" class="btn ghost" id="aiCall">Fill from notes (AI)</button>',
       after: res => { toast(res.lead_id ? 'Call logged and lead created' : 'Call logged'); if (state.view === 'calls') loadCalls(); else if (state.view === 'overview') loadOverview(); } });
   }
+  document.addEventListener('click', async e => {
+    if (!e.target || e.target.id !== 'aiCall') return;
+    const f = $('#genForm'); const notes = f.elements.summary.value.trim();
+    if (!notes) return toast('Type the call notes in "What was discussed" first.', true);
+    e.target.disabled = true; e.target.textContent = 'Reading notes…';
+    try {
+      const r = (await api('/api/admin/ai/calls/extract', { method: 'POST', json: { notes } })).fields;
+      for (const k of ['contact_name', 'company', 'phone']) if (r[k] && !f.elements[k].value) f.elements[k].value = r[k];
+      if (r.purpose && [...f.elements.purpose.options].some(o => o.value === r.purpose)) f.elements.purpose.value = r.purpose;
+      const extra = [r.service && 'Service: ' + r.service, r.square_footage && 'Size: ' + r.square_footage, r.deadline && 'Deadline: ' + r.deadline, r.follow_up && 'Next: ' + r.follow_up].filter(Boolean).join('\n');
+      if (r.summary) f.elements.summary.value = r.summary + (extra ? '\n' + extra : '') + '\n---\n' + notes;
+      if (['New business', 'Bid request', 'Pricing question'].includes(r.purpose)) f.elements.create_lead.checked = true;
+      toast('Filled from your notes. Check before saving.');
+    } catch (err) { toast(err.message, true); }
+    e.target.disabled = false; e.target.textContent = 'Fill from notes (AI)';
+  });
   function openCall(c) {
     openDrawer({ title: c.company || c.contact_name || c.phone || 'Call', sub: `${c.direction} · ${fmtWhen(c.created_at)}${c.created_by ? ' · logged by ' + esc(c.created_by) : ''}`,
       body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || '—')}</dd><dt>Lead</dt><dd>${c.lead_id ? `<button class="linklike" id="callLead">Lead #${c.lead_id}</button>` : '—'}</dd><dt>Follow-up</dt><dd>${c.follow_up_date ? fmtDate(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd></dl><div class="formsection">Summary</div><p>${esc(c.summary || '—')}</p>`,
@@ -1218,9 +1266,10 @@
   }
   function renderDocs() {
     const k = $('#docKind').value, rows = docState.documents.filter(d => !k || d.kind === k);
-    $('#documentsRows').innerHTML = rows.length ? rows.map(d => `<tr><td><button class="linklike" data-doc="${d.id}">${esc(d.title)}</button><small>${esc(d.file_name || '')}${d.size ? ' · ' + Math.round(d.size / 1024).toLocaleString() + ' KB' : ''}</small></td><td>${esc(d.kind)}</td><td>${esc(d.revision || '—')}</td><td>${esc(d.project_name || d.customer_company || d.customer_name || '—')}</td><td>${fmtDate(d.created_at)}</td><td>${badge(d.analysis_status)} <button class="btn ghost" data-totake="${d.id}">Takeoff</button></td></tr>`).join('')
+    $('#documentsRows').innerHTML = rows.length ? rows.map(d => `<tr><td><button class="linklike" data-doc="${d.id}">${esc(d.title)}</button><small>${esc(d.file_name || '')}${d.size ? ' · ' + Math.round(d.size / 1024).toLocaleString() + ' KB' : ''}</small></td><td>${esc(d.kind)}</td><td>${esc(d.revision || '—')}</td><td>${esc(d.project_name || d.customer_company || d.customer_name || '—')}</td><td>${fmtDate(d.created_at)}</td><td>${badge(d.analysis_status)} <button class="btn ghost" data-totake="${d.id}">Takeoff</button>${docState.ai_ready && /\.pdf$/i.test(d.file_name || '') ? ` <button class="btn ghost" data-aitake="${d.id}">AI takeoff</button>` : ''}</td></tr>`).join('')
       : '<tr><td class="emptyrow" colspan="6">No files yet. Upload a drawing set to start.</td></tr>';
     $$('#documentsRows [data-doc]').forEach(b => b.onclick = () => { const d = docState.documents.find(x => x.id === Number(b.dataset.doc)); downloadFile({ name: d.file_name || d.title, url: d.file_url }); });
+    $$('#documentsRows [data-aitake]').forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = 'Reading drawings…'; try { const r = await api(`/api/admin/ai/documents/${b.dataset.aitake}/takeoff`, { method: 'POST' }); toast(`AI read ${r.analysis.sheets.length} sheets; takeoff #${r.takeoff_id} drafted for your review`); go('takeoffs'); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'AI takeoff'; } });
     $$('#documentsRows [data-totake]').forEach(b => b.onclick = () => { const d = docState.documents.find(x => x.id === Number(b.dataset.totake)); openTakeoff(null, d); });
   }
   function uploadDocs() {
