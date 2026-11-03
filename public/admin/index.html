@@ -266,6 +266,7 @@
   .qrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 10px 0; border-bottom: 1px solid var(--line2); } .qrow .seg3 { display: flex; } .qrow .seg3 button { border: 1px solid #ccd5df; background: #fff; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; } .qrow .seg3 button:first-child { border-radius: 8px 0 0 8px; } .qrow .seg3 button:last-child { border-radius: 0 8px 8px 0; } .qrow .seg3 .on.p { background: #17904c; color: #fff; } .qrow .seg3 .on.f { background: #d1382f; color: #fff; } .qrow .seg3 .on.n { background: #4c637a; color: #fff; } .qrow input { grid-column: 1 / -1; padding: 8px 10px; border: 1px solid #ccd5df; border-radius: 8px; font: inherit; }
   @media (max-width: 1100px) { .qcharts { grid-template-columns: minmax(0, 1fr); } } .qcharts .card { min-width: 0; overflow: hidden; }
   .chkrow { display: flex !important; gap: 10px; align-items: center; justify-content: flex-start; font-weight: 400 !important; margin: 6px 0; text-align: left; } .chkrow input { width: 18px !important; height: 18px; flex: none; margin: 0; } .chkrow span { flex: 1; } .chkrow small { flex: none; }
+  #v-reports.alt > :not(.pagehead):not(#repTabs):not(#repNew) { display: none !important; } #v-reports.alt #repCsv, #v-reports.alt #repMonths { display: none; }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -526,6 +527,8 @@
     </section>
     <section class="view" id="v-reports">
       <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><div class="headact"><button class="btn ghost" id="repCsv" type="button">Export CSV</button><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select></div></div>
+      <div class="segtabs" id="repTabs" role="tablist"><button data-rt="overview" class="on">Overview</button><button data-rt="pl">Profit &amp; loss</button><button data-rt="aging">A/R aging</button><button data-rt="labor">Labor</button><button data-rt="projects">Project profitability</button><button data-rt="sched">Scheduled reports</button></div>
+      <div id="repNew" hidden><div class="filt"><label class="muted" style="align-self:center">From</label><input type="date" id="repFrom"><label class="muted" style="align-self:center">To</label><input type="date" id="repTo"><button class="btn ghost" id="repApply" type="button">Apply</button><button class="btn" id="repPdf" type="button">Download PDF</button></div><div id="repBody"></div></div>
       <div class="kpis small" id="repKpis"></div>
       <div class="kpis small" id="repKpis2" style="margin-top:12px"></div>
       <div class="kpis small" id="repKpis3" style="margin-top:12px"></div>
