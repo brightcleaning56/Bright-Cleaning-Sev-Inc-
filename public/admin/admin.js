@@ -1797,7 +1797,7 @@
       const r = await api(`/api/admin/takeoffs/${id}/adjustments`, { method: 'PUT', json: body }); if (r.error) throw new Error(r.error); $('#prOut').innerHTML = draw(r.price); return r.price; };
     $('#prCalc').onclick = async () => { try { await save(); } catch (e) { toast(e.message, true); } };
     $$('#prForm input[type=checkbox]').forEach(c => c.onchange = () => save().catch(e => toast(e.message, true)));
-    $('#prEst').onclick = async () => { try { await save(); let r; try { r = await api(`/api/admin/takeoffs/${id}/estimate`, { method: 'POST', json: { customer_name: t.name } }); } catch (e) { if (/revised|recheck/i.test(e.message) && confirm(e.message + '\n\nConfirm the quantities are still right and continue?')) r = await api(`/api/admin/takeoffs/${id}/estimate`, { method: 'POST', json: { customer_name: t.name, acknowledge_stale: true } }); else throw e; }
+    $('#prEst').onclick = async () => { try { await save(); let cn = ''; if (!t.customer_id) { cn = prompt('This takeoff is not linked to a customer. Customer or company name for the estimate:'); if (!cn) return; } let r; try { r = await api(`/api/admin/takeoffs/${id}/estimate`, { method: 'POST', json: { customer_name: cn } }); } catch (e) { if (/revised|recheck/i.test(e.message) && confirm(e.message + '\n\nConfirm the quantities are still right and continue?')) r = await api(`/api/admin/takeoffs/${id}/estimate`, { method: 'POST', json: { customer_name: cn, acknowledge_stale: true } }); else throw e; }
       toast(r.updated ? `Draft estimate #${r.estimate_id} re-priced: ${money(r.total)}` : `Estimate #${r.estimate_id} created: ${money(r.total)}`); closeDrawer(); go('proposals'); openEstimate(r.estimate_id); } catch (e) { toast(e.message, true); } };
     const v = $('#prVer'); if (v) v.onclick = async () => { try { const r = await api(`/api/admin/takeoffs/${id}/version`, { method: 'POST' }); toast(`Version ${r.version} created on the current drawings. Recheck the quantities.`); closeDrawer(); loadTakeoffs(); openTakeoff((await api('/api/admin/takeoffs')).takeoffs.find(x => x.id === r.id), null); } catch (e) { toast(e.message, true); } };
     $$('#drawerRoot [data-close]').forEach(el => el.onclick = closeDrawer);
@@ -1848,8 +1848,9 @@
       try {
         if (!lines.length) throw new Error('Add at least one quantity first.');
         const saved = await save();
-        let r; try { r = await api(`/api/admin/takeoffs/${saved.id}/estimate`, { method: 'POST', json: { customer_name: saved.name } }); }
-        catch (e) { if (/revised|recheck/i.test(e.message) && confirm(e.message + '\n\nConfirm the quantities are still right and continue?')) r = await api(`/api/admin/takeoffs/${saved.id}/estimate`, { method: 'POST', json: { customer_name: saved.name, acknowledge_stale: true } }); else throw e; }
+        let cn = ''; if (!saved.customer_id) { cn = prompt('This takeoff is not linked to a customer. Customer or company name for the estimate:') || ''; if (!cn) throw new Error('Choose the customer on the takeoff (or enter a customer name) to create the estimate.'); }
+        let r; try { r = await api(`/api/admin/takeoffs/${saved.id}/estimate`, { method: 'POST', json: { customer_name: cn } }); }
+        catch (e) { if (/revised|recheck/i.test(e.message) && confirm(e.message + '\n\nConfirm the quantities are still right and continue?')) r = await api(`/api/admin/takeoffs/${saved.id}/estimate`, { method: 'POST', json: { customer_name: cn, acknowledge_stale: true } }); else throw e; }
         toast(r.updated ? `Draft estimate #${r.estimate_id} re-priced` : `Estimate #${r.estimate_id} created from the takeoff`); closeDrawer(); go('proposals'); openEstimate(r.estimate_id);
       } catch (e) { fail(e); }
     };
