@@ -104,6 +104,7 @@ require('./pm')(app,{db,auth,logAction,clean,adminEmail});
 require('./sched')(app,{db,auth,logAction,clean,adminEmail,uploadDir,getMailer:()=>mailer});
 require('./qc')(app,{db,auth,logAction,clean,adminEmail});
 require('./docs2')(app,{db,auth,logAction,clean,adminEmail,upload,uploadDir});
+require('./engine')(app,{db,auth,logAction,clean});
 app.use(express.static(path.join(ROOT,'public')));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));
 app.use((err,req,res,next)=>{if(err.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'A record with that value already exists.'});const code=err.status||err.statusCode||((err.name==='MulterError'||/Unsupported file type/.test(err.message))?400:500);if(code>=500)console.error(err);res.status(code).json({error:code<500?(err.message||'Request failed'):'Something went wrong. Please try again.'})});
