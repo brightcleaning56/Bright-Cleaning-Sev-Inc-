@@ -198,9 +198,10 @@
   const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
   const chg = c => c === null || c === undefined ? '<small class="flat">no prior data</small>' : `<small class="${c > 0 ? 'up' : c < 0 ? 'down' : 'flat'}">${c > 0 ? '▲' : c < 0 ? '▼' : ''} ${Math.abs(c)}% vs prior</small>`;
   $('#ccDays').addEventListener('change', () => loadOverview());
+  setInterval(() => { if (state.view === 'overview' && document.visibilityState === 'visible' && !document.querySelector('#drawerRoot .drawer')) loadOverview().catch(() => {}); }, 30000);
   async function loadOverview() {
     const [d, cc] = await Promise.all([api('/api/admin/dashboard'), api('/api/admin/command-center?days=' + $('#ccDays').value)]);
-    $('#todayLine').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) + ' · live figures from your records';
+    $('#todayLine').innerHTML = esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + ` · <span class="live">Live</span> <small class="muted">updated ${esc(new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</small>`;
     const k = cc.kpis, per = `last ${cc.days} days`;
     const att = k.attention.parts;
     const tiles = [
@@ -214,6 +215,13 @@
     ];
     $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
     $$('#ccKpis .kpi').forEach(b => b.onclick = () => go(tiles[b.dataset.i].to));
+    if (!window.matchMedia || !matchMedia('(prefers-reduced-motion: reduce)').matches) $$('#ccKpis .kpi b').forEach(el => {
+      const txt = el.textContent, m = txt.match(/^(\$?)([\d,]+)(\.\d+)?$/); if (!m) return;
+      const target = Number((m[2] + (m[3] || '')).replace(/,/g, '')); if (!(target > 0)) return;
+      const t0 = performance.now(), dur = 600;
+      const step = t => { const p = Math.min(1, (t - t0) / dur), v = target * (1 - Math.pow(1 - p, 3)); el.textContent = m[1] ? money(v) : Math.round(v).toLocaleString(); if (p < 1) requestAnimationFrame(step); else el.textContent = txt; };
+      requestAnimationFrame(step);
+    });
     const colors = ['#1d4f91', '#2563eb', '#1497b5', '#1f9d55'];
     $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]}"><span>${esc(p.stage)} (${p.n})</span><span>${p.valued ? money(p.v) : ''}</span></div>`).join('')
       + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
@@ -511,12 +519,33 @@
         catch (err) { toast(err.message, true); }
       };
     }).catch(() => { /* approval info optional */ });
+    // Approval-aware actions: the owner (or a manager) approves and acts in one step; staff send the owner a request.
+    const clearApproval = async action => {
+      const ap = await api(`/api/admin/estimates/${e.id}/approval`);
+      if (ap.blocked) { toast(ap.blocked, true); return false; }
+      if (!ap.required || (ap.approval && ap.approval.valid)) return true;
+      const why = ap.reasons.map(r => '• ' + r).join('\n');
+      if (ap.can_approve) {
+        if (!confirm(`This proposal needs approval before it ${action}:\n${why}\n\nYou can approve it. Approve and continue?`)) return false;
+        await api(`/api/admin/estimates/${e.id}/approve`, { method: 'POST', json: { note: `Approved by ${$('#whoEmail').textContent} when it ${action}` } });
+        return true;
+      }
+      if (confirm(`This proposal needs owner approval before it ${action}:\n${why}\n\nSend the owner an approval request?`)) {
+        await api(`/api/admin/estimates/${e.id}/request-approval`, { method: 'POST' }); toast('Approval request sent to the owner');
+      }
+      return false;
+    };
     $('#es').onchange = async ev => {
-      try { await api('/api/admin/estimates/' + e.id, { method: 'PATCH', json: { status: ev.target.value } }); toast('Status updated'); loadEstimates(); }
+      const to = ev.target.value;
+      try {
+        if (['Sent', 'Approved'].includes(to) && ['Draft', 'Ready'].includes(e.status) && !(await clearApproval(to === 'Sent' ? 'goes to the customer' : 'is marked approved'))) { ev.target.value = e.status; return; }
+        await api('/api/admin/estimates/' + e.id, { method: 'PATCH', json: { status: to } }); toast('Status updated'); openEstimate(e.id); loadEstimates();
+      }
       catch (err) { ev.target.value = e.status; toast(err.message, true); }
     };
     $('#eCopy').onclick = () => navigator.clipboard.writeText(url).then(() => toast('Link copied')).catch(() => { $('#eUrl').select(); toast('Press Ctrl+C to copy'); });
     $('#eSend').onclick = async () => {
+      try { if (!(await clearApproval('goes to the customer'))) return; } catch (err) { return toast(err.message, true); }
       if (!confirm(`Email this proposal to ${e.email}?`)) return;
       try { const r = await api(`/api/admin/estimates/${e.id}/send`, { method: 'POST' }); toast(r.message || 'Sent'); closeDrawer(); loadEstimates(); }
       catch (err) { toast(err.message, true); }
@@ -717,6 +746,20 @@
     if (n('margin_pct') > 90) warn.push('Gross margin is capped at 90%.');
     $('#cWarn').hidden = !warn.length;
     $('#cWarn').textContent = warn.join(' ');
+    const pr = n('production_rate'), ar = n('area_sqft');
+    const fix = $('#cFix');
+    if (pr > 0 && pr < 20 && ar > 0) {
+      fix.hidden = false;
+      fix.innerHTML = `<b>Check the production rate.</b> ${pr} sq ft per labor hour means ${Math.round(ar / pr).toLocaleString()} labor hours for ${ar.toLocaleString()} SF. Crews usually clean 150–1,000 SF per hour. If ${money(pr)} is your <b>price per square foot</b>, use the button. <button type="button" class="btn small" id="cFixBtn">Price this as ${ar.toLocaleString()} SF × ${money(pr)}/SF</button>`;
+      $('#cFixBtn').onclick = () => {
+        const line = `Cleaning: ${ar.toLocaleString()} SF at ${money(pr)}/SF | ${(Math.round(ar * pr * 100) / 100).toFixed(2)}`;
+        ef.elements.line_items_text.value = [ef.elements.line_items_text.value.trim(), line].filter(Boolean).join('\n');
+        ef.elements.production_rate.value = 0; ef.elements.labor_hours.value = 0; ef.elements.use_line_items.checked = true;
+        calcEstimate(); toast('Priced by the square foot. Labor build-up cleared.');
+      };
+    } else if (m.hours > 3000 * Math.max(1, n('visits') || 1)) {
+      fix.hidden = false; fix.innerHTML = `<b>Unusually high labor:</b> ${Math.round(m.hours).toLocaleString()} hours. Check the area, production rate and number of visits before sending.`;
+    } else fix.hidden = true;
   }
   ef.addEventListener('input', e => { if (e.target && e.target.name === 'labor_rate') repriceHourly(); calcEstimate(); });
 
@@ -961,9 +1004,9 @@
   async function loadAISettings() {
     const r = await api('/api/admin/ai/status'); aiStatus = r;
     $('#aiState').innerHTML = r.enabled ? `<span class="badge green">On</span> Model: ${esc(r.model)}` : '<span class="badge amber">Off</span> Add ANTHROPIC_API_KEY in Render (Environment) to turn it on.';
-    $('#aiAuto').checked = r.auto_triage;
+    $('#aiAuto').checked = r.auto_triage; $('#aiInfo').checked = r.auto_request_info !== false; $('#aiDraft').checked = r.auto_draft_estimates !== false;
   }
-  $('#aiAuto').addEventListener('change', async e => { try { await api('/api/admin/ai/settings', { method: 'PUT', json: { auto_triage: e.target.checked } }); toast('Saved'); } catch (err) { toast(err.message, true); } });
+  [['#aiAuto', 'auto_triage'], ['#aiInfo', 'auto_request_info'], ['#aiDraft', 'auto_draft_estimates']].forEach(([sel, k]) => $(sel).addEventListener('change', async e => { try { await api('/api/admin/ai/settings', { method: 'PUT', json: { [k]: e.target.checked } }); toast('Saved'); } catch (err) { toast(err.message, true); } }));
   async function loadApprovalRules() {
     const r = await api('/api/admin/approval-rules'), f = $('#apprCard');
     f.elements.min_margin_pct.value = r.rules.min_margin_pct; f.elements.max_total.value = r.rules.max_total;
@@ -1014,9 +1057,10 @@
     catch (err) { $('#backupMsg').className = 'msg err'; $('#backupMsg').textContent = err.message; }
   });
   async function loadUsers() {
-    const users = (await api('/api/admin/users')).users || [];
+    const r = await api('/api/admin/users'), users = r.users || [], canRoles = !!r.can_manage_roles;
     const me = $('#whoEmail').textContent;
-    $('#userList').innerHTML = users.map(u => `<div class="userrow"><span><b>${esc(u.name || u.email)}</b><small>${esc(u.email)}${u.owner ? ' · Owner' : ''}${u.last_login_at ? ' · last signed in ' + esc(ago(u.last_login_at)) : ''}</small></span>${!u.owner && u.email !== me && u.id ? `<button class="btn small danger" data-deluser="${u.id}" data-email="${esc(u.email)}">Remove</button>` : ''}</div>`).join('');
+    $('#userList').innerHTML = users.map(u => `<div class="userrow"><span><b>${esc(u.name || u.email)}</b><small>${esc(u.email)} · ${esc(u.role ? u.role[0].toUpperCase() + u.role.slice(1) : (u.owner ? 'Owner' : 'Staff'))}${u.role !== 'staff' ? ' (can approve proposals)' : ''}${u.last_login_at ? ' · last signed in ' + esc(ago(u.last_login_at)) : ''}</small></span>${u.id && !u.env_owner ? `<select data-role="${u.id}" aria-label="Role for ${esc(u.email)}"${canRoles ? '' : ' disabled'}>${['owner', 'manager', 'staff'].map(r => `<option value="${r}"${u.role === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select>` : ''}${!u.owner && u.email !== me && u.id ? `<button class="btn small danger" data-deluser="${u.id}" data-email="${esc(u.email)}">Remove</button>` : ''}</div>`).join('');
+    $$('[data-role]').forEach(sel => sel.onchange = async () => { try { await api(`/api/admin/users/${sel.dataset.role}/role`, { method: 'PATCH', json: { role: sel.value } }); toast('Role updated'); loadUsers(); } catch (err) { toast(err.message, true); loadUsers(); } });
     $$('[data-deluser]').forEach(b => b.onclick = async () => {
       if (!confirm(`Remove access for ${b.dataset.email}?`)) return;
       try { await api('/api/admin/users/' + b.dataset.deluser, { method: 'DELETE' }); toast('Access removed'); loadUsers(); }
@@ -1036,6 +1080,12 @@
   const getAI = async () => aiStatus || (aiStatus = await api('/api/admin/ai/status').catch(() => ({ enabled: false })));
   async function renderLeadAI(l) {
     const box = $('#leadAI'); if (!box) return;
+    const auto = l.auto_estimate_id > 0 ? `<div class="autobox"><b>Draft estimate #${l.auto_estimate_id} was prepared automatically</b> from this request using your price book. <button type="button" class="btn small" id="autoOpen">Review estimate</button></div>`
+      : (l.intake ? `<div class="autobox">No automatic estimate yet. <button type="button" class="btn small ghost" id="autoDraft">Draft estimate from this request</button></div>` : '');
+    if ($('#leadAuto')) $('#leadAuto').remove();
+    box.insertAdjacentHTML('beforebegin', `<div id="leadAuto">${auto}</div>`);
+    if ($('#autoOpen')) $('#autoOpen').onclick = () => { closeDrawer(); go('proposals'); openEstimate(l.auto_estimate_id); };
+    if ($('#autoDraft')) $('#autoDraft').onclick = async () => { try { const r = await api(`/api/admin/leads/${l.id}/draft-estimate`, { method: 'POST' }); toast(`Draft estimate #${r.estimate_id} ready${r.total ? ' – ' + money(r.total) : ''}`); closeDrawer(); go('proposals'); openEstimate(r.estimate_id); } catch (e) { toast(e.message, true); } };
     const st = await getAI();
     let ai = null; try { ai = l.ai ? JSON.parse(l.ai) : null; } catch { ai = null; }
     if (!st.enabled && !ai) { box.innerHTML = '<div class="formsection">AI assistant</div><p class="muted">AI is off. Add ANTHROPIC_API_KEY in Render to get an automatic summary, missing-information list and a reply draft for every new lead.</p>'; return; }
@@ -1049,7 +1099,8 @@
       <div class="grid"><div class="f wide"><label for="aiSubj">Reply subject</label><input id="aiSubj" value="${esc(ai.reply_subject || '')}"></div>
       <div class="f wide"><label for="aiBody">Reply (edit before sending)</label><textarea id="aiBody" rows="8">${esc(ai.reply_body || '')}</textarea></div></div>
       <button type="button" class="btn" id="aiSend"${l.email ? '' : ' disabled'}>Send reply to ${esc(l.email || 'customer')}</button> ${run}
-      <p class="hint">The AI only drafts. Nothing is sent until you click Send, and replies cannot include prices.</p>`;
+      ${ai.info_requested_at ? `<p><span class="badge green">Questions emailed to the customer</span> <small class="muted">${esc(fmtWhen(ai.info_requested_at))}</small></p>` : ''}
+      <p class="hint">Replies cannot include prices. Automatic questions go out only when information is missing and the setting is on.</p>`;
     $('#aiRun').onclick = async () => { $('#aiRun').disabled = true; $('#aiRun').textContent = 'Analyzing…'; try { const r = await api(`/api/admin/ai/leads/${l.id}/triage`, { method: 'POST' }); l.ai = JSON.stringify(r.ai); renderLeadAI(l); } catch (e) { toast(e.message, true); $('#aiRun').disabled = false; $('#aiRun').textContent = 'Run AI triage'; } };
     if ($('#aiSend')) $('#aiSend').onclick = async () => { if (!confirm(`Send this reply to ${l.email}?`)) return; try { await api(`/api/admin/leads/${l.id}/reply`, { method: 'POST', json: { subject: $('#aiSubj').value, body: $('#aiBody').value } }); toast('Reply sent'); } catch (e) { toast(e.message, true); } };
   }
@@ -1372,7 +1423,17 @@
     const sum = a => a.reduce((t, x) => t + Number(x.v || 0), 0);
     kpiTiles('#repKpis', [{ label: 'Win rate', value: r.win_rate == null ? '—' : r.win_rate + '%', sub: `${r.won_count} won · ${r.lost_count} lost` }, { label: 'Won value', value: money(r.won_value) }, { label: 'Average won job', value: r.avg_won == null ? '—' : money(r.avg_won) }, { label: 'Collected', value: money(sum(r.collected)) }]);
     const mName = k => new Date(k + '-15').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    $('#repMonthsRows').innerHTML = r.months.slice().reverse().map((m, j) => { const i = r.months.length - 1 - j; return `<tr><td>${mName(m)}</td><td class="num">${r.leads[i].n}</td><td class="num">${r.sent[i].n}</td><td class="num">${r.won[i].n}</td><td class="num">${money(r.won[i].v)}</td><td class="num">${money(r.collected[i].v)}</td></tr>`; }).join('');
+    $('#repMonthsRows').innerHTML = r.months.slice().reverse().map((m, j) => { const i = r.months.length - 1 - j; return `<tr><td>${mName(m)}</td><td class="num">${r.calls[i].n}</td><td class="num">${r.leads[i].n}</td><td class="num">${r.sent[i].n}</td><td class="num">${r.won[i].n}</td><td class="num">${money(r.won[i].v)}</td><td class="num">${money(r.billed[i].v)}</td><td class="num">${money(r.collected[i].v)}</td><td class="num">${r.quality[i].n ? r.quality[i].v + '%' : '—'}</td></tr>`; }).join('');
+    const rv = r.receivables, o = r.ops, au = r.automation;
+    kpiTiles('#repKpis2', [{ label: 'Outstanding', value: money(rv.outstanding) }, { label: 'Overdue', value: money(rv.overdue), sub: `${rv.overdue_n || 0} invoice(s)`, alert: rv.overdue > 0 }, { label: 'Inspection average', value: o.inspections.avg == null ? '—' : o.inspections.avg + '%', sub: `${o.inspections.n || 0} inspections` }, { label: 'Calls', value: o.calls.n || 0, sub: `${o.calls.missed || 0} missed · ${o.calls.to_leads || 0} became leads` }]);
+    const top = Math.max(1, ...r.flow.map(f => f.n));
+    $('#repFlowRows').innerHTML = r.flow.map(f => `<tr><td>${esc(f.k)}</td><td class="num">${f.n}</td><td>${f.n ? `<div class="bar" style="width:${Math.max(4, Math.round(f.n / top * 100))}%"></div>` : ''}</td></tr>`).join('');
+    const dl = rows => '<dl class="stat">' + rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('') + '</dl>';
+    $('#repOps').innerHTML = dl([['Active projects', o.projects_active], ['Completed projects', o.projects_completed], ['Visits done (period)', o.visits_done], ['Visits coming up', o.visits_upcoming], ['Inspections failed', o.inspections.failed || 0], ['Complaints (period)', `${o.complaints.n || 0} · ${o.complaints.resolved || 0} resolved`], ['Average days to resolve', o.complaints.days == null ? '—' : o.complaints.days], ['Open tasks', `${o.tasks_open} · ${o.tasks_overdue} overdue`]]);
+    $('#repRecv').innerHTML = dl([['Billed (all time)', money(rv.billed)], ['Collected (all time)', money(rv.paid)], ['Outstanding', money(rv.outstanding)], ['Overdue', money(rv.overdue)]]);
+    $('#repAuto').innerHTML = dl([['Leads analyzed by AI', au.ai_triaged], ['Questions emailed to customers', au.ai_info_requests], ['Estimates drafted automatically', au.auto_estimates], ['AI drawing takeoffs', au.ai_takeoffs], ['Proposal approvals', au.approvals], ['Reminders sent', au.reminders], ['Emails sent / failed', `${au.emails_sent} / ${au.emails_failed}`], ['AI errors', au.ai_failures]]);
+    const SVN = { construction_final: 'Construction final clean', multifamily: 'Multifamily', janitorial: 'Commercial janitorial', windows: 'Window cleaning', power_washing: 'Power washing', parking: 'Parking lot', unit_turnover: 'Unit turnover', inquiry: 'Contact form', 'bid (no form)': 'Bid request (no form)' };
+    $('#repLeadSvc').innerHTML = r.lead_services.length ? r.lead_services.map(x => `<tr><td>${esc(SVN[x.k] || x.k)}</td><td class="num">${x.n}</td><td class="num">${x.drafted || 0}</td></tr>`).join('') : '<tr><td class="emptyrow" colspan="3">No data yet.</td></tr>';
     const empty = c => `<tr><td class="emptyrow" colspan="${c}">No data yet.</td></tr>`;
     const svc = { construction: 'Construction cleaning', multifamily: 'Multifamily', janitorial: 'Commercial janitorial', specialty: 'Specialty', unspecified: 'Not categorized' };
     $('#repSvcRows').innerHTML = r.by_service.length ? r.by_service.map(x => `<tr><td>${esc(svc[x.k] || x.k)}</td><td class="num">${x.n}</td><td class="num">${money(x.avg)}</td><td class="num">${money(x.total)}</td></tr>`).join('') : empty(4);

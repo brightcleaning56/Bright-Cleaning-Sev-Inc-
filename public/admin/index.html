@@ -131,8 +131,23 @@
   .tolines td { padding: 4px; vertical-align: top; } .tolines select, .tolines input { width: 100%; }
   @media (max-width: 900px) { .week { grid-template-columns: 1fr; } .week .day { min-height: 0; } }
   .two > * { min-width: 0; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .bar { height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--blue), #4fb3e8); transform-origin: left; animation: grow .5s ease-out both; }
+  dl.stat { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; margin: 8px 0 0; font-size: 14px; } dl.stat dt { color: var(--muted); } dl.stat dd { margin: 0; font-weight: 700; text-align: right; }
   #v-reports .two { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
   @media (max-width: 760px) { #v-reports .two { grid-template-columns: 1fr; } .toolbar input[type=search], .toolbar select { flex: 1 1 100%; min-width: 0; } .kpi b { font-size: 18px; white-space: normal; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(31,157,85,.55); } 70% { box-shadow: 0 0 0 8px rgba(31,157,85,0); } 100% { box-shadow: 0 0 0 0 rgba(31,157,85,0); } }
+  @keyframes grow { from { transform: scaleX(.6); opacity: .4; } to { transform: none; opacity: 1; } }
+  .view.active { animation: fadeUp .28s ease-out; }
+  .card, .kpi, .portals a, .qa button, .mod { transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+  .kpi:hover, .portals a:hover, .qa button:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16,38,62,.10); }
+  .btn { transition: transform .08s ease, filter .15s ease, background-color .15s ease; } .btn:active { transform: scale(.97); } .btn:hover { filter: brightness(1.06); }
+  .funnel .st { animation: grow .5s ease-out both; transform-origin: center; } .funnel .st:nth-child(2) { animation-delay: .06s; } .funnel .st:nth-child(3) { animation-delay: .12s; } .funnel .st:nth-child(4) { animation-delay: .18s; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #1d6b47; } .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #1f9d55; animation: pulse 2s infinite; }
+  table.t tbody tr { transition: background-color .12s ease; } table.t tbody tr.click:hover { background: var(--bluebg); }
+  .autobox { margin: 8px 0 4px; padding: 12px 14px; border-radius: 10px; background: linear-gradient(90deg, var(--greenbg), var(--card)); border: 1px solid #cfe9db; }
+  @media (prefers-reduced-motion: reduce) { .view.active, .funnel .st, .live::before { animation: none; } .kpi:hover, .btn:active { transform: none; } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -351,9 +366,13 @@
     <section class="view" id="v-reports">
       <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><div class="headact"><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select></div></div>
       <div class="kpis small" id="repKpis"></div>
-      <div class="two"><div class="card"><h2>By month</h2><div class="tablewrap"><table class="t"><thead><tr><th>Month</th><th class="num">Leads</th><th class="num">Proposals sent</th><th class="num">Won</th><th class="num">Won value</th><th class="num">Collected</th></tr></thead><tbody id="repMonthsRows"></tbody></table></div></div>
+      <div class="kpis small" id="repKpis2" style="margin-top:12px"></div>
+      <div class="two" style="margin-top:6px"><div class="card"><h2>Start to finish</h2><p class="muted">Every stage a job passes through in this period, from the first call to the final payment.</p><div class="tablewrap"><table class="t" style="table-layout:fixed;width:100%;min-width:0"><thead><tr><th style="width:52%">Stage</th><th class="num" style="width:14%">Count</th><th style="width:34%"><span class="sr-only">Share</span></th></tr></thead><tbody id="repFlowRows"></tbody></table></div></div>
+      <div class="card"><h2>Operations &amp; quality</h2><div id="repOps"></div><h2 style="margin-top:16px">Money owed</h2><div id="repRecv"></div><h2 style="margin-top:16px">Automation &amp; AI</h2><div id="repAuto"></div></div></div>
+      <div class="two"><div class="card"><h2>By month</h2><div class="tablewrap"><table class="t"><thead><tr><th>Month</th><th class="num">Calls</th><th class="num">Leads</th><th class="num">Sent</th><th class="num">Won</th><th class="num">Won value</th><th class="num">Billed</th><th class="num">Collected</th><th class="num">Quality</th></tr></thead><tbody id="repMonthsRows"></tbody></table></div></div>
       <div class="card"><h2>Won work by service</h2><div class="tablewrap"><table class="t"><thead><tr><th>Service</th><th class="num">Jobs</th><th class="num">Average</th><th class="num">Total</th></tr></thead><tbody id="repSvcRows"></tbody></table></div>
       <h2 style="margin-top:16px">Pipeline by status</h2><div class="tablewrap"><table class="t"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">Value</th></tr></thead><tbody id="repPipeRows"></tbody></table></div>
+      <h2 style="margin-top:16px">What leads ask for</h2><div class="tablewrap"><table class="t"><thead><tr><th>Service</th><th class="num">Requests</th><th class="num">Auto-priced</th></tr></thead><tbody id="repLeadSvc"></tbody></table></div>
       <h2 style="margin-top:16px">Top customers (billed)</h2><div class="tablewrap"><table class="t"><thead><tr><th>Customer</th><th class="num">Invoices</th><th class="num">Billed</th><th class="num">Paid</th></tr></thead><tbody id="repTopRows"></tbody></table></div></div></div>
     </section>
     <section class="view" id="v-scopes">
@@ -439,7 +458,7 @@
           <div><span>Gross profit</span><b id="cProfit">$0.00</b></div>
           <div><span>Crew days</span><b id="cDays">0.0</b></div>
           <div class="total"><span>Proposal total</span><b id="cTotal">$0.00</b></div>
-          <div class="warnline" id="cWarn" hidden></div>
+          <div class="warnline" id="cWarn" hidden></div><div class="warnline" id="cFix" hidden></div>
         </div>
         <div class="formbar">
           <button class="btn" type="submit" id="estSave">Save estimate</button>
@@ -495,7 +514,9 @@
         </div>
       </div>
       <div class="card" id="aiCard"><h2>AI assistant</h2><p id="aiState" class="muted"></p>
-        <label class="chk"><input type="checkbox" id="aiAuto"> Analyze every new lead automatically (summary, missing information, reply draft)</label>
+        <label class="chk"><input type="checkbox" id="aiAuto"> Analyze every new lead automatically (summary, missing information, reply draft)</label><br>
+        <label class="chk"><input type="checkbox" id="aiInfo"> When information is missing, email the customer the AI's questions automatically (questions only, never prices)</label><br>
+        <label class="chk"><input type="checkbox" id="aiDraft"> Draft a priced estimate automatically from each quote request and AI takeoff (drafts are never sent without approval)</label>
         <p class="hint">The AI drafts and extracts only. It never sends email, never states prices and never approves or commits to work. Drawing takeoffs are drafts for your review. Every AI run is recorded.</p></div>
       <form class="card" id="apprCard" novalidate>
         <h2>Approval rules</h2>
