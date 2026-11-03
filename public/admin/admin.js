@@ -118,7 +118,7 @@
   async function start() {
     try {
       const me = await api('/api/admin/me');
-      $('#whoEmail').textContent = me.email || '';
+      $('#whoEmail').textContent = me.email || ''; loadTopbar();
     } catch { return; }
     $('#login').hidden = true;
     $('#app').hidden = false;
@@ -126,8 +126,9 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['overview', 'leads', 'customers', 'customer', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
+    if (view === 'customer') view = 'customers';
     if (!VIEWS.includes(view)) view = 'overview';
     state.view = view;
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'v-' + view));
@@ -162,7 +163,6 @@
       if (view === 'quality') await loadQuality();
       if (view === 'documents') await loadDocuments();
       if (view === 'reports') await loadReports();
-      if (view === 'customer') await loadCustomerPage();
       if (view === 'emails') await loadEmails();
       if (view === 'takeoffs') await loadTakeoffs();
       if (view === 'scopes') await loadScopes();
@@ -385,21 +385,29 @@
   $('#custSearch').addEventListener('input', () => renderCustomers());
   async function loadCustomers() {
     state.customers = (await api('/api/admin/customers')).customers || [];
+    if (cp.id && !state.customers.some(c => c.id === cp.id)) cp.id = null;
+    if (!cp.id && state.customers.length && innerWidth > 1100) cp.id = state.customers[0].id;
     renderCustomers();
+    if (cp.id) await loadCustomerPage();
   }
+  $('#custStatus').addEventListener('change', () => renderCustomers());
+  $('#custSort').addEventListener('change', () => renderCustomers());
   function renderCustomers() {
-    const q = $('#custSearch').value.trim().toLowerCase();
-    const rows = state.customers.filter(c => !q || [c.company, c.name, c.email, c.phone, c.notes].join(' ').toLowerCase().includes(q));
-    $('#custRows').innerHTML = rows.length ? rows.map(c => `<tr class="click" data-cust="${c.id}"><td><b>${esc(c.company || c.name || c.email)}</b>${c.company && c.name ? `<small>${esc(c.name)}</small>` : ''}</td><td>${esc(c.email || '—')}<small>${esc(c.phone || '')}</small></td><td class="num">${c.leads.length}</td><td class="num">${c.proposals.length}</td><td class="num">${c.projects.length}</td><td class="num">${money(c.billed)}</td><td class="num">${c.billed - c.paid > 0 ? `<b>${money(c.billed - c.paid)}</b>` : money(0)}</td></tr>`).join('')
-      : `<tr><td class="emptyrow" colspan="7">${q ? 'No customers match your search.' : 'Customers are added automatically from bid requests, inquiries and estimates, or click “Add customer”.'}</td></tr>`;
-    $$('[data-cust]').forEach(r => r.onclick = () => openCustomerPage(Number(r.dataset.cust)));
+    const q = $('#custSearch').value.trim().toLowerCase(), st = $('#custStatus').value, so = $('#custSort').value;
+    let rows = state.customers.filter(c => (!q || [c.company, c.name, c.email, c.phone, c.notes].join(' ').toLowerCase().includes(q)) && (!st || (c.status || 'Active') === st));
+    rows = rows.slice().sort((a, b) => so === 'name' ? String(a.company || a.name).localeCompare(String(b.company || b.name)) : so === 'balance' ? ((b.billed || 0) - (b.paid || 0)) - ((a.billed || 0) - (a.paid || 0)) : String(b.updated_at).localeCompare(String(a.updated_at)));
+    $('#custCount').textContent = `${rows.length} of ${state.customers.length}`;
+    const tone = s => ({ Active: 'green', Prospect: 'amber', Inactive: 'navy' }[s] || 'navy');
+    $('#custRows').innerHTML = rows.length ? rows.map(c => `<button type="button" role="listitem" class="crow${c.id === cp.id ? ' on' : ''}" data-cust="${c.id}"><span class="chip ${tone(c.status || 'Active')}">${ic('customers')}</span><span style="min-width:0"><b>${esc(c.company || c.name || c.email)}</b><small>${esc(c.company && c.name ? c.name : c.email || '')}</small></span>${badge(c.status || 'Active')}<span class="chev">${ic('chev')}</span></button>`).join('')
+      : `<p class="empty">${q || st ? 'No customers match.' : 'Customers are added automatically from bid requests, inquiries and estimates, or click “New customer”.'}</p>`;
+    $$('#custRows [data-cust]').forEach(r => r.onclick = () => openCustomerPage(Number(r.dataset.cust)));
   }
   $('#custAdd').addEventListener('click', () => openCustomer(null));
   // ---------- Customer profile page (full CRM workspace) ----------
   const cp = { id: Number(sessionStorage.getItem('bc_cust')) || null, tab: 'overview', d: null };
-  function openCustomerPage(id) { cp.id = id; cp.tab = 'overview'; sessionStorage.setItem('bc_cust', id); go('customer'); }
+  function openCustomerPage(id) { cp.id = id; cp.tab = 'overview'; sessionStorage.setItem('bc_cust', id); if (state.view !== 'customers') go('customers'); else { renderCustomers(); loadCustomerPage(); } }
   async function loadCustomerPage() {
-    if (!cp.id) return go('customers', true);
+    if (!cp.id) return;
     try { cp.d = await api(`/api/admin/customers/${cp.id}/profile`); } catch (e) { $('#custPage').innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
     renderCustomerPage();
   }
@@ -407,16 +415,18 @@
   function renderCustomerPage() {
     const d = cp.d, c = d.customer, f = d.financials, pc = d.contacts.find(x => x.is_primary) || d.contacts[0] || {};
     const cnt = { contacts: d.contacts.length, properties: d.properties.length, notes: d.notes.length, calls: d.calls.length, emails: d.emails.length, issues: d.issues.length, estimates: d.estimates.length, proposals: d.proposals.length, contracts: d.contracts.length, projects: d.projects.length, invoices: d.invoices.length, documents: d.documents.length };
-    const tile = (l, o, sub) => `<div class="kpi"><span style="min-width:0"><span>${esc(l)}</span><b>${money(o.value)}</b><small class="flat">${o.count} ${esc(sub)}</small></span></div>`;
+    const TI = { overview: 'overview', contacts: 'user', properties: 'customers', notes: 'note', calls: 'calls', emails: 'emails', issues: 'issues', estimates: 'proposals', proposals: 'proposals', contracts: 'contracts', projects: 'projects', invoices: 'invoices', documents: 'documents', activity: 'activity' };
     $('#custPage').innerHTML = `
-      <p><button class="linklike" id="cpBack">← All customers</button></p>
-      <div class="cphead"><div><h1>${esc(c.company || c.name || c.email)} ${badge(c.status || 'Active')}</h1>
-        <div class="cpmeta"><span>Primary contact <b>${esc(pc.name || '—')}</b></span><span>Phone <b>${pc.phone || c.phone ? `<a href="tel:${esc(pc.phone || c.phone)}">${esc(pc.phone || c.phone)}</a>` : '—'}</b></span><span>Email <b>${esc(pc.email || c.email || '—')}</b></span><span>Address <b>${esc(c.address || '—')}</b></span><span>Account owner <b>${esc(c.account_owner || 'Unassigned')}</b></span><span>Customer since <b>${fmtDate(c.created_at)}</b></span></div></div>
-        <div class="cpact"><button class="btn" data-a="note">New note</button><button class="btn ghost" data-a="call">Log call</button><button class="btn ghost" data-a="email">Send email</button><button class="btn ghost" data-a="estimate">Create estimate</button><button class="btn ghost" data-a="proposal">Create proposal</button><button class="btn ghost" data-a="issue">Create issue</button><button class="btn ghost" data-a="edit">Edit account</button>${d.role === 'owner' ? '<button class="btn ghost danger" data-a="remove">Remove</button>' : ''}</div></div>
-      <div class="fin">${tile('Draft estimates', f.estimates, 'estimates')}${tile('Proposals awaiting reply', f.proposals_out, 'sent')}${tile('Approved proposals', f.approved, 'approved · not revenue')}${tile('Signed contracts', f.contracts_signed, `signed${f.contracts_unsigned.count ? ` · ${f.contracts_unsigned.count} unsigned (${money(f.contracts_unsigned.value)})` : ''}`)}${tile('Invoiced', f.invoiced, 'invoices')}${tile('Collected', f.collected, 'payments')}${tile('Outstanding', f.outstanding, 'open invoices')}</div>
-      <div class="ctabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-t="${k}" class="${cp.tab === k ? 'on' : ''}" aria-selected="${cp.tab === k}">${l}${cnt[k] != null ? `<small>${cnt[k]}</small>` : ''}</button>`).join('')}</div>
+      <div class="card cphero"><div class="bimg">${ic('customers')}</div>
+        <div style="min-width:0;flex:1"><h1>${esc(c.company || c.name || c.email)} ${badge((c.status || 'Active') + ' customer')}</h1><div class="sub">${esc([c.customer_type, c.industry].filter(Boolean).join(' · ') || 'Commercial cleaning customer')}</div>
+          <div class="cpmeta2"><div><span class="chip blue">${ic('user')}</span><div><span>Primary contact</span><b>${esc(pc.name || '—')}</b></div></div><div><span class="chip blue">${ic('calls')}</span><div><span>Phone</span><b>${pc.phone || c.phone ? `<a href="tel:${esc(pc.phone || c.phone)}">${esc(pc.phone || c.phone)}</a>` : '—'}</b></div></div><div><span class="chip blue">${ic('emails')}</span><div><span>Email</span><b>${esc(pc.email || c.email || '—')}</b></div></div><div><span class="chip blue">${ic('pin')}</span><div><span>Address</span><b>${esc(c.address || '—')}</b></div></div><div><span class="chip blue">${ic('cal')}</span><div><span>Customer since</span><b>${fmtDate(c.created_at)}</b></div></div></div></div>
+        <div class="cpbtns"><button class="btn" id="cpActBtn" aria-haspopup="true" aria-expanded="false">${ic('gear')} Actions ▾</button><button class="btn ghost" data-a="edit">${ic('edit')} Edit customer</button>
+          <div class="menu" id="cpMenu" hidden><button data-a="note">${ic('note')} New note</button><button data-a="call">${ic('calls')} Log call</button><button data-a="email">${ic('emails')} Send email</button><button data-a="estimate">${ic('proposals')} Create estimate</button><button data-a="proposal">${ic('send')} Create proposal</button><button data-a="issue">${ic('issues')} Create issue</button>${d.role === 'owner' ? `<button data-a="remove" class="danger">${ic('trash')} Remove customer</button>` : ''}</div></div></div>
+      <div class="fin2">${kt('proposals', 'purple', 'Estimates', money(f.estimates.value), `${f.estimates.count} draft`)}${kt('proposals', 'blue', 'Proposals', money(f.proposals_out.value), `${f.proposals_out.count} awaiting reply`)}${kt('check', 'green', 'Approved proposals', money(f.approved.value), `${f.approved.count} · not revenue`)}${kt('contracts', 'purple', 'Contract value', money(f.contracts_signed.value), `${f.contracts_signed.count} signed${f.contracts_unsigned.count ? ` · ${f.contracts_unsigned.count} unsigned` : ''}`)}${kt('invoices', 'blue', 'Invoiced', money(f.invoiced.value), `${f.invoiced.count} invoices`)}${kt('money', 'teal', 'Collected', money(f.collected.value), `${f.collected.count} payments`)}${kt('clock', 'red', 'Outstanding', money(f.outstanding.value), `${f.outstanding.count} open`)}</div>
+      <div class="ctabs2 ctabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-t="${k}" class="${cp.tab === k ? 'on' : ''}" aria-selected="${cp.tab === k}">${ic(TI[k])}<span>${l}${cnt[k] != null ? ` (${cnt[k]})` : ''}</span></button>`).join('')}</div>
       <div id="cpBody"></div>`;
-    $('#cpBack').onclick = () => go('customers');
+    $('#cpActBtn').onclick = e => { e.stopPropagation(); const m = $('#cpMenu'); m.hidden = !m.hidden; $('#cpActBtn').setAttribute('aria-expanded', String(!m.hidden)); };
+    document.addEventListener('click', () => { const m = $('#cpMenu'); if (m) m.hidden = true; }, { once: true });
     $$('#custPage .ctabs button').forEach(b => b.onclick = () => { cp.tab = b.dataset.t; renderCustomerPage(); });
     $$('#custPage [data-a]').forEach(b => b.onclick = () => custAction(b.dataset.a));
     renderCustTab();
@@ -427,10 +437,18 @@
     const recLink = (type, id, label) => `<button class="linklike" data-rec="${type}:${id}">${esc(label)}</button>`;
     if (t === 'overview') {
       const openIss = d.issues.filter(i => !['Resolved', 'Closed'].includes(i.status));
-      B.innerHTML = `<div class="two"><div class="card"><h2>Customer details</h2><dl class="stat">${[['Company', c.company], ['Customer type', c.customer_type], ['Status', c.status], ['Industry', c.industry], ['Account owner', c.account_owner], ['Source', c.source], ['Tax ID / EIN', c.tax_id], ['Properties', d.properties.length], ['Contacts', d.contacts.length]].map(([k, v]) => `<dt>${k}</dt><dd>${esc(v == null || v === '' ? '—' : v)}</dd>`).join('')}</dl></div>
-        <div class="card"><h2>Recent communication</h2>${d.communications.length ? '<ul class="tl">' + d.communications.slice(0, 6).map(x => `<li><span class="ty">${x.type}</span> <b>${esc(x.title)}</b> <small class="muted">${esc(fmtWhen(x.at))}${x.by ? ' · ' + esc(x.by) : ''}</small><br><small>${esc((x.text || '').slice(0, 160))}</small></li>`).join('') + '</ul>' : '<p class="empty">No calls, emails or notes yet.</p>'}</div></div>
-        <div class="two"><div class="card"><h2>Open issues &amp; complaints (${openIss.length})</h2>${openIss.length ? '<ul class="mini">' + openIss.slice(0, 5).map(i => `<li><b>${esc(i.title)}</b> ${badge(i.priority)} ${badge(i.status)}<br><small class="muted">${esc(i.assigned_to || 'Unassigned')}${i.due_date ? ' · due ' + fmtDate(i.due_date) : ''}</small></li>`).join('') + '</ul>' : '<p class="empty">No open issues.</p>'}</div>
-        <div class="card"><h2>Current projects</h2>${d.projects.length ? '<ul class="mini">' + d.projects.map(p => `<li>${recLink('projects', p.id, p.name || 'Project #' + p.id)} ${badge(p.status)}<br><small class="muted">${p.due_date ? 'due ' + fmtDate(p.due_date) : ''}</small></li>`).join('') + '</ul>' : '<p class="empty">No projects.</p>'}</div></div>`;
+      const ACT = { call: ['calls', 'blue'], email: ['emails', 'teal'], note: ['note', 'amber'] };
+      B.innerHTML = `<div class="ov3"><div>
+          <div class="card"><h2>${ic('user')} Customer details</h2><dl class="stat">${[['Company', c.company], ['Customer type', c.customer_type], ['Status', c.status], ['Industry', c.industry], ['Account owner', c.account_owner], ['Source', c.source], ['Tax ID / EIN', c.tax_id]].map(([k, v]) => `<dt>${k}</dt><dd>${k === 'Status' ? badge(v || 'Active') : esc(v == null || v === '' ? '—' : v)}</dd>`).join('')}</dl></div>
+          <div class="card"><h2>${ic('pin')} Service areas / properties (${d.properties.length}) <button class="linklike more" data-gotab="properties">+ Add property</button></h2>${d.properties.length ? '<ul class="prop">' + d.properties.slice(0, 4).map(p => `<li><span class="chip navy">${ic('customers')}</span><span style="min-width:0;flex:1"><b>${esc(p.name)}</b><small class="muted" style="display:block">${esc(p.address || '')}</small></span>${badge(p.status)}</li>`).join('') + '</ul>' : '<p class="empty">No properties yet.</p>'}</div></div>
+        <div><div class="card"><h2>${ic('activity')} Recent activity <button class="linklike more" data-gotab="activity">View all</button></h2>${d.communications.length || d.activity.length ? '<ul class="actl">' + [...d.communications.slice(0, 4).map(x => ({ i: (ACT[x.type] || ['activity', 'navy']), t: x.title, s: x.text, at: x.at })), ...d.activity.slice(0, 2).map(a => ({ i: ['check', 'green'], t: `${a.action} ${a.entity}`, s: a.details || '', at: a.created_at }))].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 5).map(x => `<li><span class="chip ${x.i[1]}">${ic(x.i[0])}</span><span style="min-width:0"><b>${esc(x.t)}</b><small>${esc(String(x.s).slice(0, 110))}</small><small>${esc(fmtWhen(x.at))}</small></span></li>`).join('') + '</ul>' : '<p class="empty">No activity yet.</p>'}</div>
+          <div class="card"><h2>${ic('scopes')} Quick actions</h2><div class="qa6"><button class="b" data-a="note">${ic('note')} New note</button><button class="b" data-a="call">${ic('calls')} Log call</button><button class="b" data-a="email">${ic('emails')} Send email</button><button class="g" data-a="estimate">${ic('proposals')} Create estimate</button><button class="p" data-a="proposal">${ic('send')} Create proposal</button><button class="r" data-a="issue">${ic('issues')} Create issue</button></div></div></div>
+        <div><div class="card"><h2>${ic('emails')} Communication summary</h2><div class="comm3">${kt('calls', 'green', 'Calls', d.calls.length)}${kt('emails', 'blue', 'Emails', d.emails.length)}${kt('note', 'amber', 'Notes', d.notes.length)}</div></div>
+          <div class="card"><h2>${ic('issues')} Open issues / complaints (${openIss.length}) <button class="linklike more" data-gotab="issues">View all</button></h2>${openIss.length ? '<ul class="mini">' + openIss.slice(0, 3).map(i => `<li><b>${esc(i.title)}</b> ${badge(i.priority)} ${badge(i.status)}<br><small class="muted">Assigned to ${esc(i.assigned_to || 'nobody yet')}${i.due_date ? ' · due ' + fmtDate(i.due_date) : ''}</small></li>`).join('') + '</ul>' : '<p class="empty">No open issues.</p>'}</div>
+          <div class="card"><h2>${ic('projects')} Current projects (${d.projects.length}) <button class="linklike more" data-gotab="projects">View all</button></h2>${d.projects.length ? '<ul class="prop">' + d.projects.slice(0, 3).map(p => `<li><span class="chip blue">${ic('projects')}</span><span style="min-width:0;flex:1">${recLink('projects', p.id, p.name || 'Project #' + p.id)}<small class="muted" style="display:block">${esc(p.site_address || '')}${p.due_date ? ' · target ' + fmtDate(p.due_date) : ''}</small><span class="bar" style="width:${Math.max(3, Number(p.progress) || 0)}%;display:block;margin-top:6px"></span></span>${badge(p.status)}</li>`).join('') + '</ul>' : '<p class="empty">No projects.</p>'}</div></div></div>`;
+      $$('#cpBody [data-gotab]').forEach(b => b.onclick = () => { cp.tab = b.dataset.gotab; renderCustomerPage(); });
+      $$('#cpBody [data-a]').forEach(b => b.onclick = () => custAction(b.dataset.a));
+      bindOpeners(B);
     } else if (t === 'contacts') {
       B.innerHTML = `<div class="card"><h2>Contacts</h2><form class="inl" id="ctForm"><div><label>Name *</label><input name="name" required></div><div><label>Title</label><input name="title"></div><div><label>Email</label><input name="email" type="email"></div><div><label>Phone</label><input name="phone"></div><div><label class="chk"><input type="checkbox" name="is_primary"> Primary contact</label></div><div><label class="chk"><input type="checkbox" name="can_sign"> Can sign contracts</label></div><div class="wide"><button class="btn">Save contact</button></div></form>
         ${rowsOr(d.contacts.map(k => `<tr><td><b>${esc(k.name)}</b>${k.is_primary ? ' <span class="badge green">Primary</span>' : ''}${k.can_sign ? ' <span class="badge blue">Signer</span>' : ''}<small>${esc(k.title || '')}</small></td><td>${esc(k.email || '—')}</td><td>${esc(k.phone || '—')}</td><td>${k.is_primary ? '' : `<button class="btn small ghost" data-prim="${k.id}">Make primary</button> <button class="btn small danger" data-rmct="${k.id}">Remove</button>`}</td></tr>`), ['Name', 'Email', 'Phone', ''], 'No contacts yet.')}</div>`;
@@ -1208,6 +1226,40 @@
     $('#aiRun').onclick = async () => { $('#aiRun').disabled = true; $('#aiRun').textContent = 'Analyzing…'; try { const r = await api(`/api/admin/ai/leads/${l.id}/triage`, { method: 'POST' }); l.ai = JSON.stringify(r.ai); renderLeadAI(l); } catch (e) { toast(e.message, true); $('#aiRun').disabled = false; $('#aiRun').textContent = 'Run AI triage'; } };
     if ($('#aiSend')) $('#aiSend').onclick = async () => { if (!confirm(`Send this reply to ${l.email}?`)) return; try { await api(`/api/admin/leads/${l.id}/reply`, { method: 'POST', json: { subject: $('#aiSubj').value, body: $('#aiBody').value } }); toast('Reply sent'); } catch (e) { toast(e.message, true); } };
   }
+
+  // ---------- Icons, sidebar and top bar ----------
+  const IC = {
+    overview: '<path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10"/>', leads: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/>',
+    customers: '<path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-4h6v4M9 9h.01M15 9h.01M9 13h.01M15 13h.01"/>', issues: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/>',
+    calls: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
+    emails: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>', proposals: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
+    contracts: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="m9 15 2 2 4-4"/>', projects: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
+    invoices: '<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/>', schedule: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    quality: '<path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>', documents: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    takeoffs: '<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>', reports: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', scopes: '<path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/>',
+    activity: '<path d="M22 12h-4l-3 8-6-16-3 8H2"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    note: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', pin: '<path d="M12 22s7-6.1 7-12a7 7 0 0 0-14 0c0 5.9 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>', user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', check: '<path d="M20 6 9 17l-5-5"/>', money: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', plus: '<path d="M12 5v14M5 12h14"/>', edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+    chev: '<path d="m9 6 6 6-6 6"/>', trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>', send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>'
+  };
+  IC.estimator = IC.proposals; IC.customer = IC.customers;
+  const ic = (k, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.overview}</svg>`;
+  $$('#nav button').forEach(b => { if (!b.querySelector('.ic')) b.insertAdjacentHTML('afterbegin', ic(b.dataset.view)); });
+  $$('.tbicons [data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+  const kt = (icon, tone, label, value, sub) => `<div class="ktile"><span class="chip ${tone}">${ic(icon)}</span><div style="min-width:0"><span>${esc(label)}</span><b>${esc(value)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div></div>`;
+  async function loadTopbar() {
+    try {
+      const [u, iss, mail, calls] = await Promise.all([api('/api/admin/users'), api('/api/admin/issues?status=open'), api('/api/admin/emails'), api('/api/admin/calls')]);
+      const role = (u.me && u.me.role) || 'staff', me = (u.users || []).find(x => x.email === (u.me && u.me.email)) || {};
+      $('#tbName').textContent = me.name && me.name !== 'Owner' ? me.name : (u.me && u.me.email) || '';
+      $('#tbRole').textContent = { owner: 'Owner', manager: 'Manager', staff: 'Staff' }[role] || role;
+      const alerts = (iss.issues || []).filter(i => i.type === 'complaint' || i.overdue).length;
+      const setDot = (id, n) => { $(id).hidden = !n; $(id).textContent = n > 99 ? '99+' : n; };
+      setDot('#tbAlerts', alerts); setDot('#tbMail', mail.summary ? mail.summary.failed_30d : 0); setDot('#tbCalls', calls.follow_ups_due || 0);
+    } catch { /* top bar is optional */ }
+  }
+  setInterval(() => { if (document.visibilityState === 'visible' && token) loadTopbar(); }, 60000);
 
   // ---------- Shared form drawer ----------
   // defs: [{name, label, type: text|textarea|select|date|time|number|checkbox|customer|project|user|file, options, wide, hint, value}]

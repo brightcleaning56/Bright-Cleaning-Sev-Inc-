@@ -163,6 +163,60 @@
   .inl .wide { grid-column: 1 / -1; } .inl input, .inl select, .inl textarea { width: 100%; }
   @media (max-width: 1100px) { .fin { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   @media (max-width: 700px) { .fin { grid-template-columns: repeat(2, minmax(0, 1fr)); } .inl { grid-template-columns: 1fr; } }
+  /* ---------- Shell (mockup look) ---------- */
+  .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .ic.big { width: 44px; height: 44px; color: #9fb3c8; }
+  .side { background: linear-gradient(180deg, #0f2741, #0b1f35); }
+  .side nav button { justify-content: flex-start; gap: 12px; font-weight: 600; color: #d7e2ee; }
+  .side nav button .ic { width: 19px; height: 19px; opacity: .9; }
+  .side nav button .count { margin-left: auto; }
+  .side nav button.active { background: linear-gradient(90deg, #1f6fd1, #2a8bf0); color: #fff; box-shadow: 0 6px 16px rgba(31,111,209,.35); }
+  main.content { padding-top: 0; }
+  .topbar { position: sticky; top: 0; z-index: 25; display: flex; align-items: center; gap: 18px; margin: 0 -32px 22px; padding: 12px 32px; background: linear-gradient(90deg, #0f2741, #13314f); color: #fff; box-shadow: 0 4px 14px rgba(9,25,43,.25); }
+  .topbar .gsearch { flex: 1; margin: 0; position: relative; max-width: 760px; }
+  .topbar .gsearch > .ic { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #c6d6e6; }
+  .topbar .gsearch input { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); color: #fff; padding: 11px 16px 11px 44px; }
+  .topbar .gsearch input::placeholder { color: #c6d6e6; } .topbar .gresults { color: var(--ink, #10263e); }
+  .tbicons { display: flex; gap: 6px; margin-left: auto; } .tbicons button { position: relative; border: 0; background: none; color: #fff; padding: 8px; border-radius: 10px; cursor: pointer; } .tbicons button:hover { background: rgba(255,255,255,.12); }
+  .tbicons .dot { position: absolute; top: 2px; right: 0; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #e5484d; color: #fff; font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; }
+  .tbuser { display: flex; align-items: center; gap: 10px; padding-left: 14px; border-left: 1px solid rgba(255,255,255,.18); } .tbuser b { display: block; font-size: 14px; } .tbuser small { color: #c6d6e6; font-size: 12px; }
+  .tbuser .av { width: 36px; height: 36px; border-radius: 50%; background: #fff; color: #0f2741; display: grid; place-items: center; }
+  .chip { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; flex: none; } .chip .ic { width: 23px; height: 23px; }
+  .chip.blue { background: #e6f0fd; color: #1f6fd1; } .chip.green { background: #e3f6ea; color: #17904c; } .chip.purple { background: #f0e9fd; color: #7a4bd8; } .chip.teal { background: #e0f5f4; color: #128a85; } .chip.amber { background: #fff3dc; color: #b9770e; } .chip.red { background: #fde8e8; color: #d1382f; } .chip.navy { background: #e7edf5; color: #1d3b5c; }
+  .ktile { display: flex; gap: 12px; align-items: center; background: var(--card); border: 1px solid var(--line2); border-radius: 14px; padding: 14px; min-width: 0; transition: transform .16s ease, box-shadow .16s ease; }
+  .ktile:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16,38,62,.10); } .ktile span { display: block; color: var(--muted); font-size: 13px; } .ktile b { display: block; font-size: 20px; color: #10263e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ktile small { color: var(--muted); font-size: 12px; }
+  /* ---------- Customers two-pane ---------- */
+  .cust2 { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 18px; align-items: start; }
+  .custlist { padding: 18px; position: sticky; top: 86px; max-height: calc(100vh - 110px); display: flex; flex-direction: column; }
+  .clhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; } .clhead h1 { margin: 0; font-size: 26px; } .clhead .btn { display: inline-flex; gap: 6px; align-items: center; padding: 9px 12px; }
+  .clsearch input, .clfilters select, .custlist input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ccd5df; border-radius: 10px; font: inherit; background: #fff; }
+  .custwork { min-width: 0; } .ktile span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } dl.stat dd .badge { display: inline-block; width: auto; } .clfilters { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; } .clfilters select { flex: 1; min-width: 0; } .clfilters .muted { font-size: 12px; }
+  .clrows { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+  .crow { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line2); border-radius: 12px; padding: 12px; background: #fff; cursor: pointer; text-align: left; font: inherit; width: 100%; transition: background .12s, border-color .12s; }
+  .crow:hover { background: #f5f9ff; } .crow.on { background: #e8f1fd; border-color: #9cc3f2; } .crow .chip { width: 40px; height: 40px; } .crow b { display: block; font-size: 15px; color: #10263e; } .crow small { color: var(--muted); } .crow .badge { margin-left: auto; } .crow .chev { color: #8aa0b6; }
+  .emptyws { display: grid; place-items: center; text-align: center; min-height: 360px; color: var(--muted); }
+  .cphero { display: flex; gap: 18px; align-items: flex-start; padding: 18px; } .cphero .bimg { width: 120px; height: 104px; border-radius: 12px; background: linear-gradient(135deg, #1f6fd1, #0f2741); color: #fff; display: grid; place-items: center; flex: none; } .cphero .bimg .ic { width: 52px; height: 52px; stroke-width: 1.4; }
+  .cphero h1 { margin: 0; font-size: 28px; } .cphero .sub { color: #1f4f80; font-size: 16px; margin: 4px 0 12px; }
+  .cpmeta2 { display: flex; flex-wrap: wrap; gap: 14px 28px; } .cpmeta2 > div { display: flex; gap: 10px; align-items: center; } .cpmeta2 span { display: block; font-size: 13px; color: var(--muted); } .cpmeta2 b { font-weight: 600; color: #10263e; }
+  .cpmeta2 .chip { width: 36px; height: 36px; border-radius: 10px; }
+  .cpbtns { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; position: relative; }
+  .menu { position: absolute; top: 46px; right: 0; z-index: 30; background: #fff; border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 14px 30px rgba(16,38,62,.18); padding: 6px; min-width: 210px; }
+  .menu button { display: flex; gap: 10px; align-items: center; width: 100%; border: 0; background: none; padding: 10px 12px; border-radius: 8px; font: inherit; cursor: pointer; text-align: left; } .menu button:hover { background: var(--bluebg); } .menu .danger { color: var(--red); }
+  .fin2 { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin: 14px 0; } .fin2 .ktile { flex-direction: column; align-items: flex-start; gap: 8px; } .fin2 .ktile b { font-size: 18px; } .fin2 .ktile span { white-space: normal; } .fin2 .chip { width: 36px; height: 36px; border-radius: 10px; } .fin2 .chip .ic { width: 19px; height: 19px; }
+  .ctabs2 { display: flex; gap: 2px; overflow-x: auto; background: #fff; border: 1px solid var(--line2); border-radius: 14px; padding: 6px; margin-bottom: 14px; }
+  .ctabs2 button { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: none; padding: 8px 12px; border-radius: 10px; font: inherit; font-size: 13px; color: #34506d; cursor: pointer; white-space: nowrap; min-width: 74px; }
+  .ctabs2 button:hover { background: #f1f6fc; } .ctabs2 button.on { background: linear-gradient(180deg, #1f6fd1, #2a8bf0); color: #fff; }
+  .ov3 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: start; } .ov3 > div { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .ov3 .card h2 { display: flex; align-items: center; gap: 8px; font-size: 17px; } .ov3 .card h2 .ic { color: #1f6fd1; } .ov3 .card h2 .more { margin-left: auto; font-size: 13px; font-weight: 600; }
+  .qa6 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; } .qa6 button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border-radius: 10px; border: 1px solid var(--line2); background: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .qa6 button:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(16,38,62,.1); } .qa6 .g { background: #effaf3; border-color: #c9ead6; } .qa6 .p { background: #f5effd; border-color: #ddd0f6; } .qa6 .r { background: #fdf0f0; border-color: #f4cfcd; } .qa6 .b { background: #f1f6fd; border-color: #cde0f7; }
+  .comm3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; } .comm3 .ktile { padding: 10px; flex-direction: column; align-items: flex-start; gap: 6px; } .comm3 .chip { width: 34px; height: 34px; } .comm3 b { font-size: 22px; }
+  .actl li { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line2); list-style: none; } .actl { padding: 0; margin: 0; } .actl .chip { width: 32px; height: 32px; border-radius: 50%; } .actl b { font-size: 14px; } .actl small { display: block; color: var(--muted); }
+  .prop li { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line2); list-style: none; } .prop { padding: 0; margin: 0; } .prop .chip { width: 44px; height: 44px; }
+  @media (max-width: 1400px) { .fin2 { grid-template-columns: repeat(4, minmax(0, 1fr)); } .ov3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ov3 > div:last-child { grid-column: 1 / -1; } }
+  @media (max-width: 1100px) { .cust2 { grid-template-columns: minmax(0, 1fr); } .custlist { position: static; max-height: 420px; } }
+  @media (max-width: 980px) { .topbar { margin: 0 -14px 16px; padding: 10px 14px; flex-wrap: wrap; } .topbar .gsearch { order: 3; flex-basis: 100%; max-width: none; } .tbuser small { display: none; } }
+  @media (max-width: 700px) { .fin2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ov3 { grid-template-columns: 1fr; } .cphero { flex-direction: column; } .cpbtns { margin-left: 0; } .qa6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -290,7 +344,16 @@
   </aside>
 
   <main class="content">
-    <div class="gsearch" role="search"><input type="search" id="gSearch" placeholder="Search customers, leads, proposals, projects, invoices, drawings, calls…" aria-label="Search everything" autocomplete="off"><div class="gresults" id="gResults" hidden></div></div>
+    <header class="topbar">
+      <div class="gsearch" role="search"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="gSearch" placeholder="Search customers, leads, proposals, projects, invoices, drawings, calls…" aria-label="Search everything" autocomplete="off"><div class="gresults" id="gResults" hidden></div></div>
+      <nav class="tbicons" aria-label="Shortcuts">
+        <button type="button" data-go="issues" title="Alerts: open complaints and overdue items" aria-label="Alerts"><svg class="ic" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span class="dot" id="tbAlerts" hidden></span></button>
+        <button type="button" data-go="emails" title="Email Center" aria-label="Email Center"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="dot" id="tbMail" hidden></span></button>
+        <button type="button" data-go="calls" title="Calls" aria-label="Calls"><svg class="ic" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span class="dot" id="tbCalls" hidden></span></button>
+        <button type="button" data-go="schedule" title="Schedule" aria-label="Schedule"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></button>
+      </nav>
+      <div class="tbuser"><span class="av" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span><b id="tbName">—</b><small id="tbRole"></small></span></div>
+    </header>
     <section class="view" id="v-overview">
       <div class="pagehead"><div><h1>Command Center</h1><p id="todayLine"></p></div>
         <div class="headact"><select id="ccDays" aria-label="Period"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select>
@@ -330,9 +393,16 @@
     </section>
 
     <section class="view" id="v-customers">
-      <div class="pagehead"><div><h1>Customers</h1><p>Your customer directory. New customers are added automatically from bid requests, inquiries, estimates and approvals.</p></div><button class="btn" id="custAdd">Add customer</button></div>
-      <div class="toolbar"><input type="search" id="custSearch" placeholder="Search customers…" aria-label="Search customers"></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Customer</th><th>Contact</th><th class="num">Leads</th><th class="num">Proposals</th><th class="num">Projects</th><th class="num">Billed</th><th class="num">Open balance</th></tr></thead><tbody id="custRows"></tbody></table></div>
+      <div class="cust2">
+        <aside class="custlist card">
+          <div class="clhead"><h1>Customers</h1><button class="btn" id="custAdd"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New customer</button></div>
+          <p class="muted">Manage customers, contacts, properties and services.</p>
+          <div class="clsearch"><input type="search" id="custSearch" placeholder="Search customers…" aria-label="Search customers"></div>
+          <div class="clfilters"><select id="custStatus" aria-label="Status"><option value="">All statuses</option><option>Active</option><option>Prospect</option><option>Inactive</option><option>Do not service</option></select><select id="custSort" aria-label="Sort"><option value="recent">Sort: Recent</option><option value="name">Sort: Name</option><option value="balance">Sort: Balance</option></select><span class="muted" id="custCount"></span></div>
+          <div id="custRows" class="clrows" role="list"></div>
+        </aside>
+        <section class="custwork" id="custPage"><div class="card emptyws"><svg class="ic big" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-4h6v4M9 9h.01M15 9h.01M9 13h.01M15 13h.01"/></svg><p>Choose a customer to open their workspace.</p></div></section>
+      </div>
     </section>
 
     <section class="view" id="v-issues">
@@ -378,7 +448,6 @@
       <div class="pagehead"><div><h1>Takeoffs</h1><p>Quantities from drawings, each tied to its source sheet and how it was found (measured, from a schedule, entered or inferred), then priced from your price book in one click.</p></div><button class="btn" id="takeoffsAdd">New takeoff</button></div>
       <div class="tablewrap"><table class="t"><thead><tr><th>Takeoff</th><th>Drawing set</th><th>Category</th><th class="num">Building SF</th><th class="num">Lines</th><th>Status</th></tr></thead><tbody id="takeoffsRows"></tbody></table></div>
     </section>
-    <section class="view" id="v-customer"><div id="custPage"></div></section>
     <section class="view" id="v-reports">
       <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><div class="headact"><button class="btn ghost" id="repCsv" type="button">Export CSV</button><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select></div></div>
       <div class="kpis small" id="repKpis"></div>
