@@ -131,6 +131,9 @@
   .tolines td { padding: 4px; vertical-align: top; } .tolines select, .tolines input { width: 100%; }
   @media (max-width: 900px) { .week { grid-template-columns: 1fr; } .week .day { min-height: 0; } }
   .two > * { min-width: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; } .chips button { border: 1px solid var(--line2); background: var(--bluebg); border-radius: 999px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .aiout { white-space: pre-wrap; margin-top: 12px; padding: 12px; border-radius: 10px; background: var(--bg); font-size: 14px; } .aiout:empty { display: none; }
+  #repIssues li.warning { color: var(--red); } #repIssues li.review { color: var(--amber); }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .bar { height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--blue), #4fb3e8); transform-origin: left; animation: grow .5s ease-out both; }
   dl.stat { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; margin: 8px 0 0; font-size: 14px; } dl.stat dt { color: var(--muted); } dl.stat dd { margin: 0; font-weight: 700; text-align: right; }
@@ -364,9 +367,15 @@
       <div class="tablewrap"><table class="t"><thead><tr><th>Takeoff</th><th>Drawing set</th><th>Category</th><th class="num">Building SF</th><th class="num">Lines</th><th>Status</th></tr></thead><tbody id="takeoffsRows"></tbody></table></div>
     </section>
     <section class="view" id="v-reports">
-      <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><div class="headact"><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select></div></div>
+      <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><div class="headact"><button class="btn ghost" id="repCsv" type="button">Export CSV</button><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select></div></div>
       <div class="kpis small" id="repKpis"></div>
       <div class="kpis small" id="repKpis2" style="margin-top:12px"></div>
+      <div class="kpis small" id="repKpis3" style="margin-top:12px"></div>
+      <div class="two" style="margin-top:6px"><div class="card"><h2>Data checks</h2><p class="muted">What makes a figure incomplete or needs a decision. Reports never treat missing data as zero without saying so.</p><ul class="mini" id="repIssues"></ul></div>
+      <div class="card" id="repAiCard"><h2>Ask about your business</h2><p class="muted" id="repAiState">Answers come only from your records, with the period and how each figure was calculated.</p>
+        <div class="chips" id="repAiChips"></div>
+        <div class="f wide"><label for="repAiQ">Question</label><textarea id="repAiQ" rows="2" placeholder="Which customers owe us money?"></textarea></div>
+        <button class="btn" id="repAiGo" type="button">Ask</button><div id="repAiOut" class="aiout" aria-live="polite"></div></div></div>
       <div class="two" style="margin-top:6px"><div class="card"><h2>Start to finish</h2><p class="muted">Every stage a job passes through in this period, from the first call to the final payment.</p><div class="tablewrap"><table class="t" style="table-layout:fixed;width:100%;min-width:0"><thead><tr><th style="width:52%">Stage</th><th class="num" style="width:14%">Count</th><th style="width:34%"><span class="sr-only">Share</span></th></tr></thead><tbody id="repFlowRows"></tbody></table></div></div>
       <div class="card"><h2>Operations &amp; quality</h2><div id="repOps"></div><h2 style="margin-top:16px">Money owed</h2><div id="repRecv"></div><h2 style="margin-top:16px">Automation &amp; AI</h2><div id="repAuto"></div></div></div>
       <div class="two"><div class="card"><h2>By month</h2><div class="tablewrap"><table class="t"><thead><tr><th>Month</th><th class="num">Calls</th><th class="num">Leads</th><th class="num">Sent</th><th class="num">Won</th><th class="num">Won value</th><th class="num">Billed</th><th class="num">Collected</th><th class="num">Quality</th></tr></thead><tbody id="repMonthsRows"></tbody></table></div></div>

@@ -1418,10 +1418,26 @@
 
   // ---------- Reports ----------
   $('#repMonths').addEventListener('change', () => loadReports());
+  $('#repCsv').addEventListener('click', () => downloadFile({ name: `bright-clean-report.csv`, url: '/api/admin/reports/export.csv?months=' + $('#repMonths').value }));
+  const RQ = ['Which customers owe us money?', 'How much work is in the sales pipeline?', 'What are our top services?', 'Which proposals should we follow up on?', 'Show revenue and collections by month.'];
+  $('#repAiChips').innerHTML = RQ.map(q => `<button type="button">${esc(q)}</button>`).join('');
+  $$('#repAiChips button').forEach(b => b.onclick = () => { $('#repAiQ').value = b.textContent; $('#repAiGo').click(); });
+  $('#repAiGo').addEventListener('click', async () => {
+    const q = $('#repAiQ').value.trim(); if (!q) return toast('Type a question first.', true);
+    const b = $('#repAiGo'); b.disabled = true; b.textContent = 'Reading your records…'; $('#repAiOut').textContent = '';
+    try { const r = await api('/api/admin/ai/reports/ask', { method: 'POST', json: { question: q, months: $('#repMonths').value } }); $('#repAiOut').textContent = r.answer; }
+    catch (e) { $('#repAiOut').textContent = e.message; }
+    b.disabled = false; b.textContent = 'Ask';
+  });
   async function loadReports() {
     const r = await api('/api/admin/reports?months=' + $('#repMonths').value);
     const sum = a => a.reduce((t, x) => t + Number(x.v || 0), 0);
-    kpiTiles('#repKpis', [{ label: 'Win rate', value: r.win_rate == null ? '—' : r.win_rate + '%', sub: `${r.won_count} won · ${r.lost_count} lost` }, { label: 'Won value', value: money(r.won_value) }, { label: 'Average won job', value: r.avg_won == null ? '—' : money(r.avg_won) }, { label: 'Collected', value: money(sum(r.collected)) }]);
+    const ex = r.executive, cnt = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    kpiTiles('#repKpis', [{ label: 'Approved proposal value', value: money(ex.approved_proposals.value), sub: cnt(ex.approved_proposals.count, 'proposal') + ' · not revenue' }, { label: 'Signed contract value', value: money(ex.signed_contracts.value), sub: cnt(ex.signed_contracts.count, 'contract') + (ex.unsigned_contracts.count ? ` · ${ex.unsigned_contracts.count} unsigned` : '') }, { label: 'Invoiced', value: money(ex.invoiced.value), sub: cnt(ex.invoiced.count, 'invoice') }, { label: 'Cash collected', value: money(ex.collected.value), sub: cnt(ex.collected.count, 'payment') }]);
+    kpiTiles('#repKpis3', [{ label: 'Win rate', value: r.win.rate == null ? '—' : r.win.rate + '%', sub: r.win.sample ? `${r.win.won} won of ${r.win.sample} decided${r.win.small_sample ? ' · small sample' : ''}` : 'no decided proposals yet', alert: r.win.small_sample && r.win.sample > 0 }, { label: 'Active / completed projects', value: `${ex.active_projects} / ${ex.completed_projects}` }, { label: 'Estimated gross profit', value: ex.est_gross_profit.value == null ? '—' : money(ex.est_gross_profit.value), sub: ex.est_gross_profit.of ? `estimate · costed ${ex.est_gross_profit.based_on} of ${ex.est_gross_profit.of}` : 'no approved proposals' }, { label: 'Actual gross profit', value: '—', sub: 'no job costs recorded yet' }]);
+    $('#repKpis3 .kpi').title = r.win.definition;
+    $('#repIssues').innerHTML = r.data_issues.map(x => `<li class="${esc(x.level)}">${esc(x.text)}${x.ids && x.kind === 'estimate' ? ' ' + x.ids.slice(0, 5).map(id => `<button class="linklike" data-est="${id}">#${id}</button>`).join(' ') : ''}</li>`).join('');
+    bindOpeners($('#repIssues'));
     const mName = k => new Date(k + '-15').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     $('#repMonthsRows').innerHTML = r.months.slice().reverse().map((m, j) => { const i = r.months.length - 1 - j; return `<tr><td>${mName(m)}</td><td class="num">${r.calls[i].n}</td><td class="num">${r.leads[i].n}</td><td class="num">${r.sent[i].n}</td><td class="num">${r.won[i].n}</td><td class="num">${money(r.won[i].v)}</td><td class="num">${money(r.billed[i].v)}</td><td class="num">${money(r.collected[i].v)}</td><td class="num">${r.quality[i].n ? r.quality[i].v + '%' : '—'}</td></tr>`; }).join('');
     const rv = r.receivables, o = r.ops, au = r.automation;
