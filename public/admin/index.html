@@ -503,10 +503,14 @@
       </div><aside class="propside" id="qSide"><div class="card"><p class="muted">Select an inspection to see its details.</p></div></aside></div>
     </section>
     <section class="view" id="v-documents">
-      <div class="pagehead"><div><h1>Drawings &amp; documents</h1><p>Drawing sets, specifications, addenda and photos, filed by project and customer. Automatic takeoff runs here once the Anthropic API key is added in Render.</p></div><button class="btn" id="documentsAdd">Upload files</button></div>
-      <div class="kpis small" id="documentsKpis"></div>
-      <div class="toolbar"><select id="docKind" aria-label="Type"><option value="">All types</option></select></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Title</th><th>Type</th><th>Rev</th><th>Project / customer</th><th>Uploaded</th><th>Takeoff</th></tr></thead><tbody id="documentsRows"></tbody></table></div>
+      <div class="pagehead"><div><h1>Drawings &amp; Documents</h1><p>Drawing sets, specifications, addenda and photos with revision control. AI reads blueprints and cites the sheet for every finding.</p></div>
+        <div class="headact"><button class="btn" id="documentsAdd"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Upload files</button></div></div>
+      <div class="kpis8" id="documentsKpis"></div>
+      <div class="segtabs" id="docTabs" role="tablist"></div>
+      <div class="propgrid"><div style="min-width:0">
+        <div class="filt"><input type="search" id="docSearch" placeholder="Search title, file, sheet, project…" aria-label="Search documents"><select id="docProj" aria-label="Project"><option value="">All projects</option></select><select id="docKind" aria-label="Type" hidden><option value="">All types</option></select></div>
+        <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Document</th><th>Type</th><th>Revision</th><th>Project / customer</th><th>Sheets</th><th>AI reading</th><th>Uploaded</th><th>Status</th><th></th></tr></thead><tbody id="documentsRows"></tbody></table></div>
+      </div><aside class="propside" id="docSide"><div class="card"><p class="muted">Select a document to see its revisions, sheet index and blueprint reading.</p></div></aside></div>
     </section>
     <section class="view" id="v-emails">
       <div class="pagehead"><div><h1>Email Center</h1><p>Every email the system sends: confirmations, proposals, reminders and notices. Reading your Outlook inbox here needs a Microsoft 365 app registration.</p></div></div>
