@@ -1767,9 +1767,40 @@
   const CATN = { construction: 'Construction cleaning', multifamily: 'Multifamily', janitorial: 'Commercial janitorial', specialty: 'Specialty' };
   async function loadTakeoffs() {
     const r = await api('/api/admin/takeoffs'); Object.assign(toState, r);
-    $('#takeoffsRows').innerHTML = r.takeoffs.length ? r.takeoffs.map(t => `<tr class="click" data-to="${t.id}"><td><b>${esc(t.name)}</b><small>${esc(t.customer_company || t.customer_name || '')}</small></td><td>${esc(t.document_title || '—')}${t.document_revision ? ' · Rev ' + esc(t.document_revision) : ''}</td><td>${esc(CATN[t.category] || t.category)}</td><td class="num">${t.building_sf ? Number(t.building_sf).toLocaleString() : '—'}</td><td class="num">${t.lines.length}</td><td>${badge(t.status)}${t.estimate_id ? ` <button class="linklike" data-est="${t.estimate_id}">Estimate #${t.estimate_id}</button>` : ''}</td></tr>`).join('') : '<tr><td class="emptyrow" colspan="6">No takeoffs yet. Open Drawings & documents and click Takeoff on a drawing set.</td></tr>';
-    $$('#takeoffsRows [data-to]').forEach(r => r.onclick = e => { if (e.target.closest('[data-est]')) return; openTakeoff(toState.takeoffs.find(t => t.id === Number(r.dataset.to)), null); });
+    const T = r.takeoffs, val = T.reduce((s, t) => s + ((t.priced && JSON.parse(t.priced).total) || 0), 0);
+    $('#takeoffKpis').innerHTML = [kt('takeoffs', 'blue', 'Takeoffs', T.length, ''), kt('clock', 'amber', 'Drafts', T.filter(t => t.status === 'Draft').length, ''), kt('check', 'green', 'Estimated', T.filter(t => t.status === 'Estimated').length, ''),
+      kt('scopes', 'navy', 'Square feet taken off', Math.round(T.reduce((s, t) => s + (Number(t.building_sf) || 0), 0)).toLocaleString(), ''), kt('money', 'teal', 'Value priced', money(val), 'converted to estimates'), kt('issues', 'red', 'Need recheck', T.filter(t => t.stale_note).length, 'drawings revised')].join('');
+    $('#takeoffsRows').innerHTML = T.length ? T.map(t => `<tr class="click" data-to="${t.id}"><td><b>${esc(t.name)}</b><small>${esc(t.customer_company || t.customer_name || '')}${t.version > 1 ? ' · v' + t.version : ''}</small>${t.stale_note ? `<small style="color:#c0362d">${esc(t.stale_note)}</small>` : ''}</td><td>${esc(t.document_title || '—')}<small>${esc(t.document_revision || '')}</small></td><td>${esc(CATN[t.category] || t.category)}</td><td class="num">${t.building_sf ? Number(t.building_sf).toLocaleString() : '—'}</td><td class="num">${t.lines.length}</td>
+      <td class="num">${t.priced ? money(JSON.parse(t.priced).total) : '—'}</td><td>${badge(t.status)}${t.estimate_id ? ` <button class="linklike" data-est="${t.estimate_id}">#${t.estimate_id}</button>` : ''}</td><td><button class="btn small ghost" data-price="${t.id}">Price</button></td></tr>`).join('') : '<tr><td class="emptyrow" colspan="8">No takeoffs yet. Start one from a drawing set or click New takeoff.</td></tr>';
+    $$('#takeoffsRows [data-to]').forEach(r => r.onclick = e => { if (e.target.closest('[data-est],[data-price]')) return; openTakeoff(toState.takeoffs.find(t => t.id === Number(r.dataset.to)), null); });
+    $$('#takeoffsRows [data-price]').forEach(b => b.onclick = () => openPricing(Number(b.dataset.price)));
     bindOpeners($('#takeoffsRows'));
+  }
+  async function openPricing(id) {
+    let d; try { d = await api(`/api/admin/takeoffs/${id}/price`); } catch (e) { return toast(e.message, true); }
+    const t = d.takeoff, a = t.adjustments || {};
+    const draw = p => `<div class="tablewrap"><table class="t" style="min-width:0;width:100%;table-layout:fixed"><colgroup><col><col style="width:70px"><col style="width:112px"></colgroup><thead><tr><th>Line</th><th>Sheet</th><th class="num">Amount</th></tr></thead><tbody>${p.lines.map(l => `<tr><td>${esc(l.description)}<small>${money(l.unit_price)}/${esc(l.unit)} · ${esc(l.method || '')}${l.hours ? ' · ' + l.hours + ' h' : ''}</small></td><td>${esc(l.sheet || '—')}</td><td class="num">${money(l.amount)}</td></tr>`).join('')}
+        <tr><td colspan="2"><b>Price book subtotal</b></td><td class="num"><b>${money(p.base)}</b></td></tr>${p.factors.map(f => `<tr><td colspan="2">${esc(f.label)} (${f.pct > 0 ? '+' : ''}${f.pct}%)</td><td class="num">${money(p.base * f.pct / 100)}</td></tr>`).join('')}
+        ${p.mobilization ? `<tr><td colspan="2">Mobilization</td><td class="num">${money(p.mobilization)}</td></tr>` : ''}${p.travel ? `<tr><td colspan="2">Travel</td><td class="num">${money(p.travel)}</td></tr>` : ''}${p.minimum_applied ? `<tr><td colspan="2">Minimum job charge applied</td><td class="num">${money(p.minimum - p.subtotal)}</td></tr>` : ''}
+        <tr><td colspan="2"><b>Total</b></td><td class="num"><b style="font-size:18px">${money(p.total)}</b></td></tr></tbody></table></div>
+      <dl class="stat"><dt>Labor hours</dt><dd>${p.hours || '—'}</dd><dt>Labor cost</dt><dd>${p.labor_cost != null ? money(p.labor_cost) : '—'}</dd><dt>Estimated margin</dt><dd style="color:${p.margin_pct != null && p.margin_pct < p.margin_target ? '#c0362d' : 'inherit'}">${p.margin_pct != null ? p.margin_pct + '%' : '—'} <small class="muted">target ${p.margin_target}%</small></dd><dt>Price per SF</dt><dd>${p.per_sf != null ? '$' + p.per_sf : '—'}</dd></dl>
+      ${p.warnings.length ? `<div class="err" style="display:block">${p.warnings.map(w => '⚠ ' + esc(w)).join('<br>')}</div>` : '<p class="muted">No warnings.</p>'}`;
+    openDrawer({ title: `Price: ${t.name}`, sub: `${esc(CATN[t.category] || t.category)}${t.building_sf ? ' · ' + Number(t.building_sf).toLocaleString() + ' SF' : ''} · v${t.version || 1}${t.estimate_id ? ' · estimate #' + t.estimate_id : ''}`,
+      body: `<form class="ig" id="prForm"><div class="wide"><label>Difficulty factors</label>${d.factors.map(f => `<label class="chkrow"><input type="checkbox" name="f_${f.key}" ${(a.factors || []).includes(f.key) ? 'checked' : ''}><span>${esc(f.label)}</span><small class="muted">+${f.pct}%</small></label>`).join('')}</div>
+        <div><label>Custom adjustment</label><input name="c_label" value="${esc(((a.custom || [])[0] || {}).label || '')}" placeholder="e.g. Repeat customer"></div><div><label>Custom %</label><input name="c_pct" inputmode="decimal" value="${esc(((a.custom || [])[0] || {}).pct || '')}" placeholder="-5"></div>
+        <div><label>Mobilization ($)</label><input name="mobilization" inputmode="decimal" value="${esc(a.mobilization || '')}"></div><div><label>Travel ($)</label><input name="travel" inputmode="decimal" value="${esc(a.travel || '')}"></div>
+        <div><label>Minimum job charge ($)</label><input name="minimum" inputmode="decimal" value="${esc(a.minimum || '')}"></div><div><label>Loaded labor rate ($/h)</label><input name="labor_rate" inputmode="decimal" value="${esc(a.labor_rate || '')}"></div>
+        <div><label>Margin target (%)</label><input name="margin_target" inputmode="decimal" value="${esc(a.margin_target || 30)}"></div></form>
+        <div id="prOut" style="margin-top:12px">${d.price ? draw(d.price) : ''}</div>`,
+      footer: `<button class="btn ghost" data-close>Close</button>${t.stale_note ? '<button class="btn ghost" id="prVer">New version from current drawings</button>' : ''}<button class="btn ghost" id="prCalc">Recalculate</button><button class="btn" id="prEst">${t.estimate_id ? 'Update draft estimate' : 'Create estimate'}</button>` });
+    const save = async () => { const f = formObj($('#prForm')); const body = { factors: d.factors.filter(x => f['f_' + x.key]).map(x => x.key), custom: f.c_label && f.c_pct ? [{ label: f.c_label, pct: f.c_pct }] : [], mobilization: f.mobilization, travel: f.travel, minimum: f.minimum, labor_rate: f.labor_rate, margin_target: f.margin_target };
+      const r = await api(`/api/admin/takeoffs/${id}/adjustments`, { method: 'PUT', json: body }); if (r.error) throw new Error(r.error); $('#prOut').innerHTML = draw(r.price); return r.price; };
+    $('#prCalc').onclick = async () => { try { await save(); } catch (e) { toast(e.message, true); } };
+    $$('#prForm input[type=checkbox]').forEach(c => c.onchange = () => save().catch(e => toast(e.message, true)));
+    $('#prEst').onclick = async () => { try { await save(); let r; try { r = await api(`/api/admin/takeoffs/${id}/estimate`, { method: 'POST', json: { customer_name: t.name } }); } catch (e) { if (/revised|recheck/i.test(e.message) && confirm(e.message + '\n\nConfirm the quantities are still right and continue?')) r = await api(`/api/admin/takeoffs/${id}/estimate`, { method: 'POST', json: { customer_name: t.name, acknowledge_stale: true } }); else throw e; }
+      toast(r.updated ? `Draft estimate #${r.estimate_id} re-priced: ${money(r.total)}` : `Estimate #${r.estimate_id} created: ${money(r.total)}`); closeDrawer(); go('proposals'); openEstimate(r.estimate_id); } catch (e) { toast(e.message, true); } };
+    const v = $('#prVer'); if (v) v.onclick = async () => { try { const r = await api(`/api/admin/takeoffs/${id}/version`, { method: 'POST' }); toast(`Version ${r.version} created on the current drawings. Recheck the quantities.`); closeDrawer(); loadTakeoffs(); openTakeoff((await api('/api/admin/takeoffs')).takeoffs.find(x => x.id === r.id), null); } catch (e) { toast(e.message, true); } };
+    $$('#drawerRoot [data-close]').forEach(el => el.onclick = closeDrawer);
   }
   async function openTakeoff(t, doc) {
     if (!scopeState.items.length) { try { Object.assign(scopeState, await api('/api/admin/scopes')); } catch { /* */ } }
@@ -1817,13 +1848,9 @@
       try {
         if (!lines.length) throw new Error('Add at least one quantity first.');
         const saved = await save();
-        const c = state.customers.find(x => String(x.id) === String(saved.customer_id)) || {};
-        const est = await api('/api/admin/estimates', { method: 'POST', json: { customer_name: c.name || c.company || saved.name, company: c.company || '', email: c.email || '', project_name: saved.name, area_sqft: saved.building_sf || 0,
-          scope: `${CATN[saved.category]} from takeoff #${saved.id}${saved.document_title ? ' (' + saved.document_title + ')' : ''}`, scope_category: saved.category, use_line_items: 1,
-          line_items: saved.lines.map(l => ({ scope_id: l.scope_id, quantity: l.quantity })), notes: saved.questions ? 'Open questions from takeoff:\n' + saved.questions : '' } });
-        await api('/api/admin/takeoffs/' + saved.id, { method: 'PATCH', json: { status: 'Estimated' } });
-        await api('/api/admin/takeoffs/' + saved.id + '/link', { method: 'POST', json: { estimate_id: est.estimate.id } }).catch(() => {});
-        toast(`Estimate #${est.estimate.id} created from the takeoff`); closeDrawer(); go('proposals'); openEstimate(est.estimate.id);
+        let r; try { r = await api(`/api/admin/takeoffs/${saved.id}/estimate`, { method: 'POST', json: { customer_name: saved.name } }); }
+        catch (e) { if (/revised|recheck/i.test(e.message) && confirm(e.message + '\n\nConfirm the quantities are still right and continue?')) r = await api(`/api/admin/takeoffs/${saved.id}/estimate`, { method: 'POST', json: { customer_name: saved.name, acknowledge_stale: true } }); else throw e; }
+        toast(r.updated ? `Draft estimate #${r.estimate_id} re-priced` : `Estimate #${r.estimate_id} created from the takeoff`); closeDrawer(); go('proposals'); openEstimate(r.estimate_id);
       } catch (e) { fail(e); }
     };
     draw();
