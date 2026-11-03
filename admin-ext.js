@@ -155,10 +155,23 @@ module.exports = function mountAdminExt(app, ctx) {
     res.json({ ok: true, message: 'Password changed. Use the new password next time you sign in.' });
   });
 
+  // Roles: owner (approves, manages roles and rules), manager (approves proposals), staff (prepares, requests approval).
+  if (!db.prepare('PRAGMA table_info(admin_users)').all().some(c => c.name === 'role')) db.exec("ALTER TABLE admin_users ADD COLUMN role TEXT NOT NULL DEFAULT 'staff'");
+  const roleOf = email => { const e = String(email || '').toLowerCase(); if (adminEmail && e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return r ? r.role : 'staff'; };
   app.get('/api/admin/users', auth, (req, res) => {
-    const rows = db.prepare('SELECT id,email,name,created_at,last_login_at FROM admin_users ORDER BY id').all();
+    const rows = db.prepare('SELECT id,email,name,role,created_at,last_login_at FROM admin_users ORDER BY id').all();
     const envListed = adminEmail && !rows.some(r => r.email === adminEmail);
-    res.json({ users: [...(envListed ? [{ id: 0, email: adminEmail, name: 'Owner', created_at: '', last_login_at: '', owner: true }] : []), ...rows.map(r => ({ ...r, owner: r.email === adminEmail }))] });
+    res.json({ me: { email: req.user && req.user.email, role: roleOf(req.user && req.user.email) }, can_manage_roles: roleOf(req.user && req.user.email) === 'owner',
+      users: [...(envListed ? [{ id: 0, email: adminEmail, name: 'Owner', role: 'owner', env_owner: true, created_at: '', last_login_at: '', owner: true }] : []), ...rows.map(r => ({ ...r, role: r.email === adminEmail ? 'owner' : r.role, env_owner: r.email === adminEmail, owner: r.email === adminEmail }))] });
+  });
+  app.patch('/api/admin/users/:id/role', auth, (req, res) => {
+    if (roleOf(req.user && req.user.email) !== 'owner') return res.status(403).json({ error: 'Only an owner can change roles.' });
+    const role = String((req.body || {}).role || ''); if (!['owner', 'manager', 'staff'].includes(role)) return res.status(400).json({ error: 'Choose owner, manager or staff.' });
+    const u = db.prepare('SELECT * FROM admin_users WHERE id=?').get(Number(req.params.id)); if (!u) return res.status(404).json({ error: 'User not found.' });
+    if (u.email === adminEmail) return res.status(400).json({ error: 'The main owner account is always an owner.' });
+    db.prepare('UPDATE admin_users SET role=? WHERE id=?').run(role, u.id);
+    logAction(req, 'changed role', 'user', u.id, `${u.email}: ${u.role} → ${role}`);
+    res.json({ ok: true });
   });
 
   app.post('/api/admin/users', auth, async (req, res) => {

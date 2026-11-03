@@ -94,7 +94,17 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
       const t = db.prepare(`INSERT INTO takeoffs(document_id,customer_id,project_id,name,category,building_sf,lines,questions,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'Draft','AI',?,?)`)
         .run(d.id, d.customer_id, d.project_id, `AI takeoff – ${d.title}`, 'construction', analysis.building_sf, JSON.stringify(lines), qs.slice(0, 5000), now(), now());
       logRun('ai_takeoff', docId, 'ok', `${analysis.sheets.length} sheets, ${analysis.quantities.length} quantities, takeoff #${t.lastInsertRowid}`);
-      return { analysis, takeoff_id: t.lastInsertRowid };
+      let estimateId = null;
+      if (lines.length) {
+        const items = lines.map(x => { const sc = db.prepare('SELECT * FROM scope_items WHERE id=?').get(x.scope_id); return { scope_id: sc.id, description: `${sc.name} (${Number(x.quantity).toLocaleString('en-US')} ${sc.unit})`, category: sc.category, unit: sc.unit, quantity: x.quantity, unit_price: sc.unit_price, production_rate: sc.production_rate || 0, pricing_method: sc.pricing_method, hours: 0, labor_rate: 0, amount: Math.round(x.quantity * sc.unit_price * 100) / 100 }; });
+        const total = Math.round(items.reduce((a, i) => a + i.amount, 0) * 100) / 100, c = d.customer_id ? db.prepare('SELECT * FROM customers WHERE id=?').get(d.customer_id) : null;
+        const info = db.prepare(`INSERT INTO estimates(customer_name,company,email,project_name,site_address,scope,area_sqft,line_items,line_items_total,use_line_items,proposal_total,status,public_token,expires_on,created_at,updated_at,scope_category) VALUES(?,?,?,?,?,?,?,?,?,1,?,'Draft',?,?,?,?,'construction')`)
+          .run((c && (c.name || c.company)) || d.title, (c && c.company) || '', (c && c.email) || '', d.title, (c && c.address) || '', `Construction cleaning, Clean #1–#3, from AI takeoff of ${d.title}${d.revision ? ' (Rev ' + d.revision + ')' : ''}. Building area ${analysis.building_sf.toLocaleString('en-US')} SF read from sheet ${analysis.building_sf_sheet || 'index'}. Review the takeoff and questions before sending.`,
+            analysis.building_sf, JSON.stringify(items), total, total, require('crypto').randomBytes(24).toString('hex'), new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), now(), now());
+        estimateId = info.lastInsertRowid;
+        db.prepare("UPDATE takeoffs SET estimate_id=?, status='Estimated' WHERE id=?").run(estimateId, t.lastInsertRowid);
+      }
+      return { analysis, takeoff_id: t.lastInsertRowid, estimate_id: estimateId };
     } catch (e) {
       db.prepare("UPDATE documents SET analysis_status='Failed' WHERE id=?").run(docId);
       logRun('ai_takeoff', docId, 'failed', e.message);
@@ -104,11 +114,11 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
 
   // ---------- Routes ----------
   const fail = (res, e) => res.status(e.code === 'AI_OFF' ? 503 : 502).json({ error: e.message, ai_off: e.code === 'AI_OFF' });
-  app.get('/api/admin/ai/status', auth, (req, res) => res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true) }));
+  app.get('/api/admin/ai/status', auth, (req, res) => res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', true), auto_draft_estimates: setting('auto_draft_estimates', true) }));
   app.put('/api/admin/ai/settings', auth, (req, res) => {
-    if ('auto_triage' in (req.body || {})) db.prepare("INSERT INTO ai_settings(key,value) VALUES('auto_triage',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(req.body.auto_triage ? '1' : '0');
+    for (const k of ['auto_triage', 'auto_request_info', 'auto_draft_estimates']) if (k in (req.body || {})) db.prepare("INSERT INTO ai_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k, req.body[k] ? '1' : '0');
     logAction(req, 'changed', 'ai settings', 0, `auto_triage ${!!req.body.auto_triage}`);
-    res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true) });
+    res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', true), auto_draft_estimates: setting('auto_draft_estimates', true) });
   });
   app.post('/api/admin/ai/leads/:id/triage', auth, async (req, res) => {
     try { const ai = await triageLead(Number(req.params.id)); logAction(req, 'ran AI triage', 'lead', Number(req.params.id), ai.summary.slice(0, 120)); res.json({ ai }); }
@@ -138,6 +148,23 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
     res.json({ ok: true });
   });
 
+  // Automatic information request: when the AI finds missing information, it emails the customer its
+  // reply draft (questions only, never prices). Once per lead; can be turned off in Settings.
+  async function maybeRequestInfo(id, ai) {
+    if (!ai || !ai.missing || !ai.missing.length || !setting('auto_request_info', true)) return;
+    const l = db.prepare('SELECT * FROM leads WHERE id=?').get(id);
+    if (!l || !l.email || !isEmail(l.email) || /^test\b|\btest\b/i.test(`${l.contact_name} ${l.company}`)) return;
+    if (/\$\s?\d/.test(ai.reply_body || '') || !ai.reply_subject || !ai.reply_body) return;
+    const m = getMailer(); if (!m) return;
+    try {
+      await m.sendMail({ from: process.env.FROM_EMAIL || 'info@brightclean.net', to: l.email, subject: ai.reply_subject, text: ai.reply_body });
+      const cur = JSON.parse(db.prepare('SELECT ai FROM leads WHERE id=?').get(id).ai || '{}'); cur.info_requested_at = now();
+      db.prepare("UPDATE leads SET ai=?, status=CASE WHEN status='New' THEN 'In Review' ELSE status END WHERE id=?").run(JSON.stringify(cur), id);
+      db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','requested information','lead',?,?,?)").run(id, ai.missing.join('; ').slice(0, 300), now());
+      logRun('ai_info_request', id, 'ok', l.email);
+    } catch (e) { logRun('ai_info_request', id, 'failed', e.message); }
+  }
+
   // ---------- Automation: triage new leads in the background ----------
   let busy = false;
   async function sweep() {
@@ -146,10 +173,10 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
     try {
       const since = new Date(Date.now() - 7 * 864e5).toISOString();
       const rows = db.prepare(`SELECT id FROM leads WHERE ai IS NULL AND kind IN ('bid','inquiry') AND created_at>=? ORDER BY id LIMIT 5`).all(since);
-      for (const r of rows) { try { await triageLead(r.id); } catch (e) { logRun('ai_lead_triage', r.id, 'failed', e.message); db.prepare('UPDATE leads SET ai=? WHERE id=?').run(JSON.stringify({ error: e.message, at: now() }), r.id); } }
+      for (const r of rows) { try { const ai = await triageLead(r.id); await maybeRequestInfo(r.id, ai); } catch (e) { logRun('ai_lead_triage', r.id, 'failed', e.message); db.prepare('UPDATE leads SET ai=? WHERE id=?').run(JSON.stringify({ error: e.message, at: now() }), r.id); } }
     } finally { busy = false; }
   }
   const timer = setInterval(sweep, Number(process.env.AI_SWEEP_MS) || 60000); timer.unref();
   setTimeout(sweep, 3000).unref();
-  return { triageLead, sweep };
+  return { triageLead, sweep, maybeRequestInfo };
 };

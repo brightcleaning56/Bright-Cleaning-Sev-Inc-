@@ -51,7 +51,9 @@ module.exports = function mountApprovals(app, ctx) {
     CREATE TABLE IF NOT EXISTS estimate_approvals(id INTEGER PRIMARY KEY AUTOINCREMENT, estimate_id INTEGER NOT NULL, fingerprint TEXT NOT NULL,
       reasons TEXT, note TEXT, approved_by TEXT, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS approvals_est ON estimate_approvals(estimate_id);`);
-  const isOwner = req => !adminEmail || String((req.user && req.user.email) || '').toLowerCase() === adminEmail.toLowerCase();
+  const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; try { const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return r ? r.role : 'staff'; } catch { return 'staff'; } };
+  const isOwner = req => roleOf(req) === 'owner';
+  const canApprove = req => ['owner', 'manager'].includes(roleOf(req));
 
   app.get('/api/admin/approval-rules', auth, (req, res) => res.json({ rules: rules(), can_change: isOwner(req) }));
   app.put('/api/admin/approval-rules', auth, (req, res) => {
@@ -70,10 +72,10 @@ module.exports = function mountApprovals(app, ctx) {
   app.get('/api/admin/estimates/:id/approval', auth, (req, res) => {
     const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(Number(req.params.id));
     if (!e) return res.status(404).json({ error: 'Not found' });
-    res.json({ ...evaluate(e), can_approve: isOwner(req) });
+    res.json({ ...evaluate(e), can_approve: canApprove(req), role: roleOf(req) });
   });
   app.post('/api/admin/estimates/:id/approve', auth, (req, res) => {
-    if (!isOwner(req)) return res.status(403).json({ error: 'Only the owner can approve proposals.' });
+    if (!canApprove(req)) return res.status(403).json({ error: 'Only an owner or manager can approve proposals. Use "request approval" instead.' });
     const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(Number(req.params.id));
     if (!e) return res.status(404).json({ error: 'Not found' });
     const v = evaluate(e);
@@ -84,6 +86,19 @@ module.exports = function mountApprovals(app, ctx) {
     db.prepare('INSERT INTO estimate_approvals(estimate_id,fingerprint,reasons,note,approved_by,created_at) VALUES(?,?,?,?,?,?)').run(e.id, fingerprint(e), JSON.stringify(v.reasons), note, (req.user && req.user.email) || null, t);
     logAction(req, 'approved for sending', 'estimate', e.id, v.reasons.join('; ') + (note ? ' — ' + note : ''));
     res.json({ ok: true, approval: evaluate(e).approval });
+  });
+
+  // Staff: ask the owner to approve. Creates a task for the owner and emails them.
+  app.post('/api/admin/estimates/:id/request-approval', auth, async (req, res) => {
+    const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(Number(req.params.id)); if (!e) return res.status(404).json({ error: 'Not found' });
+    const v = evaluate(e); if (!v.required) return res.status(400).json({ error: 'This proposal does not need approval.' });
+    const t = new Date().toISOString(), title = `Approve proposal #${e.id} – ${e.project_name || e.customer_name}`;
+    try { db.prepare(`INSERT INTO customer_issues(type,category,title,description,priority,status,assigned_to,required_action,customer_comms,created_by,created_at,updated_at) VALUES('task','Sales',?,?,'High','Open',?,?, 'Not needed',?,?,?)`)
+      .run(title, v.reasons.join('; '), adminEmail || null, 'Open Estimates & proposals, review and click Approve.', (req.user && req.user.email) || null, t, t); } catch { /* issues table optional */ }
+    const m = ctx.getMailer && ctx.getMailer();
+    if (m && adminEmail) { try { await m.sendMail({ from: process.env.FROM_EMAIL || adminEmail, to: adminEmail, subject: title, text: `${(req.user && req.user.email) || 'A team member'} asked you to approve proposal #${e.id} for ${e.customer_name}.\nReasons: ${v.reasons.join('; ')}\nTotal: $${Number(e.proposal_total).toLocaleString('en-US')}\n\nOpen Bright Clean admin → Estimates & proposals to approve it.` }); } catch { /* email optional */ } }
+    logAction(req, 'requested approval', 'estimate', e.id, v.reasons.join('; '));
+    res.json({ ok: true });
   });
 
   app.get('/api/admin/approvals/pending', auth, (req, res) => {

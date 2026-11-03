@@ -223,7 +223,54 @@ module.exports = function mountSuite(app, ctx) {
     const pipeline = db.prepare(`SELECT status k, COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates GROUP BY status`).all();
     const topCustomers = db.prepare(`SELECT COALESCE(NULLIF(company,''),customer_name) k, COUNT(*) n, COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) paid FROM invoices GROUP BY k ORDER BY billed DESC LIMIT 8`).all();
     const w = decided.w || 0, l = decided.l || 0;
-    res.json({ months: keys, leads, sent, won, collected, win_rate: w + l ? Math.round(w / (w + l) * 1000) / 10 : null,
+    const one = (sql, ...a) => { try { return db.prepare(sql).get(...a) || {}; } catch { return {}; } };
+    const all = (sql, ...a) => { try { return db.prepare(sql).all(...a); } catch { return []; } };
+    const calls = byMonth(`SELECT substr(created_at,1,7) m, COUNT(*) n, SUM(outcome IN ('Missed','Voicemail')) v FROM calls WHERE created_at>=? GROUP BY m`);
+    const billed = byMonth(`SELECT substr(created_at,1,7) m, COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE created_at>=? AND status<>'Void' GROUP BY m`);
+    const quality = byMonth(`SELECT substr(date,1,7) m, COUNT(*) n, ROUND(AVG(score),1) v FROM inspections WHERE date>=? GROUP BY m`);
+    // Start-to-finish flow for the period: every stage a job passes through.
+    const flow = [
+      ['Calls logged', one(`SELECT COUNT(*) n FROM calls WHERE created_at>=?`, start).n],
+      ['Leads & quote requests', one(`SELECT COUNT(*) n FROM leads WHERE kind IN ('bid','inquiry') AND created_at>=?`, start).n],
+      ['Estimates drafted automatically', one(`SELECT COUNT(*) n FROM leads WHERE auto_estimate_id>0 AND created_at>=?`, start).n],
+      ['Estimates created', one(`SELECT COUNT(*) n FROM estimates WHERE created_at>=?`, start).n],
+      ['Proposals sent', one(`SELECT COUNT(*) n FROM estimates WHERE sent_at>=?`, start).n],
+      ['Viewed by customer', one(`SELECT COUNT(*) n FROM estimates WHERE viewed_at>=?`, start).n],
+      ['Approved (won)', w],
+      ['Contracts', one(`SELECT COUNT(*) n FROM contracts WHERE created_at>=?`, start).n],
+      ['Projects', one(`SELECT COUNT(*) n FROM projects WHERE created_at>=?`, start).n],
+      ['Site visits & phases scheduled', one(`SELECT COUNT(*) n FROM visits WHERE created_at>=?`, start).n],
+      ['Inspections', one(`SELECT COUNT(*) n FROM inspections WHERE created_at>=?`, start).n],
+      ['Invoices issued', one(`SELECT COUNT(*) n FROM invoices WHERE created_at>=? AND status<>'Void'`, start).n],
+      ['Invoices paid in full', one(`SELECT COUNT(*) n FROM invoices WHERE created_at>=? AND status='Paid'`, start).n]
+    ].map(([k, n]) => ({ k, n: n || 0 }));
+    const today = new Date().toISOString().slice(0, 10);
+    const recv = one(`SELECT COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) paid, COALESCE(SUM(CASE WHEN paid_amount<amount THEN amount-paid_amount END),0) outstanding,
+      COALESCE(SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN amount-paid_amount END),0) overdue, SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN 1 END) overdue_n FROM invoices WHERE status<>'Void'`, today, today);
+    const ops = {
+      projects_active: one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold')`).n || 0,
+      projects_completed: one(`SELECT COUNT(*) n FROM projects WHERE status='Completed'`).n || 0,
+      visits_done: one(`SELECT COUNT(*) n FROM visits WHERE status='Done' AND date>=?`, start).n || 0,
+      visits_upcoming: one(`SELECT COUNT(*) n FROM visits WHERE status='Scheduled' AND date>=?`, today).n || 0,
+      inspections: one(`SELECT COUNT(*) n, ROUND(AVG(score),1) avg, SUM(passed=0) failed FROM inspections WHERE date>=?`, start),
+      complaints: one(`SELECT COUNT(*) n, SUM(status IN ('Resolved','Closed')) resolved, ROUND(AVG(CASE WHEN status IN ('Resolved','Closed') THEN julianday(updated_at)-julianday(created_at) END),1) days FROM customer_issues WHERE type='complaint' AND created_at>=?`, start),
+      tasks_open: one(`SELECT COUNT(*) n FROM customer_issues WHERE type IN ('task','follow_up') AND status IN ('Open','In progress')`).n || 0,
+      tasks_overdue: one(`SELECT COUNT(*) n FROM customer_issues WHERE status IN ('Open','In progress') AND due_date<>'' AND due_date<?`, today).n || 0,
+      calls: one(`SELECT COUNT(*) n, SUM(outcome IN ('Missed','Voicemail')) missed, SUM(lead_id IS NOT NULL) to_leads FROM calls WHERE created_at>=?`, start)
+    };
+    const automation = {
+      ai_triaged: one(`SELECT COUNT(*) n FROM automation_log WHERE kind='ai_lead_triage' AND status='ok' AND created_at>=?`, start).n || 0,
+      ai_info_requests: one(`SELECT COUNT(*) n FROM automation_log WHERE kind='ai_info_request' AND status='ok' AND created_at>=?`, start).n || 0,
+      ai_takeoffs: one(`SELECT COUNT(*) n FROM automation_log WHERE kind='ai_takeoff' AND status='ok' AND created_at>=?`, start).n || 0,
+      ai_failures: one(`SELECT COUNT(*) n FROM automation_log WHERE kind LIKE 'ai_%' AND status='failed' AND created_at>=?`, start).n || 0,
+      auto_estimates: one(`SELECT COUNT(*) n FROM audit_log WHERE actor='automation' AND action='drafted' AND created_at>=?`, start).n || 0,
+      reminders: one(`SELECT COUNT(*) n FROM automation_log WHERE kind NOT LIKE 'ai_%' AND status='sent' AND created_at>=?`, start).n || 0,
+      emails_sent: one(`SELECT COUNT(*) n FROM email_log WHERE status='sent' AND created_at>=?`, start).n || 0,
+      emails_failed: one(`SELECT COUNT(*) n FROM email_log WHERE status='failed' AND created_at>=?`, start).n || 0,
+      approvals: one(`SELECT COUNT(*) n FROM estimate_approvals WHERE created_at>=?`, start).n || 0
+    };
+    const leadServices = all(`SELECT COALESCE(json_extract(intake,'$.service'), CASE kind WHEN 'bid' THEN 'bid (no form)' ELSE kind END) k, COUNT(*) n, SUM(auto_estimate_id>0) drafted FROM leads WHERE kind IN ('bid','inquiry') AND created_at>=? GROUP BY k ORDER BY n DESC`, start);
+    res.json({ months: keys, leads, sent, won, collected, calls, billed, quality, flow, receivables: recv, ops, automation, lead_services: leadServices, win_rate: w + l ? Math.round(w / (w + l) * 1000) / 10 : null,
       won_count: w, lost_count: l, won_value: decided.wv, avg_won: w ? Math.round(decided.wv / w * 100) / 100 : null, by_service: byService, pipeline, top_customers: topCustomers });
   });
 
