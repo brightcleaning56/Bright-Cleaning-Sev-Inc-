@@ -41,7 +41,8 @@ module.exports = function mountSched(app, ctx) {
     const a1 = mins(v.start_time), b1 = mins(v.end_time) ?? (a1 != null ? a1 + 240 : null);
     for (const o of db.prepare("SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date=? AND v.id<>? AND v.status NOT IN ('Cancelled','Skipped')").all(emp.id, v.date, v.id)) {
       const a2 = mins(o.start_time), b2 = mins(o.end_time) ?? (a2 != null ? a2 + 240 : null);
-      if (a1 == null || a2 == null || (a1 < b2 && a2 < b1)) block.push(`${emp.name} is already on "${o.title}" ${o.start_time || ''}–${o.end_time || ''}`);
+      if (a1 == null || a2 == null) warn.push(`${emp.name} also has "${o.title}" that day (no set time): check the timing`);
+      else if (a1 < b2 && a2 < b1) block.push(`${emp.name} is already on "${o.title}" ${o.start_time || ''}–${o.end_time || ''}`);
     }
     const dow = new Date(v.date + 'T12:00:00Z').getUTCDay() || 7;
     if (!String(emp.work_days || '').split(',').map(Number).includes(dow)) warn.push(`${v.date} is outside ${emp.name}'s usual work days`);
