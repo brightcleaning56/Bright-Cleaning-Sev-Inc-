@@ -236,6 +236,15 @@
   .thread li { list-style: none; padding: 8px 0; border-bottom: 1px solid var(--line2); } .thread { padding: 0; margin: 0 0 8px; } .secth { font-size: 15px; margin: 18px 0 8px; color: #10263e; }
   @media (max-width: 1100px) { .kpis5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 700px) { .kpis5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .typepick { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ig { grid-template-columns: 1fr; } }
+  .kpis6 { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; } .kpis6 .ktile { flex-direction: column; align-items: flex-start; gap: 6px; } .kpis6 .ktile b { font-size: 22px; } .kpis6 .chip { width: 34px; height: 34px; }
+  .sumbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 14px 16px; margin-bottom: 12px; background: linear-gradient(90deg, #eef5ff, #f6f9ff); } .sumbar span { display: block; color: var(--muted); font-size: 13px; } .sumbar b { font-size: 21px; color: #10263e; }
+  .propgrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; } .propside { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 86px; }
+  .wflow { list-style: none; padding: 0; margin: 0; } .wflow li { position: relative; padding: 0 0 14px 34px; } .wflow li:before { content: ''; position: absolute; left: 9px; top: 22px; bottom: 0; width: 2px; background: #dfe7f0; } .wflow li:last-child:before { display: none; }
+  .wflow li i { position: absolute; left: 0; top: 0; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #c5d3e2; background: #fff; } .wflow li.done i { background: #17904c; border-color: #17904c; } .wflow li.now i { border-color: #1f6fd1; box-shadow: inset 0 0 0 4px #1f6fd1; } .wflow li.now b { color: #1f6fd1; } .wflow small { display: block; color: var(--muted); }
+  .pill.st-Draft, .pill.st-Ready { background: #eef2f6; color: #4c637a; } .pill.st-Sent { background: #e6f0fd; color: #1f6fd1; } .pill.st-Viewed { background: #f0e9fd; color: #7a4bd8; } .pill.st-Approved { background: #e3f6ea; color: #17904c; } .pill.st-Declined, .pill.st-Withdrawn { background: #fde8e8; color: #c0362d; } .pill.st-Expired { background: #fff3dc; color: #a46a00; }
+  .flagl li { list-style: none; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 14px; } .flagl { padding: 0; margin: 0; } .flagl .block { background: #fde8e8; color: #a52a22; } .flagl .warn { background: #fff3dc; color: #8a5a00; } .flagl .info { background: #eef2f6; color: #4c637a; }
+  @media (max-width: 1300px) { .propgrid { grid-template-columns: minmax(0, 1fr); } .propside { position: static; } .kpis6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .kpis6, .sumbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -505,13 +514,23 @@
     </section>
 
     <section class="view" id="v-proposals">
-      <div class="pagehead"><div><h1>Estimates &amp; proposals</h1><p>Build an estimate, then send the customer a proposal link they can approve online. Approval creates a draft contract and a project.</p></div>
-        <button class="btn" data-action="new-estimate">New estimate</button></div>
-      <div class="toolbar">
-        <input type="search" id="propSearch" placeholder="Search customer or project…" aria-label="Search proposals">
-        <select id="propStatusFilter" aria-label="Filter by status"></select>
-      </div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Created</th><th>Customer / project</th><th class="num">Total</th><th>Status</th><th>Valid through</th><th></th></tr></thead><tbody id="propRows"></tbody></table></div>
+      <div class="pagehead"><div><h1>Estimating, Proposals &amp; Bids</h1><p>Create estimates, send professional proposals, manage bids and convert approvals to contracts and projects.</p></div>
+        <div class="headact"><button class="btn" data-action="new-estimate"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New estimate</button><button class="btn ghost" id="propAiBtn" type="button">AI estimate</button><button class="btn ghost" id="propCsv" type="button">Export CSV</button></div></div>
+      <div class="segtabs" id="propTabs" role="tablist"><button data-pv="all" class="on">Overview</button><button data-pv="estimates">Estimates</button><button data-pv="proposals">Proposals</button><button data-pv="bids">Bids (GC)</button><button data-pv="contracts">Contracts</button></div>
+      <div class="propgrid"><div style="min-width:0">
+        <div class="kpis6" id="propKpis"></div>
+        <div class="sumbar card" id="propSum"></div>
+        <div class="filt"><input type="search" id="propSearch" placeholder="Search proposals, customers or projects…" aria-label="Search proposals"><select id="propStatusFilter" aria-label="Filter by status"></select><select id="propService" aria-label="Service"><option value="">Service: All</option></select><select id="propRange" aria-label="Created"><option value="">Created: Any time</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select></div>
+        <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Proposal #</th><th>Customer / project</th><th>Service</th><th class="num">Amount</th><th>Created</th><th>Sent</th><th>Valid until</th><th>Activity</th><th>Status</th><th></th></tr></thead><tbody id="propRows"></tbody></table>
+          <div class="pager"><span class="muted" id="propShowing"></span><div id="propPages"></div></div></div></div>
+        <aside class="propside">
+          <div class="card"><h2 style="display:flex;gap:8px;align-items:center;font-size:17px">AI Estimating Assistant <span class="badge" id="propAiState">…</span></h2>
+            <p class="muted">Describe the project: square footage or unit counts and the cleaning needed. The AI only uses your approved price book and never guesses quantities.</p>
+            <textarea id="propAiDesc" rows="5" placeholder="e.g. Final construction clean for a 24,000 sq ft two-story office, rough + final + touch-up, needs to be done by Dec 1." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #ccd5df;border-radius:10px;font:inherit"></textarea>
+            <input id="propAiCo" placeholder="Customer company (optional)" style="width:100%;box-sizing:border-box;margin-top:8px;padding:10px 12px;border:1px solid #ccd5df;border-radius:10px;font:inherit">
+            <button class="btn" id="propAiGo" type="button" style="width:100%;margin-top:10px">Generate estimate with AI</button><div id="propAiOut" class="aiout"></div></div>
+          <div class="card"><h2 style="font-size:17px">Proposal workflow</h2><ol class="wflow" id="propFlow"></ol><p class="muted" id="propFlowFor">Select a proposal to see where it is.</p></div>
+        </aside></div>
     </section>
 
     <section class="view" id="v-estimator">

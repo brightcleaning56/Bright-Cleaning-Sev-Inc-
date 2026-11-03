@@ -567,26 +567,101 @@
     }
   }
 
-  // ---------- Estimates ----------
-  $('#propStatusFilter').innerHTML = '<option value="">All statuses</option>' + options(STATUS.estimates);
-  $('#propSearch').addEventListener('input', () => renderEstimates());
-  $('#propStatusFilter').addEventListener('change', () => renderEstimates());
-
+  // ---------- Estimates, proposals & bids (mockup layout) ----------
+  const prop = { view: 'all', page: 1, dash: null, steps: [], sel: null };
+  $('#propStatusFilter').innerHTML = '<option value="">Status: All</option>' + options([...STATUS.estimates, 'Withdrawn']);
+  ['#propStatusFilter', '#propService', '#propRange'].forEach(x => $(x).addEventListener('change', () => { prop.page = 1; renderEstimates(); }));
+  $('#propSearch').addEventListener('input', () => { prop.page = 1; renderEstimates(); });
+  $$('#propTabs button').forEach(b => b.onclick = () => { if (b.dataset.pv === 'contracts') return go('contracts'); prop.view = b.dataset.pv; prop.page = 1; $$('#propTabs button').forEach(x => x.classList.toggle('on', x === b)); loadEstimates(); });
+  const SVC = { construction: 'Construction', multifamily: 'Multifamily', janitorial: 'Janitorial', windows: 'Windows', exterior: 'Exterior', other: 'Other' };
+  const pnum = e => e.number || `P-${String(e.created_at || '').slice(0, 4)}-${1000 + e.id}`;
   async function loadEstimates() {
-    state.estimates = (await api('/api/admin/estimates')).estimates || [];
-    renderEstimates();
+    const [r, d] = await Promise.all([api('/api/admin/bids?view=' + prop.view), api('/api/admin/bids/dashboard')]);
+    state.estimates = r.estimates || []; prop.steps = r.steps || []; prop.dash = d;
+    $('#propKpis').innerHTML = [['proposals', 'blue', 'Draft estimates', d.drafts.n, d.drafts.week ? `+${d.drafts.week} this week` : money(d.drafts.v)], ['clock', 'amber', 'Awaiting review', d.review.n, money(d.review.v)], ['send', 'blue', 'Proposals pending', d.waiting.n, money(d.waiting.v)], ['check', 'green', 'Approved', d.approved.n, money(d.approved.v)], ['issues', 'red', 'Declined', d.declined.n, money(d.declined.v)], ['cal', 'amber', 'Expiring soon', d.expiring.n, 'Next 7 days']].map(x => kt(...x)).join('');
+    $('#propSum').innerHTML = `<div><span>Total proposed value</span><b>${money(d.proposed_value)}</b></div><div><span>Contracted value (signed)</span><b>${money(d.contracted_value)}</b></div><div><span>Projected gross profit (estimate)</span><b>${d.projected_gp.costed ? money(d.projected_gp.v) + (d.projected_gp.pct != null ? ` <small>(${d.projected_gp.pct}%)</small>` : '') : '—'}</b></div><div><span>Win rate</span><b>${d.win.rate == null ? '—' : d.win.rate + '%'}</b> <small class="muted">${d.win.won} of ${d.win.decided} decided</small></div>`;
+    const svcs = [...new Set(state.estimates.map(e => e.scope_category).filter(Boolean))];
+    { const cur = $('#propService').value; $('#propService').innerHTML = '<option value="">Service: All</option>' + svcs.map(x => `<option value="${esc(x)}">${esc(SVC[x] || x)}</option>`).join(''); $('#propService').value = cur; }
+    renderEstimates(); drawFlow(prop.sel ? state.estimates.find(e => e.id === prop.sel) : null);
+    try { const a = await api('/api/admin/ai/status'); $('#propAiState').textContent = a.enabled ? 'Active' : 'Off'; $('#propAiState').className = 'badge ' + (a.enabled ? 'green' : ''); } catch { $('#propAiState').textContent = 'Off'; }
+  }
+  function drawFlow(e) {
+    const st = e ? e.stage : null, steps = prop.steps.length ? prop.steps : ['Draft', 'Internal review', 'Approved for sending', 'Sent', 'Viewed', 'Accepted', 'Contract', 'Project planning'];
+    const k = e ? steps.indexOf(st) : -1;
+    const sub = { 'Draft': 'Estimate and pricing created', 'Internal review': 'Scope, pricing and margin checked', 'Approved for sending': 'Cleared by approval rules', 'Sent': 'Emailed with a secure review link', 'Viewed': 'Customer opened the proposal', 'Accepted': 'Customer approved and signed', 'Contract': 'Agreement generated from the approved version', 'Project planning': 'Handed off to operations' };
+    $('#propFlow').innerHTML = steps.map((s, n) => `<li class="${k > n ? 'done' : k === n ? 'now' : ''}"><i></i><b>${esc(s)}</b><small>${esc(sub[s] || '')}</small></li>`).join('');
+    $('#propFlowFor').textContent = e ? `${pnum(e)} · ${e.stage}${['Declined', 'Withdrawn', 'Expired', 'Superseded'].includes(e.stage) ? ' (ended)' : ''}` : 'Select a proposal to see where it is.';
   }
   function renderEstimates() {
-    const q = $('#propSearch').value.trim().toLowerCase();
-    const st = $('#propStatusFilter').value;
-    const rows = state.estimates.filter(e => !st || e.status === st)
-      .filter(e => !q || [e.customer_name, e.company, e.project_name, e.email, e.site_address].join(' ').toLowerCase().includes(q));
+    const q = $('#propSearch').value.trim().toLowerCase(), st = $('#propStatusFilter').value, sv = $('#propService').value, rg = Number($('#propRange').value) || 0;
+    const since = rg ? new Date(Date.now() - rg * 864e5).toISOString() : '';
+    const all = state.estimates.filter(e => (!st || e.status === st) && (!sv || e.scope_category === sv) && (!since || e.created_at >= since))
+      .filter(e => !q || [e.customer_name, e.company, e.project_name, e.email, e.site_address, pnum(e)].join(' ').toLowerCase().includes(q));
+    const per = 10, pages = Math.max(1, Math.ceil(all.length / per)); prop.page = Math.min(prop.page, pages);
+    const rows = all.slice((prop.page - 1) * per, prop.page * per);
     $('#propRows').innerHTML = rows.length ? rows.map(e => {
-      const expired = e.expires_on && e.expires_on < todayISO() && !['Approved', 'Declined'].includes(e.status);
-      return `<tr class="click" data-est="${e.id}"><td>${fmtDate(e.created_at)}</td><td><b>${esc(e.customer_name)}</b><small>${esc([e.company, e.project_name].filter(Boolean).join(' · '))}</small></td><td class="num"><b>${money(e.proposal_total)}</b></td><td>${badge(e.status)}</td><td>${e.expires_on ? fmtDate(e.expires_on) : '—'}${expired ? ' <span class="badge red">Expired</span>' : ''}</td><td><div class="rowactions"><button class="btn small ghost" data-edit="${e.id}">Edit</button></div></td></tr>`;
-    }).join('') : `<tr><td class="emptyrow" colspan="6">${q || st ? 'No proposals match your search.' : 'No estimates yet. Click “New estimate” to build your first proposal.'}</td></tr>`;
-    $$('#propRows [data-est]').forEach(r => r.onclick = e => { if (!e.target.closest('[data-edit]')) openEstimate(Number(r.dataset.est)); });
+      const expired = e.expires_on && e.expires_on < todayISO() && !['Approved', 'Declined', 'Withdrawn'].includes(e.status);
+      const act = e.status === 'Approved' ? `Accepted<small>${e.signer_name ? 'by ' + esc(e.signer_name) : fmtDate(e.decided_at)}</small>` : e.view_count ? `Viewed (${e.view_count})<small>${fmtDate(e.last_viewed_at || e.viewed_at)}</small>` : e.sent_at ? 'Not opened yet' : '—';
+      const warn = e.flags && e.flags.some(f => f.level !== 'info') ? ` <span title="${esc(e.flags.filter(f => f.level !== 'info').map(f => f.text).join('\n'))}" style="color:#c26a00">⚠</span>` : '';
+      return `<tr class="click" data-est="${e.id}"><td><b style="color:#1f6fd1">${esc(pnum(e))}</b><small>v${e.version || 1}${e.bid_type === 'gc_bid' ? ' · GC bid' : ''}</small></td><td><b>${esc(e.company || e.customer_name)}</b><small>${esc(e.project_name || '')}</small></td>
+        <td>${e.scope_category ? `<span class="pill t-task">${esc(SVC[e.scope_category] || e.scope_category)}</span>` : '<span class="muted">Not set</span>'}</td><td class="num"><b>${money(e.proposal_total)}</b>${warn}</td>
+        <td>${fmtDate(e.created_at)}</td><td>${e.sent_at ? fmtDate(e.sent_at) : '—'}</td><td class="${expired ? 'due-late' : ''}">${e.expires_on ? fmtDate(e.expires_on) : '—'}</td><td>${act}</td>
+        <td><span class="pill st-${esc(e.status)}">${esc(e.status === 'Approved' ? 'Accepted' : e.status)}</span></td><td><button class="btn small ghost" data-det="${e.id}" title="Details, versions and history">Details</button> <button class="btn small ghost" data-edit="${e.id}">Edit</button></td></tr>`;
+    }).join('') : `<tr><td class="emptyrow" colspan="10">${q || st || sv || rg ? 'No proposals match your filters.' : 'No estimates yet. Click “New estimate” or describe a project to the AI assistant.'}</td></tr>`;
+    $('#propShowing').textContent = all.length ? `Showing ${(prop.page - 1) * per + 1} – ${Math.min(prop.page * per, all.length)} of ${all.length}` : '';
+    $('#propPages').innerHTML = pages > 1 ? Array.from({ length: pages }, (_, n) => `<button class="${n + 1 === prop.page ? 'on' : ''}" data-pg="${n + 1}">${n + 1}</button>`).join('') : '';
+    $$('#propPages button').forEach(b => b.onclick = () => { prop.page = Number(b.dataset.pg); renderEstimates(); });
+    $$('#propRows [data-est]').forEach(r => r.onclick = ev => { if (ev.target.closest('[data-edit],[data-det]')) return; prop.sel = Number(r.dataset.est); drawFlow(state.estimates.find(e => e.id === prop.sel)); openEstimate(prop.sel); });
     $$('#propRows [data-edit]').forEach(b => b.onclick = () => editEstimate(Number(b.dataset.edit)));
+    $$('#propRows [data-det]').forEach(b => b.onclick = () => { prop.sel = Number(b.dataset.det); drawFlow(state.estimates.find(e => e.id === prop.sel)); openBid(prop.sel); });
+  }
+  $('#propCsv').addEventListener('click', () => {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`, rows = [['Proposal', 'Version', 'Type', 'Customer', 'Project', 'Service', 'Amount', 'Estimated cost', 'Status', 'Stage', 'Created', 'Sent', 'Valid until', 'Views', 'Accepted by'], ...state.estimates.map(e => [pnum(e), e.version || 1, e.bid_type === 'gc_bid' ? 'GC bid' : 'Proposal', e.company || e.customer_name, e.project_name, e.scope_category, e.proposal_total, e.total_cost, e.status, e.stage, e.created_at, e.sent_at, e.expires_on, e.view_count, e.signer_name])];
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'proposals.csv'; a.click();
+  });
+  $('#propAiBtn').addEventListener('click', () => { $('#propAiDesc').focus(); $('#propAiDesc').scrollIntoView && $('#propAiDesc').scrollIntoView({ block: 'center' }); });
+  $('#propAiGo').addEventListener('click', async () => {
+    const d = $('#propAiDesc').value.trim(); if (d.length < 20) return toast('Describe the project in a sentence or two, with square footage or unit counts.', true);
+    const b = $('#propAiGo'); b.disabled = true; b.textContent = 'Reading the price book…'; $('#propAiOut').textContent = '';
+    try {
+      const r = await api('/api/admin/ai/estimates/generate', { method: 'POST', json: { description: d, company: $('#propAiCo').value.trim() } });
+      if (!r.created) $('#propAiOut').textContent = 'Not enough information to price it yet:\n• ' + r.questions.join('\n• ');
+      else { $('#propAiOut').textContent = `Draft created: ${money(r.total)} from ${r.lines} price-book line(s).${r.questions.length ? '\nOpen questions:\n• ' + r.questions.join('\n• ') : ''}`; $('#propAiDesc').value = ''; await loadEstimates(); openBid(r.id); }
+    } catch (e) { $('#propAiOut').textContent = e.message; }
+    b.disabled = false; b.textContent = 'Generate estimate with AI';
+  });
+  async function openBid(id) {
+    let r; try { r = await api('/api/admin/bids/' + id); } catch (e) { return toast(e.message, true); }
+    const e = r.estimate, items = (() => { try { return Array.isArray(e.line_items) ? e.line_items : JSON.parse(e.line_items || '[]'); } catch { return []; } })();
+    const margin = e.proposal_total > 0 && e.total_cost > 0 ? ((e.proposal_total - e.total_cost) / e.proposal_total * 100).toFixed(1) + '%' : '—';
+    const sent = ['Sent', 'Viewed', 'Approved', 'Declined', 'Expired'].includes(e.status), editable = ['Draft', 'Ready'].includes(e.status);
+    openDrawer({ title: `${pnum(e)} v${e.version || 1}`, sub: `${e.company || e.customer_name}${e.project_name ? ' · ' + e.project_name : ''} · ${e.stage}`,
+      body: `${e.flags.length ? `<ul class="flagl">${e.flags.map(f => `<li class="${f.level}">${esc(f.text)}</li>`).join('')}</ul>` : '<p class="muted">No pricing flags.</p>'}
+        <h3 class="secth">Customer &amp; project</h3><dl class="stat"><dt>Customer</dt><dd>${esc(e.company || '—')}</dd><dt>Contact</dt><dd>${esc(e.customer_name)}${e.email ? ' · ' + esc(e.email) : ''}</dd><dt>Site</dt><dd>${esc(e.site_address || '—')}</dd><dt>Service</dt><dd>${esc(SVC[e.scope_category] || e.scope_category || 'Not set')}</dd><dt>Type</dt><dd>${e.bid_type === 'gc_bid' ? `GC bid${e.gc_name ? ' · ' + esc(e.gc_name) : ''}${e.bid_due_date ? ' · due ' + fmtDate(e.bid_due_date) : ''}` : 'Customer proposal'}</dd></dl>
+        <h3 class="secth">Scope of work</h3><p style="white-space:pre-wrap">${esc(e.scope || '')}</p>
+        ${items.length ? `<h3 class="secth">Line items</h3><div class="tablewrap"><table class="t"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead><tbody>${items.map(i => `<tr><td>${esc(i.description || i.name || '')}${i.basis ? `<small>${esc(i.basis)}</small>` : ''}</td><td class="num">${Number(i.quantity || i.qty || 0).toLocaleString()}</td><td class="num">${money(i.unit_price || i.rate)}</td><td class="num">${money(i.amount != null ? i.amount : (i.quantity || 0) * (i.unit_price || 0))}</td></tr>`).join('')}</tbody></table></div>` : ''}
+        <form id="bidForm" class="ig" style="margin-top:12px"><div class="wide"><label>Assumptions (shown to customer)</label><textarea name="assumptions" rows="2" ${editable ? '' : 'disabled'}>${esc(e.assumptions || '')}</textarea></div><div class="wide"><label>Exclusions (shown to customer)</label><textarea name="exclusions" rows="2" ${editable ? '' : 'disabled'}>${esc(e.exclusions || '')}</textarea></div>
+          <div class="wide"><label>Internal notes (never shown to the customer)</label><textarea name="internal_notes" rows="2">${esc(e.internal_notes || '')}</textarea></div>
+          <div><label>Bid type</label><select name="bid_type"><option value="proposal"${e.bid_type !== 'gc_bid' ? ' selected' : ''}>Customer proposal</option><option value="gc_bid"${e.bid_type === 'gc_bid' ? ' selected' : ''}>General contractor bid</option></select></div><div><label>General contractor</label><input name="gc_name" value="${esc(e.gc_name || '')}"></div><div><label>Bid due date</label><input type="date" name="bid_due_date" value="${esc(e.bid_due_date || '')}"></div><div></div></form>
+        ${!editable ? '<p class="muted">Customer-facing terms are locked after sending. Use <b>Revise</b> to change them; the sent version stays on record.</p>' : ''}
+        <h3 class="secth">Internal costs &amp; margin</h3><dl class="stat"><dt>Estimated cost</dt><dd>${money(e.total_cost)}</dd><dt>Price</dt><dd>${money(e.proposal_total)}</dd><dt>Gross margin (estimate)</dt><dd>${margin}</dd><dt>Labor hours</dt><dd>${Number(e.labor_hours || 0).toLocaleString()}</dd></dl>
+        ${e.signed_at ? `<h3 class="secth">Acceptance</h3><p>Accepted by <b>${esc(e.signer_name)}</b>${e.signer_title ? ', ' + esc(e.signer_title) : ''} on ${fmtWhen(e.signed_at)}${e.decision_ip ? ` <small class="muted">from ${esc(e.decision_ip)}</small>` : ''}</p>` : ''}${e.decline_reason ? `<p><b>Decline reason:</b> ${esc(e.decline_reason)}</p>` : ''}${e.withdrawn_reason ? `<p><b>Withdrawn:</b> ${esc(e.withdrawn_reason)}</p>` : ''}
+        ${r.contract ? `<p>Contract: <button class="linklike" data-rec="contracts:${r.contract.id}">${esc(r.contract.title || 'Contract #' + r.contract.id)}</button> ${badge(r.contract.signature_status || 'Not sent')}</p>` : ''}
+        ${r.takeoffs.length || r.documents.length ? `<h3 class="secth">Drawings &amp; takeoffs</h3><ul class="mini">${r.takeoffs.map(t => `<li>Takeoff: ${esc(t.title)} ${badge(t.status)}${t.building_sf ? ' · ' + Number(t.building_sf).toLocaleString() + ' SF' : ''}</li>`).join('')}${r.documents.map(x => `<li>${esc(x.title)} <small class="muted">${esc(x.kind)}</small></li>`).join('')}</ul>` : ''}
+        <h3 class="secth">Versions (${r.versions.length})</h3><ul class="mini">${r.versions.map(v => `<li>${v.id === e.id ? '<b>' : ''}v${v.version || 1} · ${badge(v.status)} ${money(v.proposal_total)} · ${fmtDate(v.created_at)}${v.id === e.id ? '</b> (this one)' : ` <button class="linklike" data-ver="${v.id}">open</button>`}</li>`).join('')}</ul>
+        <h3 class="secth">Customer communications (${r.communications.length})</h3>${r.communications.length ? `<ul class="mini">${r.communications.slice(0, 10).map(m => `<li>${esc(m.subject)} <small class="muted">${fmtWhen(m.created_at)} · ${esc(m.status)}</small></li>`).join('')}</ul>` : '<p class="muted">No emails yet.</p>'}
+        <h3 class="secth">Approval &amp; history</h3>${r.approval ? `<p class="flagl"><span class="warn" style="display:block;padding:6px 10px;border-radius:8px">${esc(r.approval)}</span></p>` : ''}<div class="activity">${renderActivity(r.history) || '<p class="empty">No history yet.</p>'}</div>`,
+      footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="bPdf">Download PDF</button>${e.public_token && sent ? '<button class="btn ghost" id="bPreview">Customer view</button>' : ''}${editable ? '<button class="btn ghost" id="bEdit">Edit</button>' : ''}${['Sent', 'Viewed', 'Declined', 'Expired'].includes(e.status) || (e.status === 'Approved' && !r.contract) ? '<button class="btn ghost" id="bRevise">Revise</button>' : ''}${['Draft', 'Ready', 'Sent', 'Viewed'].includes(e.status) ? '<button class="btn ghost danger" id="bWithdraw">Withdraw</button>' : ''}<button class="btn ghost" id="bDup">Duplicate</button><button class="btn" id="bSave">Save</button><button class="btn" id="bMore">${['Sent', 'Viewed'].includes(e.status) ? 'Resend / actions' : editable ? 'Send / approve…' : 'Actions…'}</button>` });
+    bindOpeners($('#drawerRoot'));
+    $$('#drawerRoot [data-ver]').forEach(b => b.onclick = () => openBid(Number(b.dataset.ver)));
+    $('#bPdf').onclick = () => downloadFile({ name: `${pnum(e)}-v${e.version || 1}.pdf`, url: `/api/admin/bids/${e.id}/pdf` });
+    $('#bPreview') && ($('#bPreview').onclick = () => window.open('/proposal/' + e.public_token, '_blank'));
+    $('#bEdit') && ($('#bEdit').onclick = () => { closeDrawer(); editEstimate(e.id); });
+    $('#bMore').onclick = () => openEstimate(e.id);
+    $('#bDup').onclick = async () => { try { const x = await api(`/api/admin/estimates/${e.id}/duplicate`, { method: 'POST' }); toast('Duplicated as a new draft'); await loadEstimates(); openBid(x.id || (x.estimate && x.estimate.id)); } catch (err) { toast(err.message, true); } };
+    $('#bSave').onclick = async () => { try { await api('/api/admin/bids/' + e.id, { method: 'PATCH', json: formObj($('#bidForm')) }); toast('Saved'); loadEstimates(); openBid(e.id); } catch (err) { toast(err.message, true); } };
+    $('#bRevise') && ($('#bRevise').onclick = async () => { if (!confirm(`Create version ${(e.version || 1) + 1}? This version stays on record and its customer link closes.`)) return; try { const x = await api(`/api/admin/bids/${e.id}/revise`, { method: 'POST' }); toast(`Version ${x.version} created as a draft`); await loadEstimates(); openBid(x.id); } catch (err) { toast(err.message, true); } });
+    $('#bWithdraw') && ($('#bWithdraw').onclick = async () => { const reason = prompt('Why are you withdrawing this proposal? (kept on record; the customer link will close)'); if (!reason) return; try { await api(`/api/admin/bids/${e.id}/withdraw`, { method: 'POST', json: { reason } }); toast('Withdrawn'); await loadEstimates(); openBid(e.id); } catch (err) { toast(err.message, true); } });
   }
 
   async function openEstimate(id) {
