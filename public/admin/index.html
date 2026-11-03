@@ -123,6 +123,13 @@
   .checklist select, .checklist input { width: 100%; }
   .mini li { margin: 6px 0; font-size: 14px; }
   @media (max-width: 760px) { .kpis.small { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+  .week .day { background: var(--card); border: 1px solid var(--line2); border-radius: 10px; min-height: 160px; padding: 8px; }
+  .week .day h3 { margin: 0 0 6px; font-size: 13px; color: var(--muted); } .week .day.today { border-color: var(--blue); }
+  .week .ev { display: block; width: 100%; text-align: left; border: 0; border-radius: 7px; padding: 6px 8px; margin-bottom: 6px; font: inherit; font-size: 12.5px; cursor: pointer; background: var(--bluebg); color: var(--navy); }
+  .week .ev.due { background: var(--amberbg); } .week .ev.done { opacity: .6; text-decoration: line-through; }
+  .tolines td { padding: 4px; vertical-align: top; } .tolines select, .tolines input { width: 100%; }
+  @media (max-width: 900px) { .week { grid-template-columns: 1fr; } .week .day { min-height: 0; } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -230,6 +237,7 @@
       <button data-view="customers">Customers</button>
       <button data-view="issues">Issues &amp; tasks <span class="count" id="navIssues" hidden></span></button>
       <button data-view="calls">Calls <span class="count" id="navCalls" hidden></span></button>
+      <button data-view="emails">Email Center <span class="count" id="navEmails" hidden></span></button>
       <div class="sep"></div>
       <button data-view="proposals">Estimates &amp; proposals</button>
       <button data-view="contracts">Contracts</button>
@@ -238,6 +246,7 @@
       <button data-view="schedule">Schedule</button>
       <button data-view="quality">Quality &amp; inspections</button>
       <button data-view="documents">Drawings &amp; documents</button>
+      <button data-view="takeoffs">Takeoffs</button>
       <div class="sep"></div>
       <button data-view="reports">Reports</button>
       <button data-view="scopes">Cleaning scopes <span class="count" id="navScopes" hidden></span></button>
@@ -311,8 +320,8 @@
     <section class="view" id="v-schedule">
       <div class="pagehead"><div><h1>Schedule</h1><p>Site visits, walkthroughs, cleaning phases and inspections, plus project due dates.</p></div><button class="btn" id="scheduleAdd">Schedule visit</button></div>
       <div class="kpis small" id="scheduleKpis"></div>
-      <div class="toolbar"><select id="schedRange" aria-label="Range"><option value="14">Next 2 weeks</option><option value="30" selected>Next 30 days</option><option value="90">Next 90 days</option><option value="past">Past 30 days</option></select></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Time</th><th>What</th><th>Customer / project</th><th>Assigned</th><th>Status</th></tr></thead><tbody id="scheduleRows"></tbody></table></div>
+      <div class="toolbar"><select id="schedMode" aria-label="View"><option value="list">List</option><option value="week">Week</option></select><select id="schedRange" aria-label="Range"><option value="14">Next 2 weeks</option><option value="30" selected>Next 30 days</option><option value="90">Next 90 days</option><option value="past">Past 30 days</option></select></div>
+      <div class="week" id="schedWeek" hidden></div><div class="tablewrap" id="schedTable"><table class="t"><thead><tr><th>Date</th><th>Time</th><th>What</th><th>Customer / project</th><th>Assigned</th><th>Status</th></tr></thead><tbody id="scheduleRows"></tbody></table></div>
     </section>
     <section class="view" id="v-quality">
       <div class="pagehead"><div><h1>Quality &amp; inspections</h1><p>Walkthrough checklists with pass/fail scores. A failed item needs a note so the crew knows what to fix.</p></div><button class="btn" id="qualityAdd">New inspection</button></div>
@@ -325,6 +334,16 @@
       <div class="kpis small" id="documentsKpis"></div>
       <div class="toolbar"><select id="docKind" aria-label="Type"><option value="">All types</option></select></div>
       <div class="tablewrap"><table class="t"><thead><tr><th>Title</th><th>Type</th><th>Rev</th><th>Project / customer</th><th>Uploaded</th><th>Takeoff</th></tr></thead><tbody id="documentsRows"></tbody></table></div>
+    </section>
+    <section class="view" id="v-emails">
+      <div class="pagehead"><div><h1>Email Center</h1><p>Every email the system sends: confirmations, proposals, reminders and notices. Reading your Outlook inbox here needs a Microsoft 365 app registration.</p></div></div>
+      <div class="kpis small" id="emailsKpis"></div>
+      <div class="toolbar"><input type="search" id="emailSearch" placeholder="Search recipient or subject…" aria-label="Search emails"><select id="emailStatus" aria-label="Status"><option value="">All</option><option value="sent">Sent</option><option value="failed">Failed</option></select></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>When</th><th>To</th><th>Subject</th><th>Status</th></tr></thead><tbody id="emailsRows"></tbody></table></div>
+    </section>
+    <section class="view" id="v-takeoffs">
+      <div class="pagehead"><div><h1>Takeoffs</h1><p>Quantities from drawings, each tied to its source sheet and how it was found (measured, from a schedule, entered or inferred), then priced from your price book in one click.</p></div><button class="btn" id="takeoffsAdd">New takeoff</button></div>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Takeoff</th><th>Drawing set</th><th>Category</th><th class="num">Building SF</th><th class="num">Lines</th><th>Status</th></tr></thead><tbody id="takeoffsRows"></tbody></table></div>
     </section>
     <section class="view" id="v-reports">
       <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select></div>

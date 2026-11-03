@@ -126,7 +126,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['overview', 'leads', 'customers', 'issues', 'calls', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'reports', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (!VIEWS.includes(view)) view = 'overview';
     state.view = view;
@@ -162,6 +162,8 @@
       if (view === 'quality') await loadQuality();
       if (view === 'documents') await loadDocuments();
       if (view === 'reports') await loadReports();
+      if (view === 'emails') await loadEmails();
+      if (view === 'takeoffs') await loadTakeoffs();
       if (view === 'scopes') await loadScopes();
       if (view === 'activity') await loadActivity();
       if (view === 'settings') await loadSettings();
@@ -1142,6 +1144,7 @@
   const schedState = { visits: [], options: null };
   $('#scheduleAdd').addEventListener('click', () => scheduleVisit());
   $('#schedRange').addEventListener('change', () => loadSchedule());
+  $('#schedMode').addEventListener('change', () => { if ($('#schedMode').value === 'week' && $('#schedRange').value === 'past') $('#schedRange').value = '14'; loadSchedule(); });
   async function loadSchedule() {
     const v = $('#schedRange').value, t = new Date();
     const from = v === 'past' ? new Date(t - 30 * 864e5) : t, to = v === 'past' ? t : new Date(+t + Number(v) * 864e5);
@@ -1149,12 +1152,18 @@
     const items = [...r.visits.map(x => ({ ...x, kind: 'visit' })), ...r.project_due.map(p => ({ kind: 'due', id: p.id, date: p.due_date, title: `Due: ${p.name || p.customer_name}`, status: p.status, type: 'Project due' }))].sort((a, b) => (a.date + (a.start_time || '')).localeCompare(b.date + (b.start_time || '')));
     const week = r.visits.filter(x => x.status === 'Scheduled' && x.date <= new Date(+t + 7 * 864e5).toISOString().slice(0, 10)).length;
     kpiTiles('#scheduleKpis', [{ label: 'Scheduled in view', value: r.visits.filter(x => x.status === 'Scheduled').length }, { label: 'Next 7 days', value: week }, { label: 'Project due dates', value: r.project_due.length }, { label: 'Done', value: r.visits.filter(x => x.status === 'Done').length }]);
+    const mode = $('#schedMode').value; $('#schedWeek').hidden = mode !== 'week'; $('#schedTable').hidden = mode === 'week';
+    if (mode === 'week') {
+      const start = new Date(); start.setHours(12, 0, 0, 0); start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+      const days = [...Array(7)].map((_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d.toISOString().slice(0, 10); });
+      $('#schedWeek').innerHTML = days.map(day => `<div class="day${day === todayISO() ? ' today' : ''}"><h3>${new Date(day + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</h3>${items.filter(x => x.date === day).map(x => x.kind === 'due' ? `<button class="ev due" data-due="${x.id}">${esc(x.title)}</button>` : `<button class="ev${x.status === 'Done' ? ' done' : ''}" data-visit="${x.id}"><b>${esc(x.start_time || '')}</b> ${esc(x.title)}</button>`).join('') || '<small class="muted">—</small>'}</div>`).join('');
+    }
     $('#scheduleRows').innerHTML = items.length ? items.map(x => x.kind === 'due'
       ? `<tr class="click" data-due="${x.id}"><td>${fmtDate(x.date)}</td><td>—</td><td><b>${esc(x.title)}</b><small>Project due date</small></td><td>—</td><td>—</td><td>${badge(x.status)}</td></tr>`
       : `<tr class="click" data-visit="${x.id}"><td>${fmtDate(x.date)}</td><td>${esc([x.start_time, x.end_time].filter(Boolean).join('–') || 'Any time')}</td><td><b>${esc(x.title)}</b><small>${esc(x.type)}${x.address ? ' · ' + esc(x.address) : ''}</small></td><td>${esc(x.project_name || x.customer_company || x.customer_name || '—')}</td><td>${esc(x.assigned_to || '—')}${x.crew_size ? `<small>crew ${x.crew_size}</small>` : ''}</td><td>${badge(x.status)}</td></tr>`).join('')
       : '<tr><td class="emptyrow" colspan="6">Nothing scheduled in this range.</td></tr>';
-    $$('[data-visit]').forEach(r => r.onclick = () => scheduleVisit(schedState.visits.find(x => x.id === Number(r.dataset.visit))));
-    $$('[data-due]').forEach(r => r.onclick = () => { go('projects'); openRecord('projects', Number(r.dataset.due)); });
+    $$('#v-schedule [data-visit]').forEach(r => r.onclick = () => scheduleVisit(schedState.visits.find(x => x.id === Number(r.dataset.visit))));
+    $$('#v-schedule [data-due]').forEach(r => r.onclick = () => { go('projects'); openRecord('projects', Number(r.dataset.due)); });
   }
   function scheduleVisit(v) {
     const o = schedState.options || { type: ['Site visit', 'Walkthrough', 'Cleaning phase', 'Inspection', 'Punch list', 'Other'], status: ['Scheduled', 'Done', 'Cancelled'] };
@@ -1209,9 +1218,10 @@
   }
   function renderDocs() {
     const k = $('#docKind').value, rows = docState.documents.filter(d => !k || d.kind === k);
-    $('#documentsRows').innerHTML = rows.length ? rows.map(d => `<tr><td><button class="linklike" data-doc="${d.id}">${esc(d.title)}</button><small>${esc(d.file_name || '')}${d.size ? ' · ' + Math.round(d.size / 1024).toLocaleString() + ' KB' : ''}</small></td><td>${esc(d.kind)}</td><td>${esc(d.revision || '—')}</td><td>${esc(d.project_name || d.customer_company || d.customer_name || '—')}</td><td>${fmtDate(d.created_at)}</td><td>${badge(d.analysis_status)}</td></tr>`).join('')
+    $('#documentsRows').innerHTML = rows.length ? rows.map(d => `<tr><td><button class="linklike" data-doc="${d.id}">${esc(d.title)}</button><small>${esc(d.file_name || '')}${d.size ? ' · ' + Math.round(d.size / 1024).toLocaleString() + ' KB' : ''}</small></td><td>${esc(d.kind)}</td><td>${esc(d.revision || '—')}</td><td>${esc(d.project_name || d.customer_company || d.customer_name || '—')}</td><td>${fmtDate(d.created_at)}</td><td>${badge(d.analysis_status)} <button class="btn ghost" data-totake="${d.id}">Takeoff</button></td></tr>`).join('')
       : '<tr><td class="emptyrow" colspan="6">No files yet. Upload a drawing set to start.</td></tr>';
     $$('#documentsRows [data-doc]').forEach(b => b.onclick = () => { const d = docState.documents.find(x => x.id === Number(b.dataset.doc)); downloadFile({ name: d.file_name || d.title, url: d.file_url }); });
+    $$('#documentsRows [data-totake]').forEach(b => b.onclick = () => { const d = docState.documents.find(x => x.id === Number(b.dataset.totake)); openTakeoff(null, d); });
   }
   function uploadDocs() {
     openForm({ title: 'Upload drawings & documents', defs: [
@@ -1220,6 +1230,90 @@
       { name: 'project_id', label: 'Project', type: 'project' }, { name: 'customer_id', label: 'Customer', type: 'customer' }],
       submit: async b => { const fd = new FormData(); [...(b.files || [])].forEach(f => fd.append('files', f)); for (const k of ['kind', 'revision', 'title', 'project_id', 'customer_id']) fd.append(k, b[k] || ''); return api('/api/admin/documents', { method: 'POST', body: fd }); },
       after: res => { toast(`${res.ids.length} file(s) uploaded`); go('documents'); loadDocuments(); } });
+  }
+
+  // ---------- Email Center ----------
+  const mailState = { emails: [] };
+  $('#emailSearch').addEventListener('input', () => renderEmails()); $('#emailStatus').addEventListener('change', () => renderEmails());
+  async function loadEmails() {
+    const r = await api('/api/admin/emails'); mailState.emails = r.emails;
+    kpiTiles('#emailsKpis', [{ label: 'Sent (30 days)', value: r.summary.sent_30d }, { label: 'Failed (30 days)', value: r.summary.failed_30d, alert: r.summary.failed_30d > 0 }, { label: 'Total (30 days)', value: r.summary.total_30d }, { label: 'Inbox in Bright Clean', value: 'Needs M365 app' }]);
+    $('#navEmails').hidden = !r.summary.failed_30d; $('#navEmails').textContent = r.summary.failed_30d;
+    renderEmails();
+  }
+  function renderEmails() {
+    const q = $('#emailSearch').value.trim().toLowerCase(), st = $('#emailStatus').value;
+    const rows = mailState.emails.filter(m => (!st || m.status === st) && (!q || [m.to_addr, m.subject].join(' ').toLowerCase().includes(q)));
+    $('#emailsRows').innerHTML = rows.length ? rows.map(m => `<tr class="click" data-mail="${m.id}"><td>${esc(fmtWhen(m.created_at))}</td><td>${esc(m.to_addr)}</td><td>${esc(m.subject)}</td><td>${m.status === 'sent' ? '<span class="badge green">Sent</span>' : '<span class="badge red">Failed</span>'}</td></tr>`).join('') : '<tr><td class="emptyrow" colspan="4">No emails yet.</td></tr>';
+    $$('[data-mail]').forEach(r => r.onclick = () => { const m = mailState.emails.find(x => x.id === Number(r.dataset.mail)); openDrawer({ title: m.subject || '(no subject)', sub: `To ${esc(m.to_addr)} · ${esc(fmtWhen(m.created_at))} · via ${esc(m.provider || '')}`, body: `${m.error ? `<p class="msg err">${esc(m.error)}</p>` : ''}<pre style="white-space:pre-wrap;font:inherit">${esc(m.body || '')}</pre>`, footer: '' }); });
+  }
+
+  // ---------- Takeoffs ----------
+  const toState = { takeoffs: [], methods: ['Measured', 'From schedule', 'Entered', 'Inferred'] };
+  $('#takeoffsAdd').addEventListener('click', () => openTakeoff(null, null));
+  const CATN = { construction: 'Construction cleaning', multifamily: 'Multifamily', janitorial: 'Commercial janitorial', specialty: 'Specialty' };
+  async function loadTakeoffs() {
+    const r = await api('/api/admin/takeoffs'); Object.assign(toState, r);
+    $('#takeoffsRows').innerHTML = r.takeoffs.length ? r.takeoffs.map(t => `<tr class="click" data-to="${t.id}"><td><b>${esc(t.name)}</b><small>${esc(t.customer_company || t.customer_name || '')}</small></td><td>${esc(t.document_title || '—')}${t.document_revision ? ' · Rev ' + esc(t.document_revision) : ''}</td><td>${esc(CATN[t.category] || t.category)}</td><td class="num">${t.building_sf ? Number(t.building_sf).toLocaleString() : '—'}</td><td class="num">${t.lines.length}</td><td>${badge(t.status)}${t.estimate_id ? ` <button class="linklike" data-est="${t.estimate_id}">Estimate #${t.estimate_id}</button>` : ''}</td></tr>`).join('') : '<tr><td class="emptyrow" colspan="6">No takeoffs yet. Open Drawings & documents and click Takeoff on a drawing set.</td></tr>';
+    $$('#takeoffsRows [data-to]').forEach(r => r.onclick = e => { if (e.target.closest('[data-est]')) return; openTakeoff(toState.takeoffs.find(t => t.id === Number(r.dataset.to)), null); });
+    bindOpeners($('#takeoffsRows'));
+  }
+  async function openTakeoff(t, doc) {
+    if (!scopeState.items.length) { try { Object.assign(scopeState, await api('/api/admin/scopes')); } catch { /* */ } }
+    if (!state.customers || !state.customers.length) { try { state.customers = (await api('/api/admin/customers')).customers || []; } catch { state.customers = []; } }
+    let lines = t ? t.lines.map(l => ({ ...l })) : [];
+    const cur = t || { name: doc ? doc.title : '', category: 'construction', document_id: doc ? doc.id : null, customer_id: doc ? doc.customer_id : null, building_sf: '', questions: '' };
+    const priced = cat => scopeState.items.filter(i => i.active && i.category === cat && !i.missing.length);
+    openDrawer({ title: t ? t.name : 'New takeoff', sub: doc ? `From ${esc(doc.title)}${doc.revision ? ' · Rev ' + esc(doc.revision) : ''}` : (t && t.document_title ? 'From ' + esc(t.document_title) : 'Quantities with their source'),
+      body: `<form id="toForm" class="grid" novalidate>
+        <div class="f wide"><label for="to1">Name</label><input id="to1" name="name" value="${esc(cur.name || '')}"></div>
+        <div class="f"><label for="to2">Category</label><select id="to2" name="category">${Object.entries(CATN).map(([k, v]) => `<option value="${k}"${k === cur.category ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+        <div class="f"><label for="to3">Customer</label><select id="to3" name="customer_id"><option value="">None</option>${state.customers.map(c => `<option value="${c.id}"${String(c.id) === String(cur.customer_id ?? '') ? ' selected' : ''}>${esc(c.company || c.name || c.email)}</option>`).join('')}</select></div>
+        <div class="f"><label for="to4">Building square footage</label><input id="to4" name="building_sf" inputmode="decimal" value="${esc(cur.building_sf ?? '')}"><span class="hint">From the area schedule or code-plan sheet.</span></div>
+        <div class="f"><label>&nbsp;</label><button type="button" class="btn ghost" id="toPhases">Add Clean #1–#3 at this SF</button></div>
+        <div class="f wide"><label for="to5">Questions for the GC / missing information</label><textarea id="to5" name="questions" placeholder="e.g. Exterior glass quantity not on A-sheets; confirm whether basement is in scope">${esc(cur.questions || '')}</textarea></div>
+      </form>
+      <div class="formsection">Quantities</div><table class="tolines" id="toLines"></table><button type="button" class="btn ghost" id="toAddLine">Add quantity</button>
+      <p class="hint">Every measured or scheduled quantity needs its source sheet (for example A1.1), so anyone can check it against the drawing.</p>
+      <div class="totals" id="toTotal"></div><p class="msg" id="toMsg" role="status"></p>`,
+      footer: `<button class="btn" id="toSave">Save takeoff</button><button class="btn ghost" id="toEst">Create estimate from takeoff</button>` });
+    const f = $('#toForm');
+    const draw = () => {
+      const opts = priced(f.elements.category.value);
+      $('#toLines').innerHTML = lines.length ? `<tr><th>Scope item</th><th>Qty</th><th>Sheet</th><th>Method</th><th></th></tr>` + lines.map((l, i) => `<tr><td><select data-k="scope_id" data-i="${i}"><option value="">Choose…</option>${opts.map(o => `<option value="${o.id}"${o.id === l.scope_id ? ' selected' : ''}>${esc(o.name)} (${money(o.unit_price)}/${esc(o.unit)})</option>`).join('')}</select></td><td><input data-k="quantity" data-i="${i}" inputmode="decimal" value="${esc(l.quantity ?? '')}"></td><td><input data-k="sheet" data-i="${i}" value="${esc(l.sheet || '')}" placeholder="A1.1"></td><td><select data-k="method" data-i="${i}">${toState.methods.map(m => `<option${m === l.method ? ' selected' : ''}>${m}</option>`).join('')}</select></td><td><button type="button" class="btn ghost" data-rm="${i}" aria-label="Remove">✕</button></td></tr>`).join('') : '<tr><td class="muted">No quantities yet.</td></tr>';
+      $$('#toLines [data-k]').forEach(el => el.oninput = el.onchange = () => { const l = lines[Number(el.dataset.i)]; l[el.dataset.k] = el.dataset.k === 'scope_id' ? Number(el.value) : el.value; total(); });
+      $$('#toLines [data-rm]').forEach(b => b.onclick = () => { lines.splice(Number(b.dataset.rm), 1); draw(); });
+      total();
+    };
+    const total = () => { const sum = lines.reduce((t, l) => { const it = scopeState.items.find(i => i.id === l.scope_id); return t + (it ? Number(String(l.quantity).replace(/,/g, '')) * it.unit_price : 0) || t; }, 0); $('#toTotal').innerHTML = `<div class="row grand"><span>Priced from your price book (before tax, allowances and alternates)</span><b>${money(sum)}</b></div>`; };
+    f.elements.category.onchange = () => { if (lines.length && !confirm('Changing the category clears the quantities. Continue?')) { f.elements.category.value = cur.category; return; } lines = []; cur.category = f.elements.category.value; draw(); };
+    $('#toAddLine').onclick = () => { lines.push({ scope_id: null, quantity: '', sheet: '', method: 'From schedule' }); draw(); };
+    $('#toPhases').onclick = () => {
+      const sf = Number(String(f.elements.building_sf.value).replace(/,/g, ''));
+      if (f.elements.category.value !== 'construction') return toast('Construction phases apply to the Construction category.', true);
+      if (!(sf > 0)) return toast('Enter the building square footage first.', true);
+      const ph = ['Clean #1', 'Clean #2', 'Clean #3'].map(p => priced('construction').find(i => i.name.startsWith(p)));
+      if (ph.some(x => !x)) return toast('Import the price book first (Cleaning scopes → Import price book).', true);
+      lines = lines.filter(l => !ph.some(p => p.id === l.scope_id)); ph.forEach(p => lines.push({ scope_id: p.id, quantity: sf, sheet: '', method: 'From schedule' })); draw();
+    };
+    const body = () => ({ ...formObj(f), document_id: cur.document_id, lines: lines.map(l => ({ ...l, quantity: String(l.quantity) })) });
+    const fail = e => { $('#toMsg').className = 'msg err'; $('#toMsg').textContent = e.message; };
+    const save = async () => { const r = t ? await api('/api/admin/takeoffs/' + t.id, { method: 'PATCH', json: body() }) : await api('/api/admin/takeoffs', { method: 'POST', json: body() }); t = r.takeoff; return t; };
+    $('#toSave').onclick = async () => { try { await save(); toast('Takeoff saved'); closeDrawer(); go('takeoffs'); loadTakeoffs(); } catch (e) { fail(e); } };
+    $('#toEst').onclick = async () => {
+      try {
+        if (!lines.length) throw new Error('Add at least one quantity first.');
+        const saved = await save();
+        const c = state.customers.find(x => String(x.id) === String(saved.customer_id)) || {};
+        const est = await api('/api/admin/estimates', { method: 'POST', json: { customer_name: c.name || c.company || saved.name, company: c.company || '', email: c.email || '', project_name: saved.name, area_sqft: saved.building_sf || 0,
+          scope: `${CATN[saved.category]} from takeoff #${saved.id}${saved.document_title ? ' (' + saved.document_title + ')' : ''}`, scope_category: saved.category, use_line_items: 1,
+          line_items: saved.lines.map(l => ({ scope_id: l.scope_id, quantity: l.quantity })), notes: saved.questions ? 'Open questions from takeoff:\n' + saved.questions : '' } });
+        await api('/api/admin/takeoffs/' + saved.id, { method: 'PATCH', json: { status: 'Estimated' } });
+        await api('/api/admin/takeoffs/' + saved.id + '/link', { method: 'POST', json: { estimate_id: est.estimate.id } }).catch(() => {});
+        toast(`Estimate #${est.estimate.id} created from the takeoff`); closeDrawer(); go('proposals'); openEstimate(est.estimate.id);
+      } catch (e) { fail(e); }
+    };
+    draw();
   }
 
   // ---------- Reports ----------
