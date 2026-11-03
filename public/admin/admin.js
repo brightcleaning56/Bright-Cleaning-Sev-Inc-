@@ -1213,7 +1213,7 @@
   async function loadDocuments() {
     const r = await api('/api/admin/documents'); Object.assign(docState, r);
     const cur = $('#docKind').value; $('#docKind').innerHTML = '<option value="">All types</option>' + r.kinds.map(k => `<option>${esc(k)}</option>`).join(''); $('#docKind').value = cur;
-    kpiTiles('#documentsKpis', [{ label: 'Files', value: r.documents.length }, { label: 'Drawing sets', value: r.documents.filter(d => d.kind === 'Drawings').length }, { label: 'Addenda', value: r.documents.filter(d => d.kind === 'Addendum').length }, { label: 'Automatic takeoff', value: r.ai_ready ? 'Ready' : 'Needs API key', alert: !r.ai_ready }]);
+    kpiTiles('#documentsKpis', [{ label: 'Files', value: r.documents.length }, { label: 'Drawing sets', value: r.documents.filter(d => d.kind === 'Drawings').length }, { label: 'Addenda', value: r.documents.filter(d => d.kind === 'Addendum').length }, { label: 'AI takeoff', value: r.ai_ready ? 'Ready' : 'Off', sub: r.ai_ready ? '' : 'needs Anthropic API key', alert: !r.ai_ready }]);
     renderDocs();
   }
   function renderDocs() {
@@ -1237,7 +1237,7 @@
   $('#emailSearch').addEventListener('input', () => renderEmails()); $('#emailStatus').addEventListener('change', () => renderEmails());
   async function loadEmails() {
     const r = await api('/api/admin/emails'); mailState.emails = r.emails;
-    kpiTiles('#emailsKpis', [{ label: 'Sent (30 days)', value: r.summary.sent_30d }, { label: 'Failed (30 days)', value: r.summary.failed_30d, alert: r.summary.failed_30d > 0 }, { label: 'Total (30 days)', value: r.summary.total_30d }, { label: 'Inbox in Bright Clean', value: 'Needs M365 app' }]);
+    kpiTiles('#emailsKpis', [{ label: 'Sent (30 days)', value: r.summary.sent_30d }, { label: 'Failed (30 days)', value: r.summary.failed_30d, alert: r.summary.failed_30d > 0 }, { label: 'Total (30 days)', value: r.summary.total_30d }, { label: 'Outlook inbox here', value: 'Not connected', sub: 'needs Microsoft 365 app' }]);
     $('#navEmails').hidden = !r.summary.failed_30d; $('#navEmails').textContent = r.summary.failed_30d;
     renderEmails();
   }
