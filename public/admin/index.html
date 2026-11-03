@@ -151,6 +151,18 @@
   table.t tbody tr { transition: background-color .12s ease; } table.t tbody tr.click:hover { background: var(--bluebg); }
   .autobox { margin: 8px 0 4px; padding: 12px 14px; border-radius: 10px; background: linear-gradient(90deg, var(--greenbg), var(--card)); border: 1px solid #cfe9db; }
   @media (prefers-reduced-motion: reduce) { .view.active, .funnel .st, .live::before { animation: none; } .kpi:hover, .btn:active { transform: none; } }
+  .cphead { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .cphead h1 { margin: 0; } .cpmeta { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 8px; color: var(--muted); font-size: 14px; } .cpmeta b { color: var(--ink, #10263e); font-weight: 600; }
+  .cpact { display: flex; flex-wrap: wrap; gap: 8px; } .cpact .btn { padding: 9px 12px; font-size: 14px; }
+  .fin { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin: 16px 0; } .fin .kpi b { font-size: 18px; }
+  .ctabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line2); margin: 6px 0 14px; scrollbar-width: thin; }
+  .ctabs button { border: 0; background: none; padding: 10px 12px; font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; border-bottom: 3px solid transparent; color: var(--muted); }
+  .ctabs button.on { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; } .ctabs small { background: var(--bg); border-radius: 999px; padding: 1px 7px; margin-left: 4px; }
+  .tl li { list-style: none; padding: 10px 0; border-bottom: 1px solid var(--line2); } .tl { padding: 0; margin: 0; } .tl .ty { display: inline-block; min-width: 54px; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--blue); }
+  .inl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: end; margin: 10px 0 14px; padding: 12px; background: var(--bg); border-radius: 10px; }
+  .inl .wide { grid-column: 1 / -1; } .inl input, .inl select, .inl textarea { width: 100%; }
+  @media (max-width: 1100px) { .fin { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .fin { grid-template-columns: repeat(2, minmax(0, 1fr)); } .inl { grid-template-columns: 1fr; } }
   .badge.blue { background: var(--bluebg); color: #0f5a94; }
   .badge.green { background: var(--greenbg); color: #1d6b47; }
   .badge.amber { background: var(--amberbg); color: var(--amber); }
@@ -366,6 +378,7 @@
       <div class="pagehead"><div><h1>Takeoffs</h1><p>Quantities from drawings, each tied to its source sheet and how it was found (measured, from a schedule, entered or inferred), then priced from your price book in one click.</p></div><button class="btn" id="takeoffsAdd">New takeoff</button></div>
       <div class="tablewrap"><table class="t"><thead><tr><th>Takeoff</th><th>Drawing set</th><th>Category</th><th class="num">Building SF</th><th class="num">Lines</th><th>Status</th></tr></thead><tbody id="takeoffsRows"></tbody></table></div>
     </section>
+    <section class="view" id="v-customer"><div id="custPage"></div></section>
     <section class="view" id="v-reports">
       <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><div class="headact"><button class="btn ghost" id="repCsv" type="button">Export CSV</button><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select></div></div>
       <div class="kpis small" id="repKpis"></div>

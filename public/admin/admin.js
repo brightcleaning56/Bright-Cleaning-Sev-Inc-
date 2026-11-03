@@ -126,12 +126,12 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['overview', 'leads', 'customers', 'customer', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (!VIEWS.includes(view)) view = 'overview';
     state.view = view;
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'v-' + view));
-    const navView = view === 'estimator' ? 'proposals' : view;
+    const navView = view === 'estimator' ? 'proposals' : view === 'customer' ? 'customers' : view;
     $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === navView));
     const hash = '#' + view;
     if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash);
@@ -162,6 +162,7 @@
       if (view === 'quality') await loadQuality();
       if (view === 'documents') await loadDocuments();
       if (view === 'reports') await loadReports();
+      if (view === 'customer') await loadCustomerPage();
       if (view === 'emails') await loadEmails();
       if (view === 'takeoffs') await loadTakeoffs();
       if (view === 'scopes') await loadScopes();
@@ -391,9 +392,112 @@
     const rows = state.customers.filter(c => !q || [c.company, c.name, c.email, c.phone, c.notes].join(' ').toLowerCase().includes(q));
     $('#custRows').innerHTML = rows.length ? rows.map(c => `<tr class="click" data-cust="${c.id}"><td><b>${esc(c.company || c.name || c.email)}</b>${c.company && c.name ? `<small>${esc(c.name)}</small>` : ''}</td><td>${esc(c.email || '—')}<small>${esc(c.phone || '')}</small></td><td class="num">${c.leads.length}</td><td class="num">${c.proposals.length}</td><td class="num">${c.projects.length}</td><td class="num">${money(c.billed)}</td><td class="num">${c.billed - c.paid > 0 ? `<b>${money(c.billed - c.paid)}</b>` : money(0)}</td></tr>`).join('')
       : `<tr><td class="emptyrow" colspan="7">${q ? 'No customers match your search.' : 'Customers are added automatically from bid requests, inquiries and estimates, or click “Add customer”.'}</td></tr>`;
-    $$('[data-cust]').forEach(r => r.onclick = () => openCustomer(state.customers.find(c => c.id === Number(r.dataset.cust))));
+    $$('[data-cust]').forEach(r => r.onclick = () => openCustomerPage(Number(r.dataset.cust)));
   }
   $('#custAdd').addEventListener('click', () => openCustomer(null));
+  // ---------- Customer profile page (full CRM workspace) ----------
+  const cp = { id: Number(sessionStorage.getItem('bc_cust')) || null, tab: 'overview', d: null };
+  function openCustomerPage(id) { cp.id = id; cp.tab = 'overview'; sessionStorage.setItem('bc_cust', id); go('customer'); }
+  async function loadCustomerPage() {
+    if (!cp.id) return go('customers', true);
+    try { cp.d = await api(`/api/admin/customers/${cp.id}/profile`); } catch (e) { $('#custPage').innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+    renderCustomerPage();
+  }
+  const TABS = [['overview', 'Overview'], ['contacts', 'Contacts'], ['properties', 'Properties'], ['notes', 'Notes'], ['calls', 'Calls'], ['emails', 'Emails'], ['issues', 'Issues'], ['estimates', 'Estimates'], ['proposals', 'Proposals'], ['contracts', 'Contracts'], ['projects', 'Projects'], ['invoices', 'Invoices'], ['documents', 'Documents'], ['activity', 'Activity']];
+  function renderCustomerPage() {
+    const d = cp.d, c = d.customer, f = d.financials, pc = d.contacts.find(x => x.is_primary) || d.contacts[0] || {};
+    const cnt = { contacts: d.contacts.length, properties: d.properties.length, notes: d.notes.length, calls: d.calls.length, emails: d.emails.length, issues: d.issues.length, estimates: d.estimates.length, proposals: d.proposals.length, contracts: d.contracts.length, projects: d.projects.length, invoices: d.invoices.length, documents: d.documents.length };
+    const tile = (l, o, sub) => `<div class="kpi"><span style="min-width:0"><span>${esc(l)}</span><b>${money(o.value)}</b><small class="flat">${o.count} ${esc(sub)}</small></span></div>`;
+    $('#custPage').innerHTML = `
+      <p><button class="linklike" id="cpBack">← All customers</button></p>
+      <div class="cphead"><div><h1>${esc(c.company || c.name || c.email)} ${badge(c.status || 'Active')}</h1>
+        <div class="cpmeta"><span>Primary contact <b>${esc(pc.name || '—')}</b></span><span>Phone <b>${pc.phone || c.phone ? `<a href="tel:${esc(pc.phone || c.phone)}">${esc(pc.phone || c.phone)}</a>` : '—'}</b></span><span>Email <b>${esc(pc.email || c.email || '—')}</b></span><span>Address <b>${esc(c.address || '—')}</b></span><span>Account owner <b>${esc(c.account_owner || 'Unassigned')}</b></span><span>Customer since <b>${fmtDate(c.created_at)}</b></span></div></div>
+        <div class="cpact"><button class="btn" data-a="note">New note</button><button class="btn ghost" data-a="call">Log call</button><button class="btn ghost" data-a="email">Send email</button><button class="btn ghost" data-a="estimate">Create estimate</button><button class="btn ghost" data-a="proposal">Create proposal</button><button class="btn ghost" data-a="issue">Create issue</button><button class="btn ghost" data-a="edit">Edit account</button>${d.role === 'owner' ? '<button class="btn ghost danger" data-a="remove">Remove</button>' : ''}</div></div>
+      <div class="fin">${tile('Draft estimates', f.estimates, 'estimates')}${tile('Proposals awaiting reply', f.proposals_out, 'sent')}${tile('Approved proposals', f.approved, 'approved · not revenue')}${tile('Signed contracts', f.contracts_signed, `signed${f.contracts_unsigned.count ? ` · ${f.contracts_unsigned.count} unsigned (${money(f.contracts_unsigned.value)})` : ''}`)}${tile('Invoiced', f.invoiced, 'invoices')}${tile('Collected', f.collected, 'payments')}${tile('Outstanding', f.outstanding, 'open invoices')}</div>
+      <div class="ctabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-t="${k}" class="${cp.tab === k ? 'on' : ''}" aria-selected="${cp.tab === k}">${l}${cnt[k] != null ? `<small>${cnt[k]}</small>` : ''}</button>`).join('')}</div>
+      <div id="cpBody"></div>`;
+    $('#cpBack').onclick = () => go('customers');
+    $$('#custPage .ctabs button').forEach(b => b.onclick = () => { cp.tab = b.dataset.t; renderCustomerPage(); });
+    $$('#custPage [data-a]').forEach(b => b.onclick = () => custAction(b.dataset.a));
+    renderCustTab();
+  }
+  const rowsOr = (rows, cols, empty) => rows.length ? `<div class="tablewrap"><table class="t"><thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>` : `<p class="empty">${empty}</p>`;
+  function renderCustTab() {
+    const d = cp.d, c = d.customer, B = $('#cpBody'), t = cp.tab, o = d.options;
+    const recLink = (type, id, label) => `<button class="linklike" data-rec="${type}:${id}">${esc(label)}</button>`;
+    if (t === 'overview') {
+      const openIss = d.issues.filter(i => !['Resolved', 'Closed'].includes(i.status));
+      B.innerHTML = `<div class="two"><div class="card"><h2>Customer details</h2><dl class="stat">${[['Company', c.company], ['Customer type', c.customer_type], ['Status', c.status], ['Industry', c.industry], ['Account owner', c.account_owner], ['Source', c.source], ['Tax ID / EIN', c.tax_id], ['Properties', d.properties.length], ['Contacts', d.contacts.length]].map(([k, v]) => `<dt>${k}</dt><dd>${esc(v == null || v === '' ? '—' : v)}</dd>`).join('')}</dl></div>
+        <div class="card"><h2>Recent communication</h2>${d.communications.length ? '<ul class="tl">' + d.communications.slice(0, 6).map(x => `<li><span class="ty">${x.type}</span> <b>${esc(x.title)}</b> <small class="muted">${esc(fmtWhen(x.at))}${x.by ? ' · ' + esc(x.by) : ''}</small><br><small>${esc((x.text || '').slice(0, 160))}</small></li>`).join('') + '</ul>' : '<p class="empty">No calls, emails or notes yet.</p>'}</div></div>
+        <div class="two"><div class="card"><h2>Open issues &amp; complaints (${openIss.length})</h2>${openIss.length ? '<ul class="mini">' + openIss.slice(0, 5).map(i => `<li><b>${esc(i.title)}</b> ${badge(i.priority)} ${badge(i.status)}<br><small class="muted">${esc(i.assigned_to || 'Unassigned')}${i.due_date ? ' · due ' + fmtDate(i.due_date) : ''}</small></li>`).join('') + '</ul>' : '<p class="empty">No open issues.</p>'}</div>
+        <div class="card"><h2>Current projects</h2>${d.projects.length ? '<ul class="mini">' + d.projects.map(p => `<li>${recLink('projects', p.id, p.name || 'Project #' + p.id)} ${badge(p.status)}<br><small class="muted">${p.due_date ? 'due ' + fmtDate(p.due_date) : ''}</small></li>`).join('') + '</ul>' : '<p class="empty">No projects.</p>'}</div></div>`;
+    } else if (t === 'contacts') {
+      B.innerHTML = `<div class="card"><h2>Contacts</h2><form class="inl" id="ctForm"><div><label>Name *</label><input name="name" required></div><div><label>Title</label><input name="title"></div><div><label>Email</label><input name="email" type="email"></div><div><label>Phone</label><input name="phone"></div><div><label class="chk"><input type="checkbox" name="is_primary"> Primary contact</label></div><div><label class="chk"><input type="checkbox" name="can_sign"> Can sign contracts</label></div><div class="wide"><button class="btn">Save contact</button></div></form>
+        ${rowsOr(d.contacts.map(k => `<tr><td><b>${esc(k.name)}</b>${k.is_primary ? ' <span class="badge green">Primary</span>' : ''}${k.can_sign ? ' <span class="badge blue">Signer</span>' : ''}<small>${esc(k.title || '')}</small></td><td>${esc(k.email || '—')}</td><td>${esc(k.phone || '—')}</td><td>${k.is_primary ? '' : `<button class="btn small ghost" data-prim="${k.id}">Make primary</button> <button class="btn small danger" data-rmct="${k.id}">Remove</button>`}</td></tr>`), ['Name', 'Email', 'Phone', ''], 'No contacts yet.')}</div>`;
+      $('#ctForm').onsubmit = async e => { e.preventDefault(); try { const b = formObj(e.target); b.is_primary = e.target.elements.is_primary.checked; b.can_sign = e.target.elements.can_sign.checked; await api(`/api/admin/customers/${c.id}/contacts`, { method: 'POST', json: b }); toast('Contact saved'); loadCustomerPage(); } catch (err) { toast(err.message, true); } };
+      $$('[data-prim]').forEach(b => b.onclick = async () => { try { await api(`/api/admin/customers/${c.id}/contacts/${b.dataset.prim}`, { method: 'PATCH', json: { is_primary: true } }); toast('Primary contact updated'); loadCustomerPage(); } catch (err) { toast(err.message, true); } });
+      $$('[data-rmct]').forEach(b => b.onclick = async () => { if (!confirm('Remove this contact?')) return; try { await api(`/api/admin/customers/${c.id}/contacts/${b.dataset.rmct}`, { method: 'DELETE' }); toast('Contact removed'); loadCustomerPage(); } catch (err) { toast(err.message, true); } });
+    } else if (t === 'properties') {
+      B.innerHTML = `<div class="card"><h2>Properties &amp; service locations</h2><form class="inl" id="prForm"><div><label>Name *</label><input name="name" placeholder="Main Campus – Bldg B" required></div><div><label>Type</label><select name="property_type">${o.property_types.map(x => `<option>${x}</option>`).join('')}</select></div><div><label>Address</label><input name="address"></div><div><label>Units</label><input name="units" inputmode="numeric"></div><div><label>Square feet</label><input name="square_feet" inputmode="decimal"></div><div class="wide"><label>Access instructions (internal)</label><textarea name="access_notes" rows="2" placeholder="Gate code, parking, key pickup, contact on site"></textarea></div><div class="wide"><button class="btn">Save property</button></div></form>
+        ${rowsOr(d.properties.map(p => `<tr><td><b>${esc(p.name)}</b><small>${esc(p.property_type || '')}</small></td><td>${esc(p.address || '—')}</td><td>${p.units ?? '—'} units · ${p.square_feet ? Number(p.square_feet).toLocaleString() + ' SF' : '— SF'}</td><td><small>${esc(p.access_notes || '')}</small></td><td>${badge(p.status)} <button class="btn small ghost" data-pst="${p.id}" data-to="${p.status === 'Active' ? 'Inactive' : 'Active'}">${p.status === 'Active' ? 'Deactivate' : 'Activate'}</button></td></tr>`), ['Property', 'Address', 'Size', 'Access', 'Status'], 'No properties yet.')}</div>`;
+      $('#prForm').onsubmit = async e => { e.preventDefault(); try { await api(`/api/admin/customers/${c.id}/properties`, { method: 'POST', json: formObj(e.target) }); toast('Property saved'); loadCustomerPage(); } catch (err) { toast(err.message, true); } };
+      $$('[data-pst]').forEach(b => b.onclick = async () => { try { await api(`/api/admin/customers/${c.id}/properties/${b.dataset.pst}`, { method: 'PATCH', json: { status: b.dataset.to } }); loadCustomerPage(); } catch (err) { toast(err.message, true); } });
+    } else if (t === 'notes') {
+      B.innerHTML = `<div class="card"><h2>Internal notes</h2><p class="muted">Visible to your team only. Notes never appear in customer emails or proposals.</p><form class="inl" id="ntForm"><div><label>Category</label><select name="category">${o.note_categories.map(x => `<option>${x}</option>`).join('')}</select></div><div><label class="chk"><input type="checkbox" name="pinned"> Pin to top</label></div><div></div><div class="wide"><label>Note *</label><textarea name="body" rows="3" required></textarea></div><div class="wide"><button class="btn">Save note</button></div></form>
+        ${d.notes.length ? '<ul class="tl">' + d.notes.map(n => `<li>${n.pinned ? '<span class="badge amber">Pinned</span> ' : ''}<span class="ty">${esc(n.category)}</span> <small class="muted">${esc(n.author || 'unknown')} · ${esc(fmtWhen(n.created_at))}${n.updated_at !== n.created_at ? ' · edited' : ''}</small><br>${esc(n.body)} <button class="linklike" data-pin="${n.id}" data-v="${n.pinned ? 0 : 1}">${n.pinned ? 'Unpin' : 'Pin'}</button></li>`).join('') + '</ul>' : '<p class="empty">No notes yet.</p>'}</div>`;
+      $('#ntForm').onsubmit = async e => { e.preventDefault(); try { await api(`/api/admin/customers/${c.id}/notes`, { method: 'POST', json: { ...formObj(e.target), pinned: e.target.elements.pinned.checked } }); toast('Note saved'); loadCustomerPage(); } catch (err) { toast(err.message, true); } };
+      $$('[data-pin]').forEach(b => b.onclick = async () => { try { await api(`/api/admin/customers/${c.id}/notes/${b.dataset.pin}`, { method: 'PATCH', json: { pinned: b.dataset.v === '1' } }); loadCustomerPage(); } catch (err) { toast(err.message, true); } });
+    } else if (t === 'calls') {
+      B.innerHTML = `<div class="card"><h2>Calls</h2><button class="btn" id="cpLog">Log call</button>${rowsOr(d.calls.map(x => `<tr><td>${esc(fmtWhen(x.created_at))}<small>${esc(x.direction)}</small></td><td>${esc(x.contact_name || x.phone || '—')}</td><td>${badge(x.purpose)}</td><td>${esc(x.outcome)}</td><td>${esc(x.summary || '')}</td></tr>`), ['When', 'Caller', 'Purpose', 'Outcome', 'Summary'], 'No calls recorded for this customer.')}</div>`;
+      $('#cpLog').onclick = () => custAction('call');
+    } else if (t === 'emails') {
+      B.innerHTML = `<div class="card"><h2>Emails</h2><p class="muted">Every email the system sent to this customer's contacts. Replies from customers arrive in Outlook until the Microsoft 365 inbox is connected.</p><button class="btn" id="cpMail">Send email</button>${rowsOr(d.emails.map(m => `<tr class="click" data-ml="${m.id}"><td>${esc(fmtWhen(m.created_at))}</td><td>${esc(m.to_addr)}</td><td>${esc(m.subject)}</td><td>${m.status === 'sent' ? '<span class="badge green">Sent</span>' : '<span class="badge red">Failed</span>'}</td></tr>`), ['When', 'To', 'Subject', 'Status'], 'No emails yet.')}</div>`;
+      $('#cpMail').onclick = () => custAction('email');
+      $$('[data-ml]').forEach(r => r.onclick = () => { const m = d.emails.find(x => x.id === Number(r.dataset.ml)); openDrawer({ title: m.subject, sub: `To ${esc(m.to_addr)} · ${esc(fmtWhen(m.created_at))}`, body: `<pre style="white-space:pre-wrap;font:inherit">${esc(m.body || '')}</pre>`, footer: '' }); });
+    } else if (t === 'issues') {
+      B.innerHTML = `<div class="card"><h2>Issues &amp; complaints</h2><button class="btn" id="cpIss">Create issue</button>${rowsOr(d.issues.map(i => `<tr class="click" data-iss="${i.id}"><td><b>${esc(i.title)}</b><small>${esc(i.type)} · ${esc(i.category || '')}</small></td><td>${badge(i.priority)}</td><td>${badge(i.status)}</td><td>${esc(i.assigned_to || 'Unassigned')}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td></tr>`), ['Item', 'Priority', 'Status', 'Assigned', 'Due'], 'No issues for this customer.')}</div>`;
+      $('#cpIss').onclick = () => custAction('issue');
+      $$('[data-iss]').forEach(r => r.onclick = () => openIssue(d.issues.find(i => i.id === Number(r.dataset.iss)), { id: c.id }));
+    } else if (t === 'estimates' || t === 'proposals') {
+      const list = t === 'estimates' ? d.estimates : d.proposals;
+      B.innerHTML = `<div class="card"><h2>${t === 'estimates' ? 'Estimates (internal drafts)' : 'Proposals (sent to the customer)'}</h2><button class="btn" id="cpEst">${t === 'estimates' ? 'Create estimate' : 'Create proposal'}</button>${rowsOr(list.map(e => `<tr class="click" data-est="${e.id}"><td>#${e.id} <b>${esc(e.project_name || '')}</b></td><td>${esc(e.scope_category || 'Not categorized')}</td><td class="num">${money(e.proposal_total)}</td><td>${badge(e.status)}</td><td>${e.sent_at ? fmtDate(e.sent_at) : '—'}</td></tr>`), ['Proposal', 'Service', 'Total', 'Status', 'Sent'], t === 'estimates' ? 'No draft estimates.' : 'No proposals sent yet.')}</div>`;
+      $('#cpEst').onclick = () => custAction(t === 'estimates' ? 'estimate' : 'proposal'); bindOpeners(B);
+    } else if (t === 'contracts') {
+      B.innerHTML = `<div class="card"><h2>Contracts</h2>${rowsOr(d.contracts.map(k => `<tr class="click" data-rec="contracts:${k.id}"><td><b>${esc(k.title || 'Contract #' + k.id)}</b></td><td class="num">${money(k.value)}</td><td>${badge(k.status)}</td><td>${badge(k.signature_status || 'Not sent')}</td><td>${k.start_date ? fmtDate(k.start_date) : '—'} – ${k.end_date ? fmtDate(k.end_date) : '—'}</td></tr>`), ['Contract', 'Value', 'Status', 'Signature', 'Term'], 'No contracts.')}</div>`; bindOpeners(B);
+    } else if (t === 'projects') {
+      B.innerHTML = `<div class="card"><h2>Projects</h2>${rowsOr(d.projects.map(p => `<tr class="click" data-rec="projects:${p.id}"><td><b>${esc(p.name || 'Project #' + p.id)}</b><small>${esc(p.site_address || '')}</small></td><td>${badge(p.status)}</td><td>${p.progress || 0}%</td><td>${p.due_date ? fmtDate(p.due_date) : '—'}</td></tr>`), ['Project', 'Status', 'Progress', 'Due'], 'No projects.')}</div>`; bindOpeners(B);
+    } else if (t === 'invoices') {
+      B.innerHTML = `<div class="card"><h2>Invoices &amp; payments</h2>${rowsOr(d.invoices.map(i => `<tr class="click" data-rec="invoices:${i.id}"><td><b>${esc(i.invoice_number || '#' + i.id)}</b></td><td class="num">${money(i.amount)}</td><td class="num">${money(i.paid_amount)}</td><td class="num">${money(Math.max(0, i.amount - i.paid_amount))}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td><td>${badge(i.status)}</td></tr>`), ['Invoice', 'Amount', 'Paid', 'Balance', 'Due', 'Status'], 'No invoices.')}</div>`; bindOpeners(B);
+    } else if (t === 'documents') {
+      B.innerHTML = `<div class="card"><h2>Documents</h2><button class="btn" id="cpUp">Upload files</button>${rowsOr(d.documents.map(x => `<tr><td><button class="linklike" data-dl="${x.id}">${esc(x.title)}</button><small>${esc(x.file_name || '')}</small></td><td>${esc(x.kind)}</td><td>${esc(x.revision || '—')}</td><td>${fmtDate(x.created_at)}</td></tr>`), ['Document', 'Type', 'Rev', 'Uploaded'], 'No documents for this customer.')}</div>`;
+      $('#cpUp').onclick = () => uploadDocs();
+      $$('[data-dl]').forEach(b => b.onclick = () => { const x = d.documents.find(y => y.id === Number(b.dataset.dl)); downloadFile({ name: x.file_name || x.title, url: x.file_url }); });
+    } else if (t === 'activity') {
+      B.innerHTML = `<div class="card"><h2>Activity history</h2><p class="muted">Every change to this customer and its records, with who made it and when.</p><div class="activity">${renderActivity(d.activity) || '<p class="empty">No activity yet.</p>'}</div></div>`;
+    }
+  }
+  async function custAction(a) {
+    const d = cp.d, c = d.customer, pc = d.contacts.find(x => x.is_primary) || {};
+    if (a === 'note') { cp.tab = 'notes'; renderCustomerPage(); setTimeout(() => $('#ntForm textarea').focus(), 50); }
+    else if (a === 'call') logCall({ customer_id: c.id, company: c.company || '', contact_name: pc.name || '', phone: pc.phone || c.phone || '' });
+    else if (a === 'issue') openIssue(null, { id: c.id });
+    else if (a === 'estimate' || a === 'proposal') { go('estimator'); setTimeout(() => openEstimator(null, { contact_name: pc.name || c.name || '', company: c.company || '', email: pc.email || c.email || '', address: c.address || '' }), 50); }
+    else if (a === 'email') {
+      const tos = d.contacts.filter(k => k.email);
+      if (!tos.length) return toast('Add a contact with an email address first.', true);
+      openForm({ title: 'Send email', sub: esc(c.company || c.name), defs: [{ name: 'to', label: 'To', type: 'select', options: tos.map(k => [k.email, `${k.name} <${k.email}>`]) }, { name: 'subject', label: 'Subject', wide: true }, { name: 'body', label: 'Message', type: 'textarea' }],
+        values: { to: pc.email || tos[0].email }, submit: b => api(`/api/admin/customers/${c.id}/email`, { method: 'POST', json: b }), after: () => { toast('Email sent'); loadCustomerPage(); } });
+    } else if (a === 'edit') {
+      openForm({ title: 'Edit account', defs: [{ name: 'company', label: 'Company' }, { name: 'status', label: 'Status', type: 'select', options: d.options.statuses }, { name: 'account_owner', label: 'Account owner', type: 'select', options: [['', 'Unassigned'], ...d.users] }, { name: 'customer_type', label: 'Customer type', type: 'select', options: ['', 'Commercial', 'General contractor', 'Property management', 'Multifamily', 'Healthcare', 'Education', 'Government', 'Residential'] }, { name: 'industry', label: 'Industry' }, { name: 'tax_id', label: 'Tax ID / EIN' }, { name: 'phone', label: 'Main phone' }, { name: 'address', label: 'Billing address', wide: true }],
+        values: c, submit: b => api(`/api/admin/customers/${c.id}/account`, { method: 'PATCH', json: b }), after: r => { toast(r.changed.length ? 'Saved' : 'No changes'); loadCustomerPage(); } });
+    } else if (a === 'remove') {
+      const label = c.company || c.name || c.email;
+      const typed = prompt(`Removing a customer cannot be undone. Customers with proposals, contracts, projects or invoices cannot be removed; set them to Inactive instead.\n\nType the customer name to confirm:\n${label}`);
+      if (typed == null) return;
+      try { await api('/api/admin/customers/' + c.id, { method: 'DELETE', json: { confirm: typed } }); toast('Customer removed'); sessionStorage.removeItem('bc_cust'); go('customers'); } catch (err) { toast(err.message, true); }
+    }
+  }
+
   function openCustomer(c) {
     const isNew = !c;
     c = c || { name: '', company: '', email: '', phone: '', address: '', notes: '', leads: [], proposals: [], contracts: [], projects: [], invoices: [], billed: 0, paid: 0 };
@@ -1158,7 +1262,7 @@
     $$('#gResults [data-g]').forEach(b => b.onclick = async () => {
       const x = r.results[Number(b.dataset.g)]; box.hidden = true; $('#gSearch').value = '';
       if (x.type === 'lead') { go('leads'); openLead(x.id); }
-      else if (x.type === 'customer') { go('customers'); setTimeout(() => { const c = (state.customers || []).find(c => c.id === x.id); if (c) openCustomer(c); }, 500); }
+      else if (x.type === 'customer') openCustomerPage(x.id);
       else if (x.type === 'estimate') { go('proposals'); openEstimate(x.id); }
       else if (x.type === 'project') { go('projects'); openRecord('projects', x.id); }
       else if (x.type === 'invoice') { go('invoices'); openRecord('invoices', x.id); }
