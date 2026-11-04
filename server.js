@@ -107,6 +107,7 @@ require('./qc')(app,{db,auth,logAction,clean,adminEmail});
 require('./docs2')(app,{db,auth,logAction,clean,adminEmail,upload,uploadDir});
 require('./engine')(app,{db,auth,logAction,clean});
 require('./contracts2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
+require('./calls2')(app,{db,auth,logAction,clean});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public')));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));

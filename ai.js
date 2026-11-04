@@ -124,6 +124,33 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
     try { const ai = await triageLead(Number(req.params.id)); logAction(req, 'ran AI triage', 'lead', Number(req.params.id), ai.summary.slice(0, 120)); res.json({ ai }); }
     catch (e) { if (e.code !== 'AI_OFF') logRun('ai_lead_triage', Number(req.params.id), 'failed', e.message); fail(res, e); }
   });
+  // Call intelligence: analyze a call's transcript or notes. Suggestions only — nothing is changed on the lead or
+  // customer, and the follow-up date is applied only if the user clicks it in the UI.
+  app.post('/api/admin/ai/calls/:id/analyze', auth, async (req, res) => {
+    const c = db.prepare('SELECT * FROM calls WHERE id=?').get(Number(req.params.id)); if (!c) return res.status(404).json({ error: 'Call not found.' });
+    const src = String((req.body || {}).transcript || c.transcript || c.summary || '').trim();
+    if (src.length < 40) return res.status(400).json({ error: 'Add the call transcript or detailed notes (at least a few sentences) first.' });
+    try {
+      const text = await call([{ role: 'user', content: `CALL ANALYSIS for Bright Cleaning Sev Inc. (commercial & construction cleaning, Iowa). Today is ${require('./bizdate').today()}.
+Caller: ${c.contact_name || ''} ${c.company ? '(' + c.company + ')' : ''} · ${c.direction} · purpose logged: ${c.purpose}
+Transcript or notes:
+"""${src.slice(0, 30000)}"""
+Return ONLY JSON: {"summary":"3-5 sentences","intent":"New bid request|Pricing question|Schedule change|Complaint|Billing question|Vendor/Sales|Job applicant|Other","sentiment":"Positive|Neutral|Negative","urgency":"Low|Normal|High",
+"lead_score":0-100 or null when not a sales opportunity,"score_reasons":["short"],"details":{"service":"","square_feet":number or null,"site_address":"","timeline":"","budget":""},
+"action_items":[{"task":"","owner":"Office|Estimator|Manager|Crew","due":"YYYY-MM-DD or empty"}],"follow_up_date":"YYYY-MM-DD or empty","reply_draft":"short follow-up email we could send","risks":["e.g. complaint risk, unclear scope"]}
+Only use facts stated in the call. Leave anything not mentioned empty or null.` }], 'You analyze phone calls for a cleaning contractor. You never invent facts.');
+      const r = parseJSON(text), pick = (v, l, d) => l.includes(v) ? v : d, isD = x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ''));
+      const ai = { summary: clean(r.summary, 1500), intent: pick(r.intent, ['New bid request', 'Pricing question', 'Schedule change', 'Complaint', 'Billing question', 'Vendor/Sales', 'Job applicant', 'Other'], 'Other'),
+        sentiment: pick(r.sentiment, ['Positive', 'Neutral', 'Negative'], 'Neutral'), urgency: pick(r.urgency, ['Low', 'Normal', 'High'], 'Normal'),
+        lead_score: Number.isFinite(Number(r.lead_score)) && r.lead_score !== null ? Math.max(0, Math.min(100, Math.round(Number(r.lead_score)))) : null, score_reasons: (r.score_reasons || []).slice(0, 5).map(x => clean(x, 160)).filter(Boolean),
+        details: { service: clean((r.details || {}).service, 120), square_feet: Number((r.details || {}).square_feet) > 0 ? Number(r.details.square_feet) : null, site_address: clean((r.details || {}).site_address, 200), timeline: clean((r.details || {}).timeline, 120), budget: clean((r.details || {}).budget, 120) },
+        action_items: (r.action_items || []).slice(0, 10).map(x => ({ task: clean(x.task, 200), owner: clean(x.owner, 30), due: isD(x.due) ? x.due : '' })).filter(x => x.task),
+        follow_up_date: isD(r.follow_up_date) ? r.follow_up_date : '', reply_draft: clean(r.reply_draft, 3000), risks: (r.risks || []).slice(0, 5).map(x => clean(x, 200)).filter(Boolean), at: new Date().toISOString() };
+      db.prepare('UPDATE calls SET transcript=COALESCE(?,transcript), ai=?, sentiment=?, intent=?, lead_score=?, analyzed_at=? WHERE id=?').run((req.body || {}).transcript ? src.slice(0, 60000) : null, JSON.stringify(ai), ai.sentiment, ai.intent, ai.lead_score, ai.at, c.id);
+      logAction(req, 'ran AI call analysis', 'call', c.id, `${ai.intent}, ${ai.sentiment}${ai.lead_score != null ? ', score ' + ai.lead_score : ''}`);
+      res.json({ ai });
+    } catch (e) { if (e.code !== 'AI_OFF') logRun('ai_call_analysis', c.id, 'failed', e.message); fail(res, e); }
+  });
   app.post('/api/admin/ai/calls/extract', auth, async (req, res) => {
     try { res.json({ fields: await extractCall(String((req.body || {}).notes || '')) }); } catch (e) { fail(res, e); }
   });

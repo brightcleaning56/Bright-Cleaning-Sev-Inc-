@@ -76,7 +76,7 @@ module.exports = function mountSuite(app, ctx) {
     purpose: ['New business', 'Bid request', 'Existing customer', 'Complaint', 'Invoice question', 'Pricing question', 'Other'] };
   const callRow = id => db.prepare(`SELECT c.*, cu.company customer_company, cu.name customer_name FROM calls c LEFT JOIN customers cu ON cu.id=c.customer_id WHERE c.id=?`).get(id);
   app.get('/api/admin/calls', auth, (req, res) => {
-    const since = new Date(); since.setHours(0, 0, 0, 0);
+    const since = new Date(require('./bizdate').startUTC(today())); // start of the business day (Central), not UTC midnight
     const rows = db.prepare(`SELECT c.*, cu.company customer_company, cu.name customer_name FROM calls c LEFT JOIN customers cu ON cu.id=c.customer_id ORDER BY c.id DESC LIMIT 300`).all();
     const t = db.prepare(`SELECT COUNT(*) total, SUM(outcome='Answered') answered, SUM(outcome IN ('Missed','Voicemail')) missed FROM calls WHERE created_at>=?`).get(since.toISOString());
     const fu = db.prepare(`SELECT COUNT(*) n FROM calls WHERE follow_up_done=0 AND follow_up_date IS NOT NULL AND follow_up_date<>'' AND follow_up_date<=?`).get(today()).n;
