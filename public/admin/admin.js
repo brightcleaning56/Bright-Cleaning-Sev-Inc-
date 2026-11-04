@@ -765,7 +765,7 @@
     $('#eSend').onclick = async () => {
       try { if (!(await clearApproval('goes to the customer'))) return; } catch (err) { return toast(err.message, true); }
       if (!confirm(`Email this proposal to ${e.email}?`)) return;
-      try { const r = await api(`/api/admin/estimates/${e.id}/send`, { method: 'POST' }); toast(r.message || 'Sent'); closeDrawer(); loadEstimates(); }
+      try { let r; try { r = await api(`/api/admin/estimates/${e.id}/send`, { method: 'POST' }); } catch (er) { if (/was due/.test(er.message) && confirm(er.message + '\n\nSend it anyway?')) r = await api(`/api/admin/estimates/${e.id}/send`, { method: 'POST', json: { late_ok: true } }); else throw er; } toast(r.message || 'Sent'); closeDrawer(); loadEstimates(); }
       catch (err) { toast(err.message, true); }
     };
     $('#eEdit').onclick = () => { closeDrawer(); editEstimate(e.id); };
