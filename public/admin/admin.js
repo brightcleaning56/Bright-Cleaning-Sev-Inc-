@@ -10,7 +10,9 @@
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const money = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v || 0));
-  const todayISO = () => new Date().toISOString().slice(0, 10);
+  // Local calendar date of this device (Central time for the office), not UTC — UTC flips to tomorrow every evening.
+  const localISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const fmtDate = v => {
     if (!v) return '—';
     const d = /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v + 'T12:00:00') : new Date(v);
@@ -62,7 +64,7 @@
     leads: ['New', 'In Review', 'Site Walkthrough', 'Proposal in Progress', 'Proposal Sent', 'Won', 'Lost', 'Archived'],
     estimates: ['Draft', 'Ready', 'Sent', 'Viewed', 'Approved', 'Declined', 'Expired'],
     contracts: ['Draft', 'Review', 'Active', 'Renewal Due', 'Closed'],
-    signature: ['Not sent', 'Sent', 'Signed'],
+    signature: ['Not sent', 'Sent', 'Viewed', 'Customer signed', 'Signed', 'Declined'],
     projects: ['Planning', 'Mobilization', 'In Progress', 'Quality Review', 'Completed', 'On Hold'],
     invoices: ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue', 'Void']
   };
@@ -791,7 +793,7 @@
     ef.reset();
     ef.elements.id.value = '';
     Object.entries(DEFAULTS).forEach(([k, v]) => { ef.elements[k].value = v; });
-    const d = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+    const d = localISO(new Date(Date.now() + 30 * 864e5));
     ef.elements.expires_on.value = d;
     ef.elements.use_line_items.checked = false;
     loadTemplates();
@@ -1075,6 +1077,33 @@
     });
   }
 
+  async function openContract(id) {
+    let d; try { d = await api('/api/admin/contracts2/' + id); } catch (e) { return toast(e.message, true); }
+    const k = d.contract, signed = ['Customer signed', 'Signed'].includes(k.signature_status), exec = ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status);
+    const stTone = { 'Not sent': '', Sent: 'blue', Viewed: 'blue', 'Customer signed': 'amber', Signed: 'green', Declined: 'red' }[k.signature_status || 'Not sent'] || '';
+    openDrawer({ title: `${k.number} · ${k.title || 'Contract'}`, sub: `${esc(k.kind || 'Contract')} · ${esc(k.company || k.customer_name || '')} · <span class="badge ${stTone}">${esc(k.signature_status || 'Not sent')}</span> · ${esc(k.status)}`,
+      body: `${k.signature_status === 'Declined' ? `<p class="err" style="display:block">Customer declined: ${esc(k.decline_reason || '')}. Edit the contract and send it again.</p>` : ''}
+        ${k.signed_at ? `<p class="muted">Customer signed: <b>${esc(k.signer_name)}</b>${k.signer_title ? ', ' + esc(k.signer_title) : ''} · ${fmtWhen(k.signed_at)} · IP ${esc(k.signed_ip || '')}${k.countersigned_at ? `<br>Countersigned: <b>${esc(k.countersigned_by)}</b> · ${fmtWhen(k.countersigned_at)}` : ''}</p>` : ''}
+        ${k.link && !signed ? `<p>Signing link: <input readonly value="${esc(k.link)}" style="width:100%;padding:8px;border:1px solid #ccd5df;border-radius:8px" id="kLink"> <small class="muted">${k.viewed_at ? 'Viewed ' + fmtWhen(k.viewed_at) : k.sent_at ? 'Sent ' + fmtWhen(k.sent_at) : ''}</small></p>` : ''}
+        <form class="ig" id="kForm"><div class="wide"><label>Title</label><input name="title" value="${esc(k.title || '')}"></div><div><label>Company</label><input name="company" value="${esc(k.company || '')}"></div><div><label>Customer contact</label><input name="customer_name" value="${esc(k.customer_name || '')}"></div>
+          <div><label>Customer email (receives the link)</label><input name="email" value="${esc(k.email || '')}"></div><div><label>Contract value ($)</label><input name="value" inputmode="decimal" value="${esc(k.value || '')}"></div><div><label>Start</label><input type="date" name="start_date" value="${esc(k.start_date || '')}"></div><div><label>End</label><input type="date" name="end_date" value="${esc(k.end_date || '')}"></div>
+          <div><label>Payment terms</label><input name="payment_terms" value="${esc(k.payment_terms || 'Net 30')}"></div><div><label>Billing</label><input name="billing" value="${esc(k.billing || '')}" placeholder="e.g. Monthly in advance"></div><div><label>Auto-renew</label><select name="auto_renew"><option value="">No</option><option value="1"${k.auto_renew ? ' selected' : ''}>Yes</option></select></div><div><label>Notice days</label><input name="notice_days" inputmode="numeric" value="${esc(k.notice_days ?? 30)}"></div>
+          <div class="wide"><label>Scope of work</label><textarea name="scope" rows="5">${esc(k.scope || '')}</textarea></div><div class="wide"><label>Terms and conditions</label><textarea name="terms" rows="8">${esc(k.terms || d.default_terms)}</textarea></div></form>
+        ${d.versions.length > 1 ? `<h3 class="secth">Versions</h3>${d.versions.map(v => `<p style="margin:3px 0"><button class="linklike" data-kv="${v.id}">v${v.version || 1}</button> ${badge(v.status)} ${esc(v.signature_status || '')} · ${money(v.value)}</p>`).join('')}` : ''}
+        <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity yet.</p>'}</div>`,
+      footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="kPdf">PDF</button>${!signed ? '<button class="btn ghost" id="kSave">Save</button>' : ''}${!signed && k.status !== 'Superseded' ? `<button class="btn" id="kSend">${k.link ? 'Re-send link' : 'Send for signature'}</button>` : ''}${k.signature_status === 'Customer signed' ? '<button class="btn" id="kCs">Countersign</button>' : ''}${exec ? '<button class="btn ghost" id="kAmend">Amend</button><button class="btn ghost" id="kRenew">Renew</button>' : ''}` });
+    if (signed) $$('#kForm input, #kForm textarea, #kForm select').forEach(x => x.disabled = true);
+    const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
+    const save = () => { const f = formObj($('#kForm')); return api('/api/admin/contracts2/' + id, { method: 'PATCH', json: { ...f, auto_renew: !!f.auto_renew } }); };
+    act('#kSave', async () => { try { await save(); toast('Saved'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
+    act('#kSend', async () => { try { await save(); const r = await api(`/api/admin/contracts2/${id}/send`, { method: 'POST' }); try { await navigator.clipboard.writeText(r.link); } catch { /* */ } toast(r.emailed ? 'Sent to the customer for signature (link copied)' : 'Signing link created and copied — email could not be sent, share the link'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
+    act('#kCs', async () => { const name = prompt('Type your full name to countersign and execute this contract:'); if (!name) return; try { await api(`/api/admin/contracts2/${id}/countersign`, { method: 'POST', json: { name } }); toast('Countersigned — contract executed'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
+    act('#kPdf', () => downloadFile({ name: k.number + '.pdf', url: `/api/admin/contracts2/${id}/pdf` }));
+    act('#kAmend', async () => { const reason = prompt('What does the amendment change?'); if (!reason) return; try { const r = await api(`/api/admin/contracts2/${id}/amend`, { method: 'POST', json: { reason } }); toast('Amendment drafted'); loadRegister('contracts'); openContract(r.id); } catch (e) { toast(e.message, true); } });
+    act('#kRenew', async () => { const pct = prompt('Price change for the renewal term (%), e.g. 3 or 0:', '0'); if (pct === null) return; try { const r = await api(`/api/admin/contracts2/${id}/renew`, { method: 'POST', json: { increase_pct: Number(pct) || 0 } }); toast(`Renewal drafted: ${r.start_date} to ${r.end_date}`); loadRegister('contracts'); openContract(r.id); } catch (e) { toast(e.message, true); } });
+    $$('#drawerRoot [data-kv]').forEach(b => b.onclick = () => openContract(Number(b.dataset.kv)));
+    $$('#drawerRoot [data-close]').forEach(el => el.onclick = closeDrawer);
+  }
   function regHeader(t) {
     const R = state[t] || [], sel = $(`[data-filter="${t}"]`), tabs = $('#regTabs-' + t), kp = $('#regKpis-' + t);
     if (!tabs || !kp || !sel) return;
@@ -1083,8 +1112,8 @@
     tabs.innerHTML = `<button data-rt="" class="${!sel.value ? 'on' : ''}">All (${R.length})</button>` + sts.map(x => `<button data-rt="${esc(x)}" class="${sel.value === x ? 'on' : ''}">${esc(x)} (${R.filter(r => stOf(r) === x).length})</button>`).join('');
     $$('#regTabs-' + t + ' button').forEach(b => b.onclick = () => { sel.value = b.dataset.rt; renderRegister(t); });
     if (t === 'contracts') {
-      const act = R.filter(r => r.status === 'Active'), sum = a => a.reduce((s, r) => s + (Number(r.value) || 0), 0), in60 = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
-      kp.innerHTML = [kt('contracts', 'blue', 'Active contracts', act.length, money(sum(act))), kt('money', 'navy', 'Total contracted', money(sum(R.filter(r => r.status !== 'Closed'))), 'not closed'), kt('issues', 'amber', 'Awaiting signature', R.filter(r => !['Signed', 'Executed', 'Fully signed'].includes(r.signature_status) && r.status !== 'Closed').length, ''),
+      const act = R.filter(r => r.status === 'Active'), sum = a => a.reduce((s, r) => s + (Number(r.value) || 0), 0), in60 = localISO(new Date(Date.now() + 60 * 864e5));
+      kp.innerHTML = [kt('contracts', 'blue', 'Active contracts', act.length, money(sum(act))), kt('money', 'navy', 'Total contracted', money(sum(R.filter(r => r.status !== 'Closed'))), 'not closed'), kt('issues', 'amber', 'Awaiting signature', R.filter(r => ['Sent', 'Viewed', 'Customer signed'].includes(r.signature_status) && r.status !== 'Closed').length, `${R.filter(r => r.signature_status === 'Customer signed').length} need your countersignature`),
         kt('cal', 'red', 'Ending within 60 days', R.filter(r => r.status === 'Active' && r.end_date && r.end_date <= in60).length, 'plan the renewal'), kt('proposals', 'purple', 'Drafts', R.filter(r => r.status === 'Draft').length, ''), kt('check', 'green', 'Closed', R.filter(r => r.status === 'Closed').length, '')].join('');
     } else {
       const live = R.filter(i => i.status !== 'Void' && i.status !== 'Draft'), billed = live.reduce((s, i) => s + Number(i.amount || 0), 0), paid = live.reduce((s, i) => s + Number(i.paid_amount || 0), 0), od = live.filter(i => invoiceState(i) === 'Overdue');
@@ -1115,6 +1144,7 @@
 
   async function openRecord(t, id) {
     if (t === 'projects' && id) return openProject(id);
+    if (t === 'contracts' && id) return openContract(id);
     const cfg = REG[t];
     if (!state[t].length || (id && !state[t].find(r => r.id === id))) {
       try { state[t] = (await api('/api/admin/' + t))[t] || []; } catch (err) { return toast(err.message, true); }
@@ -1126,7 +1156,7 @@
       if (t === 'invoices') {
         try { rec.invoice_number = (await api('/api/admin/next-invoice-number')).number; } catch { /* optional */ }
         rec.issue_date = todayISO();
-        rec.due_date = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+        rec.due_date = localISO(new Date(Date.now() + 30 * 864e5));
         rec.status = 'Draft';
       }
     }
@@ -1509,14 +1539,14 @@
   async function loadSchedule() {
     const v = $('#schedRange').value, t = new Date();
     const from = v === 'past' ? new Date(t - 30 * 864e5) : t, to = v === 'past' ? t : new Date(+t + Number(v) * 864e5);
-    const r = await api(`/api/admin/visits?from=${from.toISOString().slice(0, 10)}&to=${to.toISOString().slice(0, 10)}`); Object.assign(schedState, r);
+    const r = await api(`/api/admin/visits?from=${localISO(from)}&to=${localISO(to)}`); Object.assign(schedState, r);
     const items = [...r.visits.map(x => ({ ...x, kind: 'visit' })), ...r.project_due.map(p => ({ kind: 'due', id: p.id, date: p.due_date, title: `Due: ${p.name || p.customer_name}`, status: p.status, type: 'Project due' }))].sort((a, b) => (a.date + (a.start_time || '')).localeCompare(b.date + (b.start_time || '')));
-    const week = r.visits.filter(x => x.status === 'Scheduled' && x.date <= new Date(+t + 7 * 864e5).toISOString().slice(0, 10)).length;
+    const week = r.visits.filter(x => x.status === 'Scheduled' && x.date <= localISO(new Date(+t + 7 * 864e5))).length;
     loadDispatch();
     const mode = $('#schedMode').value; $('#schedWeek').hidden = mode !== 'week'; $('#schedTable').hidden = mode === 'week';
     if (mode === 'week') {
       const start = new Date(); start.setHours(12, 0, 0, 0); start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-      const days = [...Array(7)].map((_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d.toISOString().slice(0, 10); });
+      const days = [...Array(7)].map((_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return localISO(d); });
       $('#schedWeek').innerHTML = days.map(day => `<div class="day${day === todayISO() ? ' today' : ''}"><h3>${new Date(day + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</h3>${items.filter(x => x.date === day).map(x => x.kind === 'due' ? `<button class="ev due" data-due="${x.id}">${esc(x.title)}</button>` : `<button class="ev${x.status === 'Done' ? ' done' : ''}" data-visit="${x.id}"><b>${esc(x.start_time || '')}</b> ${esc(x.title)}</button>`).join('') || '<small class="muted">—</small>'}</div>`).join('');
     }
     $('#scheduleRows').innerHTML = items.length ? items.map(x => x.kind === 'due'
@@ -1616,7 +1646,7 @@
 
   // ---------- Reports: P&L, aging, labor, projects, schedules ----------
   const rep2 = { tab: 'overview' };
-  { const t = new Date(), f = new Date(t.getFullYear(), t.getMonth() - 2, 1); $('#repFrom').value = f.toISOString().slice(0, 10); $('#repTo').value = t.toISOString().slice(0, 10); }
+  { const t = new Date(), f = new Date(t.getFullYear(), t.getMonth() - 2, 1); $('#repFrom').value = localISO(f); $('#repTo').value = localISO(t); }
   $$('#repTabs button').forEach(b => b.onclick = () => { rep2.tab = b.dataset.rt; $$('#repTabs button').forEach(x => x.classList.toggle('on', x === b)); $('#v-reports').classList.toggle('alt', rep2.tab !== 'overview'); $('#repNew').hidden = rep2.tab === 'overview'; if (rep2.tab !== 'overview') drawRep2(); });
   $('#repApply').addEventListener('click', () => drawRep2());
   $('#repPdf').addEventListener('click', () => downloadFile({ name: `bright-clean-report-${$('#repFrom').value}-to-${$('#repTo').value}.pdf`, url: `/api/admin/reports/pdf?from=${$('#repFrom').value}&to=${$('#repTo').value}` }));
