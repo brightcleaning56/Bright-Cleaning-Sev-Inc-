@@ -7,7 +7,7 @@ module.exports = function mountReports2(app, ctx) {
   const { db, auth, logAction, clean, adminEmail, getMailer } = ctx;
   db.exec(`CREATE TABLE IF NOT EXISTS report_schedules(id INTEGER PRIMARY KEY AUTOINCREMENT, frequency TEXT NOT NULL, recipients TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
     last_sent TEXT, created_by TEXT, created_at TEXT NOT NULL);`);
-  const now = () => new Date().toISOString(), today = () => now().slice(0, 10);
+  const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
   const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
@@ -23,12 +23,12 @@ module.exports = function mountReports2(app, ctx) {
   const daysBetween = (a, b) => Math.floor((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 864e5);
 
   function finance({ from, to }) {
-    const inv = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void') AND substr(i.created_at,1,10) BETWEEN ? AND ?`).all(from, to);
+    const inv = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void') AND i.created_at >= ? AND i.created_at < ?`).all(...require('./bizdate').window(from, to));
     const invoiced = r2(inv.reduce((s, i) => s + (i.amount || 0), 0)), collected = r2(inv.reduce((s, i) => s + Math.min(i.paid_amount || 0, i.amount || 0), 0));
     const costRows = has('project_costs') ? db.prepare(`SELECT c.*, p.name project_name FROM project_costs c LEFT JOIN projects p ON p.id=c.project_id WHERE c.cost_date BETWEEN ? AND ?`).all(from, to) : [];
     const byCat = {}; for (const c of costRows) byCat[c.category] = r2((byCat[c.category] || 0) + c.amount);
     // Approved time that is not tied to a project (so it was not posted as a project cost) still costs money.
-    let unposted = 0; if (has('time_entries')) unposted = r2(db.prepare(`SELECT COALESCE(SUM(t.minutes/60.0*e.hourly_rate),0) v FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND substr(t.clock_in,1,10) BETWEEN ? AND ?`).get(from, to).v);
+    let unposted = 0; if (has('time_entries')) unposted = r2(db.prepare(`SELECT COALESCE(SUM(t.minutes/60.0*e.hourly_rate),0) v FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).get(...require('./bizdate').window(from, to)).v);
     if (unposted) byCat['Labor (not tied to a project)'] = unposted;
     const costs = r2(Object.values(byCat).reduce((s, v) => s + v, 0));
     // Project profitability: everything recorded against each project, all time (projects span periods).
@@ -41,7 +41,7 @@ module.exports = function mountReports2(app, ctx) {
     const checks = [];
     const noCost = projects.filter(p => p.invoiced > 0 && p.cost === 0); if (noCost.length) checks.push(`${noCost.length} invoiced project(s) have no recorded costs, so their profit is not shown: ${noCost.slice(0, 5).map(p => p.name || '#' + p.id).join(', ')}.`);
     const noProj = inv.filter(i => !i.project_id).length; if (noProj) checks.push(`${noProj} invoice(s) in this period are not linked to a project.`);
-    if (has('time_entries')) { const pend = db.prepare("SELECT COUNT(*) n FROM time_entries WHERE approved_by IS NULL AND clock_out IS NOT NULL AND substr(clock_in,1,10) BETWEEN ? AND ?").get(from, to).n; if (pend) checks.push(`${pend} time entr${pend === 1 ? 'y is' : 'ies are'} not approved yet, so that labor is not in the costs.`); }
+    if (has('time_entries')) { const pend = db.prepare("SELECT COUNT(*) n FROM time_entries WHERE approved_by IS NULL AND clock_out IS NOT NULL AND clock_in >= ? AND clock_in < ?").get(...require('./bizdate').window(from, to)).n; if (pend) checks.push(`${pend} time entr${pend === 1 ? 'y is' : 'ies are'} not approved yet, so that labor is not in the costs.`); }
     return { from, to, invoiced, collected, costs, cost_by_category: byCat, gross_profit: r2(invoiced - costs), margin: invoiced > 0 ? Math.round((invoiced - costs) / invoiced * 1000) / 10 : null,
       basis: 'Revenue = invoices issued in the period (not drafts or void). Costs = actual costs recorded on projects in the period plus approved labor not tied to a project. Collected = amount paid on the invoices issued in the period.',
       invoices: inv.length, projects, checks };
@@ -57,7 +57,7 @@ module.exports = function mountReports2(app, ctx) {
   }
   function labor({ from, to }) {
     if (!has('time_entries')) return { from, to, employees: [], projects: [], totals: { hours: 0, cost: 0, pending_hours: 0, overtime_hours: 0 } };
-    const rows = db.prepare(`SELECT t.*, e.name, e.hourly_rate, e.max_week_hours, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN projects p ON p.id=t.project_id WHERE t.clock_out IS NOT NULL AND substr(t.clock_in,1,10) BETWEEN ? AND ?`).all(from, to);
+    const rows = db.prepare(`SELECT t.*, e.name, e.hourly_rate, e.max_week_hours, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN projects p ON p.id=t.project_id WHERE t.clock_out IS NOT NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(...require('./bizdate').window(from, to));
     const wk = d => { const x = new Date(d.slice(0, 10) + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
     const emp = {}, proj = {}, weeks = {};
     for (const t of rows) {

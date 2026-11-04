@@ -3,7 +3,7 @@
 module.exports = function mountSuite(app, ctx) {
   const { db, auth, logAction, clean, upload, path, fs, getOps, isEmail } = ctx;
   const now = () => new Date().toISOString();
-  const today = () => now().slice(0, 10);
+  const today = () => require('./bizdate').today();
   const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
   const isTime = v => /^\d{2}:\d{2}$/.test(String(v || ''));
   const pick = (v, list, dflt) => list.includes(v) ? v : dflt;

@@ -9,7 +9,7 @@ module.exports = function mountBids(app, ctx) {
     ['signer_name', 'TEXT'], ['signer_title', 'TEXT'], ['signed_at', 'TEXT'], ['decline_reason', 'TEXT'], ['assumptions', 'TEXT'], ['exclusions', 'TEXT'], ['internal_notes', 'TEXT'],
     ['bid_type', "TEXT DEFAULT 'proposal'"], ['gc_name', 'TEXT'], ['bid_due_date', 'TEXT'], ['bid_result', 'TEXT']])
     if (!cols.includes(c)) db.exec(`ALTER TABLE estimates ADD COLUMN ${c} ${t}`);
-  const now = () => new Date().toISOString(), today = () => now().slice(0, 10);
+  const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const get = id => db.prepare('SELECT * FROM estimates WHERE id=?').get(Number(id));
   const number = e => `P-${String(e.created_at || '').slice(0, 4) || '2026'}-${String(1000 + e.id)}`;
   const gate = e => { try { return require('./approvals').gate(e); } catch { return null; } };

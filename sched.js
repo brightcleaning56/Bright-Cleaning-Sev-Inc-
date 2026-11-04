@@ -19,7 +19,7 @@ module.exports = function mountSched(app, ctx) {
   for (const [c, t] of [['dispatched_at', 'TEXT'], ['dispatched_by', 'TEXT'], ['arrived_at', 'TEXT'], ['departed_at', 'TEXT'], ['completed_at', 'TEXT'], ['priority', "TEXT DEFAULT 'Normal'"],
     ['crew_needed', 'INTEGER'], ['instructions', 'TEXT'], ['equipment', 'TEXT'], ['checklist', "TEXT DEFAULT '[]'"], ['skip_reason', 'TEXT'], ['moved_from', 'TEXT']])
     if (!vcols.includes(c)) db.exec(`ALTER TABLE visits ADD COLUMN ${c} ${t}`);
-  const now = () => new Date().toISOString(), today = () => now().slice(0, 10);
+  const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
   const J = (s, d) => { try { return JSON.parse(s || '') || d; } catch { return d; } };

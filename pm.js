@@ -30,7 +30,7 @@ module.exports = function mountPM(app, ctx) {
     CREATE TABLE IF NOT EXISTS project_costs(id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, cost_date TEXT, entered_by TEXT, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS pcosts_p ON project_costs(project_id);
     CREATE TABLE IF NOT EXISTS project_updates(id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT 'Update', body TEXT NOT NULL, author TEXT, created_at TEXT NOT NULL);`);
-  const now = () => new Date().toISOString(), today = () => now().slice(0, 10);
+  const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
   const get = id => db.prepare('SELECT * FROM projects WHERE id=?').get(Number(id));

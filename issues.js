@@ -31,7 +31,7 @@ module.exports = function mountIssues(app, ctx) {
   try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'issue_id')) db.exec('ALTER TABLE documents ADD COLUMN issue_id INTEGER'); } catch { /* documents table created by suite */ }
 
   const now = () => new Date().toISOString();
-  const today = () => now().slice(0, 10);
+  const today = () => require('./bizdate').today();
   const who = req => ((req.user && req.user.email) || '').toLowerCase() || null;
   const users = () => [...new Set([...(adminEmail ? [adminEmail.toLowerCase()] : []), ...db.prepare('SELECT email FROM admin_users').all().map(r => r.email.toLowerCase())])];
   const roleOf = email => { const e = String(email || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };

@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 module.exports = function mountAdminExt(app, ctx) {
   const { db, auth, logAction, clean, num, required, estimateMath, uploadDir, bcrypt, adminEmail, adminHash } = ctx;
-  const today = () => new Date().toISOString().slice(0, 10);
+  const today = () => require('./bizdate').today();
   const id = req => Number(req.params.id);
 
   // ---------- Dashboard ----------

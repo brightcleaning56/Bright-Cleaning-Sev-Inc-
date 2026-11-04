@@ -6,7 +6,8 @@ const app=express();const estimating=require('./estimating');const {isEmail}=req
 if(!process.env.JWT_SECRET||process.env.JWT_SECRET.length<32){if(process.env.NODE_ENV==='production'){console.error('FATAL: JWT_SECRET must be set to at least 32 characters in production.');process.exit(1)}console.warn('WARNING: Set a strong JWT_SECRET (32+ characters) in .env before production.')}
 if(process.env.TRUST_PROXY)app.set('trust proxy',Number(process.env.TRUST_PROXY)||1);
 app.use(helmet({contentSecurityPolicy:false}));app.use(express.json({limit:'1mb'}));app.use(express.urlencoded({extended:true}));
-app.use('/api/',rateLimit({windowMs:15*60*1000,max:600,standardHeaders:true,legacyHeaders:false}));
+// Public endpoints: 600 requests / 15 min per IP. Signed-in admin traffic (Bearer token) gets a higher ceiling so busy office use is never throttled.
+app.use('/api/',rateLimit({windowMs:15*60*1000,max:req=>/^Bearer\s+\S+/.test(req.headers.authorization||'')&&req.path.startsWith('/admin/')?5000:(Number(process.env.RATE_LIMIT_PUBLIC)||600),standardHeaders:true,legacyHeaders:false}));
 const db=new Database(path.join(dataDir,'brightclean.db'));db.pragma('journal_mode = WAL');
 db.exec(`CREATE TABLE IF NOT EXISTS leads(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL DEFAULT 'bid',contact_name TEXT,company TEXT,email TEXT,phone TEXT,project_name TEXT,project_type TEXT,service TEXT,address TEXT,square_footage TEXT,bid_due_date TEXT,start_date TEXT,frequency TEXT,walkthrough TEXT,details TEXT,status TEXT NOT NULL DEFAULT 'New',files TEXT,created_at TEXT NOT NULL);`);
 db.exec(`
@@ -105,6 +106,7 @@ require('./sched')(app,{db,auth,logAction,clean,adminEmail,uploadDir,getMailer:(
 require('./qc')(app,{db,auth,logAction,clean,adminEmail});
 require('./docs2')(app,{db,auth,logAction,clean,adminEmail,upload,uploadDir});
 require('./engine')(app,{db,auth,logAction,clean});
+require('./contracts2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public')));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));

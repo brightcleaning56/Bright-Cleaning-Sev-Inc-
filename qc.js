@@ -25,7 +25,7 @@ module.exports = function mountQC(app, ctx) {
     ['threshold', 'REAL'], ['signed_by', 'TEXT'], ['signed_name', 'TEXT'], ['signed_at', 'TEXT'], ['accepted_by', 'TEXT'], ['accepted_title', 'TEXT'], ['accepted_at', 'TEXT'], ['accept_notes', 'TEXT'], ['ai_summary', 'TEXT']])
     if (!icols.includes(c)) db.exec(`ALTER TABLE inspections ADD COLUMN ${c} ${t}`);
   for (const [tbl, c] of [['documents', 'inspection_id'], ['customer_issues', 'inspection_id'], ['customer_issues', 'inspection_item']]) { try { if (!db.prepare(`PRAGMA table_info(${tbl})`).all().some(x => x.name === c)) db.exec(`ALTER TABLE ${tbl} ADD COLUMN ${c} ${c === 'inspection_item' ? 'TEXT' : 'INTEGER'}`); } catch { /* */ } }
-  const now = () => new Date().toISOString(), today = () => now().slice(0, 10);
+  const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   for (const [name, [service, items]] of Object.entries(BUILTIN)) if (!db.prepare('SELECT 1 FROM qc_templates WHERE name=?').get(name)) db.prepare('INSERT INTO qc_templates(name,service,items,builtin,updated_at) VALUES(?,?,?,1,?)').run(name, service, JSON.stringify(items), now());
   const who = req => (req.user && req.user.email) || null;
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
