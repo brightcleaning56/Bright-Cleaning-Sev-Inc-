@@ -1178,7 +1178,8 @@
       body: `<form id="recForm" class="grid" novalidate>${cfg.fields.map(f => fieldHTML(f, rec[f[0]])).join('')}</form><p class="msg" id="recMsg" role="status"></p>`,
       footer: `<button class="btn" id="recSave">${id ? 'Save changes' : 'Create ' + cfg.label}</button>
         ${t === 'invoices' && id && bal && rec.status !== 'Void' ? '<button class="btn ghost" id="recPay">Record payment</button>' : ''}
-        ${t === 'invoices' && id ? '<button class="btn ghost" id="recPrint">Print / PDF</button>' : ''}
+        ${t === 'invoices' && id && !['Void', 'Paid'].includes(rec.status) ? `<button class="btn" id="recSend">${rec.sent_at ? 'Resend invoice' : 'Send invoice'}</button>` : ''}
+        ${t === 'invoices' && id ? '<button class="btn ghost" id="recPdf">PDF</button><button class="btn ghost" id="recPrint">Print</button>' : ''}
         <span class="grow"></span>${id ? '<button class="btn danger" id="recDel">Delete</button>' : ''}`
     });
     const form = $('#recForm');
@@ -1208,6 +1209,11 @@
     };
     if ($('#recPay')) $('#recPay').onclick = () => recordPayment(id);
     if ($('#recPrint')) $('#recPrint').onclick = () => printInvoice(rec);
+    if ($('#recPdf')) $('#recPdf').onclick = () => downloadFile({ name: (rec.invoice_number || 'invoice') + '.pdf', url: `/api/admin/invoices/${id}/pdf` });
+    if ($('#recSend')) $('#recSend').onclick = async () => { const to = prompt('Send the invoice (PDF attached) to:', rec.email || ''); if (!to) return; let body = { to };
+      try { let r; try { r = await api(`/api/admin/invoices/${id}/send`, { method: 'POST', json: body }); }
+        catch (e) { if (/above the contract value/.test(e.message)) { const reason = prompt(e.message + '\n\nOwner/manager: give the reason to bill above the contract (e.g. approved change order #):'); if (!reason) return; r = await api(`/api/admin/invoices/${id}/send`, { method: 'POST', json: { ...body, over_contract_reason: reason } }); } else throw e; }
+        toast(`Invoice ${r.resend ? 're-sent' : 'sent'} to ${r.to}`); closeDrawer(); loadRegister('invoices'); } catch (e) { toast(e.message, true); } };
   }
 
   async function recordPayment(id) {
@@ -1562,13 +1568,14 @@
         ${a.reply_draft ? `<p><b>Reply draft</b> <button class="btn small ghost" id="callCopy" type="button">Copy</button></p><div class="pre" style="white-space:pre-wrap;background:#f6f9fc;border-radius:8px;padding:10px">${esc(a.reply_draft)}</div>` : ''}</div>` : '';
     openDrawer({ title: c.company || c.customer_company || c.contact_name || c.phone || 'Call', sub: `${esc(c.direction)} · ${fmtWhen(c.created_at)}${c.source === 'Twilio' ? ' · captured automatically' : c.created_by ? ' · logged by ' + esc(c.created_by) : ''}`,
       body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || 'Not linked')}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}${c.duration_s ? ` · ${Math.round(c.duration_s / 60 * 10) / 10} min` : ''}</dd>
-        <dt>Follow-up</dt><dd>${c.follow_up_date ? esc(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd>${c.lead_id ? `<dt>Lead</dt><dd><button class="linklike" id="callLead">Open lead #${c.lead_id}</button></dd>` : ''}${c.recording_url ? `<dt>Recording</dt><dd><a href="${esc(c.recording_url)}" target="_blank" rel="noopener">Listen (Twilio)</a></dd>` : ''}</dl>
+        <dt>Follow-up</dt><dd>${c.follow_up_date ? esc(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd>${c.issue_id ? `<dt>Issue</dt><dd>Issue #${c.issue_id} created from this call</dd>` : ''}${c.lead_id ? `<dt>Lead</dt><dd><button class="linklike" id="callLead">Open lead #${c.lead_id}</button></dd>` : ''}${c.recording_url ? `<dt>Recording</dt><dd><a href="${esc(c.recording_url)}" target="_blank" rel="noopener">Listen (Twilio)</a></dd>` : ''}</dl>
         ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}${aiHtml}
         <label for="callTr"><b>Transcript or detailed notes</b></label><textarea id="callTr" rows="6" style="width:100%" placeholder="Paste the call transcript or write what was said…">${esc(c.transcript || '')}</textarea>
         <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity.</p>'}</div>`,
-      footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : ''}` });
+      footer: `<button class="btn ghost" data-close>Close</button>${c.customer_id && !c.issue_id ? '<button class="btn ghost" id="callIssue">Create issue</button>' : ''}<button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : ''}` });
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     act('#callLead', () => { closeDrawer(); go('leads'); openLead(c.lead_id); });
+    act('#callIssue', async () => { try { const r = await api(`/api/admin/calls/${c.id}/issue`, { method: 'POST', json: {} }); toast(`${r.issue.number} created from this call`); closeDrawer(); go('issues'); openIssue(r.issue); } catch (e) { toast(e.message, true); } });
     act('#callDone', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_done: true } }); toast('Follow-up done'); closeDrawer(); loadCalls(); } catch (e) { toast(e.message, true); } });
     act('#callAnalyze', async () => { const b = $('#callAnalyze'); b.disabled = true; b.textContent = 'Analyzing…'; try { await api(`/api/admin/ai/calls/${c.id}/analyze`, { method: 'POST', json: { transcript: $('#callTr').value } }); toast('Call analyzed'); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Analyze with AI'; } });
     act('#callUseFu', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_date: a.follow_up_date, follow_up_done: false } }); toast('Follow-up set for ' + a.follow_up_date); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); } });
@@ -2149,6 +2156,7 @@
       const open = isOpenSt(it.status), cx = ['complaint', 'incident'].includes(type);
       return `<button class="btn ghost" data-close type="button">Cancel</button>${!isNew && type === 'note' ? '<button class="btn ghost danger" id="iDel" type="button">Delete note</button>' : ''}
         ${!isNew && type !== 'note' && open ? '<button class="btn ghost" id="iResolve" type="button">Resolve</button>' : ''}
+        ${!isNew && ['complaint', 'service_request', 'incident'].includes(type) && open ? '<button class="btn ghost" id="iCustUpd" type="button">Email customer update</button><button class="btn ghost" id="iVisit" type="button">Schedule corrective visit</button>' : ''}
         ${!isNew && cx && it.status === 'Resolved' && !it.verified_by ? '<button class="btn ghost" id="iVerify" type="button">Verify fix</button>' : ''}
         ${!isNew && !open ? '<button class="btn ghost" id="iReopen" type="button">Reopen</button>' : ''}
         <button class="btn" id="iSave" type="button">${isNew ? SAVE_LABEL[type] : 'Save changes'}</button>`;
@@ -2158,6 +2166,10 @@
       openDrawer({ title: isNew ? 'Create new item' : it.title, body: body(), footer: footer() });
       if (keep) { const f = $('#issForm'); Object.entries(keep).forEach(([k, val]) => { if (f.elements[k] && k !== 'type') f.elements[k].value = val; }); }
       wire();
+      if ($('#iCustUpd')) $('#iCustUpd').onclick = async () => { const message = prompt('Message to the customer (only this text is sent — internal notes are never included):', `Thank you for letting us know about "${it.title}". `); if (!message) return;
+        try { const r = await api(`/api/admin/issues/${it.id}/customer-update`, { method: 'POST', json: { message } }); toast('Update emailed to ' + r.to); closeDrawer(); openIssue(r.issue); if (typeof loadIssues === 'function') loadIssues(); } catch (e) { toast(e.message, true); } };
+      if ($('#iVisit')) $('#iVisit').onclick = async () => { const date = prompt('Date for the corrective visit (YYYY-MM-DD):', todayISO()); if (!date) return; const start_time = prompt('Start time (HH:MM, optional):', '08:00') || ''; const end_time = start_time ? (prompt('End time (HH:MM, optional):', '10:00') || '') : '';
+        try { const r = await api(`/api/admin/issues/${it.id}/schedule-visit`, { method: 'POST', json: { date, start_time, end_time } }); toast(`Corrective visit #${r.visit_id} scheduled for ${date} — assign the crew on the Schedule page`); closeDrawer(); openIssue(r.issue); } catch (e) { toast(e.message, true); } };
     };
     async function loadLinks() {
       const f = $('#issForm'), cid = f.elements.customer_id.value;
