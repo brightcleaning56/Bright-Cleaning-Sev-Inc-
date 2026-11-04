@@ -125,7 +125,7 @@ module.exports = function mountContracts(app, ctx) {
     d.heading('Signatures', 11);
     d.para(k.signed_at ? `Customer: ${k.signer_name}${k.signer_title ? ', ' + k.signer_title : ''} — signed electronically ${k.signed_at.slice(0, 16).replace('T', ' ')} UTC (IP ${k.signed_ip || 'n/a'})` : 'Customer: not signed');
     d.para(k.countersigned_at ? `Bright Cleaning Sev Inc.: ${k.countersigned_by} — ${k.countersigned_at.slice(0, 16).replace('T', ' ')} UTC` : 'Bright Cleaning Sev Inc.: not countersigned');
-    d.footer(`Bright Cleaning Sev Inc. - ${k.number}`);
+    d.footer(`Bright Cleaning Sev Inc. - ${k.number} - Office 515-329-5889 - Eric Moore (Owner) 469-267-8472`);
     return d.toBuffer();
   }
   app.get('/api/admin/contracts2/:id/pdf', auth, (req, res) => {
