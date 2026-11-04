@@ -35,8 +35,44 @@ module.exports = function mountAutobid(app, ctx) {
       if (a.condition === 'Heavy') assumptions.push('Heavy move-out condition: price may need an adjustment after photos.');
       return lines.length ? { category: 'multifamily', lines, assumptions, missing } : { missing: ['Move-out prices (import the price book)'] };
     }
-    if (service === 'multifamily') return { missing: ['Number of hallways per building and stairwell count (needed to price common areas)'] };
-    return null; // janitorial, windows, power washing, parking: no per-unit prices in the book yet
+    // Visits per month from the customer's frequency (stated as an assumption on the draft).
+    const VPM = { 'Daily': 21.7, '5 days per week': 21.7, '3 days per week': 13, 'Weekly': 4.33, 'Every 2 weeks': 2.17, 'Monthly': 1, 'Quarterly': 1 / 3, 'One-time': 1 };
+    const anyItem = (cat, prefix) => db.prepare("SELECT * FROM scope_items WHERE active=1 AND category=? AND name LIKE ? ORDER BY id LIMIT 1").get(cat, prefix + '%');
+    const r2 = n => Math.round(n * 100) / 100;
+    if (service === 'multifamily') {
+      const f = a.frequency, v = VPM[f]; if (!v) return { missing: ['Cleaning frequency (needed for recurring pricing)'] };
+      const areas = [].concat(a.common_areas || []), lines = [];
+      const add = (name, qtyPerVisit, why) => { if (!(qtyPerVisit > 0)) { missing.push(why); return; } const it = item('multifamily', name); if (!it) { missing.push(`Set the price for "${name}" in Cleaning Scopes`); return; } lines.push({ scope_id: it.id, quantity: r2(qtyPerVisit * v) }); };
+      if (areas.includes('Hallways and corridors')) add('Hallways and corridors', Number(a.hallway_sqft), 'Total hallway/corridor square footage');
+      if (areas.includes('Stairwells')) add('Stairwells', Number(a.stairwells) * (Number(a.floors) || 0), 'Number of stairwells and floors');
+      if (areas.includes('Elevators')) add('Elevators', Number(a.elevators), 'Number of elevator cabs');
+      for (const [ans, name] of [['Lobby / leasing office', 'Lobbies and leasing offices'], ['Clubhouse', 'Clubhouses'], ['Fitness center', 'Fitness centers']]) if (areas.includes(ans)) missing.push(`${ans} square footage (walkthrough) to price "${name}"`);
+      for (const [ans, name] of [['Laundry rooms', 'Laundry rooms'], ['Trash rooms', 'Trash rooms']]) if (areas.includes(ans)) missing.push(`Number of ${ans.toLowerCase()} to price "${name}"`);
+      if ([].concat(a.extras || []).includes('Valet trash')) { const it = item('multifamily', 'Valet trash'); if (!it) missing.push('Set the price for "Valet trash" in Cleaning Scopes'); else if (Number(a.valet_doors) > 0) lines.push({ scope_id: it.id, quantity: r2(Number(a.valet_doors) * 21.7) }); else missing.push('Number of valet trash doors'); if (it) assumptions.push('Valet trash priced at 5 nights per week (21.7 nights/month).'); }
+      assumptions.push(`Recurring monthly price: ${f} = ${r2(v)} visits per month.`);
+      return lines.length ? { category: 'multifamily', lines, assumptions, missing, recurring: 'month' } : { missing };
+    }
+    if (service === 'janitorial') {
+      const sf = Number(a.square_footage), f = a.frequency, v = VPM[f];
+      if (!(sf > 0)) return { missing: ['Square footage'] };
+      if (!v) return { missing: ['Cleaning frequency (needed for recurring pricing)'] };
+      const lines = [], base = anyItem('janitorial', 'Daily office cleaning');
+      if (!base) return { missing: ['Add "Daily office cleaning" to Cleaning Scopes'] };
+      if (!(base.unit_price > 0)) missing.push('Set the price per SF per visit for "Daily office cleaning" in Cleaning Scopes'); else lines.push({ scope_id: base.id, quantity: r2(sf * v) });
+      if (Number(a.breakrooms) > 0) { const it = item('janitorial', 'Breakrooms'); if (it) lines.push({ scope_id: it.id, quantity: r2(Number(a.breakrooms) * v) }); else missing.push('Set the price for "Breakrooms" in Cleaning Scopes'); }
+      if (Number(a.restrooms) > 0) missing.push(`Fixture count for the ${a.restrooms} restroom(s) to price "Restroom sanitation" (priced per fixture)`);
+      // Staffing from the company production rate (SF per labor hour) on the price-book item.
+      let staffing = null;
+      if (base.production_rate > 0) {
+        const hrs = sf / base.production_rate, shift = a.shift === 'Daytime' ? 8 : 4;
+        staffing = { hours_per_visit: r2(hrs), crew_size: Math.max(1, Math.ceil(hrs / shift)), shift_hours: shift, monthly_hours: r2(hrs * v) };
+        assumptions.push(`Staffing: ${sf.toLocaleString('en-US')} SF ÷ ${base.production_rate.toLocaleString('en-US')} SF/hr = ${staffing.hours_per_visit} labor hours per visit → ${staffing.crew_size} cleaner(s) on a ${shift}-hour ${a.shift === 'Daytime' ? 'day' : 'evening'} shift; about ${staffing.monthly_hours} labor hours per month.`);
+      } else missing.push('Set the production rate (SF per labor hour) for "Daily office cleaning" to calculate staffing');
+      if (a.day_porter === 'Yes' || a.day_porter === true) missing.push('Day porter hours per day');
+      assumptions.push(`Recurring monthly price: ${f} = ${r2(v)} visits per month.`);
+      return lines.length ? { category: 'janitorial', lines, assumptions, missing, staffing, recurring: 'month' } : { missing, staffing };
+    }
+    return null; // windows, power washing, parking: no per-unit prices in the book yet
   }
 
   function draftFromLead(l) {
@@ -49,6 +85,7 @@ module.exports = function mountAutobid(app, ctx) {
     const total = Math.round(items.reduce((t, i) => t + i.amount, 0) * 100) / 100;
     const scope = [`${l.service || l.project_type || 'Cleaning'} for ${l.project_name || l.company || l.contact_name}${l.address ? ' at ' + l.address : ''}.`,
       'Drafted automatically from the customer\'s quote request using the Bright Clean price book. Review before sending.',
+      ...(p.recurring ? [`Pricing is per month (recurring service).`] : []),
       ...(p.assumptions.length ? ['Assumptions: ' + p.assumptions.join(' ')] : []), ...(p.missing.length ? ['Still needed: ' + p.missing.join('; ')] : [])].join('\n\n');
     const t = now();
     const exp = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);

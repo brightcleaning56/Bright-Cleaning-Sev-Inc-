@@ -12,6 +12,8 @@ const SERVICES = {
       { name: 'floors', label: 'Floors per building (highest)', type: 'number', min: 1 },
       { name: 'common_areas', label: 'Common areas to include', type: 'multi', required: true, options: ['Hallways and corridors', 'Stairwells', 'Elevators', 'Lobby / leasing office', 'Clubhouse', 'Fitness center', 'Laundry rooms', 'Trash rooms', 'Pool area'] },
       { name: 'elevators', label: 'How many elevators?', type: 'number', min: 1, show_if: { field: 'common_areas', has: 'Elevators' } },
+      { name: 'hallway_sqft', label: 'Total hallway / corridor square footage (if known)', type: 'number' },
+      { name: 'stairwells', label: 'Number of stairwells per building', type: 'number' },
       { name: 'frequency', label: 'Cleaning frequency', type: 'select', required: true, options: COMMON_FREQ },
       { name: 'occupancy', label: 'Property status', type: 'select', options: ['Occupied', 'Lease-up / partly occupied', 'New / vacant'] },
       { name: 'extras', label: 'Also interested in', type: 'multi', options: ['Unit turnover cleaning', 'Valet trash', 'Parking lot pickup'] },
@@ -34,7 +36,11 @@ const SERVICES = {
       { name: 'plans', label: 'Drawings and specifications', type: 'select', required: true, options: ['Uploading them now', 'Will send them later', 'No drawings available'] },
       { name: 'bid_due_date', label: 'Bid due date', type: 'date' },
       { name: 'completion_date', label: 'Owner walkthrough / turnover date', type: 'date' },
-      { name: 'site_access', label: 'Site access and requirements', type: 'textarea' }
+      { name: 'site_access', label: 'Site access and requirements', type: 'textarea' },
+      { name: 'elevators', label: 'Number of elevators', type: 'number' },
+      { name: 'stairwells', label: 'Number of stairwells', type: 'number' },
+      { name: 'safety_requirements', label: 'Site safety requirements (badging, PPE, orientation)', type: 'text' },
+      { name: 'exclusions', label: 'Anything excluded from our scope', type: 'text' }
     ]
   },
   janitorial: {
@@ -50,6 +56,9 @@ const SERVICES = {
       { name: 'shift', label: 'Preferred time', type: 'select', options: ['After hours', 'Daytime', 'Overnight', 'Flexible'] },
       { name: 'supplies', label: 'Restroom paper and soap', type: 'select', options: ['Bright Clean supplies them', 'We supply them', 'Discuss'] },
       { name: 'day_porter', label: 'Day porter needed?', type: 'yesno' },
+      { name: 'occupancy', label: 'Approximate number of occupants / staff on site', type: 'number' },
+      { name: 'access_notes', label: 'Access and security (keys, alarm codes handled in person, badge rules)', type: 'text' },
+      { name: 'special_requirements', label: 'Special requirements', type: 'text' },
       { name: 'start_date', label: 'Desired start date', type: 'date' }
     ]
   },
