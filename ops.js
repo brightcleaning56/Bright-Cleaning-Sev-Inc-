@@ -214,7 +214,7 @@ module.exports = function mountOps(app, ctx) {
     if (running) return { skipped: 'already running' };
     running = true;
     const t = atTime ? new Date(atTime) : new Date();
-    const today = t.toISOString().slice(0, 10);
+    const today = require('./bizdate').today(t); // business (Central) date — UTC would age reminders a day early every evening
     const result = { proposal_reminders: 0, invoice_reminders: 0, backup: null };
     try {
       if (isOn('auto_proposal_reminders')) {

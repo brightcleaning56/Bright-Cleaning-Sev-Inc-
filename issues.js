@@ -162,6 +162,60 @@ module.exports = function mountIssues(app, ctx) {
     res.status(201).json({ issue: getOne(it.id) });
   });
 
+  // ---- Complaint workflow actions (audit MF-01..MF-03) ----
+  for (const [tbl, c, t] of [['calls', 'issue_id', 'INTEGER'], ['visits', 'issue_id', 'INTEGER'], ['issue_comments', 'customer_facing', 'INTEGER DEFAULT 0']]) {
+    try { if (!db.prepare(`PRAGMA table_info(${tbl})`).all().some(x => x.name === c)) db.exec(`ALTER TABLE ${tbl} ADD COLUMN ${c} ${t}`); } catch { /* table created by another module */ }
+  }
+  // MF-01: turn a logged call into an issue (complaint by default) without retyping it.
+  app.post('/api/admin/calls/:id/issue', auth, async (req, res) => {
+    const call = db.prepare('SELECT * FROM calls WHERE id=?').get(Number(req.params.id)); if (!call) return res.status(404).json({ error: 'Call not found.' });
+    if (call.issue_id) return res.status(409).json({ error: 'An issue was already created from this call.', id: call.issue_id });
+    const r = req.body || {}, summary = String(call.summary || call.transcript || '').trim();
+    if (!call.customer_id && !r.customer_id) return res.status(400).json({ error: 'Link this call to a customer first (complaints are tracked per customer).' });
+    const b = { type: TYPES[r.type] ? r.type : 'complaint', status: 'Open', priority: r.priority || (call.purpose === 'Complaint' ? 'High' : 'Normal'), customer_id: r.customer_id || call.customer_id,
+      title: clean(r.title, 200) || `Phone ${call.purpose === 'Complaint' ? 'complaint' : 'request'}: ${summary.slice(0, 70) || (call.company || call.contact_name || call.phone)}`,
+      description: `${summary}\n\nFrom ${call.direction.toLowerCase()} call ${call.created_at.slice(0, 16).replace('T', ' ')} UTC${call.contact_name ? ' with ' + call.contact_name : ''}${call.phone ? ' (' + call.phone + ')' : ''}.`,
+      source: 'Phone call', reported_by: call.contact_name || null, assigned_to: r.assigned_to || null, category: r.category || null };
+    if (b.type === 'complaint') b.customer_comms = 'Needs update';
+    for (const k of Object.keys(b)) if (b[k] == null || b[k] === '') delete b[k];
+    const { out, errs } = validate(b, null); if (errs.length) return res.status(400).json({ error: errs.join(' ') });
+    const t = now(), c2 = Object.keys(out);
+    const info = db.prepare(`INSERT INTO customer_issues(${c2.join(',')},created_by,created_at,updated_at,resolved_at) VALUES(${c2.map(() => '?').join(',')},?,?,?,?)`).run(...c2.map(c => out[c]), who(req), t, t, null);
+    db.prepare('UPDATE calls SET issue_id=? WHERE id=?').run(info.lastInsertRowid, call.id);
+    const it = getOne(info.lastInsertRowid);
+    logAction(req, 'created', TYPES[it.type].toLowerCase(), it.id, `${it.number} from call #${call.id}`);
+    await afterChange(req, null, it);
+    res.status(201).json({ issue: it });
+  });
+  // MF-02: send the customer an update (only the typed message — internal notes are never included) and record it.
+  app.post('/api/admin/issues/:id/customer-update', auth, async (req, res) => {
+    const it = getOne(Number(req.params.id)); if (!it) return res.status(404).json({ error: 'Item not found.' });
+    const msg = String((req.body || {}).message || '').trim().slice(0, 5000); if (msg.length < 10) return res.status(400).json({ error: 'Write the message to the customer (at least a sentence).' });
+    const k = it.contact_id ? db.prepare('SELECT name, email FROM customer_contacts WHERE id=?').get(it.contact_id) : null, cu = it.customer_id ? db.prepare('SELECT name, company, email FROM customers WHERE id=?').get(it.customer_id) : null;
+    const to = (k && k.email) || (cu && cu.email); if (!to) return res.status(400).json({ error: 'No email on file for this customer or contact. Add one, or call them and mark the update as done.' });
+    const m = ctx.getMailer && ctx.getMailer(); if (!m) return res.status(503).json({ error: 'Email is not set up, so the update was not sent.' });
+    try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || adminEmail, to, subject: `Update on your ${TYPES[it.type].toLowerCase()} ${it.number}: ${it.title}`, text: `${msg}\n\nBright Cleaning Sev Inc.\nOffice 515-329-5889 · Eric Moore (Owner) 469-267-8472` }); }
+    catch (e) { logAction(req, 'customer update FAILED', TYPES[it.type].toLowerCase(), it.id, `${to}: ${e.message}`); return res.status(502).json({ error: 'The email could not be sent: ' + e.message + '. Nothing was marked as sent.' }); }
+    db.prepare('INSERT INTO issue_comments(issue_id, body, author, created_at, customer_facing) VALUES(?,?,?,?,1)').run(it.id, `Emailed to customer (${to}):\n${msg}`, who(req), now());
+    db.prepare("UPDATE customer_issues SET customer_comms='Customer informed', updated_at=? WHERE id=?").run(now(), it.id);
+    logAction(req, 'emailed customer update', TYPES[it.type].toLowerCase(), it.id, `${it.number} to ${to}`);
+    res.json({ ok: true, to, issue: getOne(it.id) });
+  });
+  // MF-03: schedule the corrective visit from the issue (shows on the dispatch board; crew conflicts are checked when crew is assigned).
+  app.post('/api/admin/issues/:id/schedule-visit', auth, (req, res) => {
+    const it = getOne(Number(req.params.id)); if (!it) return res.status(404).json({ error: 'Item not found.' });
+    const b = req.body || {}, isD = x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || '')), isT = x => !x || /^\d{2}:\d{2}$/.test(String(x));
+    if (!isD(b.date)) return res.status(400).json({ error: 'Choose the visit date.' });
+    if (!isT(b.start_time) || !isT(b.end_time) || (b.start_time && b.end_time && b.end_time <= b.start_time)) return res.status(400).json({ error: 'Check the start and end times.' });
+    const t = now(), vid = db.prepare(`INSERT INTO visits(title,type,date,start_time,end_time,address,customer_id,project_id,notes,status,created_by,created_at,updated_at,issue_id) VALUES(?,?,?,?,?,?,?,?,?,'Scheduled',?,?,?,?)`)
+      .run(clean(b.title, 200) || `Corrective work: ${it.number} ${it.title}`.slice(0, 200), 'Corrective work', b.date, b.start_time || null, b.end_time || null, clean(b.address, 300) || it.property || null, it.customer_id || null, it.project_id || null, `For ${it.number}. ${clean(b.notes, 1000) || ''}`.trim(), who(req), t, t, it.id).lastInsertRowid;
+    if (it.status === 'Open') db.prepare("UPDATE customer_issues SET status='In progress', updated_at=? WHERE id=?").run(t, it.id);
+    if (!String(it.corrective_action || '').trim()) db.prepare('UPDATE customer_issues SET corrective_action=?, updated_at=? WHERE id=?').run(`Corrective visit on ${b.date}${b.start_time ? ' ' + b.start_time : ''} (visit #${vid}).`, t, it.id);
+    db.prepare('INSERT INTO issue_comments(issue_id, body, author, created_at) VALUES(?,?,?,?)').run(it.id, `Corrective visit scheduled for ${b.date}${b.start_time ? ' ' + b.start_time : ''} (visit #${vid}).`, who(req), t);
+    logAction(req, 'scheduled corrective visit', TYPES[it.type].toLowerCase(), it.id, `${it.number}: visit #${vid} on ${b.date}`);
+    res.status(201).json({ visit_id: vid, issue: getOne(it.id) });
+  });
+
   app.patch('/api/admin/issues/:id', auth, async (req, res) => {
     const cur = getOne(Number(req.params.id));
     if (!cur) return res.status(404).json({ error: 'Item not found.' });
