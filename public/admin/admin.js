@@ -685,8 +685,9 @@
       body: `
         <dl class="facts">
           <dt>Proposal total</dt><dd><b style="font-size:20px;color:var(--navy)">${money(e.proposal_total)}</b></dd>
-          <dt>Cost incl. overhead</dt><dd>${money(e.total_cost)} · ${Number(e.labor_hours || 0).toFixed(1)} labor hours</dd>
-          <dt>Gross margin</dt><dd>${Number(e.margin_pct || 0)}% · profit ${money(e.proposal_total / (1 + Number(e.tax_pct || 0) / 100) - e.total_cost)}</dd>
+          ${Number(e.tax_pct) > 0 ? `<dt>Subtotal before tax</dt><dd>${money(e.proposal_total / (1 + Number(e.tax_pct) / 100))}</dd><dt>Tax (${Number(e.tax_pct)}%)</dt><dd>${money(e.proposal_total - e.proposal_total / (1 + Number(e.tax_pct) / 100))}</dd>` : ''}
+          ${Number(e.total_cost) > 0 ? `<dt>Cost incl. overhead</dt><dd>${money(e.total_cost)} · ${Number(e.labor_hours || 0).toFixed(1)} labor hours</dd>
+          <dt>Gross margin</dt><dd>${Math.round((1 - e.total_cost / (e.proposal_total / (1 + Number(e.tax_pct || 0) / 100))) * 1000) / 10}% · profit ${money(e.proposal_total / (1 + Number(e.tax_pct || 0) / 100) - e.total_cost)}</dd>` : `<dt>Cost &amp; margin</dt><dd class="muted">No costs entered, so margin can't be calculated. Add labor and costs (or price it from a takeoff) to see profit.</dd>`}
           <dt>Email</dt><dd>${esc(e.email || '— add one to email the proposal')}</dd>
           <dt>Site</dt><dd>${esc(e.site_address || '—')}</dd>
           <dt>Valid through</dt><dd>${fmtDate(e.expires_on)}</dd>
