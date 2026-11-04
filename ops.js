@@ -215,8 +215,25 @@ module.exports = function mountOps(app, ctx) {
     running = true;
     const t = atTime ? new Date(atTime) : new Date();
     const today = require('./bizdate').today(t); // business (Central) date — UTC would age reminders a day early every evening
-    const result = { proposal_reminders: 0, invoice_reminders: 0, backup: null };
+    const result = { proposal_reminders: 0, invoice_reminders: 0, bid_deadline_alerts: 0, backup: null };
     try {
+      // Bid deadline alerts (internal): open GC bid requests due within 3 days / tomorrow-or-today with no proposal sent yet.
+      { const to = process.env.NOTIFY_EMAIL || process.env.ADMIN_EMAIL;
+        if (to && isEmail(to)) {
+          const rows = db.prepare("SELECT l.* FROM leads l WHERE l.kind='bid' AND l.bid_due_date IS NOT NULL AND l.bid_due_date<>'' AND l.status NOT IN ('Proposal Sent','Won','Lost','Archived') AND NOT EXISTS (SELECT 1 FROM estimates e WHERE e.lead_id=l.id AND e.status IN ('Sent','Viewed','Approved','Declined'))").all();
+          for (const l of rows) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(l.bid_due_date)) continue;
+            const diff = days(new Date(l.bid_due_date + 'T12:00:00Z') - new Date(today + 'T12:00:00Z'));
+            const stage = diff < 0 ? 'missed' : diff <= 1 ? 'due1' : diff <= 3 ? 'due3' : null;
+            if (!stage || sentAlready('bid_deadline', l.id, stage)) continue;
+            if (stage === 'due3' && (sentAlready('bid_deadline', l.id, 'due1') || sentAlready('bid_deadline', l.id, 'missed'))) continue;
+            if (stage === 'due1' && sentAlready('bid_deadline', l.id, 'missed')) continue;
+            const label = stage === 'missed' ? `MISSED bid deadline (${l.bid_due_date})` : diff === 0 ? 'Bid due TODAY' : diff === 1 ? 'Bid due tomorrow' : `Bid due in ${diff} days`;
+            const ok = await send('bid_deadline', l.id, stage, to, `${label}: ${l.project_name || 'bid request'} - ${l.company || l.contact_name || ''}`,
+              `${label}.\n\nProject: ${l.project_name || '-'}\nGeneral contractor: ${l.company || '-'} (${l.contact_name || ''} ${l.email || ''} ${l.phone || ''})\nDue: ${l.bid_due_date}\nStatus: ${l.status}\n\nNo proposal has been sent yet. Open the lead: ${baseUrl()}/admin/#leads`);
+            if (ok) result.bid_deadline_alerts++;
+          }
+        } }
       if (isOn('auto_proposal_reminders')) {
         const rows = db.prepare("SELECT * FROM estimates WHERE status IN ('Sent','Viewed') AND email IS NOT NULL AND email<>''").all();
         for (const e of rows) {
