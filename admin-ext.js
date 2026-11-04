@@ -54,6 +54,7 @@ module.exports = function mountAdminExt(app, ctx) {
   });
 
   app.put('/api/admin/estimates/:id', auth, (req, res) => {
+    { const pr = Number((req.body || {}).production_rate); if (pr > 0 && pr < 20) return res.status(400).json({ error: `Production rate is square feet cleaned per labor hour (typically 1,000–3,000). ${pr} looks like a price per square foot — enter the rate in sq ft per hour.` }); }
     const b = req.body || {};
     const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(id(req));
     if (!e) return res.status(404).json({ error: 'Not found' });
@@ -117,11 +118,15 @@ module.exports = function mountAdminExt(app, ctx) {
     if (!inv) return res.status(404).json({ error: 'Not found' });
     const amt = num(req.body && req.body.amount);
     if (!amt) return res.status(400).json({ error: 'Enter a payment amount greater than zero.' });
+    if (inv.status === 'Void') return res.status(409).json({ error: 'This invoice is void. Payments cannot be recorded on it.' });
+    const balance = Math.round((Number(inv.amount || 0) - Number(inv.paid_amount || 0)) * 100) / 100;
+    if (balance <= 0) return res.status(409).json({ error: 'This invoice is already paid in full.' });
+    if (amt > balance + 0.005) return res.status(400).json({ error: `That is more than the balance due ($${balance.toFixed(2)}). Record the exact amount, or record the extra as a separate credit.` });
     const paid = Math.round((Number(inv.paid_amount || 0) + amt) * 100) / 100;
     const status = paid >= Number(inv.amount || 0) ? 'Paid' : 'Partially Paid';
     db.prepare('UPDATE invoices SET paid_amount=?,status=? WHERE id=?').run(paid, status, inv.id);
     // Dated payment record (feeds "collected this month" on the Command Center).
-    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.received_on || '')) && req.body.received_on <= new Date().toISOString().slice(0, 10) ? req.body.received_on : null;
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.received_on || '')) && req.body.received_on <= require('./bizdate').today() ? req.body.received_on : null;
     const nowIso = new Date().toISOString();
     db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)')
       .run(inv.id, amt, clean(req.body.note || '', 300), day ? day + 'T12:00:00.000Z' : nowIso, (req.user && req.user.email) || null, nowIso);
