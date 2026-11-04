@@ -697,6 +697,7 @@
           ${e.decided_at ? `<dt>Decision</dt><dd>${badge(e.status)} ${esc(fmtWhen(e.decided_at))}${e.decision_ip ? ' · by the customer online' : ' · set in admin'}</dd>` : ''}
           ${e.lead_id ? `<dt>From lead</dt><dd><button class="linklike" data-lead="${e.lead_id}">Lead #${e.lead_id}</button></dd>` : ''}
         </dl>
+        <div class="card" id="estFiles" style="margin:10px 0"><h3 class="secth" style="margin-top:0">Attached files</h3><p class="muted">Loading…</p></div>
         <div id="apprBox"></div>
         <div class="grid"><div class="f"><label for="es">Status</label><select id="es"${e.decision_ip ? ' disabled' : ''}>${options(STATUS.estimates, e.status)}</select><span class="hint">${e.decision_ip ? 'Locked: the customer made this decision online. Duplicate the proposal to revise it.' : 'Updates automatically when the customer views, approves or declines.'}</span></div></div>
         <div class="formsection">Scope</div><div class="pre">${esc(e.scope)}</div>
@@ -713,6 +714,15 @@
         <span class="grow"></span>
         <button class="btn danger" id="eDel"${e.status === 'Approved' ? ' disabled title="Approved proposals are kept for your records."' : ''}>Delete</button>`
     });
+    const loadEstFiles = async () => { const box = $('#estFiles'); if (!box) return; let f = []; try { f = (await api(`/api/admin/estimates/${e.id}/files`)).files; } catch { /* */ }
+      box.innerHTML = `<h3 class="secth" style="margin-top:0">Attached files</h3>${f.length ? `<ul class="plain">${f.map(x => `<li style="margin:4px 0">📎 <a href="#" data-fdl="${x.id}">${esc(x.title || x.file_name)}</a> <small class="muted">${esc(x.kind)} · ${(x.size / 1024).toFixed(0)} KB · ${esc(fmtDate(x.created_at))}${x.uploaded_by ? ' · ' + esc(x.uploaded_by) : ''}</small></li>`).join('')}</ul>` : '<p class="muted">No files attached yet.</p>'}
+        <label class="btn small ghost" style="cursor:pointer">Attach file<input type="file" id="estFileIn" hidden multiple></label> <small class="muted">Also saved to the customer's documents.</small>`;
+      $$('#estFiles [data-fdl]').forEach(a => a.onclick = ev => { ev.preventDefault(); const x = f.find(y => y.id === Number(a.dataset.fdl)); downloadFile({ name: x.file_name, url: x.file_url }); });
+      $('#estFileIn').onchange = async ev => { const files = [...ev.target.files]; if (!files.length) return; const fd = new FormData(); files.forEach(x => fd.append('files', x)); fd.append('kind', 'Proposal'); fd.append('estimate_id', e.id); if (e.customer_id) fd.append('customer_id', e.customer_id);
+        if (files.length === 1) fd.append('title', files[0].name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' '));
+        try { const r = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd }); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed'); toast(`${files.length} file(s) attached`); loadEstFiles(); } catch (err) { toast(err.message, true); } };
+    };
+    loadEstFiles();
     bindOpeners($('#drawerRoot'));
     api(`/api/admin/estimates/${e.id}/approval`).then(ap => {
       const box = $('#apprBox'); if (!box) return;
