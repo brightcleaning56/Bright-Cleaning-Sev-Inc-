@@ -7,7 +7,7 @@ const discOf = s => ({ G: 'General', A: 'Architectural', I: 'Interior', S: 'Stru
 module.exports = function mountDocs(app, ctx) {
   const { db, auth, logAction, clean, adminEmail, upload, uploadDir } = ctx;
   const cols = db.prepare('PRAGMA table_info(documents)').all().map(c => c.name);
-  for (const [c, t] of [['status', "TEXT DEFAULT 'Current'"], ['version', 'INTEGER DEFAULT 1'], ['supersedes_id', 'INTEGER'], ['superseded_by', 'INTEGER'], ['superseded_at', 'TEXT'], ['sheets', "TEXT DEFAULT '[]'"],
+  for (const [c, t] of [['estimate_id', 'INTEGER'], ['status', "TEXT DEFAULT 'Current'"], ['version', 'INTEGER DEFAULT 1'], ['supersedes_id', 'INTEGER'], ['superseded_by', 'INTEGER'], ['superseded_at', 'TEXT'], ['sheets', "TEXT DEFAULT '[]'"],
     ['blueprint', 'TEXT'], ['blueprint_status', 'TEXT'], ['tags', 'TEXT'], ['notes', 'TEXT'], ['archived_by', 'TEXT'], ['archived_at', 'TEXT']])
     if (!cols.includes(c)) db.exec(`ALTER TABLE documents ADD COLUMN ${c} ${t}`);
   try { if (!db.prepare('PRAGMA table_info(takeoffs)').all().some(c => c.name === 'stale_note')) db.exec('ALTER TABLE takeoffs ADD COLUMN stale_note TEXT'); } catch { /* takeoffs absent */ }
@@ -18,6 +18,9 @@ module.exports = function mountDocs(app, ctx) {
   const get = id => { const d = db.prepare(`SELECT d.*, p.name project_name, c.company customer_company, c.name customer_name FROM documents d LEFT JOIN projects p ON p.id=d.project_id LEFT JOIN customers c ON c.id=d.customer_id WHERE d.id=?`).get(Number(id)); return d && { ...d, sheets: J(d.sheets, []), blueprint: J(d.blueprint, null), analysis: J(d.analysis, null) }; };
   const chain = d => { const list = []; let cur = d, guard = 0; while (cur && cur.supersedes_id && guard++ < 50) { cur = db.prepare('SELECT id,title,revision,version,status,file_name,created_at,uploaded_by FROM documents WHERE id=?').get(cur.supersedes_id); if (cur) list.push(cur); } return list; };
 
+  app.get('/api/admin/estimates/:id/files', auth, (req, res) => {
+    res.json({ files: db.prepare("SELECT id, title, kind, file_name, file_url, size, uploaded_by, created_at FROM documents WHERE estimate_id=? AND COALESCE(status,'Current')<>'Archived' ORDER BY id DESC").all(Number(req.params.id)) });
+  });
   app.get('/api/admin/docs/library', auth, (req, res) => {
     const rows = db.prepare(`SELECT d.id,d.title,d.kind,d.revision,d.version,d.status,d.file_name,d.file_url,d.size,d.project_id,d.customer_id,d.lead_id,d.issue_id,d.inspection_id,d.uploaded_by,d.created_at,d.analysis_status,d.blueprint_status,d.sheets,d.supersedes_id,d.superseded_by,d.tags,
       p.name project_name, c.company customer_company, c.name customer_name FROM documents d LEFT JOIN projects p ON p.id=d.project_id LEFT JOIN customers c ON c.id=d.customer_id ORDER BY d.id DESC LIMIT 1000`).all()

@@ -402,7 +402,7 @@ module.exports = function mountSuite(app, ctx) {
   });
 
   // ---------- Drawing and document library ----------
-  const KINDS = ['Drawings', 'Specifications', 'Addendum', 'Finish schedule', 'Photos', 'Other'];
+  const KINDS = ['Drawings', 'Specifications', 'Addendum', 'Finish schedule', 'Photos', 'Proposal', 'Contract', 'Other'];
   app.get('/api/admin/documents', auth, (req, res) => {
     const where = [], args = [];
     for (const k of ['project_id', 'customer_id', 'lead_id']) if (req.query[k]) { where.push(`d.${k}=?`); args.push(Number(req.query[k])); }
@@ -416,13 +416,16 @@ module.exports = function mountSuite(app, ctx) {
     const errs = [];
     if (!files.length) errs.push('Choose at least one file to upload.');
     const pid = idOrNull(b.project_id), cid = idOrNull(b.customer_id), lid = idOrNull(b.lead_id), iid = idOrNull(b.issue_id), qid = idOrNull(b.inspection_id);
+    const eid = idOrNull(b.estimate_id); if (!exists('estimates', eid)) errs.push('The linked proposal was not found.');
+    let cidX = cid; if (eid && !cidX) { const e = db.prepare('SELECT company, email FROM estimates WHERE id=?').get(eid); const m = e && db.prepare("SELECT id FROM customers WHERE (?<>'' AND lower(company)=lower(?)) OR (?<>'' AND lower(email)=lower(?)) ORDER BY id LIMIT 1").get(e.company || '', e.company || '', e.email || '', e.email || ''); cidX = m ? m.id : null; }
     if (!exists('projects', pid) || !exists('customers', cid) || !exists('leads', lid) || !exists('customer_issues', iid) || !exists('inspections', qid)) errs.push('The linked project, customer, lead or item was not found.');
     if (errs.length) { discard(); return res.status(400).json({ error: errs.join(' ') }); }
     const kind = pick(b.kind, KINDS, 'Drawings'), t = now(), ids = [];
     for (const f of files) {
       const title = clean(b.title, 200) && files.length === 1 ? clean(b.title, 200) : f.originalname;
       ids.push(db.prepare(`INSERT INTO documents(project_id,customer_id,lead_id,issue_id,inspection_id,title,kind,revision,file_name,file_url,size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(pid, cid, lid, iid, qid, title, kind, clean(b.revision, 40), f.originalname, '/api/files/' + path.basename(f.filename), f.size, who(req), t).lastInsertRowid);
+        .run(pid, cidX, lid, iid, qid, title, kind, clean(b.revision, 40), f.originalname, '/api/files/' + path.basename(f.filename), f.size, who(req), t).lastInsertRowid);
+      if (eid) { try { db.prepare('UPDATE documents SET estimate_id=? WHERE id=?').run(eid, ids[ids.length - 1]); } catch { /* column added by docs2 */ } }
     }
     logAction(req, 'uploaded', 'document', ids[0], `${ids.length} file(s): ${kind}`);
     res.status(201).json({ ids });
