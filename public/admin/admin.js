@@ -699,7 +699,7 @@
         </dl>
         <div class="card" id="estFiles" style="margin:10px 0"><h3 class="secth" style="margin-top:0">Attached files</h3><p class="muted">Loading…</p></div>
         <div id="apprBox"></div>
-        <div class="grid"><div class="f"><label for="es">Status</label><select id="es"${e.decision_ip ? ' disabled' : ''}>${options(STATUS.estimates, e.status)}</select><span class="hint">${e.decision_ip ? 'Locked: the customer made this decision online. Duplicate the proposal to revise it.' : 'Updates automatically when the customer views, approves or declines.'}</span></div></div>
+        <div class="grid"><div class="f"><label for="es">Status</label><select id="es"${e.decision_ip ? ' disabled' : ''}>${options(STATUS.estimates.filter(x => x !== 'Approved' || e.status === 'Approved'), e.status)}</select><span class="hint">${e.decision_ip ? 'Locked: the customer made this decision online. Duplicate the proposal to revise it.' : 'Updates automatically when the customer views, approves or declines.'}</span></div></div>
         <div class="formsection">Scope</div><div class="pre">${esc(e.scope)}</div>
         ${items.length ? `<div class="formsection">Line items</div><table class="t"><tbody>${items.map(i => `<tr><td>${esc(i.description)}</td><td class="num">${money(i.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
         ${e.terms ? `<div class="formsection">Terms</div><div class="pre">${esc(e.terms)}</div>` : ''}
