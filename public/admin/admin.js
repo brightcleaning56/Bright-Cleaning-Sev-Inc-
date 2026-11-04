@@ -1496,7 +1496,7 @@
     $('#navCalls').hidden = !r.follow_ups_due; $('#navCalls').textContent = r.follow_ups_due;
     renderCalls();
     api('/api/admin/calls-intel').then(x => { const el = $('#callsIntel'); if (!el) return;
-      el.innerHTML = `<div class="st"><span>Phone capture</span><b style="font-size:15px;color:${x.connected ? '#17904c' : '#a06a00'}">${x.connected ? 'Connected (Twilio)' : 'Not connected'}</b><small>${x.connected ? 'calls log automatically' : 'calls are logged by hand'}</small></div>
+      el.innerHTML = `<div class="st"><span>Phone capture</span><b style="font-size:15px;color:${x.connected ? '#17904c' : '#a06a00'}">${x.connected ? 'Connected (Twilio)' : 'Not connected'}</b><small>${x.connected ? (x.forwarding ? 'calls ring your phone, log automatically' : 'calls go to voicemail, log automatically') : 'calls are logged by hand'}</small>${x.connected ? '' : `<small style="word-break:break-all">Twilio voice URL: ${esc(x.voice_url || '')}</small>`}</div>
         <div class="st"><span>Last 30 days</span><b>${x.total_30}</b><small>${x.missed_30} missed</small></div>${x.by_intent.slice(0, 3).map(i => `<div class="st"><span>${esc(i.k)}</span><b>${i.n}</b><small>calls (AI)</small></div>`).join('')}
         <div class="st"><span>Hot leads (score 70+)</span><b>${x.hot_leads.length}</b><small>${x.hot_leads.slice(0, 2).map(h => esc(h.company || h.contact_name || '')).join(', ')}</small></div>`; }).catch(() => {});
   }
