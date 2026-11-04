@@ -32,6 +32,12 @@
   };
   const formObj = form => Object.fromEntries(new FormData(form).entries());
 
+  // Copy text without ever throwing: clipboard API when available, otherwise select the field so the user can press Ctrl+C.
+  async function copyText(text, field, okMsg) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); toast(okMsg || 'Copied'); return true; } } catch { /* fall through */ }
+    if (field && field.select) { field.focus(); field.select(); }
+    toast('Press Ctrl+C (Cmd+C on Mac) to copy'); return false;
+  }
   function toast(text, isErr) {
     const t = document.createElement('div');
     t.className = 'toast' + (isErr ? ' err' : '');
@@ -761,7 +767,7 @@
       }
       catch (err) { ev.target.value = e.status; toast(err.message, true); }
     };
-    $('#eCopy').onclick = () => navigator.clipboard.writeText(url).then(() => toast('Link copied')).catch(() => { $('#eUrl').select(); toast('Press Ctrl+C to copy'); });
+    $('#eCopy').onclick = () => copyText(url, $('#eUrl'), 'Link copied');
     $('#eSend').onclick = async () => {
       try { if (!(await clearApproval('goes to the customer'))) return; } catch (err) { return toast(err.message, true); }
       if (!confirm(`Email this proposal to ${e.email}?`)) return;
@@ -2218,7 +2224,7 @@
       $('#iVerify') && ($('#iVerify').onclick = () => save({ verify: true }));
       $('#iReopen') && ($('#iReopen').onclick = () => save({ status: 'Open' }));
       $('#iDel') && ($('#iDel').onclick = async () => { if (!confirm('Delete this note?')) return; try { await api('/api/admin/issues/' + it.id, { method: 'DELETE' }); toast('Note deleted'); closeDrawer(); loadIssues(); } catch (e) { msg(e.message); } });
-      $('#i_cmtBtn') && ($('#i_cmtBtn').onclick = async () => { const t = $('#i_cmt').value.trim(); if (!t) return; try { await api(`/api/admin/issues/${it.id}/comments`, { method: 'POST', json: { body: t } }); toast('Comment added'); openIssue(it, null); } catch (e) { msg(e.message); } });
+      $('#i_cmtBtn') && ($('#i_cmtBtn').onclick = async () => { const t = $('#i_cmt').value.trim(); if (!t) { toast('Write a comment first.', true); $('#i_cmt').focus(); return; } try { await api(`/api/admin/issues/${it.id}/comments`, { method: 'POST', json: { body: t } }); toast('Comment added'); openIssue(it, null); } catch (e) { msg(e.message); } });
       $$('#drawerRoot [data-close]').forEach(el => el.onclick = closeDrawer);
       loadLinks();
     }
