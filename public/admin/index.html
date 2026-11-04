@@ -480,9 +480,9 @@
 
     <section class="view" id="v-calls">
       <div class="pagehead"><div><h1>Calls</h1><p>Log every call so nothing falls through. Calls about new work can create a lead in one step. Automatic call capture needs a phone provider.</p></div><button class="btn" id="callsAdd">Log call</button></div>
-      <div class="kpis small" id="callsKpis"></div>
+      <div class="kpis small" id="callsKpis"></div><div class="card pipe" id="callsIntel"></div>
       <div class="toolbar"><input type="search" id="callSearch" placeholder="Search calls…" aria-label="Search calls"><label class="chk"><input type="checkbox" id="callFollow"> Follow-ups due</label></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>When</th><th>Caller</th><th>Purpose</th><th>Outcome</th><th>Summary</th><th>Follow-up</th></tr></thead><tbody id="callsRows"></tbody></table></div>
+      <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>When</th><th>Caller</th><th>Purpose</th><th>Outcome</th><th>Summary</th><th>Follow-up</th></tr></thead><tbody id="callsRows"></tbody></table></div>
     </section>
     <section class="view" id="v-schedule">
       <div class="pagehead"><div><h1>Scheduling &amp; Dispatch Center</h1><p>Schedule crews, manage jobs, dispatch work and keep cleaning operations on track.</p></div>
@@ -551,11 +551,12 @@
     </section>
     <section class="view" id="v-scopes">
       <div class="pagehead"><div><h1>Cleaning scopes</h1><p>Your service library: what each service includes, how it is measured, production rates and pricing. Estimates use only items from the matching category, so construction work is never priced with janitorial rates.</p></div><div class="headact"><button class="btn ghost" id="scopeImport">Import price book</button><button class="btn" id="scopeAdd">Add scope item</button></div></div>
+      <div class="kpis6" id="scopeKpis"></div>
       <p class="msg" id="scopeNote" role="status"></p>
       <div class="toolbar"><input type="search" id="scopeSearch" placeholder="Search scope items…" aria-label="Search scope items">
         <select id="scopeCat" aria-label="Category"><option value="">All categories</option></select>
         <select id="scopeShow" aria-label="Show"><option value="active">Active</option><option value="missing">Needs rates</option><option value="archived">Archived</option></select></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Scope item</th><th>Category</th><th>Unit</th><th class="num">Units / labor hr</th><th class="num">Crew</th><th class="num">Price</th><th>Status</th></tr></thead><tbody id="scopeRows"></tbody></table></div>
+      <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Scope item</th><th>Category</th><th>Unit</th><th class="num">Units / labor hr</th><th class="num">Crew</th><th class="num">Price</th><th>Status</th></tr></thead><tbody id="scopeRows"></tbody></table></div>
     </section>
 
     <section class="view" id="v-proposals">
@@ -685,11 +686,13 @@
 
     <section class="view" id="v-activity">
       <div class="pagehead"><div><h1>Activity log</h1><p>Sign-ins, website submissions and every change made in this portal.</p></div></div>
+      <div class="kpis6" id="actKpis"></div>
+      <div class="toolbar"><input type="search" id="actSearch" placeholder="Search activity (person, action, record)…" aria-label="Search activity"></div>
       <div class="card activity" id="activityRows"></div>
     </section>
 
     <section class="view" id="v-settings">
-      <div class="pagehead"><div><h1>Settings</h1></div></div>
+      <div class="pagehead"><div><h1>Settings</h1><p>Your password, team members and roles, email, AI, backups and company preferences.</p></div></div>
       <div class="two">
         <form class="card" id="pwForm">
           <h2>Change your password</h2>

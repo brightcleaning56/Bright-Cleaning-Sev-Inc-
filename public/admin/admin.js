@@ -1238,10 +1238,21 @@
   }
 
   // ---------- Activity ----------
+  let actEvents = [];
   async function loadActivity() {
-    const a = (await api('/api/admin/audit-log')).events || [];
-    $('#activityRows').innerHTML = renderActivity(a) || '<p class="empty">No activity recorded yet.</p>';
+    actEvents = (await api('/api/admin/audit-log')).events || [];
+    const t = todayISO(), isToday = e => localISO(new Date(e.created_at)) === t, today = actEvents.filter(isToday);
+    $('#actKpis').innerHTML = [kt('reports', 'blue', "Today's events", today.length, `${actEvents.length} loaded`), kt('customers', 'navy', 'Sign-ins today', today.filter(e => /sign|log(ged)? ?in/i.test(e.action)).length, ''),
+      kt('proposals', 'purple', 'Changes today', today.filter(e => /creat|updat|edit|delet|archiv|chang|sent|sign/i.test(e.action)).length, ''), kt('leads', 'teal', 'From customers / website', actEvents.filter(e => /^customer|website|public/i.test(e.actor || '')).length, 'signatures, views, forms'),
+      kt('calls', 'amber', 'Phone system', actEvents.filter(e => e.actor === 'phone system').length, 'captured calls'), kt('check', 'green', 'People active', new Set(today.map(e => e.actor).filter(Boolean)).size, 'today')].join('');
+    renderActRows();
   }
+  function renderActRows() {
+    const q = ($('#actSearch').value || '').trim().toLowerCase();
+    const rows = q ? actEvents.filter(e => [e.actor, e.action, e.entity, e.details].join(' ').toLowerCase().includes(q)) : actEvents;
+    $('#activityRows').innerHTML = renderActivity(rows) || `<p class="empty">${q ? 'No activity matches your search.' : 'No activity recorded yet.'}</p>`;
+  }
+  $('#actSearch').addEventListener('input', () => renderActRows());
 
   // ---------- Settings ----------
   $('#pwForm').addEventListener('submit', async e => {
@@ -1484,6 +1495,10 @@
     kpiTiles('#callsKpis', [{ label: "Today's calls", value: r.today.total }, { label: 'Answered', value: r.today.answered }, { label: 'Missed / voicemail', value: r.today.missed, alert: r.today.missed > 0 }, { label: 'Follow-ups due', value: r.follow_ups_due, alert: r.follow_ups_due > 0 }]);
     $('#navCalls').hidden = !r.follow_ups_due; $('#navCalls').textContent = r.follow_ups_due;
     renderCalls();
+    api('/api/admin/calls-intel').then(x => { const el = $('#callsIntel'); if (!el) return;
+      el.innerHTML = `<div class="st"><span>Phone capture</span><b style="font-size:15px;color:${x.connected ? '#17904c' : '#a06a00'}">${x.connected ? 'Connected (Twilio)' : 'Not connected'}</b><small>${x.connected ? 'calls log automatically' : 'calls are logged by hand'}</small></div>
+        <div class="st"><span>Last 30 days</span><b>${x.total_30}</b><small>${x.missed_30} missed</small></div>${x.by_intent.slice(0, 3).map(i => `<div class="st"><span>${esc(i.k)}</span><b>${i.n}</b><small>calls (AI)</small></div>`).join('')}
+        <div class="st"><span>Hot leads (score 70+)</span><b>${x.hot_leads.length}</b><small>${x.hot_leads.slice(0, 2).map(h => esc(h.company || h.contact_name || '')).join(', ')}</small></div>`; }).catch(() => {});
   }
   function renderCalls() {
     const q = $('#callSearch').value.trim().toLowerCase(), due = $('#callFollow').checked, t = todayISO();
@@ -1523,12 +1538,31 @@
     } catch (err) { toast(err.message, true); }
     e.target.disabled = false; e.target.textContent = 'Fill from notes (AI)';
   });
-  function openCall(c) {
-    openDrawer({ title: c.company || c.contact_name || c.phone || 'Call', sub: `${c.direction} · ${fmtWhen(c.created_at)}${c.created_by ? ' · logged by ' + esc(c.created_by) : ''}`,
-      body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || '—')}</dd><dt>Lead</dt><dd>${c.lead_id ? `<button class="linklike" id="callLead">Lead #${c.lead_id}</button>` : '—'}</dd><dt>Follow-up</dt><dd>${c.follow_up_date ? fmtDate(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd></dl><div class="formsection">Summary</div><p>${esc(c.summary || '—')}</p>`,
-      footer: c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : '' });
-    if ($('#callLead')) $('#callLead').onclick = () => { closeDrawer(); go('leads'); openLead(c.lead_id); };
-    if ($('#callDone')) $('#callDone').onclick = async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_done: true } }); toast('Follow-up done'); closeDrawer(); loadCalls(); } catch (e) { toast(e.message, true); } };
+  async function openCall(c0) {
+    let d; try { d = await api(`/api/admin/calls/${c0.id}/detail`); } catch (e) { return toast(e.message, true); }
+    const c = d.call, a = c.ai, tone = { Positive: 'green', Neutral: '', Negative: 'red' };
+    const aiHtml = a ? `<div class="card" style="margin:10px 0"><h3 class="secth" style="margin-top:0">AI call analysis <small class="muted">suggestion · ${fmtWhen(a.at)}</small></h3>
+        <p>${esc(a.summary)}</p><p><span class="badge blue">${esc(a.intent)}</span> <span class="badge ${tone[a.sentiment] || ''}">${esc(a.sentiment)}</span> <span class="badge ${a.urgency === 'High' ? 'red' : ''}">Urgency: ${esc(a.urgency)}</span>${a.lead_score != null ? ` <span class="badge ${a.lead_score >= 70 ? 'green' : a.lead_score >= 40 ? 'amber' : ''}">Lead score ${a.lead_score}</span>` : ''}</p>
+        ${a.score_reasons.length ? `<p class="muted">${a.score_reasons.map(esc).join(' · ')}</p>` : ''}
+        ${Object.entries(a.details || {}).some(([, v]) => v) ? `<dl class="facts">${Object.entries(a.details).filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k.replace('_', ' '))}</dt><dd>${esc(typeof v === 'number' ? v.toLocaleString() : v)}</dd>`).join('')}</dl>` : ''}
+        ${a.action_items.length ? `<p><b>Action items</b></p><ul>${a.action_items.map(x => `<li>${esc(x.task)} <small class="muted">${esc(x.owner || '')}${x.due ? ' · by ' + esc(x.due) : ''}</small></li>`).join('')}</ul>` : ''}
+        ${a.risks.length ? `<p class="err" style="display:block">${a.risks.map(esc).join('<br>')}</p>` : ''}
+        ${a.follow_up_date ? `<p>Suggested follow-up: <b>${esc(a.follow_up_date)}</b> <button class="btn small ghost" id="callUseFu" type="button">Set as follow-up</button></p>` : ''}
+        ${a.reply_draft ? `<p><b>Reply draft</b> <button class="btn small ghost" id="callCopy" type="button">Copy</button></p><div class="pre" style="white-space:pre-wrap;background:#f6f9fc;border-radius:8px;padding:10px">${esc(a.reply_draft)}</div>` : ''}</div>` : '';
+    openDrawer({ title: c.company || c.customer_company || c.contact_name || c.phone || 'Call', sub: `${esc(c.direction)} · ${fmtWhen(c.created_at)}${c.source === 'Twilio' ? ' · captured automatically' : c.created_by ? ' · logged by ' + esc(c.created_by) : ''}`,
+      body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || 'Not linked')}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}${c.duration_s ? ` · ${Math.round(c.duration_s / 60 * 10) / 10} min` : ''}</dd>
+        <dt>Follow-up</dt><dd>${c.follow_up_date ? esc(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd>${c.lead_id ? `<dt>Lead</dt><dd><button class="linklike" id="callLead">Open lead #${c.lead_id}</button></dd>` : ''}${c.recording_url ? `<dt>Recording</dt><dd><a href="${esc(c.recording_url)}" target="_blank" rel="noopener">Listen (Twilio)</a></dd>` : ''}</dl>
+        ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}${aiHtml}
+        <label for="callTr"><b>Transcript or detailed notes</b></label><textarea id="callTr" rows="6" style="width:100%" placeholder="Paste the call transcript or write what was said…">${esc(c.transcript || '')}</textarea>
+        <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity.</p>'}</div>`,
+      footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : ''}` });
+    const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
+    act('#callLead', () => { closeDrawer(); go('leads'); openLead(c.lead_id); });
+    act('#callDone', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_done: true } }); toast('Follow-up done'); closeDrawer(); loadCalls(); } catch (e) { toast(e.message, true); } });
+    act('#callAnalyze', async () => { const b = $('#callAnalyze'); b.disabled = true; b.textContent = 'Analyzing…'; try { await api(`/api/admin/ai/calls/${c.id}/analyze`, { method: 'POST', json: { transcript: $('#callTr').value } }); toast('Call analyzed'); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Analyze with AI'; } });
+    act('#callUseFu', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_date: a.follow_up_date, follow_up_done: false } }); toast('Follow-up set for ' + a.follow_up_date); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); } });
+    act('#callCopy', async () => { try { await navigator.clipboard.writeText(a.reply_draft); toast('Reply copied'); } catch { toast('Select the text to copy', true); } });
+    $$('#drawerRoot [data-close]').forEach(el => el.onclick = closeDrawer);
   }
 
   // ---------- Schedule ----------
@@ -2324,6 +2358,8 @@
     $('#scopeCat').innerHTML = '<option value="">All categories</option>' + Object.entries(scopeState.categories).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('');
     $('#scopeCat').value = cur;
     const n = r.summary ? r.summary.needs_rates : 0;
+    { const act = scopeState.items.filter(i => !i.archived && i.active !== 0), byCat = k => act.filter(i => i.category === k).length, ic4 = { construction: ['projects', 'blue'], multifamily: ['customers', 'purple'], janitorial: ['check', 'green'], specialty: ['scopes', 'teal'] };
+      $('#scopeKpis').innerHTML = kt('scopes', 'navy', 'Active scope items', act.length, `${Object.keys(scopeState.categories).length} categories`) + Object.entries(scopeState.categories).slice(0, 4).map(([k, v]) => kt(...(ic4[k] || ['scopes', 'blue']), v, byCat(k), '')).join('') + kt('issues', n ? 'red' : 'green', 'Need a price', n, n ? 'estimates skip these' : 'all priced'); }
     $('#navScopes').hidden = !n; $('#navScopes').textContent = n;
     $('#scopeNote').className = n ? 'msg err' : 'msg';
     $('#scopeNote').textContent = n ? `${n} of ${r.summary.total} active items have no price yet. Estimates can only use items that have a price.` : '';
