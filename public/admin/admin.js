@@ -38,6 +38,20 @@
     if (field && field.select) { field.focus(); field.select(); }
     toast('Press Ctrl+C (Cmd+C on Mac) to copy'); return false;
   }
+  // Click-to-call: any [data-dial] button rings the user's phone first, then connects to the number.
+  let phoneCfg = null;
+  document.addEventListener('click', async ev => {
+    const b = ev.target.closest && ev.target.closest('[data-dial]'); if (!b) return;
+    ev.preventDefault(); ev.stopPropagation();
+    try { phoneCfg = phoneCfg || await api('/api/admin/phone/settings'); } catch { phoneCfg = null; }
+    if (!phoneCfg || !phoneCfg.can_dial) { toast('Calling is not set up yet (Settings → Phone).', true); return; }
+    const name = b.dataset.name || b.dataset.dial;
+    if (!confirm(`Call ${name} at ${b.dataset.dial}?\n\nYour phone ending ${String(phoneCfg.ring_phone || '').slice(-4)} rings first — answer it and you'll be connected. Calls show ${phoneCfg.number} as the caller ID and are recorded.`)) return;
+    b.disabled = true;
+    try { const r = await api('/api/admin/calls/dial', { method: 'POST', json: { to: b.dataset.dial, customer_id: b.dataset.cust || undefined, lead_id: b.dataset.lead || undefined, name: b.dataset.name || '' } }); toast(r.message); }
+    catch (e) { toast(e.message, true); }
+    finally { setTimeout(() => { b.disabled = false; }, 4000); }
+  }, true);
   function toast(text, isErr) {
     const t = document.createElement('div');
     t.className = 'toast' + (isErr ? ' err' : '');
@@ -333,7 +347,7 @@
     try { l = (await api('/api/admin/leads/' + id)).lead; } catch (err) { return toast(err.message, true); }
     const facts = [
       ['Type', KIND_LABEL[l.kind] || l.kind], ['Received', fmtWhen(l.created_at)], ['Contact', l.contact_name], ['Company', l.company],
-      ['Email', l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : ''], ['Phone', l.phone ? `<a href="tel:${esc(l.phone)}">${esc(l.phone)}</a>` : ''],
+      ['Email', l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : ''], ['Phone', l.phone ? `<a href="tel:${esc(l.phone)}">${esc(l.phone)}</a>` + ` <button type="button" class="btn small ghost" data-dial="${esc(l.phone)}" data-lead="${l.id}" data-name="${esc(l.company || l.contact_name || '')}">📞 Call</button>` : ''],
       ['Project', l.project_name], ['Project type', l.project_type], ['Services', l.service], ['Site address', l.address],
       ['Square footage', l.square_footage], ['Bid due', l.bid_due_date && fmtDate(l.bid_due_date)], ['Start date', l.start_date && fmtDate(l.start_date)],
       ['Frequency', l.frequency], ['Walkthrough', l.walkthrough]
@@ -435,7 +449,7 @@
     $('#custPage').innerHTML = `
       <div class="card cphero"><div class="bimg">${ic('customers')}</div>
         <div style="min-width:0;flex:1"><h1>${esc(c.company || c.name || c.email)} ${badge((c.status || 'Active') + ' customer')}</h1><div class="sub">${esc([c.customer_type, c.industry].filter(Boolean).join(' · ') || 'Commercial cleaning customer')}</div>
-          <div class="cpmeta2"><div><span class="chip blue">${ic('user')}</span><div><span>Primary contact</span><b>${esc(pc.name || '—')}</b></div></div><div><span class="chip blue">${ic('calls')}</span><div><span>Phone</span><b>${pc.phone || c.phone ? `<a href="tel:${esc(pc.phone || c.phone)}">${esc(pc.phone || c.phone)}</a>` : '—'}</b></div></div><div><span class="chip blue">${ic('emails')}</span><div><span>Email</span><b>${esc(pc.email || c.email || '—')}</b></div></div><div><span class="chip blue">${ic('pin')}</span><div><span>Address</span><b>${esc(c.address || '—')}</b></div></div><div><span class="chip blue">${ic('cal')}</span><div><span>Customer since</span><b>${fmtDate(c.created_at)}</b></div></div></div></div>
+          <div class="cpmeta2"><div><span class="chip blue">${ic('user')}</span><div><span>Primary contact</span><b>${esc(pc.name || '—')}</b></div></div><div><span class="chip blue">${ic('calls')}</span><div><span>Phone</span><b>${pc.phone || c.phone ? `<a href="tel:${esc(pc.phone || c.phone)}">${esc(pc.phone || c.phone)}</a> <button type="button" class="btn small ghost" data-dial="${esc(pc.phone || c.phone)}" data-cust="${c.id}" data-name="${esc(pc.name || c.company || c.name || '')}">📞 Call</button>` : '—'}</b></div></div><div><span class="chip blue">${ic('emails')}</span><div><span>Email</span><b>${esc(pc.email || c.email || '—')}</b></div></div><div><span class="chip blue">${ic('pin')}</span><div><span>Address</span><b>${esc(c.address || '—')}</b></div></div><div><span class="chip blue">${ic('cal')}</span><div><span>Customer since</span><b>${fmtDate(c.created_at)}</b></div></div></div></div>
         <div class="cpbtns"><button class="btn" id="cpActBtn" aria-haspopup="true" aria-expanded="false">${ic('gear')} Actions ▾</button><button class="btn ghost" data-a="edit">${ic('edit')} Edit customer</button>
           <div class="menu" id="cpMenu" hidden><button data-a="note">${ic('note')} New note</button><button data-a="call">${ic('calls')} Log call</button><button data-a="email">${ic('emails')} Send email</button><button data-a="estimate">${ic('proposals')} Create estimate</button><button data-a="proposal">${ic('send')} Create proposal</button><button data-a="issue">${ic('issues')} Create issue</button>${d.role === 'owner' ? `<button data-a="remove" class="danger">${ic('trash')} Remove customer</button>` : ''}</div></div></div>
       <div class="fin2">${kt('proposals', 'purple', 'Estimates', money(f.estimates.value), `${f.estimates.count} draft`)}${kt('proposals', 'blue', 'Proposals', money(f.proposals_out.value), `${f.proposals_out.count} awaiting reply`)}${kt('check', 'green', 'Approved proposals', money(f.approved.value), `${f.approved.count} · not revenue`)}${kt('contracts', 'purple', 'Contract value', money(f.contracts_signed.value), `${f.contracts_signed.count} signed${f.contracts_unsigned.count ? ` · ${f.contracts_unsigned.count} unsigned` : ''}`)}${kt('invoices', 'blue', 'Invoiced', money(f.invoiced.value), `${f.invoiced.count} invoices`)}${kt('money', 'teal', 'Collected', money(f.collected.value), `${f.collected.count} payments`)}${kt('clock', 'red', 'Outstanding', money(f.outstanding.value), `${f.outstanding.count} open`)}</div>
@@ -1573,7 +1587,7 @@
         ${a.follow_up_date ? `<p>Suggested follow-up: <b>${esc(a.follow_up_date)}</b> <button class="btn small ghost" id="callUseFu" type="button">Set as follow-up</button></p>` : ''}
         ${a.reply_draft ? `<p><b>Reply draft</b> <button class="btn small ghost" id="callCopy" type="button">Copy</button></p><div class="pre" style="white-space:pre-wrap;background:#f6f9fc;border-radius:8px;padding:10px">${esc(a.reply_draft)}</div>` : ''}</div>` : '';
     openDrawer({ title: c.company || c.customer_company || c.contact_name || c.phone || 'Call', sub: `${esc(c.direction)} · ${fmtWhen(c.created_at)}${c.source === 'Twilio' ? ' · captured automatically' : c.created_by ? ' · logged by ' + esc(c.created_by) : ''}`,
-      body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || 'Not linked')}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}${c.duration_s ? ` · ${Math.round(c.duration_s / 60 * 10) / 10} min` : ''}</dd>
+      body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a> <button type="button" class="btn small ghost" data-dial="${esc(c.phone)}" data-cust="${c.customer_id || ''}" data-name="${esc(c.company || c.contact_name || '')}">📞 Call back</button>` : '—'}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || 'Not linked')}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}${c.duration_s ? ` · ${Math.round(c.duration_s / 60 * 10) / 10} min` : ''}</dd>
         <dt>Follow-up</dt><dd>${c.follow_up_date ? esc(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd>${c.issue_id ? `<dt>Issue</dt><dd>Issue #${c.issue_id} created from this call</dd>` : ''}${c.lead_id ? `<dt>Lead</dt><dd><button class="linklike" id="callLead">Open lead #${c.lead_id}</button></dd>` : ''}${c.recording_url ? `<dt>Recording</dt><dd><a href="${esc(c.recording_url)}" target="_blank" rel="noopener">Listen (Twilio)</a></dd>` : ''}</dl>
         ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}${aiHtml}
         <label for="callTr"><b>Transcript or detailed notes</b></label><textarea id="callTr" rows="6" style="width:100%" placeholder="Paste the call transcript or write what was said…">${esc(c.transcript || '')}</textarea>
