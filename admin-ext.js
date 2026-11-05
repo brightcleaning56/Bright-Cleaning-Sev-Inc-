@@ -95,6 +95,14 @@ module.exports = function mountAdminExt(app, ctx) {
   // ---------- Contracts / projects / invoices: delete ----------
   for (const table of ['contracts', 'projects', 'invoices']) {
     app.delete(`/api/admin/${table}/:id`, auth, (req, res) => {
+      // Audit D-11: only owners/managers delete, and only records with no financial or signed history.
+      const em = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase();
+      const role = !ow || em === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
+      if (!['owner', 'manager'].includes(role)) return res.status(403).json({ error: 'Only an owner or manager can delete records.' });
+      const r = db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(id(req)); if (!r) return res.status(404).json({ error: 'Not found' });
+      if (table === 'contracts' && (r.signature_status === 'Signed' || ['Active', 'Completed'].includes(r.status))) return res.status(409).json({ error: 'A signed or active contract cannot be deleted. Close or archive it instead so its history is kept.' });
+      if (table === 'invoices' && (Number(r.paid_amount) > 0 || ['Sent', 'Paid', 'Partially Paid', 'Overdue'].includes(r.status) || r.sent_at)) return res.status(409).json({ error: 'An invoice that was sent or has payments cannot be deleted. Void it instead.' });
+      if (table === 'projects' && db.prepare('SELECT COUNT(*) n FROM invoices WHERE project_id=?').get(r.id).n) return res.status(409).json({ error: 'This project has invoices. Archive it instead of deleting.' });
       const x = db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id(req));
       if (!x.changes) return res.status(404).json({ error: 'Not found' });
       logAction(req, 'deleted', table.slice(0, -1), id(req));

@@ -38,17 +38,29 @@ Bright Cleaning Sev Inc is presented as a commercial cleaning, construction fina
 - Privacy, website terms, and accessibility starter pages
 - QA audit report with corrected defects and production acceptance checklist
 
-## Functional application features
-- Responsive navigation and page layouts
-- Commercial bid intake with multiple service selections and document uploads
-- Bid details include company/contact, project type, address, square footage, floors/units, occupancy, due date, walkthrough date, start/completion dates, frequency, site access, site logistics, insurance/vendor requirements, procurement/billing notes, and detailed scope
-- Contact and career interest forms
-- SQLite storage for incoming inquiries
-- Admin sign-in scaffold with bcrypt password verification and expiring JWT
-- Admin lead list, lead detail view, status updates, CSV export
-- Protected bid document download from admin dashboard
-- Optional SMTP notifications to company and acknowledgement to submitter
-- SEO sitemap and robots file
+## What the system includes (current, Nov 2026)
+The code is the source of truth; this section maps it.
+
+| Area | Files | What it does |
+|---|---|---|
+| Website + intake | `public/`, `intake.js`, `server.js` | Public site; bid/quote/contact/career forms with service-specific questionnaires, uploads, duplicate merge |
+| Admin app | `public/admin/`, `admin-ext.js`, `command.js` | 19-page operations admin, Command Center, global search |
+| Customers + CRM | `ops.js`, `crm.js` | Customer matching, profiles, contacts, history |
+| Leads + bids | `bids.js`, `autobid.js` | Bid pipeline, GC due dates, deadline alerts, AI-drafted estimates from the price book |
+| Estimating + proposals | `estimating.js`, `scopes.js`, `pricebook.js`, `engine.js`, `approvals.js` | Price book, takeoffs-to-pricing, approval gate, sanity blocks, customer proposal links (client-only approval) |
+| AI | `ai.js` | Lead triage, call analysis, drawing reading, draft takeoffs (drafts only; humans approve and send) |
+| Contracts | `contracts2.js` (authoritative) | Send for signature, client signs, owner/manager countersigns, amendments, renewals, PDF. The older `/api/admin/contracts` register routes are restricted: they cannot create or activate a contract without a signature. |
+| Projects | `pm.js` | Readiness checks, dispatch authorization, work plans/tasks, costs, sign-off, billing hand-off |
+| Scheduling + crew | `sched.js` | Employees, time off, conflicts, dispatch board, crew field links, time entries |
+| Quality | `qc.js` | Inspection templates, signed inspections, corrective work, reinspection, customer acceptance |
+| Documents + takeoffs | `docs2.js`, `suite.js`, `engine.js` | Drawing sets, revisions/addenda (stale-takeoff flags), proposal attachments |
+| Issues | `issues.js` | Complaints/tasks, escalation, customer updates, corrective visits |
+| Calls + phone | `calls2.js` | Twilio capture, click-to-call, browser phone, live transcription, voicemail playback, save caller as customer |
+| Invoices | `invoices2.js`, `admin-ext.js` | Send by email with PDF, contract-value check, payments (only path to Paid), reminders |
+| Reports | `reports2.js` | P&L, A/R aging, labor, profitability, PDF, scheduled emails |
+| Permissions | `server.js` (central gate) | Owner / manager / staff rules enforced on the server; denials logged |
+
+Automated tests: `tests/run-tests.js` (server/API, end-to-end workflows A-G), `tests/ui-tests.js` (admin in a browser engine), `tests/ai-test.js`, `tests/button-audit.js` (clicks every admin button). Test timestamps are recorded in UTC.
 
 ## Run locally
 1. Install Node.js 20+.
@@ -94,14 +106,6 @@ The admin portal now includes an estimate builder and customer proposal workflow
 - The admin can send the proposal by email when SMTP is configured, copy the customer link, and see Draft / Sent / Viewed / Approved / Declined status.
 - A proposal approval is an approval record, not a qualified electronic signature or a substitute for a signed service agreement / PO.
 
-## Contract, project and finance registers (initial operating modules)
-- Contract register: customer, title, scope summary, dates, value, status, linked estimate reference and signature status field.
-- Project register: customer, site, manager, contract reference, dates, status and progress.
-- Invoice register: customer, invoice number, project reference, due date, amount, paid-to-date and status; summary totals billed, collected and outstanding.
-- Activity log records selected administrative create/update/send actions.
-
-These are initial operational registers, not yet a full enterprise field-service or accounting platform. E-signature, PO document workflows, change-order approvals, automated renewals, crew dispatch, shift scheduling, mobile site checklists, inspection/photo evidence, customer project dashboards, completion report distribution, invoice delivery, ACH/card processing, tax determination, accounting sync and contract-level profitability allocation require further integration and acceptance testing.
-
 ## Quote and proposal setup
 1. Create the admin account with `npm run create-admin -- admin@yourcompany.com "Use-a-long-unique-password-14+"`.
 2. Install dependencies with `npm install` and start with `npm start`.
@@ -111,8 +115,8 @@ These are initial operational registers, not yet a full enterprise field-service
 6. Confirm the estimate inputs, tax treatment, terms, exclusions and pricing with an authorized estimator before sending a binding commercial offer.
 
 ## Approval handoff (added)
-When a customer approves a proposal, the system now automatically creates:
+When a customer approves a proposal online (staff cannot approve on the customer's behalf), the system automatically creates:
 - one **draft contract** linked to the proposal, with the proposal total as its value and signature status "Not sent"; and
 - one **Planning project** linked to that contract, using the project name and site address.
 
-Approval does not create an invoice. Invoices are still entered manually after the contract is signed. A proposal can only create one contract, even if approved again. Every automatic creation is recorded in the audit log under the "customer" actor.
+Approval does not create an invoice. Invoices are created by the project billing hand-off (or manually) and become Paid only through recorded payments. A proposal can only create one contract, even if approved again. Every automatic creation is recorded in the audit log under the "customer" actor.
