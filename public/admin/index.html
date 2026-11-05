@@ -138,6 +138,8 @@
   .bar { height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--blue), #4fb3e8); transform-origin: left; animation: grow .5s ease-out both; }
   dl.stat { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; margin: 8px 0 0; font-size: 14px; } dl.stat dt { color: var(--muted); } dl.stat dd { margin: 0; font-weight: 700; text-align: right; }
   #v-reports .two { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
+  /* Phone widths: long words/addresses wrap, fields shrink, inline forms wrap (verified at 375px on all 18 pages). */
+  @media (max-width: 760px) { .view { overflow-wrap: anywhere; min-width: 0; } .view input, .view select, .view textarea { max-width: 100%; min-width: 0; } #aiTestForm, #cbForm { flex-wrap: wrap; } }
   @media (max-width: 760px) { #v-reports .two { grid-template-columns: 1fr; } .toolbar input[type=search], .toolbar select { flex: 1 1 100%; min-width: 0; } .kpi b { font-size: 18px; white-space: normal; } }
   @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(31,157,85,.55); } 70% { box-shadow: 0 0 0 8px rgba(31,157,85,0); } 100% { box-shadow: 0 0 0 0 rgba(31,157,85,0); } }
