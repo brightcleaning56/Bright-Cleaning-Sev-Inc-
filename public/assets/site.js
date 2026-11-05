@@ -5,3 +5,6 @@ async function postForm(form,endpoint,statusId){const status=document.getElement
 document.getElementById('bidForm')?.addEventListener('submit',e=>{const selected=[...e.target.querySelectorAll('input[name="service"]:checked')];if(!selected.length){e.preventDefault();document.getElementById('bidStatus').textContent='Please select at least one service.';return}e.preventDefault();postForm(e.target,'/api/bids','bidStatus')});
 document.getElementById('contactForm')?.addEventListener('submit',e=>{e.preventDefault();postForm(e.target,'/api/inquiries','contactStatus')});
 document.getElementById('careerForm')?.addEventListener('submit',e=>{e.preventDefault();postForm(e.target,'/api/careers','careerStatus')});
+
+// Hide a media block whose file fails to load (replaces inline onerror handlers; CSP-safe).
+window.addEventListener('error', function (e) { var t = e.target; if (!t || !t.getAttribute) return; var sel = t.getAttribute('data-hide-on-error'); if (sel) { var box = t.closest(sel); if (box) box.hidden = true; } }, true);
