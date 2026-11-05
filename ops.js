@@ -188,7 +188,7 @@ module.exports = function mountOps(app, ctx) {
   const health = (req, res) => {
     try {
       db.prepare('SELECT 1').get();
-      res.json({ ok: true, db: 'ok', uptime_s: Math.round((Date.now() - started) / 1000), version, build: BUILD.short, build_files: BUILD.files });
+      res.json({ ok: true, db: 'ok', uptime_s: Math.round((Date.now() - started) / 1000), version, build: BUILD.short, build_files: BUILD.files, errors_1h: ctx.monitoring && ctx.monitoring.errorsLastHour ? ctx.monitoring.errorsLastHour() : null });
     } catch (e) { res.status(503).json({ ok: false, db: 'error' }); }
   };
   app.get('/health', health);
