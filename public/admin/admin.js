@@ -78,18 +78,22 @@
       device.on('error', e => console.warn('phone:', e && e.message));
       await device.register();
       const chip = document.createElement('div'); chip.id = 'phoneChip'; chip.title = 'Browser phone is on: calls to ' + fmtNum(phoneCfg.number) + ' ring here too';
-      chip.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9998;background:#1e8e3e;color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.15)'; chip.textContent = '📞 Phone on'; document.body.appendChild(chip);
+      chip.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9998;background:#1e8e3e;color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.15)'; chip.textContent = '📞 Phone on'; chip.style.cursor = 'pointer'; chip.title += ' — click to dial'; chip.onclick = () => openDialPad(); document.body.appendChild(chip);
     } catch (e) { console.warn('phone off:', e.message); device = null; }
   }
   // Any [data-dial] button: call from this computer when the browser phone is on; otherwise ring the user's phone first.
-  document.addEventListener('click', async ev => {
+  document.addEventListener('click', ev => {
     const b = ev.target.closest && ev.target.closest('[data-dial]'); if (!b) return;
     ev.preventDefault(); ev.stopPropagation();
+    b.disabled = true; setTimeout(() => { b.disabled = false; }, 4000);
+    startDial(b.dataset);
+  }, true);
+  async function startDial(d) {
+    const b = { dataset: d };
     try { phoneCfg = phoneCfg || await api('/api/admin/phone/settings'); } catch { phoneCfg = null; }
     if (!phoneCfg || !phoneCfg.can_dial) { toast('Calling is not set up yet (Settings → Phone).', true); return; }
     const name = b.dataset.name || b.dataset.dial;
     if (activeCall) { toast('Finish the current call first.', true); return; }
-    b.disabled = true; setTimeout(() => { b.disabled = false; }, 4000);
     if (device) {
       if (!confirm(`Call ${name} at ${b.dataset.dial} from this computer?\n\nThe customer sees ${phoneCfg.number}. The call is recorded and logged.`)) return;
       try { const r = await api('/api/admin/calls/browser-start', { method: 'POST', json: { to: b.dataset.dial, customer_id: b.dataset.cust || undefined, lead_id: b.dataset.lead || undefined, name: b.dataset.name || '' } });
@@ -100,7 +104,35 @@
     if (!confirm(`Call ${name} at ${b.dataset.dial}?\n\nYour phone ending ${String(phoneCfg.ring_phone || '').slice(-4)} rings first — answer it and you'll be connected. Calls show ${phoneCfg.number} as the caller ID and are recorded.`)) return;
     try { const r = await api('/api/admin/calls/dial', { method: 'POST', json: { to: b.dataset.dial, customer_id: b.dataset.cust || undefined, lead_id: b.dataset.lead || undefined, name: b.dataset.name || '' } }); toast(r.message); }
     catch (e) { toast(e.message, true); }
-  }, true);
+  }
+  // Dial pad: call any number (optionally matched to a customer as you type).
+  async function openDialPad(prefill) {
+    let custs = []; try { custs = (await api('/api/admin/customers')).customers || []; } catch { /* */ }
+    const withPhone = custs.filter(c => c.phone);
+    openDrawer({ title: 'Call a number', body: `<form id="dpForm" class="ig"><div class="wide"><label for="dpNum">Phone number</label><input id="dpNum" type="tel" inputmode="tel" autocomplete="off" placeholder="(515) 555-0123" value="${esc(prefill || '')}" required style="font-size:20px;letter-spacing:.5px"></div>
+      <div class="wide"><label for="dpWho">Or pick a customer</label><input id="dpWho" list="dpList" placeholder="Start typing a name or company…"><datalist id="dpList">${withPhone.map(c => `<option value="${esc((c.company || c.name) + ' — ' + c.phone)}">`).join('')}</datalist></div>
+      <div class="wide" id="dpKeys" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:280px">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', '⌫'].map(k => `<button type="button" class="btn ghost" data-k="${k}" style="font-size:18px;padding:12px 0">${k}</button>`).join('')}</div></form>`,
+      footer: '<button class="btn ghost" data-close>Close</button><button class="btn" id="dpGo">📞 Call</button>' });
+    const num = $('#dpNum'); num.focus();
+    $$('#dpKeys [data-k]').forEach(k => k.onclick = () => { num.value = k.dataset.k === '⌫' ? num.value.slice(0, -1) : num.value + k.dataset.k; num.focus(); });
+    $('#dpWho').oninput = ev => { const m = withPhone.find(c => (c.company || c.name) + ' — ' + c.phone === ev.target.value); if (m) { num.value = m.phone; num.dataset.cust = m.id; num.dataset.name = m.company || m.name; } };
+    const go = () => { const v = num.value.trim(); if (String(v).replace(/\D/g, '').length < 10) { toast('Enter a 10-digit phone number.', true); return; } closeDrawer(); startDial({ dial: v, cust: num.dataset.cust || '', name: num.dataset.name || '' }); };
+    $('#dpGo').onclick = go; $('#dpForm').onsubmit = ev => { ev.preventDefault(); go(); };
+  }
+  // Save an unknown caller as a customer (or link to an existing one).
+  async function openSaveCaller(c) {
+    let custs = []; try { custs = (await api('/api/admin/customers')).customers || []; } catch { /* */ }
+    openDrawer({ title: 'Save caller as customer', body: `<p class="muted">Calls from <b>${esc(c.phone || '')}</b> will be linked to this customer — past calls and every future call.</p>
+      <form id="scForm" class="ig"><div><label for="scName">Name *</label><input id="scName" value="${esc(c.contact_name || '')}" placeholder="Danielle Kelly"></div><div><label for="scCo">Company (if a business)</label><input id="scCo" value="${esc(c.company || '')}"></div>
+      <div class="wide"><label for="scEm">Email (optional)</label><input id="scEm" type="email"></div><div class="wide"><label for="scNotes">Notes (optional)</label><textarea id="scNotes" rows="2" placeholder="e.g. residential, cleaning Monday"></textarea></div>
+      <div class="wide"><label for="scExisting">…or link to an existing customer</label><select id="scExisting"><option value="">— Create a new customer —</option>${custs.map(x => `<option value="${x.id}">${esc((x.company || x.name || 'Customer #' + x.id) + (x.phone ? ' · ' + x.phone : ''))}</option>`).join('')}</select></div></form>`,
+      footer: '<button class="btn ghost" data-close>Cancel</button><button class="btn" id="scGo">Save customer</button>' });
+    $('#scGo').onclick = async () => {
+      const ex = $('#scExisting').value, body = ex ? { customer_id: Number(ex) } : { name: $('#scName').value, company: $('#scCo').value, email: $('#scEm').value, notes: $('#scNotes').value };
+      try { const r = await api(`/api/admin/calls/${c.id}/customer`, { method: 'POST', json: body }); const nm = r.customer.company || r.customer.name; toast(`${r.created ? 'Saved' : 'Linked to'} ${nm} — ${r.linked_calls} call${r.linked_calls === 1 ? '' : 's'} linked`); closeDrawer(); if (typeof loadCalls === 'function') loadCalls(); openCall({ ...c, customer_id: r.customer.id }); }
+      catch (e) { toast(e.message, true); }
+    };
+  }
   setTimeout(() => { if (token) initPhone(); }, 1500);
   function toast(text, isErr) {
     const t = document.createElement('div');
@@ -1592,6 +1624,7 @@
   $('#callSearch').addEventListener('input', () => renderCalls());
   $('#callFollow').addEventListener('change', () => renderCalls());
   async function loadCalls() {
+    if (!document.getElementById('dialPadBtn')) { const h = document.querySelector('#v-calls .pagehead'); if (h) { const btn = document.createElement('button'); btn.className = 'btn'; btn.id = 'dialPadBtn'; btn.type = 'button'; btn.textContent = '📞 Call a number'; btn.onclick = () => openDialPad(); const wrap = h.querySelector('.headact') || h; wrap.appendChild(btn); } }
     const r = await api('/api/admin/calls'); Object.assign(callState, r);
     kpiTiles('#callsKpis', [{ label: "Today's calls", value: r.today.total }, { label: 'Answered', value: r.today.answered }, { label: 'Missed / voicemail', value: r.today.missed, alert: r.today.missed > 0 }, { label: 'Follow-ups due', value: r.follow_ups_due, alert: r.follow_ups_due > 0 }]);
     $('#navCalls').hidden = !r.follow_ups_due; $('#navCalls').textContent = r.follow_ups_due;
@@ -1656,9 +1689,10 @@
         ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}${aiHtml}
         <label for="callTr"><b>Transcript or detailed notes</b></label><textarea id="callTr" rows="6" style="width:100%" placeholder="Paste the call transcript or write what was said…">${esc(c.transcript || '')}</textarea>
         <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity.</p>'}</div>`,
-      footer: `<button class="btn ghost" data-close>Close</button>${c.customer_id && !c.issue_id ? '<button class="btn ghost" id="callIssue">Create issue</button>' : ''}<button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : ''}` });
+      footer: `<button class="btn ghost" data-close>Close</button>${!c.customer_id && c.phone ? '<button class="btn" id="callSaveCust">Save as customer</button>' : ''}${c.customer_id && !c.issue_id ? '<button class="btn ghost" id="callIssue">Create issue</button>' : ''}<button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : ''}` });
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     act('#callLead', () => { closeDrawer(); go('leads'); openLead(c.lead_id); });
+    act('#callSaveCust', () => openSaveCaller(c));
     act('#callIssue', async () => { try { const r = await api(`/api/admin/calls/${c.id}/issue`, { method: 'POST', json: {} }); toast(`${r.issue.number} created from this call`); closeDrawer(); go('issues'); openIssue(r.issue); } catch (e) { toast(e.message, true); } });
     act('#callDone', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_done: true } }); toast('Follow-up done'); closeDrawer(); loadCalls(); } catch (e) { toast(e.message, true); } });
     act('#callAnalyze', async () => { const b = $('#callAnalyze'); b.disabled = true; b.textContent = 'Analyzing…'; try { await api(`/api/admin/ai/calls/${c.id}/analyze`, { method: 'POST', json: { transcript: $('#callTr').value } }); toast('Call analyzed'); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Analyze with AI'; } });
