@@ -236,4 +236,32 @@ module.exports = function mountCalls(app, ctx) {
     if (sid && b.TranscriptionEvent === 'transcription-stopped') mergeTranscript(sid);
     res.type('text/xml').send('<Response/>');
   }));
+  // ---- Save a caller as a customer (or link to an existing one). Links every unlinked call from that number. ----
+  app.post('/api/admin/calls/:id/customer', auth, (req, res) => {
+    const c = db.prepare('SELECT * FROM calls WHERE id=?').get(Number(req.params.id)); if (!c) return res.status(404).json({ error: 'Call not found.' });
+    const b = req.body || {}, digits = String(c.phone || '').replace(/\D/g, '').slice(-10), phone = e164(c.phone) || clean(c.phone, 40);
+    let cu = null, created = false;
+    if (b.customer_id) { cu = db.prepare('SELECT * FROM customers WHERE id=?').get(Number(b.customer_id)); if (!cu) return res.status(404).json({ error: 'That customer was not found.' }); }
+    else {
+      const name = clean(b.name, 150), company = clean(b.company, 200), email = clean(b.email, 254).toLowerCase();
+      if (!name && !company) return res.status(400).json({ error: 'Enter the caller’s name (and company if it’s a business).' });
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address, or leave it blank.' });
+      if (digits.length === 10) cu = db.prepare("SELECT * FROM customers WHERE substr(replace(replace(replace(replace(replace(replace(phone,' ',''),'-',''),'(',''),')',''),'.',''),'+',''),-10)=? ORDER BY id LIMIT 1").get(digits);
+      const key = email ? 'e:' + email : company ? 'c:' + company.toLowerCase() : digits ? 'p:' + digits : '';
+      if (!cu && key) cu = db.prepare('SELECT * FROM customers WHERE match_key=?').get(key);
+      if (!cu) {
+        if (!key) return res.status(400).json({ error: 'This call has no phone number, so add an email or company.' });
+        const t = now(), id = db.prepare('INSERT INTO customers(match_key,name,company,email,phone,source,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)')
+          .run(key, name || null, company || null, email || null, phone || null, 'Phone call', clean(b.notes, 2000) || null, t, t).lastInsertRowid;
+        cu = db.prepare('SELECT * FROM customers WHERE id=?').get(id); created = true;
+        logAction(req, 'created', 'customer', id, `${company || name} from call #${c.id}`);
+      } else if (!cu.phone && phone) db.prepare('UPDATE customers SET phone=?, updated_at=? WHERE id=?').run(phone, now(), cu.id);
+    }
+    const all = digits.length === 10 ? db.prepare('SELECT id, phone FROM calls WHERE customer_id IS NULL').all().filter(x => String(x.phone || '').replace(/\D/g, '').slice(-10) === digits).map(x => x.id) : [];
+    const ids = [...new Set([c.id, ...all])];
+    const up = db.prepare('UPDATE calls SET customer_id=?, contact_name=COALESCE(NULLIF(contact_name,\'\'),?), company=COALESCE(NULLIF(company,\'\'),?) WHERE id=?');
+    for (const id of ids) up.run(cu.id, cu.name || null, cu.company || null, id);
+    logAction(req, 'linked calls', 'customer', cu.id, `${ids.length} call(s) from ${phone}`);
+    res.status(created ? 201 : 200).json({ customer: cu, created, linked_calls: ids.length });
+  });
 };
