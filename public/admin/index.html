@@ -391,6 +391,7 @@
       <div class="sep"></div>
       <button data-view="reports">Reports</button>
       <button data-view="scopes">Cleaning scopes <span class="count" id="navScopes" hidden></span></button>
+      <button data-view="website">Website photos &amp; video</button>
       <button data-view="activity">Activity log</button>
       <button data-view="settings">Settings</button>
     </nav>
@@ -551,6 +552,12 @@
       <h2 style="margin-top:16px">Pipeline by status</h2><div class="tablewrap"><table class="t"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">Value</th></tr></thead><tbody id="repPipeRows"></tbody></table></div>
       <h2 style="margin-top:16px">What leads ask for</h2><div class="tablewrap"><table class="t"><thead><tr><th>Service</th><th class="num">Requests</th><th class="num">Auto-priced</th></tr></thead><tbody id="repLeadSvc"></tbody></table></div>
       <h2 style="margin-top:16px">Top customers (billed)</h2><div class="tablewrap"><table class="t"><thead><tr><th>Customer</th><th class="num">Invoices</th><th class="num">Billed</th><th class="num">Paid</th></tr></thead><tbody id="repTopRows"></tbody></table></div></div></div>
+    </section>
+    <section class="view" id="v-website">
+      <div class="pagehead"><div><h1>Website photos &amp; video</h1><p>Change the photos and the page video on the public Projects page. Changes show on the website right away. Photos are JPG, PNG or WEBP; video is MP4, MOV or WEBM (up to 200 MB).</p></div><div class="headact"><button class="btn" id="webAdd">Add photo or video</button></div></div>
+      <div class="kpis6" id="webKpis"></div>
+      <div class="card" id="webHero" style="margin-bottom:14px"></div>
+      <div class="tablewrap card" style="padding:0"><table class="isst"><thead><tr><th>Preview</th><th>Title</th><th>Location</th><th>Type</th><th>On website</th><th>Order</th><th>Actions</th></tr></thead><tbody id="webRows"></tbody></table></div>
     </section>
     <section class="view" id="v-scopes">
       <div class="pagehead"><div><h1>Cleaning scopes</h1><p>Your service library: what each service includes, how it is measured, production rates and pricing. Estimates use only items from the matching category, so construction work is never priced with janitorial rates.</p></div><div class="headact"><button class="btn ghost" id="scopeImport">Import price book</button><button class="btn" id="scopeAdd">Add scope item</button></div></div>

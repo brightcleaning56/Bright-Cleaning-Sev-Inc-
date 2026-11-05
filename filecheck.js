@@ -17,6 +17,8 @@ function check(filePath, originalName) {
   let fd, head = Buffer.alloc(16); try { fd = fs.openSync(filePath, 'r'); fs.readSync(fd, head, 0, 16, 0); } catch { return `${name} could not be read.`; } finally { if (fd !== undefined) fs.closeSync(fd); }
   if (EXE.some(s => starts(head, s))) return `${name} is a program, not a document. It was not accepted.`;
   if (ext === 'heic' || ext === 'heif') return head.slice(4, 8).toString('latin1') === 'ftyp' ? null : `${name} is not a real ${ext.toUpperCase()} image.`;
+  if (['mp4', 'm4v', 'mov'].includes(ext)) return head.slice(4, 8).toString('latin1') === 'ftyp' ? null : `${name} is not a real ${ext.toUpperCase()} video (its contents do not match its name). It was not accepted.`;
+  if (ext === 'webm') return starts(head, [0x1a, 0x45, 0xdf, 0xa3]) ? null : `${name} is not a real WEBM video (its contents do not match its name). It was not accepted.`;
   const sigs = SIG[ext]; if (!sigs) return `${name}: this file type is not accepted.`;
   if (!sigs.some(s => starts(head, s))) return `${name} is not a real ${ext.toUpperCase()} file (its contents do not match its name). It was not accepted.`;
   if (ext === 'pdf') {

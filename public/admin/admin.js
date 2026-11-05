@@ -233,7 +233,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['website', 'overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (view === 'customer') view = 'customers';
     if (!VIEWS.includes(view)) view = 'overview';
@@ -274,6 +274,7 @@
       if (view === 'emails') await loadEmails();
       if (view === 'takeoffs') await loadTakeoffs();
       if (view === 'scopes') await loadScopes();
+      if (view === 'website') await loadWebsite();
       if (view === 'activity') await loadActivity();
       if (view === 'settings') await loadSettings();
     } catch (err) { if (err.message !== 'Signed out') toast(err.message, true); }
@@ -1654,7 +1655,7 @@
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', plus: '<path d="M12 5v14M5 12h14"/>', edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
     chev: '<path d="m9 6 6 6-6 6"/>', trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>', send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>'
   };
-  IC.estimator = IC.proposals; IC.customer = IC.customers;
+  IC.estimator = IC.proposals; IC.customer = IC.customers; IC.website = IC.documents || IC.overview;
   const ic = (k, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.overview}</svg>`;
   $$('#nav button').forEach(b => { if (!b.querySelector('.ic')) b.insertAdjacentHTML('afterbegin', ic(b.dataset.view)); });
   $$('.tbicons [data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
@@ -1695,7 +1696,7 @@
       else if (d.type === 'project') ctl = `<select id="${id}" name="${d.name}"><option value="">None</option>${opt((r.projects || []).map(p => [p.id, p.name || p.customer_name]), v(d.name))}</select>`;
       else if (d.type === 'user') ctl = `<select id="${id}" name="${d.name}"><option value="">Unassigned</option>${opt(r.users || [], v(d.name))}</select>`;
       else if (d.type === 'checkbox') return `<div class="f wide"><label class="chk"><input type="checkbox" id="${id}" name="${d.name}" value="1"${values[d.name] ? ' checked' : ''}> ${esc(d.label)}</label>${d.hint ? `<span class="hint">${esc(d.hint)}</span>` : ''}</div>`;
-      else if (d.type === 'file') ctl = `<input id="${id}" name="${d.name}" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip">`;
+      else if (d.type === 'file') ctl = `<input id="${id}" name="${d.name}" type="file"${d.single ? '' : ' multiple'} accept="${d.accept || '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip'}">`;
       else ctl = `<input id="${id}" name="${d.name}" type="${d.type === 'number' ? 'text" inputmode="decimal' : d.type || 'text'}" value="${esc(v(d.name))}"${d.placeholder ? ` placeholder="${esc(d.placeholder)}"` : ''}>`;
       return `<div class="f${wide}"><label for="${id}">${esc(d.label)}</label>${ctl}${d.hint ? `<span class="hint">${esc(d.hint)}</span>` : ''}</div>`;
     };
@@ -2714,6 +2715,98 @@
   // ---------- Cleaning scopes ----------
   const scopeState = { items: [], categories: {}, pricing: {} };
   ['#scopeSearch', '#scopeCat', '#scopeShow'].forEach(sel => $(sel).addEventListener('input', () => renderScopes()));
+  // ---------- Website photos & video (Website view) ----------
+  const webState = { items: [] };
+  const WEB_ACCEPT = '.jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.m4v';
+  const webMedia = i => i.kind === 'video'
+    ? `<video src="${esc(i.url)}" muted preload="metadata" style="width:110px;height:70px;object-fit:cover;border-radius:8px;background:#10263e"></video>`
+    : `<img src="${esc(i.url)}" alt="" loading="lazy" style="width:110px;height:70px;object-fit:cover;border-radius:8px">`;
+  // Sends a form as multipart (a file is optional on edits). Empty values are left out.
+  async function webSend(method, url, body) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(body || {})) {
+      if (k === 'file') { if (v && v.length) fd.append('file', v[0]); }
+      else if (v !== undefined && v !== null) fd.append(k, typeof v === 'boolean' ? String(v) : v);
+    }
+    return api(url, { method, body: fd });
+  }
+  async function loadWebsite() {
+    const r = await api('/api/admin/site-media'); webState.items = r.items || [];
+    const gallery = webState.items.filter(i => i.slot === 'gallery'), hero = webState.items.find(i => i.slot === 'hero_video');
+    $('#webKpis').innerHTML = kt('documents', 'navy', 'Photos & videos', gallery.length, 'in the gallery')
+      + kt('check', 'green', 'Shown on the website', gallery.filter(i => i.visible).length, 'visible to visitors')
+      + kt('documents', 'blue', 'Page video', hero ? (hero.visible ? 'Shown' : 'Hidden') : 'Built-in', hero ? hero.title : 'the default video');
+    renderWebsite();
+  }
+  function renderWebsite() {
+    const hero = webState.items.find(i => i.slot === 'hero_video');
+    $('#webHero').innerHTML = `<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">${hero ? webMedia(hero) : ''}<div style="flex:1;min-width:200px"><h2 style="margin:0 0 4px">Page video</h2><p class="hint" style="margin:0">${hero ? esc(hero.title) + (hero.visible ? '' : ' · hidden') : 'The built-in video is showing on the Projects page.'}</p></div><div class="headact"><button class="btn ghost" id="webHeroReplace">${hero ? 'Replace video' : 'Upload a video'}</button>${hero && hero.file ? '<button class="btn ghost" id="webHeroReset">Use built-in video</button>' : ''}</div></div>`;
+    const rows = webState.items.filter(i => i.slot === 'gallery');
+    $('#webRows').innerHTML = rows.map((i, n) => `<tr>
+      <td>${webMedia(i)}</td>
+      <td><b>${esc(i.title)}</b>${i.alt ? `<br><small class="muted">${esc(i.alt)}</small>` : ''}</td>
+      <td>${esc(i.location || '—')}</td>
+      <td>${i.kind === 'video' ? 'Video' : 'Photo'}</td>
+      <td>${i.visible ? '<span class="chip green">Shown</span>' : '<span class="chip">Hidden</span>'}</td>
+      <td style="white-space:nowrap"><button class="btn ghost small" data-wmove="-1" data-id="${i.id}" ${n === 0 ? 'disabled' : ''} aria-label="Move up">↑</button> <button class="btn ghost small" data-wmove="1" data-id="${i.id}" ${n === rows.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button></td>
+      <td style="white-space:nowrap"><button class="btn ghost small" data-wedit="${i.id}">Edit</button> <button class="btn ghost small" data-wvis="${i.id}">${i.visible ? 'Hide' : 'Show'}</button> <button class="btn small danger" data-wdel="${i.id}">Delete</button></td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">No photos yet. Use “Add photo or video”.</td></tr>';
+    $('#webAdd').onclick = () => openForm({
+      title: 'Add a photo or video', sub: 'It appears on the Projects page once saved.',
+      defs: [
+        { name: 'file', label: 'Photo or video', type: 'file', single: true, accept: WEB_ACCEPT, wide: true, hint: 'JPG, PNG or WEBP photo, or MP4, MOV or WEBM video, up to 200 MB. Choose one file.' },
+        { name: 'title', label: 'Title', type: 'text', hint: 'Short name shown under the photo.' },
+        { name: 'location', label: 'Location (optional)', type: 'text', hint: 'Only if you want it shown, for example “Des Moines, Iowa”.' },
+        { name: 'alt', label: 'Description for screen readers', type: 'text', hint: 'What is in the picture, in a few words.' }
+      ],
+      submit: body => webSend('POST', '/api/admin/site-media', body),
+      after: () => { toast('Added to the website'); loadWebsite(); }
+    });
+    $('#webHeroReplace').onclick = () => openForm({
+      title: hero ? 'Replace the page video' : 'Upload the page video', sub: 'Plays at the top of the Projects page.',
+      defs: [
+        { name: 'file', label: 'Video', type: 'file', single: true, accept: '.mp4,.mov,.webm,.m4v', wide: true, hint: 'MP4, MOV or WEBM, up to 200 MB. Choose one file.' },
+        { name: 'title', label: 'Title', type: 'text', value: hero ? hero.title : 'Page video' }
+      ],
+      submit: body => webSend('POST', '/api/admin/site-media', { ...body, slot: 'hero_video' }),
+      after: () => { toast('Page video updated'); loadWebsite(); }
+    });
+    if ($('#webHeroReset')) $('#webHeroReset').onclick = async () => {
+      if (!confirm('Remove the uploaded video and show the built-in video again?')) return;
+      try { await api(`/api/admin/site-media/${hero.id}`, { method: 'DELETE' }); toast('Built-in video restored'); loadWebsite(); } catch (e) { toast(e.message, true); }
+    };
+    $$('#webRows [data-wedit]').forEach(b => b.onclick = () => {
+      const i = webState.items.find(x => x.id === Number(b.dataset.wedit));
+      openForm({
+        title: 'Edit photo or video', sub: i.title,
+        defs: [
+          { name: 'title', label: 'Title', type: 'text' },
+          { name: 'location', label: 'Location (optional)', type: 'text' },
+          { name: 'alt', label: 'Description for screen readers', type: 'text' },
+          { name: 'file', label: 'Replace the photo or video (optional)', type: 'file', single: true, accept: WEB_ACCEPT, wide: true, hint: 'Leave empty to keep the current file.' }
+        ],
+        values: { title: i.title, location: i.location, alt: i.alt },
+        submit: body => webSend('PATCH', `/api/admin/site-media/${i.id}`, body),
+        after: () => { toast('Saved'); loadWebsite(); }
+      });
+    });
+    $$('#webRows [data-wvis]').forEach(b => b.onclick = async () => {
+      const i = webState.items.find(x => x.id === Number(b.dataset.wvis));
+      try { await webSend('PATCH', `/api/admin/site-media/${i.id}`, { visible: !i.visible }); toast(i.visible ? 'Hidden from the website' : 'Shown on the website'); loadWebsite(); } catch (e) { toast(e.message, true); }
+    });
+    $$('#webRows [data-wmove]').forEach(b => b.onclick = async () => {
+      const ids = rows.map(x => x.id), at = ids.indexOf(Number(b.dataset.id)), to = at + Number(b.dataset.wmove);
+      if (to < 0 || to >= ids.length) return;
+      [ids[at], ids[to]] = [ids[to], ids[at]];
+      try { await api('/api/admin/site-media/reorder', { method: 'POST', json: { ids } }); loadWebsite(); } catch (e) { toast(e.message, true); }
+    });
+    $$('#webRows [data-wdel]').forEach(b => b.onclick = async () => {
+      const i = webState.items.find(x => x.id === Number(b.dataset.wdel));
+      if (!confirm(`Remove “${i.title}” from the website?`)) return;
+      try { await api(`/api/admin/site-media/${i.id}`, { method: 'DELETE' }); toast('Removed'); loadWebsite(); } catch (e) { toast(e.message, true); }
+    });
+  }
+
   async function loadScopes() {
     const r = await api('/api/admin/scopes');
     Object.assign(scopeState, { items: r.items || [], categories: r.categories || {}, pricing: r.pricing || {} });
