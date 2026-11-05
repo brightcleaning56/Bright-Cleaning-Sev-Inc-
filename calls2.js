@@ -86,6 +86,22 @@ module.exports = function mountCalls(app, ctx) {
   const esc = x => String(x).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
   const greeting = () => esc(process.env.TWILIO_GREETING || 'Thanks for calling Bright Cleaning. We are with a customer right now. Please leave your name, number and how we can help, and we will call you back shortly.');
   const voicemail = () => `<Say voice="Polly.Joanna">${greeting()}</Say><Record maxLength="180" playBeep="true" transcribe="true" transcribeCallback="${base()}/api/webhooks/twilio/transcription" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"/><Say voice="Polly.Joanna">We did not get a message. Goodbye.</Say>`;
+  // ---- Callback ownership: every promised callback / voicemail becomes ONE assigned Follow-up task (owner, due today, High). ----
+  try { if (!db.prepare('PRAGMA table_info(calls)').all().some(c => c.name === 'callback_issue_id')) db.exec('ALTER TABLE calls ADD COLUMN callback_issue_id INTEGER'); } catch { /* */ }
+  const callbackOwner = () => (getS('callback_owner') || ctx.adminEmail || '').toLowerCase();
+  function createCallbackTask(callId, reason) {
+    try {
+      const c = db.prepare('SELECT * FROM calls WHERE id=?').get(callId); if (!c || c.callback_issue_id) return c && c.callback_issue_id;
+      const t = now(), who = c.company || c.contact_name || c.phone || 'caller', owner = callbackOwner();
+      const id = db.prepare(`INSERT INTO customer_issues(customer_id,type,title,description,priority,status,assigned_to,due_date,customer_comms,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'Open',?,?,'Not needed',?,?,?)`)
+        .run(c.customer_id || null, 'follow_up', `Call back ${who}`.slice(0, 200), `${String(reason || 'Call back').slice(0, 1500)}\n\nPhone: ${c.phone || 'unknown'} · Call #${c.id}${c.provider_sid ? ' (' + c.provider_sid + ')' : ''}`, 'High', owner || null, today(), 'phone system', t, t).lastInsertRowid;
+      db.prepare('UPDATE calls SET callback_issue_id=?, follow_up_date=COALESCE(follow_up_date,?) WHERE id=?').run(id, today(), c.id);
+      db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('phone system', 'created callback task', 'issue', id, `for call #${c.id}, assigned to ${owner || 'nobody'}`, t);
+      const m = ctx.getMailer && ctx.getMailer(); if (m && owner) m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || ctx.adminEmail, to: owner, subject: `Callback needed today: ${who}`, text: `${reason}\n\nPhone: ${c.phone || 'unknown'}\nOpen Issues in the admin (FUP-${1000 + id}) and mark it resolved once you have called back.` }).catch(() => {});
+      return id;
+    } catch (e) { console.error('callback task:', e.message); return null; }
+  }
+  ctx.createCallbackTask = createCallbackTask;
   // Record a call as Voicemail (with why it went there) — the call row may not exist yet.
   function recordVoicemail(b, why) {
     const sid = clean(b.CallSid, 64); if (!sid) return; const cu = matchCustomer(b.From), note = `Voicemail — call back. (Why: ${why}.)`;
@@ -93,6 +109,7 @@ module.exports = function mountCalls(app, ctx) {
     if (cur) db.prepare("UPDATE calls SET outcome='Voicemail', handling='Voicemail', summary=CASE WHEN summary IS NULL OR summary='' THEN ? ELSE summary END, follow_up_date=COALESCE(follow_up_date,?) WHERE id=?").run(note, today(), cur.id);
     else db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,outcome,purpose,summary,follow_up_date,created_by,created_at,provider_sid,source,handling) VALUES('Inbound',?,?,?,?,'Voicemail','Other',?,?,'phone system',?,?,'Twilio','Voicemail')`)
       .run(clean(b.From, 40), cu ? clean(cu.name, 150) : clean(b.CallerName, 150), cu ? clean(cu.company, 200) : '', cu ? cu.id : null, note, today(), now(), sid);
+    const row = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid); if (row) createCallbackTask(row.id, `Return a voicemail (${why}). Listen to it on the call in the Calls page.`);
   }
   app.post('/api/webhooks/twilio/voice', hook((req, res) => {
     const caller = e164((req.body || {}).From);
@@ -145,7 +162,7 @@ module.exports = function mountCalls(app, ctx) {
   });
   // ---- Click-to-call: ring the staff member's phone first, then bridge to the customer from the Twilio number ----
   const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
-  app.get('/api/admin/phone/settings', auth, (req, res) => res.json({ connected: !!token(), account_sid: acctSid() ? acctSid().slice(0, 6) + '…' + acctSid().slice(-4) : '', number: twNumber(), ai_receptionist: { mode: getS('ai_receptionist_mode') || process.env.AI_RECEPTIONIST || 'off', ai_key: !!process.env.ANTHROPIC_API_KEY, hours: (() => { try { return JSON.parse(getS('ai_receptionist_hours') || ''); } catch { return { days: [1, 2, 3, 4, 5], open: '08:00', close: '17:00' }; } })() }, ring_phone: ringPhones()[0] || '', ring_phones: ringPhones(), ring_source: getS('twilio_ring_phones') ? 'admin' : 'render', render_forward_digits: String(process.env.TWILIO_FORWARD_TO || '').replace(/\D/g, '').length, render_forward_parsed: parsePhones(process.env.TWILIO_FORWARD_TO).map(p => '…' + p.slice(-4)), can_dial: !!(token() && acctSid() && twNumber()), softphone: softphone() }));
+  app.get('/api/admin/phone/settings', auth, (req, res) => res.json({ connected: !!token(), account_sid: acctSid() ? acctSid().slice(0, 6) + '…' + acctSid().slice(-4) : '', number: twNumber(), callback_owner: callbackOwner(), ai_receptionist: { mode: getS('ai_receptionist_mode') || process.env.AI_RECEPTIONIST || 'off', ai_key: !!process.env.ANTHROPIC_API_KEY, hours: (() => { try { return JSON.parse(getS('ai_receptionist_hours') || ''); } catch { return { days: [1, 2, 3, 4, 5], open: '08:00', close: '17:00' }; } })() }, ring_phone: ringPhones()[0] || '', ring_phones: ringPhones(), ring_source: getS('twilio_ring_phones') ? 'admin' : 'render', render_forward_digits: String(process.env.TWILIO_FORWARD_TO || '').replace(/\D/g, '').length, render_forward_parsed: parsePhones(process.env.TWILIO_FORWARD_TO).map(p => '…' + p.slice(-4)), can_dial: !!(token() && acctSid() && twNumber()), softphone: softphone() }));
   app.put('/api/admin/phone/settings', auth, (req, res) => {
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can change phone settings.' });
     const b = req.body || {};
@@ -309,7 +326,7 @@ module.exports = function mountCalls(app, ctx) {
   const gather = (say, extra = '') => `<Gather input="speech" action="${base()}/api/webhooks/twilio/ai-turn" method="POST" speechTimeout="auto" speechModel="phone_call" language="en-US" actionOnEmptyResult="true"${extra}><Say voice="${VOICE()}">${esc(say)}</Say></Gather>`;
   function aiStart(b, reason) {
     const sid = clean(b.CallSid, 64), caller = e164(b.From) || clean(b.From, 40), cu = matchCustomer(caller);
-    const hello = `Thanks for calling Bright Cleaning. This is Bright Clean's virtual assistant, and this call may be recorded. ${cu ? 'It looks like you are calling from a number we have on file. ' : ''}How can I help you today?`;
+    const hello = `Thanks for calling Bright Cleaning. This is Bright Clean's virtual assistant, and this call may be recorded and transcribed. ${cu ? 'It looks like you are calling from a number we have on file. ' : ''}How can I help you today?`;
     db.prepare('INSERT OR IGNORE INTO ai_call_sessions(call_sid, caller, customer_id, reason, started_at, greeting) VALUES(?,?,?,?,?,?)').run(sid, caller, cu ? cu.id : null, reason, now(), hello);
     return `<?xml version="1.0" encoding="UTF-8"?><Response>${gather(hello)}<Redirect method="POST">${base()}/api/webhooks/twilio/ai-turn</Redirect></Response>`;
   }
@@ -355,6 +372,11 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       const details = [`Phone call with Bright Clean's AI receptionist.`, inp.service_needed && `Needs: ${str(inp.service_needed, 500)}`, inp.timing && `Timing: ${str(inp.timing, 200)}`, inp.drawings_available && `Drawings: ${str(inp.drawings_available, 200)}`, inp.notes && `Notes: ${str(inp.notes, 1500)}`].filter(Boolean).join('\n');
       const f = { contact_name: str(inp.name, 150) || null, company: str(inp.company, 200) || null, email, phone, service: str(inp.service_needed, 200) || null, project_type: cat, address: str(inp.location, 300) || null, square_footage: str(inp.square_footage, 40) || null, bid_due_date: due, details };
       if (sess.lead_id) { const keep = Object.entries(f).filter(([, v]) => v); db.prepare(`UPDATE leads SET ${keep.map(([k]) => k + '=?').join(',')} WHERE id=?`).run(...keep.map(([, v]) => v), sess.lead_id); return 'Saved (updated the lead).'; }
+      { const d10 = String(phone || '').replace(/\D/g, '').slice(-10), cutoff = new Date(Date.now() - 60 * 864e5).toISOString();
+        const open = d10.length === 10 ? db.prepare("SELECT id, phone, details FROM leads WHERE kind IN ('bid','inquiry') AND status NOT IN ('Won','Lost','Archived') AND created_at>=? ORDER BY id DESC").all(cutoff).find(l => String(l.phone || '').replace(/\D/g, '').slice(-10) === d10) : null;
+        if (open) { const keep = Object.entries(f).filter(([k, v]) => v && k !== 'details'); if (keep.length) db.prepare(`UPDATE leads SET ${keep.map(([k]) => k + '=?').join(',')} WHERE id=?`).run(...keep.map(([, v]) => v), open.id);
+          db.prepare('UPDATE leads SET details=? WHERE id=?').run(String(open.details || '') + `\n\nCalled again ${today()} (AI receptionist): ` + details.replace(/^Phone call with Bright Clean's AI receptionist\.\n?/, ''), open.id);
+          db.prepare('UPDATE ai_call_sessions SET lead_id=? WHERE call_sid=?').run(open.id, sess.call_sid); sess.lead_id = open.id; return 'This caller already has an open request; it was updated (no duplicate).'; } }
       const id = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,service,project_type,address,square_footage,bid_due_date,details,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'New',?)`)
         .run(cat === 'construction' ? 'bid' : 'inquiry', f.contact_name, f.company, f.email, f.phone, f.service, f.project_type, f.address, f.square_footage, f.bid_due_date, f.details, now()).lastInsertRowid;
       db.prepare('UPDATE ai_call_sessions SET lead_id=? WHERE call_sid=?').run(id, sess.call_sid); sess.lead_id = id;
@@ -434,6 +456,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       summary=?, follow_up_date=CASE WHEN ? THEN COALESCE(follow_up_date,?) ELSE follow_up_date END, issue_id=COALESCE(issue_id,?), transcript=? WHERE id=?`)
       .run(sess.lead_id, sess.customer_id, ld && ld.contact_name, ld && ld.company, sess.issue_id ? 1 : 0, sess.lead_id ? 1 : 0, summary.slice(0, 1000), sess.callback || sess.lead_id ? 1 : 0, today(), sess.issue_id, ((prev ? prev + '\n\n' : '') + '[AI receptionist conversation]\n' + lines.join('\n')).slice(0, 60000), c.id);
     if (!heard && !sess.transferred) db.prepare("UPDATE calls SET outcome='Missed' WHERE id=?").run(c.id);
+    if (sess.callback) createCallbackTask(c.id, `AI receptionist: ${sess.callback}`);
     db.prepare("UPDATE ai_call_sessions SET finalized=1, status=CASE WHEN status='active' THEN 'completed' ELSE status END, summary=?, ended_at=? WHERE call_sid=?").run(summary.slice(0, 1000), now(), sid);
   };
   ctx.aiWhyNot = () => !aiKey() ? 'AI receptionist needs ANTHROPIC_API_KEY in Render' : !token() ? 'phone not connected' : aiMode() === 'off' ? 'AI receptionist is off (Settings → Phone)' : aiMode() === 'after_hours' && isOpen() ? 'AI receptionist only answers after hours' : 'AI receptionist was available';
@@ -456,5 +479,35 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       }
       res.json({ reply: say || '(no reply)', actions });
     } catch (e) { res.status(502).json({ error: 'The AI did not answer: ' + e.message + '. On a real call this would fall back to ringing your phones.' }); }
+  });
+  // ---- Real health check: each part is exercised, not just "a key exists". ----
+  app.get('/api/admin/phone/health', auth, async (req, res) => {
+    const out = [], api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, ''), basic = 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64');
+    const add = (key, label, status, detail, ms) => out.push({ key, label, status, detail, ms });
+    const timed = async fn => { const t0 = Date.now(); try { return { ok: true, v: await fn(), ms: Date.now() - t0 }; } catch (e) { return { ok: false, e: e.message, ms: Date.now() - t0 }; } };
+    if (!token() || !acctSid()) add('twilio_auth', 'Twilio sign-in', 'fail', 'TWILIO_AUTH_TOKEN or account SID missing');
+    else { const r = await timed(async () => { const x = await fetch(`${api}/2010-04-01/Accounts/${acctSid()}.json`, { headers: { Authorization: basic } }); if (!x.ok) throw new Error('Twilio answered ' + x.status); return x.json(); }); add('twilio_auth', 'Twilio sign-in', r.ok ? 'pass' : 'fail', r.ok ? `account ${r.v.status || 'ok'}` : r.e, r.ms);
+      const n = await timed(async () => { const x = await fetch(`${api}/2010-04-01/Accounts/${acctSid()}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(twNumber())}`, { headers: { Authorization: basic } }); if (!x.ok) throw new Error('Twilio answered ' + x.status); return x.json(); });
+      const num = n.ok && (n.v.incoming_phone_numbers || [])[0], want = `${base()}/api/webhooks/twilio/voice`;
+      add('number_routing', `Number ${twNumber() || '(not set)'} routes calls here`, !n.ok ? 'fail' : !num ? 'fail' : num.voice_url === want ? 'pass' : 'fail', !n.ok ? n.e : !num ? 'number not found on this Twilio account' : num.voice_url === want ? 'voice webhook correct' + (num.status_callback ? '; call status reported' : '; call-status callback not set (missed-call outcomes less precise)') : `voice webhook is ${num.voice_url || 'empty'}; should be ${want}`, n.ms); }
+    if (!aiKey()) add('ai_model', 'AI model answers', 'fail', 'ANTHROPIC_API_KEY missing');
+    else { const r = await timed(async () => { const x = await fetch((process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/$/, '') + '/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': aiKey(), 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: process.env.AI_RECEPTIONIST_MODEL || 'claude-haiku-5-5', max_tokens: 5, messages: [{ role: 'user', content: 'Reply OK' }] }) }); if (!x.ok) throw new Error('AI answered ' + x.status); return x.json(); });
+      add('ai_model', 'AI model answers', r.ok ? (r.ms > 4000 ? 'warn' : 'pass') : 'fail', r.ok ? `${process.env.AI_RECEPTIONIST_MODEL || 'claude-haiku-5-5'} replied in ${r.ms} ms${r.ms > 4000 ? ' (slow: callers will hear a pause)' : ''}` : r.e, r.ms); }
+    add('ring_phones', 'Phones to ring / transfer to', ringPhones().length ? 'pass' : softphone() ? 'warn' : 'fail', ringPhones().length ? `${ringPhones().length} phone(s)${softphone() ? ' + browser phone' : ''}` : softphone() ? 'browser phone only' : 'none — transfers and fallback go straight to voicemail');
+    add('receptionist', 'AI receptionist mode', aiMode() === 'off' ? 'warn' : 'pass', ({ off: 'Off', no_answer: 'answers when no one picks up', after_hours: 'answers after hours', always: 'answers every call' })[aiMode()]);
+    add('fallback', 'Fallback if AI fails', 'pass', 'AI error or 9 s timeout → rings your phones → voicemail (built in)');
+    add('callback_owner', 'Callbacks assigned to', callbackOwner() ? 'pass' : 'fail', callbackOwner() || 'nobody');
+    const wk = new Date(Date.now() - 7 * 864e5).toISOString(), st = db.prepare("SELECT COUNT(*) n, SUM(status='fallback') fb FROM ai_call_sessions WHERE started_at>=?").get(wk);
+    add('recent', 'AI calls in the last 7 days', st.fb ? 'warn' : 'pass', `${st.n || 0} answered, ${st.fb || 0} fell back`);
+    const overall = out.some(x => x.status === 'fail') ? 'fail' : out.some(x => x.status === 'warn') ? 'warn' : 'pass';
+    logAction(req, 'ran phone health check', 'phone settings', 0, overall);
+    res.json({ overall, checked_at: now(), checks: out });
+  });
+  app.put('/api/admin/phone/callback-owner', auth, (req, res) => {
+    const e = String((req.body || {}).email || '').trim().toLowerCase(), em = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || '').toLowerCase();
+    const role = !ow || em === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
+    if (!['owner', 'manager'].includes(role)) return res.status(403).json({ error: 'Only an owner or manager can change who gets callbacks.' });
+    if (e !== ow && !db.prepare('SELECT 1 FROM admin_users WHERE lower(email)=?').get(e)) return res.status(400).json({ error: 'Choose someone who has access to the admin.' });
+    setS('callback_owner', e); logAction(req, 'set callback owner', 'phone settings', 0, e); res.json({ ok: true, owner: e });
   });
 };
