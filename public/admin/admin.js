@@ -330,12 +330,12 @@
   // ---- Live operations: every number opens the exact records behind it ----
   let liveTimer = null, liveData = null;
   const OPEN_BY = { lead: id => openLead(id), estimate: id => openEstimate(id), contract: id => openContract(id), invoice: id => openRecord('invoices', id), project: id => openProject(id), call: id => openCall({ id }),
-    issue: async id => { try { const r = await api('/api/admin/issues/' + id); openIssue(r.item || r.issue || r); } catch (e) { toast(e.message, true); } } };
+    issue: async id => { try { const r = await api('/api/admin/issues/' + id); openIssue(r.item || r.issue || r); } catch (e) { toast(e.message, true); } }, complaint: id => openComplaint(id) };
   async function loadLive() {
     const el = $('#ccLive'); if (!el) return;
     try {
       const d = liveData = await api('/api/admin/command-center/metrics?days=' + $('#ccDays').value);
-      const hidden = (prefs.command_center && prefs.command_center.hidden) || [], groups = ['Sales', 'Operations', 'Finance', 'Calls & AI', 'Management'].filter(g => !hidden.includes(g));
+      const hidden = (prefs.command_center && prefs.command_center.hidden) || [], groups = ['Quality', 'Sales', 'Operations', 'Finance', 'Calls & AI', 'Management'].filter(g => !hidden.includes(g));
       el.innerHTML = `<div class="sechead" style="display:flex;justify-content:space-between;align-items:baseline;margin:18px 0 8px"><h2 style="margin:0">Live operations</h2><small class="muted">Click any line to see the exact records · updated ${esc(new Date(d.as_of).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))} · <a href="#" id="liveRefresh">Refresh</a> · <a href="#" id="liveCustom">Customize</a>${hidden.length ? ` <span class="muted">(${hidden.length} hidden)</span>` : ''}</small></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px">${groups.map(g => `<div class="card" style="padding:12px 14px"><h3 class="secth" style="margin:0 0 6px">${esc(g)}</h3>${d.metrics.filter(m => m.group === g).map(m => m.error
           ? `<div class="muted" style="font-size:13px;padding:6px 0" title="${esc(m.error)}">${esc(m.label)}: unavailable</div>`
@@ -345,9 +345,17 @@
         const box = document.createElement('div'); box.className = 'card'; box.style.cssText = 'padding:12px 14px;margin-top:12px';
         box.innerHTML = `<h3 class="secth" style="margin:0 0 6px">Collected by service (period)</h3>${dv.rows.length ? dv.rows.map(r => `<button type="button" class="liverow" data-svc="${esc(r.service)}" style="display:block;width:100%;border:0;background:none;cursor:pointer;text-align:left;font:inherit;color:inherit;padding:5px 0"><span style="display:flex;justify-content:space-between"><span>${esc(r.service)}</span><b>${money(r.collected)} ›</b></span><span style="display:block;height:6px;background:#e6edf5;border-radius:4px;margin-top:3px"><span style="display:block;height:6px;border-radius:4px;background:#2563eb;width:${tot ? Math.max(2, Math.round(r.collected / tot * 100)) : 0}%"></span></span></button>`).join('') : '<p class="muted" style="margin:0">No payments recorded in this period. Record payments on invoices to see collections by service.</p>'}`;
         $('#ccLive').appendChild(box); $$('#ccLive [data-svc]').forEach(b => b.onclick = () => openDrill('collected', { service: b.dataset.svc })); } catch { /* optional panel */ } }
+      try { const ap = await api('/api/admin/autopilot/activity'); const ic = { done: '✅', needs_approval: '⏳', blocked: '⚠️', failed: '❌' };
+        const row = x => `<button type="button" class="liverow" data-cmpo="${x.ref_id}" style="display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #eef2f6;background:none;padding:6px 2px;cursor:pointer;font:inherit;color:inherit">${ic[x.status] || '•'} <b>${esc(x.ref_number || '')}</b> ${esc(x.step)} <small class="muted">· ${esc(fmtWhen(x.created_at))}</small></button>`;
+        const ab = document.createElement('div'); ab.className = 'card'; ab.style.cssText = 'padding:12px 14px;margin-top:12px';
+        ab.innerHTML = `<h3 class="secth" style="margin:0 0 6px">Autopilot activity</h3><small class="muted">What the system detected, decided and did — and what is waiting on a person.</small>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:8px"><div><b>Awaiting your decision (${ap.awaiting.length})</b>${ap.awaiting.slice(0, 6).map(row).join('') || '<p class="muted">Nothing waiting.</p>'}</div>
+          <div><b>Exceptions (${ap.exceptions.length})</b>${ap.exceptions.slice(0, 6).map(row).join('') || '<p class="muted">None.</p>'}</div><div><b>Recent actions</b>${ap.recent.slice(0, 8).map(row).join('') || '<p class="muted">No activity yet.</p>'}</div></div>`;
+        $('#ccLive').appendChild(ab); $$('#ccLive [data-cmpo]').forEach(b => b.onclick = () => { go('quality'); setTimeout(() => openComplaint(Number(b.dataset.cmpo)), 350); });
+      } catch { /* optional panel */ }
       $$('#ccLive [data-drill]').forEach(b => b.onclick = () => openDrill(b.dataset.drill));
       $('#liveRefresh').onclick = ev => { ev.preventDefault(); loadLive(); };
-      $('#liveCustom').onclick = ev => { ev.preventDefault(); const all = ['Sales', 'Operations', 'Finance', 'Calls & AI', 'Management'];
+      $('#liveCustom').onclick = ev => { ev.preventDefault(); const all = ['Quality', 'Sales', 'Operations', 'Finance', 'Calls & AI', 'Management'];
         openDrawer({ title: 'Customize Live operations', sub: 'Only changes what you see. Business records are not affected.', body: `<p class="muted">Show these groups:</p>${all.map(g => `<label class="chk" style="display:block;margin:6px 0"><input type="checkbox" data-g="${esc(g)}"${hidden.includes(g) ? '' : ' checked'}> ${esc(g)}</label>`).join('')}`,
           footer: '<button class="btn ghost" data-close>Cancel</button><button class="btn" id="custSave">Save</button>' });
         $('#custSave').onclick = async () => { const h = $$('#drawerRoot [data-g]').filter(x => !x.checked).map(x => x.dataset.g); await savePref('command_center', { ...(prefs.command_center || {}), hidden: h }); closeDrawer(); loadLive(); }; };
@@ -1804,6 +1812,7 @@
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     act('#callLead', () => { closeDrawer(); go('leads'); openLead(c.lead_id); });
     act('#callSaveCust', () => openSaveCaller(c));
+    api('/api/admin/quality/complaints?call_id=' + c.id).then(r => { const k = (r.complaints || [])[0]; if (!k) return; const dl = document.querySelector('#drawerRoot dl.facts'); if (!dl) return; dl.insertAdjacentHTML('afterbegin', `<dt>Complaint case</dt><dd><a href="#" id="callCmp">${esc(k.number)}</a> <small class="muted">${esc(k.status_label)}</small></dd>`); $('#callCmp').onclick = ev => { ev.preventDefault(); closeDrawer(); go('quality'); setTimeout(() => openComplaint(k.id), 350); }; }).catch(() => {});
     if ($('#recPlay')) $('#recPlay').onclick = async ev => {
       const btn = ev.target; btn.disabled = true; btn.textContent = 'Loading…';
       try {
@@ -1983,7 +1992,62 @@
   $('#qTplBtn').addEventListener('click', () => { qState.tab = 'templates'; drawQ(); });
   ['#qSearch', '#qCust', '#qProj'].forEach(x => $(x).addEventListener(x === '#qSearch' ? 'input' : 'change', () => drawQ()));
   $('#qCsv').addEventListener('click', () => { const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`; const rows = [['Number', 'Date', 'Area', 'Customer', 'Project', 'Type', 'Template', 'Inspector', 'Crew', 'Score', 'Result', 'Status', 'Failed items'], ...qState.inspections.map(r => [r.number, r.date, r.area, r.customer_company || r.customer_name, r.project_name, r.itype, r.template, r.signed_name || r.inspector, r.crew, r.score, r.passed == null ? '' : r.passed ? 'Passed' : 'Failed', r.status, r.items.filter(i => i.result === 'Fail').map(i => i.label).join('; ')])]; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'inspections.csv'; a.click(); });
+  // ---------------- Quality → Customer complaints ----------------
+  const CSTAGE_COLOR = { NEW: '#6b7280', TRIAGE: '#6b7280', ASSIGNED: '#1f6fd1', INVESTIGATING: '#1f6fd1', CORRECTIVE_ACTION: '#c77700', REINSPECTION: '#c77700', CUSTOMER_CONFIRMATION: '#7c3aed', RESOLVED: '#1e8e3e', CLOSED: '#1e8e3e', INFO_NEEDED: '#c0392b', ON_HOLD: '#6b7280', ESCALATED: '#c0392b' };
+  let cmpFilter = 'open';
+  async function loadComplaints() {
+    let box = document.getElementById('qcComplaints');
+    if (!box) { box = document.createElement('div'); box.id = 'qcComplaints'; box.className = 'card'; box.style.cssText = 'margin-bottom:16px;padding:14px'; const head = document.querySelector('#v-quality .pagehead'); head.parentNode.insertBefore(box, head.nextSibling); }
+    let d; try { d = await api('/api/admin/quality/complaints?status=' + encodeURIComponent(cmpFilter)); } catch (e) { box.innerHTML = `<p class="msg err">Complaints could not load: ${esc(e.message)}</p>`; return; }
+    const tabs = [['open', 'Open'], ['INFO_NEEDED', 'Information needed'], ['INVESTIGATING', 'Investigating'], ['CORRECTIVE_ACTION', 'Corrective action'], ['REINSPECTION', 'Reinspection'], ['CUSTOMER_CONFIRMATION', 'Customer confirmation'], ['ESCALATED', 'Escalated'], ['RESOLVED', 'Resolved'], ['CLOSED', 'Closed']];
+    box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px"><h2 style="margin:0;font-size:18px">Customer complaints</h2><small class="muted">Every complaint (phone, AI receptionist, issue or website) becomes one case here.</small></div>
+      <div class="segtabs" style="margin:10px 0">${tabs.map(([k, l]) => `<button type="button" data-cf="${k}" class="${cmpFilter === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${d.complaints.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Case</th><th>Customer / location</th><th>Complaint</th><th>Stage</th><th>Manager</th><th>Respond by</th></tr></thead><tbody>${d.complaints.map(c => `<tr class="click" data-cmp="${c.id}"><td><b>${esc(c.number)}</b><small>${esc(c.source_type)}</small></td><td>${esc(c.customer_company || c.customer_name || 'Unknown caller')}<small>${esc(c.property || '')}</small></td><td>${esc(String(c.description || '').slice(0, 90))}</td><td><span class="pill" style="background:${CSTAGE_COLOR[c.status]};color:#fff">${esc(c.status_label)}</span></td><td>${esc(c.assigned_manager || '—')}</td><td${c.overdue ? ' style="color:#c0392b;font-weight:600"' : ''}>${c.response_due ? esc(fmtWhen(c.response_due)) : '—'}${c.overdue ? ' · overdue' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No complaints in this view.</p>'}`;
+    $$('#qcComplaints [data-cf]').forEach(b => b.onclick = () => { cmpFilter = b.dataset.cf; loadComplaints(); });
+    $$('#qcComplaints [data-cmp]').forEach(r => r.onclick = () => openComplaint(Number(r.dataset.cmp)));
+  }
+  async function openComplaint(id) {
+    let d; try { d = await api('/api/admin/quality/complaints/' + id); } catch (e) { return toast(e.message, true); }
+    const c = d.complaint, ic = { done: '✅', needs_approval: '⏳', blocked: '⚠️', failed: '❌' };
+    let emps = []; try { emps = ((await api('/api/admin/employees')).employees || []).filter(e => e.active !== 0); } catch { /* */ }
+    const stageBtn = (to, label, extra = '') => `<button type="button" class="btn small${extra}" data-to="${to}">${label}</button>`;
+    openDrawer({ title: `${c.number} · ${c.status_label}`, sub: `${c.category} · ${c.severity} · reported ${fmtWhen(c.reported_at)} via ${c.source_type}`,
+      body: `${c.info_needed ? `<p class="msg err" style="margin:0 0 10px">Information needed: ${esc(c.info_needed)}</p>` : ''}
+        <dl class="facts"><dt>Customer</dt><dd>${d.customer ? `${esc(d.customer.company || d.customer.name)} <small class="muted">${esc(d.customer.phone || '')}</small>` : 'Not identified'}${d.repeat_complaints ? ` <span class="pill" style="background:#c0392b;color:#fff">${d.repeat_complaints} earlier complaint(s)</span>` : ''}</dd>
+        <dt>Location</dt><dd>${esc(c.property || '—')}</dd><dt>Original job</dt><dd>${d.original_visit ? `${esc(d.original_visit.title)} · ${esc(d.original_visit.date)}` : '—'}</dd><dt>Crew</dt><dd>${esc(c.crew || '—')}</dd>
+        <dt>Source call</dt><dd>${d.call ? `<a href="#" id="cmpCall">Call #${d.call.id}</a> <small class="muted">${esc(d.call.handling || '')} · ${esc(fmtWhen(d.call.created_at))}</small>` : '—'}</dd>
+        <dt>Manager</dt><dd>${esc(c.assigned_manager || '—')}</dd><dt>Respond by</dt><dd${c.overdue ? ' style="color:#c0392b"' : ''}>${c.response_due ? esc(fmtWhen(c.response_due)) : '—'}${c.overdue ? ' (overdue)' : ''}</dd></dl>
+        <h3 class="secth">Complaint</h3><p style="white-space:pre-wrap">${esc(c.description || '')}</p>${c.transcript ? `<details><summary>Call transcript</summary><pre style="white-space:pre-wrap;font-size:12px">${esc(c.transcript)}</pre></details>` : ''}
+        <h3 class="secth">Investigation</h3><p style="white-space:pre-wrap" class="muted">${esc(c.investigation_notes || 'No notes yet.')}</p>
+        <div class="f"><label for="cmpNote">Add investigation note</label><textarea id="cmpNote" rows="2"></textarea></div><button class="btn small ghost" id="cmpNoteSave">Save note</button>
+        <div class="f" style="margin-top:8px"><label for="cmpRoot">Root cause</label><input id="cmpRoot" value="${esc(c.root_cause || '')}" placeholder="What went wrong"></div>
+        <h3 class="secth">Corrective cleaning</h3>${d.actions.filter(a => a.action_type === 'corrective_visit').map(a => `<p>📅 ${esc(a.description)} · visit #${a.ref_id}</p>`).join('') || '<p class="muted">None scheduled.</p>'}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><input id="cmpDate" type="date"><input id="cmpTime" type="time" value="18:00"></div>
+        <select id="cmpCrew" multiple size="${Math.min(4, Math.max(2, emps.length))}" style="width:100%;margin-top:6px">${emps.map(e => `<option value="${e.id}">${esc(e.name)}${e.role ? ' · ' + esc(e.role) : ''}</option>`).join('')}</select>
+        <input id="cmpInstr" placeholder="Instructions for the crew" style="margin-top:6px"><button class="btn small" id="cmpCorr" style="margin-top:6px">Schedule corrective cleaning</button>
+        <h3 class="secth">Reinspection</h3>${d.actions.filter(a => a.action_type === 'reinspection').map(a => `<p>${a.status === 'Passed' ? '✅' : '❌'} ${esc(a.description)}</p>`).join('') || '<p class="muted">None yet.</p>'}
+        <select id="cmpInsp"><option value="">Link a completed inspection…</option>${d.inspections.map(i => `<option value="${i.id}">#${i.id} ${esc(i.area)} · ${esc(i.date || '')} · ${i.passed === 1 ? 'passed' : i.passed === 0 ? 'failed' : 'unsigned'}</option>`).join('')}</select> <button class="btn small ghost" id="cmpReinsp">Record reinspection</button>
+        <h3 class="secth">Customer contact</h3>${d.comms.map(m => `<p>${m.accepted === 1 ? '👍' : m.accepted === 0 ? '👎' : '💬'} ${esc(fmtWhen(m.created_at))} · ${esc(m.channel)}: ${esc(m.message)}</p>`).join('') || '<p class="muted">No contact recorded.</p>'}
+        <textarea id="cmpMsg" rows="2" placeholder="What was communicated to the customer"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px"><button class="btn small ghost" data-acc="update">Log update</button><button class="btn small ghost" data-acc="yes">Customer accepted</button><button class="btn small ghost" data-acc="no">Customer rejected</button></div>
+        <h3 class="secth">Resolution</h3><textarea id="cmpRes" rows="2" placeholder="Resolution summary">${esc(c.resolution_summary || '')}</textarea>
+        <h3 class="secth">Autopilot timeline</h3><div style="font-size:13px">${d.autopilot.map(a => `<div style="margin:3px 0">${ic[a.status] || '•'} ${esc(a.step)} <small class="muted">· ${esc(a.decided_by)} · ${esc(fmtWhen(a.created_at))}${a.evidence ? ' · ' + esc(String(a.evidence).slice(0, 140)) : ''}</small></div>`).join('')}</div>
+        <details style="margin-top:8px"><summary>History (${d.history.length})</summary>${d.history.map(h => `<div style="font-size:12px">${esc(fmtWhen(h.created_at))} · ${esc(h.actor || '')} · ${esc(h.action)}${h.next ? ': ' + esc(String(h.prev || '') ? h.prev + ' → ' : '') + esc(h.next) : ''}</div>`).join('')}</details>`,
+      footer: `<button class="btn ghost" data-close>Close</button>${stageBtn('INVESTIGATING', 'Investigate', ' ghost')}${stageBtn('CORRECTIVE_ACTION', 'Corrective action', ' ghost')}${stageBtn('RESOLVED', 'Resolve')}${stageBtn('CLOSED', 'Close case', ' ghost')}${stageBtn('ESCALATED', 'Escalate', ' ghost')}${stageBtn('ON_HOLD', 'On hold', ' ghost')}` });
+    const reload = () => { openComplaint(id); if (state.view === 'quality') loadComplaints(); };
+    if ($('#cmpCall')) $('#cmpCall').onclick = ev => { ev.preventDefault(); closeDrawer(); go('calls'); setTimeout(() => openCall({ id: d.call.id }), 350); };
+    $('#cmpNoteSave').onclick = async () => { try { await api(`/api/admin/quality/complaints/${id}/notes`, { method: 'POST', json: { text: $('#cmpNote').value } }); toast('Note saved'); reload(); } catch (e) { toast(e.message, true); } };
+    $('#cmpCorr').onclick = async () => { try { if ($('#cmpRoot').value.trim() !== (c.root_cause || '')) await api(`/api/admin/quality/complaints/${id}/stage`, { method: 'POST', json: { to: c.status === 'CORRECTIVE_ACTION' ? 'CORRECTIVE_ACTION' : 'CORRECTIVE_ACTION', root_cause: $('#cmpRoot').value } });
+      const r = await api(`/api/admin/quality/complaints/${id}/corrective`, { method: 'POST', json: { date: $('#cmpDate').value, start_time: $('#cmpTime').value, employee_ids: [...$('#cmpCrew').selectedOptions].map(o => Number(o.value)), instructions: $('#cmpInstr').value } }); toast(`Corrective cleaning scheduled (visit #${r.visit_id})`); reload(); } catch (e) { toast(e.message, true); } };
+    $('#cmpReinsp').onclick = async () => { try { const r = await api(`/api/admin/quality/complaints/${id}/reinspection`, { method: 'POST', json: { inspection_id: Number($('#cmpInsp').value) } }); toast(r.passed ? 'Reinspection passed — confirm with the customer' : 'Reinspection failed — corrective action reopened', !r.passed); reload(); } catch (e) { toast(e.message, true); } };
+    $$('#drawerRoot [data-acc]').forEach(b => b.onclick = async () => { try { await api(`/api/admin/quality/complaints/${id}/customer-contact`, { method: 'POST', json: { message: $('#cmpMsg').value, accepted: b.dataset.acc === 'yes' ? true : b.dataset.acc === 'no' ? false : undefined } }); toast('Recorded'); reload(); } catch (e) { toast(e.message, true); } });
+    $$('#drawerRoot [data-to]').forEach(b => b.onclick = async () => { const to = b.dataset.to; const body = { to, root_cause: $('#cmpRoot').value, resolution_summary: $('#cmpRes').value };
+      if (['ESCALATED', 'ON_HOLD'].includes(to)) { const n = prompt('Why?'); if (!n) return; body.note = n; }
+      if (to === 'CLOSED' && !confirm(`Close ${c.number}? This ends the case.`)) return;
+      try { await api(`/api/admin/quality/complaints/${id}/stage`, { method: 'POST', json: body }); toast('Updated'); reload(); } catch (e) { toast(e.message, true); } });
+  }
   async function loadQuality() {
+    loadComplaints();
     const [d, t] = await Promise.all([api('/api/admin/qc/dashboard?from=2000-01-01&to=2100-01-01'), api('/api/admin/qc/templates')]);
     qState.dash = d; qState.inspections = d.inspections; qState.templates = t.templates;
     const k = d.kpis;
