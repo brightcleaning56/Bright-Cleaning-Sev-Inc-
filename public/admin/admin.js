@@ -1623,6 +1623,7 @@
   $('#callsAdd').addEventListener('click', () => logCall());
   $('#callSearch').addEventListener('input', () => renderCalls());
   $('#callFollow').addEventListener('change', () => renderCalls());
+  if ($('#callVm')) $('#callVm').addEventListener('change', () => renderCalls());
   async function loadCalls() {
     if (!document.getElementById('dialPadBtn')) { const h = document.querySelector('#v-calls .pagehead'); if (h) { const btn = document.createElement('button'); btn.className = 'btn'; btn.id = 'dialPadBtn'; btn.type = 'button'; btn.textContent = '📞 Call a number'; btn.onclick = () => openDialPad(); const wrap = h.querySelector('.headact') || h; wrap.appendChild(btn); } }
     const r = await api('/api/admin/calls'); Object.assign(callState, r);
@@ -1635,10 +1636,10 @@
         <div class="st"><span>Hot leads (score 70+)</span><b>${x.hot_leads.length}</b><small>${x.hot_leads.slice(0, 2).map(h => esc(h.company || h.contact_name || '')).join(', ')}</small></div>`; }).catch(() => {});
   }
   function renderCalls() {
-    const q = $('#callSearch').value.trim().toLowerCase(), due = $('#callFollow').checked, t = todayISO();
-    const rows = callState.calls.filter(c => (!q || [c.contact_name, c.company, c.phone, c.summary, c.customer_company].join(' ').toLowerCase().includes(q)) && (!due || (!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t)));
+    const q = $('#callSearch').value.trim().toLowerCase(), due = $('#callFollow').checked, vm = !!($('#callVm') && $('#callVm').checked), t = todayISO();
+    const rows = callState.calls.filter(c => (!q || [c.contact_name, c.company, c.phone, c.summary, c.customer_company].join(' ').toLowerCase().includes(q)) && (!due || (!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t)) && (!vm || c.outcome === 'Voicemail'));
     $('#callsRows').innerHTML = rows.length ? rows.map(c => `<tr class="click" data-call="${c.id}"><td>${esc(fmtWhen(c.created_at))}<small>${esc(c.direction)}</small></td><td><b>${esc(c.company || c.customer_company || c.contact_name || '—')}</b><small>${esc([c.contact_name, c.phone].filter(Boolean).join(' · '))}</small></td><td>${badge(c.purpose)}</td><td>${c.outcome === 'Answered' ? esc(c.outcome) : `<span class="badge amber">${esc(c.outcome)}</span>`}</td><td>${esc((c.summary || '').slice(0, 90))}</td><td class="${!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t ? 'late' : ''}">${c.follow_up_date ? (c.follow_up_done ? 'Done' : fmtDate(c.follow_up_date)) : '—'}</td></tr>`).join('')
-      : `<tr><td class="emptyrow" colspan="6">No calls logged${q || due ? ' match' : ' yet'}.</td></tr>`;
+      : `<tr><td class="emptyrow" colspan="6">No calls logged${q || due || vm ? ' match' : ' yet'}.</td></tr>`;
     $$('[data-call]').forEach(r => r.onclick = () => openCall(callState.calls.find(c => c.id === Number(r.dataset.call))));
   }
   async function logCall(prefill) {
@@ -1685,7 +1686,7 @@
         ${a.reply_draft ? `<p><b>Reply draft</b> <button class="btn small ghost" id="callCopy" type="button">Copy</button></p><div class="pre" style="white-space:pre-wrap;background:#f6f9fc;border-radius:8px;padding:10px">${esc(a.reply_draft)}</div>` : ''}</div>` : '';
     openDrawer({ title: c.company || c.customer_company || c.contact_name || c.phone || 'Call', sub: `${esc(c.direction)} · ${fmtWhen(c.created_at)}${c.source === 'Twilio' ? ' · captured automatically' : c.created_by ? ' · logged by ' + esc(c.created_by) : ''}`,
       body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a> <button type="button" class="btn small ghost" data-dial="${esc(c.phone)}" data-cust="${c.customer_id || ''}" data-name="${esc(c.company || c.contact_name || '')}">📞 Call back</button>` : '—'}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || 'Not linked')}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}${c.duration_s ? ` · ${Math.round(c.duration_s / 60 * 10) / 10} min` : ''}</dd>
-        <dt>Follow-up</dt><dd>${c.follow_up_date ? esc(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd>${c.issue_id ? `<dt>Issue</dt><dd>Issue #${c.issue_id} created from this call</dd>` : ''}${c.lead_id ? `<dt>Lead</dt><dd><button class="linklike" id="callLead">Open lead #${c.lead_id}</button></dd>` : ''}${c.recording_url ? `<dt>Recording</dt><dd><a href="${esc(c.recording_url)}" target="_blank" rel="noopener">Listen (Twilio)</a></dd>` : ''}</dl>
+        <dt>Follow-up</dt><dd>${c.follow_up_date ? esc(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd>${c.issue_id ? `<dt>Issue</dt><dd>Issue #${c.issue_id} created from this call</dd>` : ''}${c.lead_id ? `<dt>Lead</dt><dd><button class="linklike" id="callLead">Open lead #${c.lead_id}</button></dd>` : ''}${c.recording_url ? `<dt>${c.outcome === 'Voicemail' ? 'Voicemail' : 'Recording'}</dt><dd id="recBox"><button type="button" class="btn small" id="recPlay">▶ Play ${c.outcome === 'Voicemail' ? 'voicemail' : 'recording'}</button></dd>` : ''}</dl>
         ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}${aiHtml}
         <label for="callTr"><b>Transcript or detailed notes</b></label><textarea id="callTr" rows="6" style="width:100%" placeholder="Paste the call transcript or write what was said…">${esc(c.transcript || '')}</textarea>
         <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity.</p>'}</div>`,
@@ -1693,6 +1694,15 @@
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     act('#callLead', () => { closeDrawer(); go('leads'); openLead(c.lead_id); });
     act('#callSaveCust', () => openSaveCaller(c));
+    if ($('#recPlay')) $('#recPlay').onclick = async ev => {
+      const btn = ev.target; btn.disabled = true; btn.textContent = 'Loading…';
+      try {
+        const r = await fetch(`/api/admin/calls/${c.id}/recording`, { headers: { Authorization: 'Bearer ' + token } });
+        if (!r.ok) { let m = 'Could not load the recording.'; try { m = (await r.json()).error || m; } catch { /* */ } throw new Error(m); }
+        const url = URL.createObjectURL(await r.blob());
+        $('#recBox').innerHTML = `<audio controls autoplay src="${url}" style="width:100%;max-width:340px;display:block"></audio><a href="${url}" download="call-${c.id}.mp3" class="muted" style="font-size:12px">Download MP3</a>`;
+      } catch (e) { btn.disabled = false; btn.textContent = '▶ Try again'; toast(e.message, true); }
+    };
     act('#callIssue', async () => { try { const r = await api(`/api/admin/calls/${c.id}/issue`, { method: 'POST', json: {} }); toast(`${r.issue.number} created from this call`); closeDrawer(); go('issues'); openIssue(r.issue); } catch (e) { toast(e.message, true); } });
     act('#callDone', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_done: true } }); toast('Follow-up done'); closeDrawer(); loadCalls(); } catch (e) { toast(e.message, true); } });
     act('#callAnalyze', async () => { const b = $('#callAnalyze'); b.disabled = true; b.textContent = 'Analyzing…'; try { await api(`/api/admin/ai/calls/${c.id}/analyze`, { method: 'POST', json: { transcript: $('#callTr').value } }); toast('Call analyzed'); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Analyze with AI'; } });
