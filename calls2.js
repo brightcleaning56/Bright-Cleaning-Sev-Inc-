@@ -60,7 +60,8 @@ module.exports = function mountCalls(app, ctx) {
     if (!token()) return res.status(503).type('text/plain').send('Phone capture is not set up (TWILIO_AUTH_TOKEN missing).');
     if (!valid(req)) return res.status(403).type('text/plain').send('Invalid signature.');
     { const b = req.body || {}; try { if (/^AC[0-9a-f]{32}$/.test(String(b.AccountSid || '')) && !getS('twilio_account_sid')) setS('twilio_account_sid', b.AccountSid); if (String(b.Direction || '') === 'inbound' && e164(b.To) && !getS('twilio_number')) setS('twilio_number', e164(b.To)); } catch { /* */ } }
-    try { fn(req, res); } catch (e) { console.error('twilio webhook:', e.message); res.status(500).type('text/plain').send('error'); }
+    const fail = e => { console.error('twilio webhook:', e && e.message); if (res.headersSent) return; if (/ai-turn/.test(req.path)) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, one moment.</Say><Redirect method="POST">' + base() + '/api/webhooks/twilio/dial-result?ai=done</Redirect></Response>'); res.status(500).type('text/plain').send('error'); };
+    try { Promise.resolve(fn(req, res)).catch(fail); } catch (e) { fail(e); }
   };
   // Call status callback: completed / no-answer / busy / failed / canceled.
   app.post('/api/webhooks/twilio/status', hook((req, res) => {
@@ -68,7 +69,7 @@ module.exports = function mountCalls(app, ctx) {
     const inbound = String(b.Direction || 'inbound').startsWith('inbound'), other = inbound ? b.From : b.To;
     const st = String(b.CallStatus || ''), outcome = st === 'completed' ? 'Answered' : ['no-answer', 'busy', 'canceled', 'failed'].includes(st) ? 'Missed' : null;
     if (!outcome) return res.type('text/xml').send('<Response/>');
-    res.on('finish', () => { try { mergeTranscript(clean(b.CallSid, 64)); attachPendingRecording(clean(b.CallSid, 64)); } catch { /* */ } });
+    res.on('finish', () => { try { mergeTranscript(clean(b.CallSid, 64)); attachPendingRecording(clean(b.CallSid, 64)); if (ctx.finalizeAi) ctx.finalizeAi(clean(b.CallSid, 64)); } catch { /* */ } });
     const cu = matchCustomer(other), dur = Math.max(0, Math.trunc(Number(b.CallDuration) || 0));
     const cur = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid);
     if (cur) db.prepare("UPDATE calls SET outcome=CASE WHEN outcome IN ('Missed','Voicemail','No answer','Busy') THEN outcome WHEN outcome IN ('Answered') AND source IN ('Click-to-call','Browser') THEN outcome WHEN source IN ('Click-to-call','Browser') AND ?='Missed' THEN 'Missed' WHEN source IN ('Click-to-call','Browser') THEN outcome ELSE ? END, duration_s=CASE WHEN source IN ('Click-to-call','Browser') AND duration_s IS NOT NULL THEN duration_s ELSE ? END WHERE id=?").run(outcome, outcome, dur, cur.id);
@@ -87,6 +88,7 @@ module.exports = function mountCalls(app, ctx) {
   const voicemail = () => `<Say voice="Polly.Joanna">${greeting()}</Say><Record maxLength="180" playBeep="true" transcribe="true" transcribeCallback="${base()}/api/webhooks/twilio/transcription" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"/><Say voice="Polly.Joanna">We did not get a message. Goodbye.</Say>`;
   app.post('/api/webhooks/twilio/voice', hook((req, res) => {
     const caller = e164((req.body || {}).From);
+    if (aiAnswersNow()) return res.type('text/xml').send(aiStart(req.body || {}, 'answered by AI'));
     const cli = softphone() ? '<Client>office</Client>' : '';
     const num = ringPhones().filter(p => p !== caller).map(p => `<Number>${esc(p)}</Number>`).join('');
     const xml = (cli || num)
@@ -98,6 +100,7 @@ module.exports = function mountCalls(app, ctx) {
   app.post('/api/webhooks/twilio/dial-result', hook((req, res) => {
     const b = req.body || {}, st = String(b.DialCallStatus || '');
     if (st === 'completed' || st === 'answered') return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+    if (!req.query.ai && ctx.aiTakeover) { const x = ctx.aiTakeover(b); if (x) return res.type('text/xml').send(x); }
     const sid = clean(b.CallSid, 64), cu = matchCustomer(b.From);
     if (sid) {
       const cur = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid);
@@ -141,11 +144,13 @@ module.exports = function mountCalls(app, ctx) {
   });
   // ---- Click-to-call: ring the staff member's phone first, then bridge to the customer from the Twilio number ----
   const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
-  app.get('/api/admin/phone/settings', auth, (req, res) => res.json({ connected: !!token(), account_sid: acctSid() ? acctSid().slice(0, 6) + '…' + acctSid().slice(-4) : '', number: twNumber(), ring_phone: ringPhones()[0] || '', ring_phones: ringPhones(), ring_source: getS('twilio_ring_phones') ? 'admin' : 'render', render_forward_digits: String(process.env.TWILIO_FORWARD_TO || '').replace(/\D/g, '').length, render_forward_parsed: parsePhones(process.env.TWILIO_FORWARD_TO).map(p => '…' + p.slice(-4)), can_dial: !!(token() && acctSid() && twNumber()), softphone: softphone() }));
+  app.get('/api/admin/phone/settings', auth, (req, res) => res.json({ connected: !!token(), account_sid: acctSid() ? acctSid().slice(0, 6) + '…' + acctSid().slice(-4) : '', number: twNumber(), ai_receptionist: { mode: getS('ai_receptionist_mode') || process.env.AI_RECEPTIONIST || 'off', ai_key: !!process.env.ANTHROPIC_API_KEY, hours: (() => { try { return JSON.parse(getS('ai_receptionist_hours') || ''); } catch { return { days: [1, 2, 3, 4, 5], open: '08:00', close: '17:00' }; } })() }, ring_phone: ringPhones()[0] || '', ring_phones: ringPhones(), ring_source: getS('twilio_ring_phones') ? 'admin' : 'render', render_forward_digits: String(process.env.TWILIO_FORWARD_TO || '').replace(/\D/g, '').length, render_forward_parsed: parsePhones(process.env.TWILIO_FORWARD_TO).map(p => '…' + p.slice(-4)), can_dial: !!(token() && acctSid() && twNumber()), softphone: softphone() }));
   app.put('/api/admin/phone/settings', auth, (req, res) => {
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can change phone settings.' });
     const b = req.body || {};
     if (b.account_sid !== undefined) { if (!/^AC[0-9a-f]{32}$/.test(String(b.account_sid))) return res.status(400).json({ error: 'Account SID starts with AC followed by 32 characters (Twilio console home page).' }); setS('twilio_account_sid', b.account_sid); }
+    if (b.ai_mode !== undefined) { if (!['off', 'no_answer', 'after_hours', 'always'].includes(b.ai_mode)) return res.status(400).json({ error: 'Choose when the AI receptionist answers.' }); setS('ai_receptionist_mode', b.ai_mode); }
+    if (b.ai_hours !== undefined) { const h = b.ai_hours || {}, ok = Array.isArray(h.days) && h.days.every(d => Number.isInteger(d) && d >= 0 && d <= 6) && /^\d{2}:\d{2}$/.test(h.open) && /^\d{2}:\d{2}$/.test(h.close) && h.open < h.close; if (!ok) return res.status(400).json({ error: 'Business hours need days and an open time before the close time.' }); setS('ai_receptionist_hours', JSON.stringify({ days: h.days, open: h.open, close: h.close })); }
     if (b.ring_phones !== undefined) { const ph = parsePhones(b.ring_phones); if (!ph.length && String(b.ring_phones).trim()) return res.status(400).json({ error: 'Enter at least one 10-digit US phone number (separate several with commas).' }); setS('twilio_ring_phones', ph.join(', ')); }
     if (b.number !== undefined) { if (!e164(b.number)) return res.status(400).json({ error: 'Enter the Twilio number as a 10-digit US number.' }); setS('twilio_number', e164(b.number)); }
     logAction(req, 'changed', 'phone settings', 0, `number ${twNumber()}`);
@@ -282,4 +287,147 @@ module.exports = function mountCalls(app, ctx) {
       res.set({ 'Content-Type': 'audio/mpeg', 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=3600', 'Content-Disposition': `inline; filename="call-${c.id}.mp3"` }).send(buf);
     } catch (e) { res.status(502).json({ error: 'Could not reach Twilio: ' + e.message }); }
   });
+  // =====================================================================================================
+  // AI RECEPTIONIST — answers calls, talks with the caller (Twilio speech recognition + Claude + neural voice),
+  // and acts only through the validated tools below. Falls back to ringing the office / voicemail on any failure.
+  // =====================================================================================================
+  const { adminEmail, getMailer } = ctx;
+  db.exec(`CREATE TABLE IF NOT EXISTS ai_call_sessions(call_sid TEXT PRIMARY KEY, caller TEXT, customer_id INTEGER, reason TEXT, messages TEXT NOT NULL DEFAULT '[]',
+    turns INTEGER DEFAULT 0, silences INTEGER DEFAULT 0, lead_id INTEGER, issue_id INTEGER, callback TEXT, transferred INTEGER DEFAULT 0, status TEXT DEFAULT 'active', error TEXT,
+    summary TEXT, started_at TEXT, ended_at TEXT, finalized INTEGER DEFAULT 0)`);
+  try { if (!db.prepare('PRAGMA table_info(calls)').all().some(c => c.name === 'handling')) db.exec('ALTER TABLE calls ADD COLUMN handling TEXT'); } catch { /* */ }
+  const aiKey = () => process.env.ANTHROPIC_API_KEY || '';
+  const aiMode = () => { const m = getS('ai_receptionist_mode') || process.env.AI_RECEPTIONIST || 'off'; return ['off', 'no_answer', 'after_hours', 'always'].includes(m) ? m : 'off'; };
+  const aiHours = () => { try { return JSON.parse(getS('ai_receptionist_hours') || '') } catch { return { days: [1, 2, 3, 4, 5], open: '08:00', close: '17:00' }; } };
+  const isOpen = (d = new Date()) => { const h = aiHours(), tz = process.env.BUSINESS_TZ || 'America/Chicago'; const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d).map(p => [p.type, p.value]));
+    const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday), hm = `${String(parts.hour).replace('24', '00')}:${parts.minute}`; return h.days.includes(day) && hm >= h.open && hm < h.close; };
+  const aiReady = () => !!(aiKey() && token());
+  const aiAnswersNow = () => aiReady() && (aiMode() === 'always' || (aiMode() === 'after_hours' && !isOpen()));
+  const VOICE = () => process.env.AI_RECEPTIONIST_VOICE || 'Polly.Joanna-Neural';
+  const gather = (say, extra = '') => `<Gather input="speech" action="${base()}/api/webhooks/twilio/ai-turn" method="POST" speechTimeout="auto" speechModel="phone_call" language="en-US" actionOnEmptyResult="true"${extra}><Say voice="${VOICE()}">${esc(say)}</Say></Gather>`;
+  function aiStart(b, reason) {
+    const sid = clean(b.CallSid, 64), caller = e164(b.From) || clean(b.From, 40), cu = matchCustomer(caller);
+    db.prepare('INSERT OR IGNORE INTO ai_call_sessions(call_sid, caller, customer_id, reason, started_at) VALUES(?,?,?,?,?)').run(sid, caller, cu ? cu.id : null, reason, now());
+    const hello = `Thanks for calling Bright Cleaning. This is Bright Clean's virtual assistant, and this call may be recorded. ${cu ? 'It looks like you are calling from a number we have on file. ' : ''}How can I help you today?`;
+    return `<?xml version="1.0" encoding="UTF-8"?><Response>${gather(hello)}<Redirect method="POST">${base()}/api/webhooks/twilio/ai-turn</Redirect></Response>`;
+  }
+  // When nobody answers and the mode is "no_answer" (or after hours), the AI takes the call instead of voicemail.
+  ctx.aiTakeover = (b) => aiReady() && (aiMode() === 'no_answer' || aiMode() === 'always' || (aiMode() === 'after_hours' && !isOpen())) ? aiStart(b, 'no one answered') : null;
+  const TOOLS = [
+    { name: 'save_caller_details', description: 'Save or update what the caller has told you, as a lead for the Bright Clean team. Call this as soon as you have the caller\'s name and what they need, and again whenever you learn more. Never invent values.',
+      input_schema: { type: 'object', properties: { name: { type: 'string' }, company: { type: 'string' }, email: { type: 'string' }, callback_number: { type: 'string' }, service_category: { type: 'string', enum: ['residential', 'commercial', 'construction', 'specialty', 'other'] },
+        service_needed: { type: 'string' }, location: { type: 'string' }, square_footage: { type: 'string' }, timing: { type: 'string' }, bid_due_date: { type: 'string', description: 'YYYY-MM-DD if given' }, drawings_available: { type: 'string' }, notes: { type: 'string' } }, required: ['service_needed'] } },
+    { name: 'log_complaint', description: 'Record a complaint or service problem from an existing customer so a manager follows up. Only use for problems with work Bright Clean did.',
+      input_schema: { type: 'object', properties: { summary: { type: 'string' }, urgent: { type: 'boolean' } }, required: ['summary'] } },
+    { name: 'request_callback', description: 'Arrange for a person from Bright Clean to call the caller back (e.g. invoice/billing questions, pricing, scheduling, anything you cannot answer).',
+      input_schema: { type: 'object', properties: { reason: { type: 'string' }, preferred_time: { type: 'string' } }, required: ['reason'] } },
+    { name: 'transfer_to_human', description: 'Connect the caller to a person now. Use when the caller asks for a person, is upset, or has an emergency.', input_schema: { type: 'object', properties: { reason: { type: 'string' } } } },
+    { name: 'end_call', description: 'Say goodbye and end the call once the caller has nothing else.', input_schema: { type: 'object', properties: {} } }];
+  const SYSTEM = (sess, cu) => `You are the virtual phone receptionist for Bright Cleaning Sev Inc. ("Bright Clean"), a cleaning company serving residential, commercial/enterprise (janitorial, multifamily common areas, offices), post-construction final cleaning (rough, final, touch-up/punch-list, interior and exterior windows) and specialty services (floor care, power washing, parking lots, valet trash).
+You are speaking on a live phone call: keep every reply to one or two short, natural sentences and ask one question at a time. No lists, no markdown.
+Goals: understand what the caller needs, collect the details the team needs, save them with save_caller_details, and tell the caller someone from Bright Clean will follow up.
+- Residential/commercial: ask the address or city, type of property, approximate size, how often or when, and a good callback number and email.
+- Construction: ask the project name and location, approximate square footage, construction stage, when final cleaning is needed, any bid due date, whether drawings are available, and site access.
+- Complaints from existing customers: get what happened and where, log it with log_complaint, apologize, and say a manager will follow up.
+- Invoice, billing, account or pricing questions: do NOT discuss amounts or account details; use request_callback.
+- If they ask for a person, are upset, or there is an emergency: use transfer_to_human.
+Rules: never state or estimate prices, never promise dates, availability or crews, never approve or change contracts, never invent insurance, licenses or certifications. If unsure, say a team member will confirm. Do not read back personal or account information.
+Caller ID: ${cu ? `matches existing customer "${(cu.company || cu.name || '').replace(/"/g, '')}" (do not confirm account details; you may say you see they have worked with us)` : 'not a known customer'}. Caller number: ${sess.caller || 'unknown'}.
+Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
+  async function claudeTurn(messages, sys) {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), Number(process.env.AI_RECEPTIONIST_TIMEOUT_MS || 9000));
+    try {
+      const r = await fetch((process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/$/, '') + '/v1/messages', { method: 'POST', signal: ctl.signal,
+        headers: { 'content-type': 'application/json', 'x-api-key': aiKey(), 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: process.env.AI_RECEPTIONIST_MODEL || 'claude-haiku-5-5', max_tokens: 400, system: sys, tools: TOOLS, messages }) });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error('AI ' + r.status + ': ' + ((j.error && j.error.message) || 'error')); return j;
+    } finally { clearTimeout(timer); }
+  }
+  const str = (v, n) => clean(typeof v === 'string' ? v : '', n);
+  function runTool(sess, name, inp) {
+    inp = inp && typeof inp === 'object' ? inp : {};
+    if (name === 'save_caller_details') {
+      const cat = ['residential', 'commercial', 'construction', 'specialty', 'other'].includes(inp.service_category) ? inp.service_category : 'other';
+      const em = str(inp.email, 254).toLowerCase(), email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em) ? em : null, due = /^\d{4}-\d{2}-\d{2}$/.test(String(inp.bid_due_date || '')) ? inp.bid_due_date : null;
+      const phone = e164(inp.callback_number) || sess.caller || null;
+      const details = [`Phone call with Bright Clean's AI receptionist.`, inp.service_needed && `Needs: ${str(inp.service_needed, 500)}`, inp.timing && `Timing: ${str(inp.timing, 200)}`, inp.drawings_available && `Drawings: ${str(inp.drawings_available, 200)}`, inp.notes && `Notes: ${str(inp.notes, 1500)}`].filter(Boolean).join('\n');
+      const f = { contact_name: str(inp.name, 150) || null, company: str(inp.company, 200) || null, email, phone, service: str(inp.service_needed, 200) || null, project_type: cat, address: str(inp.location, 300) || null, square_footage: str(inp.square_footage, 40) || null, bid_due_date: due, details };
+      if (sess.lead_id) { const keep = Object.entries(f).filter(([, v]) => v); db.prepare(`UPDATE leads SET ${keep.map(([k]) => k + '=?').join(',')} WHERE id=?`).run(...keep.map(([, v]) => v), sess.lead_id); return 'Saved (updated the lead).'; }
+      const id = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,service,project_type,address,square_footage,bid_due_date,details,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'New',?)`)
+        .run(cat === 'construction' ? 'bid' : 'inquiry', f.contact_name, f.company, f.email, f.phone, f.service, f.project_type, f.address, f.square_footage, f.bid_due_date, f.details, now()).lastInsertRowid;
+      db.prepare('UPDATE ai_call_sessions SET lead_id=? WHERE call_sid=?').run(id, sess.call_sid); sess.lead_id = id;
+      db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('AI receptionist', 'created', 'lead', id, `from call ${sess.call_sid}`, now());
+      return 'Saved as a new lead.';
+    }
+    if (name === 'log_complaint') {
+      if (!sess.customer_id) { runTool(sess, 'request_callback', { reason: 'Complaint: ' + str(inp.summary, 400) }); return 'Caller is not a known customer, so a callback was arranged instead.'; }
+      if (sess.issue_id) return 'Already logged.';
+      const t = now(), id = db.prepare(`INSERT INTO customer_issues(customer_id,type,title,description,priority,status,customer_comms,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'Open','Needs update','AI receptionist',?,?)`)
+        .run(sess.customer_id, 'complaint', ('Phone complaint: ' + str(inp.summary, 150)).slice(0, 200), str(inp.summary, 2000) + `\n\nTaken by the AI receptionist from ${sess.caller}.`, inp.urgent ? 'Urgent' : 'High', t, t).lastInsertRowid;
+      db.prepare('UPDATE ai_call_sessions SET issue_id=? WHERE call_sid=?').run(id, sess.call_sid); sess.issue_id = id;
+      db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('AI receptionist', 'created', 'complaint', id, `from call ${sess.call_sid}`, t);
+      const m = getMailer && getMailer(), to = process.env.NOTIFY_EMAIL || adminEmail;
+      if (m && to) m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || adminEmail, to, subject: `${inp.urgent ? 'URGENT ' : ''}Complaint by phone: ${str(inp.summary, 80)}`, text: `The AI receptionist logged a complaint from ${sess.caller}:\n\n${str(inp.summary, 2000)}\n\nOpen Issues in the admin to follow up.` }).catch(() => {});
+      return 'Complaint logged and a manager notified.';
+    }
+    if (name === 'request_callback') { const cb = [str(inp.reason, 300), inp.preferred_time && 'Preferred: ' + str(inp.preferred_time, 100)].filter(Boolean).join(' — '); sess.callback = sess.callback ? sess.callback + ' | ' + cb : cb; db.prepare('UPDATE ai_call_sessions SET callback=? WHERE call_sid=?').run(sess.callback, sess.call_sid); return 'Callback arranged for today.'; }
+    return 'Unknown action.';
+  }
+  const sayHangup = t => `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="${VOICE()}">${esc(t)}</Say><Hangup/></Response>`;
+  const transferXml = sess => { db.prepare("UPDATE ai_call_sessions SET transferred=1 WHERE call_sid=?").run(sess.call_sid); const nums = ringPhones().filter(p => p !== sess.caller).map(p => `<Number>${esc(p)}</Number>`).join(''); const cli = softphone() ? '<Client>office</Client>' : '';
+    return `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="${VOICE()}">One moment while I connect you.</Say>${cli || nums ? `<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result?ai=done">${cli}${nums}</Dial>` : `<Say voice="${VOICE()}">No one is available right now. Please leave a message after the tone.</Say><Record maxLength="180" playBeep="true" transcribe="true" transcribeCallback="${base()}/api/webhooks/twilio/transcription" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"/>`}</Response>`; };
+  app.post('/api/webhooks/twilio/ai-turn', hook(async (req, res) => {
+    const b = req.body || {}, sid = clean(b.CallSid, 64);
+    let sess = db.prepare('SELECT * FROM ai_call_sessions WHERE call_sid=?').get(sid);
+    if (!sess) { db.prepare('INSERT OR IGNORE INTO ai_call_sessions(call_sid, caller, reason, started_at) VALUES(?,?,?,?)').run(sid, e164(b.From) || clean(b.From, 40), 'resumed', now()); sess = db.prepare('SELECT * FROM ai_call_sessions WHERE call_sid=?').get(sid); }
+    const msgs = JSON.parse(sess.messages || '[]'), heard = String(b.SpeechResult || '').trim().slice(0, 1000);
+    if (!heard) {
+      const s = (sess.silences || 0) + 1; db.prepare('UPDATE ai_call_sessions SET silences=? WHERE call_sid=?').run(s, sid);
+      if (s >= 2) { runTool(sess, 'request_callback', { reason: 'Caller was silent / line dropped during AI call' }); return res.type('text/xml').send(sayHangup("I'm having trouble hearing you, so someone from Bright Clean will call you back shortly. Goodbye.")); }
+      return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${gather("Sorry, I didn't catch that. How can I help you?")}<Redirect method="POST">${base()}/api/webhooks/twilio/ai-turn</Redirect></Response>`);
+    }
+    if ((sess.turns || 0) >= Number(process.env.AI_RECEPTIONIST_MAX_TURNS || 16)) { runTool(sess, 'request_callback', { reason: 'Long call — continue with a person' }); return res.type('text/xml').send(sayHangup('Thank you. I have everything noted, and someone from Bright Clean will call you back shortly. Goodbye.')); }
+    msgs.push({ role: 'user', content: heard });
+    const cu = sess.customer_id ? db.prepare('SELECT id, name, company FROM customers WHERE id=?').get(sess.customer_id) : null;
+    let say = '', action = null;
+    try {
+      for (let round = 0; round < 3; round++) {
+        const j = await claudeTurn(msgs, SYSTEM(sess, cu)), content = j.content || [];
+        msgs.push({ role: 'assistant', content });
+        say = content.filter(c => c.type === 'text').map(c => c.text).join(' ').trim();
+        const uses = content.filter(c => c.type === 'tool_use'); if (!uses.length) break;
+        const results = [];
+        for (const u of uses) {
+          if (u.name === 'transfer_to_human') { action = 'transfer'; results.push({ type: 'tool_result', tool_use_id: u.id, content: 'Transferring now.' }); continue; }
+          if (u.name === 'end_call') { action = 'end'; results.push({ type: 'tool_result', tool_use_id: u.id, content: 'Ending call.' }); continue; }
+          let out; try { out = runTool(sess, u.name, u.input); } catch (e) { out = 'Could not save: ' + e.message; }
+          results.push({ type: 'tool_result', tool_use_id: u.id, content: out });
+        }
+        msgs.push({ role: 'user', content: results });
+        if (action) break;
+      }
+    } catch (e) {
+      db.prepare("UPDATE ai_call_sessions SET messages=?, error=?, status='fallback' WHERE call_sid=?").run(JSON.stringify(msgs).slice(0, 200000), String(e.message).slice(0, 300), sid);
+      logAction({ user: { email: 'AI receptionist' } }, 'AI receptionist fell back', 'call', 0, `${sid}: ${String(e.message).slice(0, 200)}`);
+      return res.type('text/xml').send(transferXml(sess));
+    }
+    db.prepare('UPDATE ai_call_sessions SET messages=?, turns=turns+1 WHERE call_sid=?').run(JSON.stringify(msgs).slice(0, 200000), sid);
+    if (action === 'transfer') return res.type('text/xml').send(transferXml(sess));
+    if (action === 'end') return res.type('text/xml').send(sayHangup(say || 'Thank you for calling Bright Clean. Goodbye.'));
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${gather(say || 'How else can I help?')}<Redirect method="POST">${base()}/api/webhooks/twilio/ai-turn</Redirect></Response>`);
+  }));
+  // When the call ends: attach the AI conversation, links and follow-up to the call record (once).
+  ctx.finalizeAi = function finalizeAi(sid) {
+    const sess = db.prepare('SELECT * FROM ai_call_sessions WHERE call_sid=? AND finalized=0').get(sid); if (!sess) return;
+    const c = db.prepare('SELECT * FROM calls WHERE provider_sid=?').get(sid); if (!c) return;
+    const msgs = JSON.parse(sess.messages || '[]'), lines = [];
+    for (const m of msgs) { if (typeof m.content === 'string') lines.push(`Caller: ${m.content}`); else for (const p of m.content || []) { if (p.type === 'text' && p.text.trim()) lines.push(`AI receptionist: ${p.text.trim()}`); if (p.type === 'tool_use') lines.push(`[action: ${p.name}]`); } }
+    const ld = sess.lead_id ? db.prepare('SELECT contact_name, company, service FROM leads WHERE id=?').get(sess.lead_id) : null;
+    const summary = [ld ? `New inquiry: ${[ld.contact_name, ld.company].filter(Boolean).join(', ')} — ${ld.service || ''}` : '', sess.issue_id ? `Complaint logged (issue #${sess.issue_id}).` : '', sess.callback ? `Callback: ${sess.callback}` : '', sess.transferred ? 'Transferred to a person.' : '', sess.error ? `AI fallback: ${sess.error}` : ''].filter(Boolean).join(' ') || 'AI receptionist call.';
+    const prev = String(c.transcript || '');
+    db.prepare(`UPDATE calls SET handling='AI', lead_id=COALESCE(lead_id,?), customer_id=COALESCE(customer_id,?), contact_name=COALESCE(NULLIF(contact_name,''),?), company=COALESCE(NULLIF(company,''),?), purpose=CASE WHEN ? THEN 'Complaint' WHEN ? THEN 'New work' ELSE purpose END,
+      summary=?, follow_up_date=CASE WHEN ? THEN COALESCE(follow_up_date,?) ELSE follow_up_date END, issue_id=COALESCE(issue_id,?), transcript=? WHERE id=?`)
+      .run(sess.lead_id, sess.customer_id, ld && ld.contact_name, ld && ld.company, sess.issue_id ? 1 : 0, sess.lead_id ? 1 : 0, summary.slice(0, 1000), sess.callback || sess.lead_id ? 1 : 0, today(), sess.issue_id, ((prev ? prev + '\n\n' : '') + '[AI receptionist conversation]\n' + lines.join('\n')).slice(0, 60000), c.id);
+    db.prepare("UPDATE ai_call_sessions SET finalized=1, status=CASE WHEN status='active' THEN 'completed' ELSE status END, summary=?, ended_at=? WHERE call_sid=?").run(summary.slice(0, 1000), now(), sid);
+  };
 };
