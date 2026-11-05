@@ -38,20 +38,70 @@
     if (field && field.select) { field.focus(); field.select(); }
     toast('Press Ctrl+C (Cmd+C on Mac) to copy'); return false;
   }
-  // Click-to-call: any [data-dial] button rings the user's phone first, then connects to the number.
-  let phoneCfg = null;
+  // ---- Phone: in-browser calling (Twilio Voice SDK) when an API key is set; otherwise ring-my-phone-first. ----
+  let phoneCfg = null, device = null, activeCall = null, callTimer = null;
+  const SDK = { src: 'https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.18.5/dist/twilio.min.js', sri: 'sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/8PffM4lzeFEYS8' };
+  const phonePanel = () => { let el = document.getElementById('phonePanel'); if (!el) { el = document.createElement('div'); el.id = 'phonePanel'; el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Phone');
+    el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9999;background:#fff;border:1px solid #d6dee8;border-radius:14px;box-shadow:0 10px 30px rgba(15,38,66,.18);padding:12px 14px;min-width:230px;font:14px/1.4 inherit;display:none'; document.body.appendChild(el); } return el; };
+  function showPanel(html) { const el = phonePanel(); el.innerHTML = html; el.style.display = html ? 'block' : 'none'; }
+  const fmtNum = n => { const d = String(n || '').replace(/\D/g, '').slice(-10); return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : (n || 'Unknown'); };
+  function inCallUI(label) {
+    const t0 = Date.now(); clearInterval(callTimer);
+    showPanel(`<b>📞 ${esc(label)}</b><div id="phT" class="muted" style="margin:4px 0 10px">Connecting…</div><button class="btn small ghost" id="phMute">Mute</button> <button class="btn small" id="phEnd" style="background:#c0392b;border-color:#c0392b">Hang up</button>`);
+    callTimer = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000), el = document.getElementById('phT'); if (el && activeCall && activeCall.status && activeCall.status() === 'open') el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }, 1000);
+    document.getElementById('phEnd').onclick = () => activeCall && activeCall.disconnect();
+    document.getElementById('phMute').onclick = ev => { if (!activeCall) return; const m = !activeCall.isMuted(); activeCall.mute(m); ev.target.textContent = m ? 'Unmute' : 'Mute'; };
+  }
+  function wireCall(call, label) {
+    activeCall = call; inCallUI(label);
+    call.on('accept', () => { const el = document.getElementById('phT'); if (el) el.textContent = '0:00'; });
+    const done = () => { activeCall = null; clearInterval(callTimer); showPanel(''); if (state.view === 'calls' && typeof loadCalls === 'function') setTimeout(loadCalls, 2500); };
+    call.on('disconnect', done); call.on('cancel', done); call.on('reject', done); call.on('error', e => { toast('Call error: ' + (e.message || e), true); done(); });
+  }
+  function loadSdk() { return new Promise((ok, bad) => { if (window.Twilio && window.Twilio.Device) return ok(); const sc = document.createElement('script'); sc.src = SDK.src; sc.integrity = SDK.sri; sc.crossOrigin = 'anonymous'; sc.onload = ok; sc.onerror = () => bad(new Error('Could not load the phone software')); document.head.appendChild(sc); }); }
+  async function initPhone() {
+    try { phoneCfg = await api('/api/admin/phone/settings'); } catch { return; }
+    if (!phoneCfg.softphone) return;
+    try {
+      await loadSdk();
+      const t = await api('/api/admin/voice/token');
+      device = new window.Twilio.Device(t.token, { codecPreferences: ['opus', 'pcmu'], closeProtection: 'A call is in progress. Leave anyway?' });
+      device.on('tokenWillExpire', async () => { try { device.updateToken((await api('/api/admin/voice/token')).token); } catch { /* retried next time */ } });
+      device.on('incoming', call => {
+        const from = call.parameters && call.parameters.From;
+        showPanel(`<b>📞 Incoming call</b><div style="margin:4px 0 10px">${esc(fmtNum(from))}<div class="muted" id="phWho"></div></div><button class="btn small" id="phAns">Answer</button> <button class="btn small ghost" id="phDec">Decline</button>`);
+        api('/api/admin/customers').then(r => { const d = String(from || '').replace(/\D/g, '').slice(-10), m = (r.customers || []).filter(c => String(c.phone || '').replace(/\D/g, '').slice(-10) === d); const w = document.getElementById('phWho'); if (w && m.length === 1) w.textContent = m[0].company || m[0].name; }).catch(() => {});
+        document.getElementById('phAns').onclick = () => { call.accept(); wireCall(call, fmtNum(from)); };
+        document.getElementById('phDec').onclick = () => { call.reject(); showPanel(''); };
+        call.on('cancel', () => showPanel(''));
+      });
+      device.on('error', e => console.warn('phone:', e && e.message));
+      await device.register();
+      const chip = document.createElement('div'); chip.id = 'phoneChip'; chip.title = 'Browser phone is on: calls to ' + fmtNum(phoneCfg.number) + ' ring here too';
+      chip.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9998;background:#1e8e3e;color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.15)'; chip.textContent = '📞 Phone on'; document.body.appendChild(chip);
+    } catch (e) { console.warn('phone off:', e.message); device = null; }
+  }
+  // Any [data-dial] button: call from this computer when the browser phone is on; otherwise ring the user's phone first.
   document.addEventListener('click', async ev => {
     const b = ev.target.closest && ev.target.closest('[data-dial]'); if (!b) return;
     ev.preventDefault(); ev.stopPropagation();
     try { phoneCfg = phoneCfg || await api('/api/admin/phone/settings'); } catch { phoneCfg = null; }
     if (!phoneCfg || !phoneCfg.can_dial) { toast('Calling is not set up yet (Settings → Phone).', true); return; }
     const name = b.dataset.name || b.dataset.dial;
+    if (activeCall) { toast('Finish the current call first.', true); return; }
+    b.disabled = true; setTimeout(() => { b.disabled = false; }, 4000);
+    if (device) {
+      if (!confirm(`Call ${name} at ${b.dataset.dial} from this computer?\n\nThe customer sees ${phoneCfg.number}. The call is recorded and logged.`)) return;
+      try { const r = await api('/api/admin/calls/browser-start', { method: 'POST', json: { to: b.dataset.dial, customer_id: b.dataset.cust || undefined, lead_id: b.dataset.lead || undefined, name: b.dataset.name || '' } });
+        const call = await device.connect({ params: { To: r.to, call_id: String(r.call_id) } }); wireCall(call, name); }
+      catch (e) { toast(e.message, true); }
+      return;
+    }
     if (!confirm(`Call ${name} at ${b.dataset.dial}?\n\nYour phone ending ${String(phoneCfg.ring_phone || '').slice(-4)} rings first — answer it and you'll be connected. Calls show ${phoneCfg.number} as the caller ID and are recorded.`)) return;
-    b.disabled = true;
     try { const r = await api('/api/admin/calls/dial', { method: 'POST', json: { to: b.dataset.dial, customer_id: b.dataset.cust || undefined, lead_id: b.dataset.lead || undefined, name: b.dataset.name || '' } }); toast(r.message); }
     catch (e) { toast(e.message, true); }
-    finally { setTimeout(() => { b.disabled = false; }, 4000); }
   }, true);
+  setTimeout(() => { if (token) initPhone(); }, 1500);
   function toast(text, isErr) {
     const t = document.createElement('div');
     t.className = 'toast' + (isErr ? ' err' : '');
@@ -1303,7 +1353,21 @@
   });
 
   async function loadSettings() {
-    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings()]);
+    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings()]);
+  }
+  async function loadPhoneSettings() {
+    let card = document.getElementById('phoneCard');
+    if (!card) { card = document.createElement('div'); card.className = 'card'; card.id = 'phoneCard'; card.style.marginBottom = '16px'; const head = document.querySelector('#v-settings .pagehead'); head.parentNode.insertBefore(card, head.nextSibling); }
+    let r; try { r = await api('/api/admin/phone/settings'); } catch (e) { card.innerHTML = `<h2>Phone</h2><p class="muted">${esc(e.message)}</p>`; return; }
+    const warn = !r.ring_phones.length && r.render_forward_digits ? `<p class="msg err" style="margin:8px 0">The ring phone in Render (TWILIO_FORWARD_TO) has ${r.render_forward_digits} digits and isn't a valid US number, so incoming calls go straight to voicemail. Enter the phone(s) below instead.</p>` : '';
+    card.innerHTML = `<h2>Phone</h2>
+      <p class="muted">Calls to <b>${esc(r.number || 'your Twilio number')}</b> ring the phones below${r.softphone ? ' and this admin (browser phone on)' : ''}. Unanswered calls go to voicemail with a same-day follow-up.</p>
+      <dl class="facts"><dt>Phone service</dt><dd>${r.connected ? '<span class="badge green">Connected</span>' : '<span class="badge amber">Not connected</span>'}</dd>
+      <dt>Click-to-call</dt><dd>${r.can_dial && r.ring_phones.length ? '<span class="badge green">Ready</span>' : '<span class="badge amber">Needs a ring phone</span>'}</dd>
+      <dt>Browser phone</dt><dd>${r.softphone ? '<span class="badge green">On</span>' : '<span class="badge amber">Off</span> <small class="muted">needs TWILIO_API_KEY + TWILIO_API_SECRET in Render</small>'}</dd></dl>${warn}
+      <form id="ringForm" style="margin-top:10px"><div class="f"><label for="ringPh">Phones to ring (separate several with commas)</label><input id="ringPh" value="${esc(r.ring_phones.join(', '))}" placeholder="+1 469 267 8472, +1 515 329 5889"></div>
+      <div class="formbar"><button class="btn">Save ring phones</button><span class="msg" id="ringMsg" role="status"></span></div></form>`;
+    $('#ringForm').onsubmit = async ev => { ev.preventDefault(); try { const x = await api('/api/admin/phone/settings', { method: 'PUT', json: { ring_phones: $('#ringPh').value } }); phoneCfg = null; $('#ringMsg').textContent = 'Saved.'; setTimeout(loadPhoneSettings, 600); } catch (e) { $('#ringMsg').textContent = e.message; } };
   }
   async function loadAISettings() {
     const r = await api('/api/admin/ai/status'); aiStatus = r;
