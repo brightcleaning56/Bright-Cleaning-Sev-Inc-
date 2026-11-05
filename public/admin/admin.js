@@ -304,13 +304,52 @@
   const chg = c => c === null || c === undefined ? '<small class="flat">no prior data</small>' : `<small class="${c > 0 ? 'up' : c < 0 ? 'down' : 'flat'}">${c > 0 ? '▲' : c < 0 ? '▼' : ''} ${Math.abs(c)}% vs prior</small>`;
   $('#ccDays').addEventListener('change', () => loadOverview());
   setInterval(() => { if (state.view === 'overview' && document.visibilityState === 'visible' && !document.querySelector('#drawerRoot .drawer')) loadOverview().catch(() => {}); }, 30000);
+  // ---- Live operations: every number opens the exact records behind it ----
+  let liveTimer = null, liveData = null;
+  const OPEN_BY = { lead: id => openLead(id), estimate: id => openEstimate(id), contract: id => openContract(id), invoice: id => openRecord('invoices', id), project: id => openProject(id), call: id => openCall({ id }),
+    issue: async id => { try { const r = await api('/api/admin/issues/' + id); openIssue(r.item || r.issue || r); } catch (e) { toast(e.message, true); } } };
+  async function loadLive() {
+    const el = $('#ccLive'); if (!el) return;
+    try {
+      const d = liveData = await api('/api/admin/command-center/metrics?days=' + $('#ccDays').value);
+      const groups = ['Sales', 'Operations', 'Finance', 'Calls & AI'];
+      el.innerHTML = `<div class="sechead" style="display:flex;justify-content:space-between;align-items:baseline;margin:18px 0 8px"><h2 style="margin:0">Live operations</h2><small class="muted">Click any line to see the exact records · updated ${esc(new Date(d.as_of).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))} · <a href="#" id="liveRefresh">Refresh</a></small></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px">${groups.map(g => `<div class="card" style="padding:12px 14px"><h3 class="secth" style="margin:0 0 6px">${esc(g)}</h3>${d.metrics.filter(m => m.group === g).map(m => m.error
+          ? `<div class="muted" style="font-size:13px;padding:6px 0" title="${esc(m.error)}">${esc(m.label)}: unavailable</div>`
+          : `<button type="button" class="liverow" data-drill="${m.key}" style="display:flex;width:100%;justify-content:space-between;align-items:center;gap:8px;padding:7px 4px;border:0;border-bottom:1px solid #eef2f6;background:none;cursor:pointer;text-align:left;font:inherit;color:inherit">
+              <span>${esc(m.label)}</span><span style="white-space:nowrap"><b style="color:${m.alert ? '#c0392b' : 'inherit'}">${m.count}</b>${m.amount != null && m.count ? ` <small class="muted">${money(m.amount)}</small>` : ''} ›</span></button>`).join('')}</div>`).join('')}</div>`;
+      $$('#ccLive [data-drill]').forEach(b => b.onclick = () => openDrill(b.dataset.drill));
+      $('#liveRefresh').onclick = ev => { ev.preventDefault(); loadLive(); };
+    } catch (e) { el.innerHTML = `<p class="msg err">Live operations could not load: ${esc(e.message)} <a href="#" onclick="return false" id="liveRetry">Retry</a></p>`; const r = $('#liveRetry'); if (r) r.onclick = () => loadLive(); }
+    clearTimeout(liveTimer); liveTimer = setTimeout(() => { if (state.view === 'overview' && !document.hidden) loadLive(); }, 60000);
+  }
+  async function openDrill(key) {
+    let d; try { d = await api(`/api/admin/command-center/drill/${key}?days=${$('#ccDays').value}`); } catch (e) { return toast(e.message, true); }
+    const per = d.days === 1 ? 'today' : `last ${d.days} days`;
+    openDrawer({ title: `${d.label} (${d.count})`, sub: `${d.group}${d.amount != null ? ' · total ' + money(d.amount) : ''} · period: ${per} · as of ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
+      body: d.rows.length ? `<div>${d.rows.map(r => `<button type="button" class="liverow" data-open="${r.id}" style="display:flex;width:100%;justify-content:space-between;gap:10px;padding:10px 4px;border:0;border-bottom:1px solid #eef2f6;background:none;cursor:pointer;text-align:left;font:inherit;color:inherit">
+          <span style="min-width:0"><b>${esc(r.title || '—')}</b><br><small class="muted">${esc(r.sub || '')}</small></span><span style="white-space:nowrap;text-align:right">${r.amount != null ? `<b>${money(r.amount)}</b><br>` : ''}<small class="muted">${esc(String(r.date || '').slice(0, 10))}</small></span></button>`).join('')}${d.count > d.rows.length ? `<p class="muted">Showing the latest ${d.rows.length} of ${d.count}.</p>` : ''}</div>`
+        : `<p class="muted">Nothing here right now${d.view ? ` — <a href="#" id="drillGo">open ${esc(d.view)}</a>` : ''}.</p>`,
+      footer: `<button class="btn ghost" data-close>Close</button>${d.view ? `<button class="btn ghost" id="drillPage">Open ${esc(d.view)} page</button>` : ''}` });
+    $$('#drawerRoot [data-open]').forEach(b => b.onclick = async () => { const id = Number(b.dataset.open); closeDrawer(); go(d.view); if (d.open && OPEN_BY[d.open]) { await new Promise(r => setTimeout(r, 350)); OPEN_BY[d.open](id); } });
+    if ($('#drillPage')) $('#drillPage').onclick = () => { closeDrawer(); go(d.view); };
+    if ($('#drillGo')) $('#drillGo').onclick = ev => { ev.preventDefault(); closeDrawer(); go(d.view); };
+  }
+  async function openAttention() {
+    const d = liveData || await api('/api/admin/command-center/metrics?days=' + $('#ccDays').value).catch(() => null); if (!d) return;
+    const items = d.metrics.filter(m => m.alert);
+    openDrawer({ title: `Needs attention (${items.reduce((s, m) => s + m.count, 0)})`, sub: 'Each line opens the exact records',
+      body: items.length ? items.map(m => `<button type="button" class="liverow" data-drill="${m.key}" style="display:flex;width:100%;justify-content:space-between;padding:10px 4px;border:0;border-bottom:1px solid #eef2f6;background:none;cursor:pointer;font:inherit;color:inherit"><span>${esc(m.group)} · ${esc(m.label)}</span><b style="color:#c0392b">${m.count} ›</b></button>`).join('') : '<p class="muted">Nothing needs attention right now.</p>',
+      footer: '<button class="btn ghost" data-close>Close</button>' });
+    $$('#drawerRoot [data-drill]').forEach(b => b.onclick = () => openDrill(b.dataset.drill));
+  }
   async function loadOverview() {
     const [d, cc] = await Promise.all([api('/api/admin/dashboard'), api('/api/admin/command-center?days=' + $('#ccDays').value)]);
     $('#todayLine').innerHTML = esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + ` · <span class="live">Live</span> <small class="muted">updated ${esc(new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</small>`;
     const k = cc.kpis, per = `last ${cc.days} days`;
     const att = k.attention.parts;
     const tiles = [
-      { label: 'New leads', sub: per, value: k.new_leads.value, change: k.new_leads.change, icon: 'leads', c: '#1f6fd1', to: 'leads' },
+      { label: 'New leads', sub: per, value: k.new_leads.value, change: k.new_leads.change, icon: 'leads', c: '#1f6fd1', to: 'leads', drill: 'new_leads' },
       { label: 'Proposals sent', sub: per, value: k.proposals_sent.value, change: k.proposals_sent.change, icon: 'doc', c: '#2f80ed', to: 'proposals' },
       { label: 'Won', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
       { label: 'Collected this month', value: money(k.collected_month.value), icon: 'dollar', c: '#178a4c', to: 'invoices' },
@@ -319,7 +358,8 @@
         title: `Proposals awaiting approval ${att.awaiting_approval} · open complaints ${att.open_complaints} · overdue tasks ${att.overdue_tasks} · overdue invoices ${att.overdue_invoices} · late projects ${att.late_projects} · leads waiting 2+ days ${att.leads_waiting_2_days} · failed emails (7 days) ${att.failed_emails_7_days}` }
     ];
     $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
-    $$('#ccKpis .kpi').forEach(b => b.onclick = () => go(tiles[b.dataset.i].to));
+    $$('#ccKpis .kpi').forEach(b => b.onclick = () => { const t = tiles[b.dataset.i]; if (t.label === 'Needs attention') return openAttention(); if (t.drill) return openDrill(t.drill); go(t.to); });
+    loadLive();
     if (!window.matchMedia || !matchMedia('(prefers-reduced-motion: reduce)').matches) $$('#ccKpis .kpi b').forEach(el => {
       const txt = el.textContent, m = txt.match(/^(\$?)([\d,]+)(\.\d+)?$/); if (!m) return;
       const target = Number((m[2] + (m[3] || '')).replace(/,/g, '')); if (!(target > 0)) return;
@@ -1407,6 +1447,15 @@
           <input id="aiOpen" type="time" value="${esc(ai.hours.open)}" style="width:auto"> to <input id="aiClose" type="time" value="${esc(ai.hours.close)}" style="width:auto"></div></div>
         <div class="formbar"><button class="btn">Save AI receptionist</button><span class="msg" id="aiRecMsg" role="status"></span></div></form>`;
       card.appendChild(box);
+      const tb = document.createElement('div'); tb.style.marginTop = '14px';
+      tb.innerHTML = `<h3 class="secth">Test the AI receptionist</h3><p class="muted">Type what a caller would say. It answers with the real AI, prompt and rules used on calls. Nothing is saved.</p>
+        <div id="aiTestLog" style="border:1px solid #d6dee8;border-radius:10px;padding:10px;min-height:60px;max-height:260px;overflow:auto;font-size:14px;background:#fbfcfe"><span class="muted">e.g. “Hi, I need a quote for a final clean on a new 30,000 square foot office in Ankeny.”</span></div>
+        <form id="aiTestForm" style="display:flex;gap:8px;margin-top:8px"><input id="aiTestIn" placeholder="Caller says…" style="flex:1"><button class="btn">Send</button><button class="btn ghost" type="button" id="aiTestReset">Reset</button></form>`;
+      card.appendChild(tb); let conv = [];
+      const draw = () => { $('#aiTestLog').innerHTML = conv.map(m => `<div style="margin:4px 0"><b>${m.role === 'ai' ? '🤖 Receptionist' : '📞 Caller'}:</b> ${esc(m.text)}${m.actions && m.actions.length ? `<div class="muted" style="font-size:12px">↳ would ${m.actions.map(a => esc(a.action.replace(/_/g, ' ')) + (a.details && Object.keys(a.details).length ? ' (' + esc(Object.entries(a.details).map(([k, v]) => k + ': ' + v).join(', ')).slice(0, 220) + ')' : '')).join('; ')}</div>` : ''}</div>`).join(''); $('#aiTestLog').scrollTop = 1e6; };
+      $('#aiTestReset').onclick = () => { conv = []; $('#aiTestLog').innerHTML = '<span class="muted">Reset.</span>'; };
+      $('#aiTestForm').onsubmit = async ev => { ev.preventDefault(); const t = $('#aiTestIn').value.trim(); if (!t) return; conv.push({ role: 'caller', text: t }); $('#aiTestIn').value = ''; draw();
+        try { const r = await api('/api/admin/ai-receptionist/test', { method: 'POST', json: { messages: conv } }); conv.push({ role: 'ai', text: r.reply, actions: r.actions }); } catch (e) { conv.push({ role: 'ai', text: '⚠ ' + e.message }); } draw(); };
       $('#aiRecForm').onsubmit = async ev => { ev.preventDefault(); try { await api('/api/admin/phone/settings', { method: 'PUT', json: { ai_mode: $('#aiMode').value, ai_hours: { days: $$('#aiRecForm [data-day]').filter(x => x.checked).map(x => Number(x.dataset.day)), open: $('#aiOpen').value, close: $('#aiClose').value } } }); $('#aiRecMsg').textContent = 'Saved.'; } catch (e) { $('#aiRecMsg').textContent = e.message; } };
     }
     $('#ringForm').onsubmit = async ev => { ev.preventDefault(); try { const x = await api('/api/admin/phone/settings', { method: 'PUT', json: { ring_phones: $('#ringPh').value } }); phoneCfg = null; $('#ringMsg').textContent = 'Saved.'; setTimeout(loadPhoneSettings, 600); } catch (e) { $('#ringMsg').textContent = e.message; } };
@@ -1643,7 +1692,7 @@
     renderCalls();
     api('/api/admin/calls-intel').then(x => { const el = $('#callsIntel'); if (!el) return;
       el.innerHTML = `<div class="st"><span>Phone capture</span><b style="font-size:15px;color:${x.connected ? '#17904c' : '#a06a00'}">${x.connected ? 'Connected (Twilio)' : 'Not connected'}</b><small>${x.connected ? (x.forwarding ? 'calls ring your phone, log automatically' : 'calls go to voicemail, log automatically') : 'calls are logged by hand'}</small>${x.connected ? '' : `<small style="word-break:break-all">Twilio voice URL: ${esc(x.voice_url || '')}</small>`}</div>
-        <div class="st"><span>Last 30 days</span><b>${x.total_30}</b><small>${x.missed_30} missed</small></div>${x.by_intent.slice(0, 3).map(i => `<div class="st"><span>${esc(i.k)}</span><b>${i.n}</b><small>calls (AI)</small></div>`).join('')}
+        ${x.receptionist ? `<div class="st" style="cursor:pointer" onclick="location.hash='#settings'" title="Change in Settings → Phone"><span>AI receptionist</span><b style="font-size:15px;color:${x.receptionist.answering_now ? '#17904c' : '#a06a00'}">${x.receptionist.mode === 'off' ? 'Off' : !x.receptionist.key ? 'Needs AI key' : x.receptionist.answering_now ? 'On' : 'Waiting (business hours)'}</b><small>${esc({ off: 'people and voicemail only', no_answer: 'answers when no one picks up', after_hours: 'answers after hours', always: 'answers every call first' }[x.receptionist.mode] || '')}</small></div>` : ''}        <div class="st"><span>Last 30 days</span><b>${x.total_30}</b><small>${x.missed_30} missed</small></div>${x.by_intent.slice(0, 3).map(i => `<div class="st"><span>${esc(i.k)}</span><b>${i.n}</b><small>calls (AI)</small></div>`).join('')}
         <div class="st"><span>Hot leads (score 70+)</span><b>${x.hot_leads.length}</b><small>${x.hot_leads.slice(0, 2).map(h => esc(h.company || h.contact_name || '')).join(', ')}</small></div>`; }).catch(() => {});
   }
   function renderCalls() {
