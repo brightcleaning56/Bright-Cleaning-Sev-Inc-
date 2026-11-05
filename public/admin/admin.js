@@ -221,8 +221,10 @@
 
   async function start() {
     try {
-      const me = await api('/api/admin/me');
+      const me = await api('/api/admin/me'); state.me = me;
       $('#whoEmail').textContent = me.email || ''; loadTopbar();
+      { const lbl = document.querySelector('#whoRole') || (() => { const x = document.createElement('small'); x.id = 'whoRole'; x.style.cssText = 'display:block;opacity:.75'; $('#whoEmail').after(x); return x; })(); lbl.textContent = [me.name, me.label].filter(Boolean).join(' · '); }
+      if (Array.isArray(me.views)) { $$('#nav [data-view]').forEach(b => { b.hidden = !me.views.includes(b.dataset.view); }); if (!me.views.includes((location.hash || '').slice(1) || 'overview')) location.hash = '#' + (me.home || me.views[0]); }
     } catch { return; }
     $('#login').hidden = true;
     $('#app').hidden = false;
@@ -234,6 +236,7 @@
   function go(view, replace) {
     if (view === 'customer') view = 'customers';
     if (!VIEWS.includes(view)) view = 'overview';
+    if (state.me && Array.isArray(state.me.views) && !state.me.views.includes(view)) view = state.me.home || state.me.views[0];
     state.view = view;
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'v-' + view));
     const navView = view === 'estimator' ? 'proposals' : view === 'customer' ? 'customers' : view;
@@ -382,6 +385,11 @@
     $$('#drawerRoot [data-drill]').forEach(b => b.onclick = () => openDrill(b.dataset.drill));
   }
   async function loadOverview() {
+    if (state.me && state.me.sees_money === false) { // supervisors: live operations only (no revenue, proposals or collections)
+      $$('#v-overview > *').forEach(el => { el.hidden = !(el.classList.contains('pagehead') || el.contains($('#ccLive')) || el.id === 'ccLive'); });
+      $('#todayLine').innerHTML = esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + ' · <span class="live">Live</span>';
+      return loadLive();
+    }
     const [d, cc] = await Promise.all([api('/api/admin/dashboard'), api('/api/admin/command-center?days=' + $('#ccDays').value)]);
     $('#todayLine').innerHTML = esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + ` · <span class="live">Live</span> <small class="muted">updated ${esc(new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</small>`;
     const k = cc.kpis, per = `last ${cc.days} days`;
@@ -1470,6 +1478,11 @@
     await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings()]);
   }
   function addSignOutEverywhere() {
+    const pm0 = document.getElementById('pwMsg');
+    if (pm0 && !document.getElementById('nameForm')) { const f = document.createElement('form'); f.id = 'nameForm'; f.style.cssText = 'display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:12px 0';
+      f.innerHTML = `<div class="f" style="flex:1;min-width:200px"><label for="myName">Your name</label><input id="myName" value="${esc((state.me && state.me.name) || '')}" maxlength="120"></div><button class="btn ghost">Save name</button><span class="msg" id="nameMsg" role="status"></span>`;
+      const pwForm = pm0.closest('form'); (pwForm || pm0).parentNode.insertBefore(f, pwForm || pm0);
+      f.onsubmit = async ev => { ev.preventDefault(); try { const r = await api('/api/admin/account/name', { method: 'PUT', json: { name: $('#myName').value } }); if (state.me) state.me.name = r.name; const lbl = $('#whoRole'); if (lbl) lbl.textContent = [r.name, state.me && state.me.label].filter(Boolean).join(' · '); $('#nameMsg').textContent = 'Saved.'; } catch (e) { $('#nameMsg').textContent = e.message; } }; }
     const pm = document.getElementById('pwMsg'); if (!pm || document.getElementById('soEverywhere')) return;
     const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost'; b.id = 'soEverywhere'; b.textContent = 'Sign out all other devices'; b.style.marginLeft = '8px';
     pm.parentNode.insertBefore(b, pm);
@@ -1578,7 +1591,7 @@
   async function loadUsers() {
     const r = await api('/api/admin/users'), users = r.users || [], canRoles = !!r.can_manage_roles;
     const me = $('#whoEmail').textContent;
-    $('#userList').innerHTML = users.map(u => `<div class="userrow"><span><b>${esc(u.name || u.email)}</b><small>${esc(u.email)} · ${esc(u.role ? u.role[0].toUpperCase() + u.role.slice(1) : (u.owner ? 'Owner' : 'Staff'))}${u.role !== 'staff' ? ' (can approve proposals)' : ''}${u.last_login_at ? ' · last signed in ' + esc(ago(u.last_login_at)) : ''}</small></span>${u.id && !u.env_owner ? `<select data-role="${u.id}" aria-label="Role for ${esc(u.email)}"${canRoles ? '' : ' disabled'}>${['owner', 'manager', 'staff'].map(r => `<option value="${r}"${u.role === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select>` : ''}${!u.owner && u.email !== me && u.id ? `<button class="btn small danger" data-deluser="${u.id}" data-email="${esc(u.email)}">Remove</button>` : ''}</div>`).join('');
+    $('#userList').innerHTML = users.map(u => `<div class="userrow"><span><b>${esc(u.name || u.email)}</b><small>${esc(u.email)} · ${esc(u.role ? u.role[0].toUpperCase() + u.role.slice(1) : (u.owner ? 'Owner' : 'Staff'))}${u.role !== 'staff' ? ' (can approve proposals)' : ''}${u.last_login_at ? ' · last signed in ' + esc(ago(u.last_login_at)) : ''}</small></span>${u.id && !u.env_owner ? `<select data-role="${u.id}" aria-label="Role for ${esc(u.email)}"${canRoles ? '' : ' disabled'}>${['owner', 'manager', 'supervisor', 'inspector', 'staff'].map(r => `<option value="${r}"${u.role === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select>` : ''}${!u.owner && u.email !== me && u.id ? `<button class="btn small danger" data-deluser="${u.id}" data-email="${esc(u.email)}">Remove</button>` : ''}</div>`).join('');
     $$('[data-role]').forEach(sel => sel.onchange = async () => { try { await api(`/api/admin/users/${sel.dataset.role}/role`, { method: 'PATCH', json: { role: sel.value } }); toast('Role updated'); loadUsers(); } catch (err) { toast(err.message, true); loadUsers(); } });
     $$('[data-deluser]').forEach(b => b.onclick = async () => {
       if (!confirm(`Remove access for ${b.dataset.email}?`)) return;
@@ -2797,5 +2810,37 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#drawerRoot').innerHTML) closeDrawer(); });
 
   // ---------- Boot ----------
+  // ---- Sortable, paginated tables (every list table: table.t). Applied automatically, re-applied after re-renders. ----
+  const PAGE = 50;
+  const cellVal = td => { const t = (td ? td.textContent : '').trim(); const n = t.replace(/[$,%\s]/g, ''); if (/^-?\d+(\.\d+)?$/.test(n)) return { k: 0, v: Number(n) }; const d = Date.parse(t.replace(/·.*$/, '')); if (!isNaN(d) && /\d{4}|\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/.test(t)) return { k: 1, v: d }; return { k: 2, v: t.toLowerCase() }; };
+  function sortBody(tb, col, dir) { const rows = [...tb.rows]; rows.sort((a, b) => { const x = cellVal(a.cells[col]), y = cellVal(b.cells[col]); const r = x.k !== y.k ? x.k - y.k : (x.v < y.v ? -1 : x.v > y.v ? 1 : 0); return r * dir; }); if (rows.some((r, i) => tb.rows[i] !== r)) rows.forEach(r => tb.appendChild(r)); }
+  function pageBody(tbl) {
+    const tb = tbl.tBodies[0]; if (!tb) return; const rows = [...tb.rows].filter(r => r.cells.length > 1), limit = Number(tbl.dataset.limit || PAGE);
+    rows.forEach((r, i) => { r.hidden = i >= limit; });
+    let f = tbl.parentElement.querySelector(':scope > .tblmore'); if (rows.length <= limit) { if (f) f.remove(); return; }
+    if (!f) { f = document.createElement('div'); f.className = 'tblmore'; f.style.cssText = 'padding:8px 4px;font-size:13px;color:#5b6b7d'; tbl.after(f); }
+    f.innerHTML = `Showing ${limit} of ${rows.length} · <a href="#" data-more>Show ${Math.min(PAGE, rows.length - limit)} more</a> · <a href="#" data-all>Show all</a>`;
+    f.querySelector('[data-more]').onclick = ev => { ev.preventDefault(); tbl.dataset.limit = limit + PAGE; pageBody(tbl); };
+    f.querySelector('[data-all]').onclick = ev => { ev.preventDefault(); tbl.dataset.limit = rows.length; pageBody(tbl); };
+  }
+  function enhanceTable(tbl) {
+    try { if (!tbl.tHead || !tbl.tHead.rows[0] || !tbl.tBodies[0]) return; enhanceTable2(tbl); } catch (e) { console.warn('table enhance skipped:', e.message); }
+  }
+  function enhanceTable2(tbl) {
+    if (!tbl.dataset.enh) { tbl.dataset.enh = '1';
+      // One delegated listener: keeps working when the page rebuilds its header row.
+      tbl.addEventListener('click', ev => { const th = ev.target.closest && ev.target.closest('thead th'); if (!th || !tbl.contains(th) || !th.textContent.trim()) return;
+        const cells = [...th.parentElement.cells], i = cells.indexOf(th), dir = tbl.dataset.scol === String(i) && tbl.dataset.sdir === '1' ? -1 : 1; tbl.dataset.scol = i; tbl.dataset.sdir = dir;
+        cells.forEach(h => { h.setAttribute('aria-sort', 'none'); const m = h.querySelector('.sortm'); if (m) m.remove(); });
+        th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending'); th.insertAdjacentHTML('beforeend', `<span class="sortm" style="font-size:10px"> ${dir === 1 ? '▲' : '▼'}</span>`);
+        sortBody(tbl.tBodies[0], i, dir); pageBody(tbl); if (tbl.__obs) tbl.__obs.takeRecords(); });
+      tbl.__obs = new MutationObserver(() => { if (tbl.dataset.scol) sortBody(tbl.tBodies[0], Number(tbl.dataset.scol), Number(tbl.dataset.sdir)); delete tbl.dataset.limit; pageBody(tbl); tbl.__obs.takeRecords(); });
+      tbl.__obs.observe(tbl.tBodies[0], { childList: true });
+    }
+    pageBody(tbl);
+  }
+  const enhanceAll = root => (root || document).querySelectorAll('table.t').forEach(enhanceTable);
+  new MutationObserver(muts => { const seen = new Set(); for (const m of muts) { const host = m.target && m.target.closest ? m.target.closest('table.t') : null; if (host) seen.add(host); for (const n of m.addedNodes) if (n.nodeType === 1) { if (n.matches && n.matches('table.t')) seen.add(n); else if (n.querySelectorAll) n.querySelectorAll('table.t').forEach(t => seen.add(t)); } } seen.forEach(t => { if (!t.dataset.enh) enhanceTable(t); }); }).observe(document.body, { childList: true, subtree: true });
+  enhanceAll();
   if (token) { loadPrefs().then(() => { const cc = prefs.command_center || {}, cf = prefs.calls_filters || {}; if (cc.days && $('#ccDays') && [...$('#ccDays').options].some(o => o.value === String(cc.days))) $('#ccDays').value = String(cc.days); if ($('#callFollow')) $('#callFollow').checked = !!cf.follow; if ($('#callVm')) $('#callVm').checked = !!cf.vm; }).finally(() => { start(); setTimeout(connectLive, 800); }); } else signOut();
 })();
