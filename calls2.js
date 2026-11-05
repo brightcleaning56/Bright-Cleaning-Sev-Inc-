@@ -33,6 +33,22 @@ module.exports = function mountCalls(app, ctx) {
   const setS = (k, v) => db.prepare('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at').run(k, v, now());
   const acctSid = () => process.env.TWILIO_ACCOUNT_SID || getS('twilio_account_sid');
   const twNumber = () => process.env.TWILIO_NUMBER || getS('twilio_number');
+  // Live call transcription (Twilio Real-Time Transcription). Final utterances are stored per call SID and merged into
+  // calls.transcript, labelled by speaker. Off with TWILIO_TRANSCRIBE=off.
+  db.exec('CREATE TABLE IF NOT EXISTS call_transcript_parts(id INTEGER PRIMARY KEY AUTOINCREMENT, call_sid TEXT NOT NULL, seq INTEGER, track TEXT, text TEXT, at TEXT, UNIQUE(call_sid, seq))');
+  const transcribeOn = () => String(process.env.TWILIO_TRANSCRIBE || 'on').toLowerCase() !== 'off';
+  const liveTranscribe = () => transcribeOn() ? `<Start><Transcription statusCallbackUrl="${base()}/api/webhooks/twilio/live-transcript" track="both_tracks" languageCode="en-US" partialResults="false"/></Start>` : '';
+  function mergeTranscript(sid) {
+    const c = db.prepare('SELECT id, direction, transcript FROM calls WHERE provider_sid=?').get(sid); if (!c) return;
+    const parts = db.prepare('SELECT track, text FROM call_transcript_parts WHERE call_sid=? ORDER BY seq, id').all(sid); if (!parts.length) return;
+    // inbound_track = audio coming into this call leg. Inbound calls: that is the customer. Outbound legs (our phone/browser): that is us.
+    const who = t => (t === 'inbound_track') === (c.direction === 'Inbound') ? 'Customer' : 'Bright Clean';
+    const lines = []; for (const p of parts) { const w = who(p.track); if (lines.length && lines[lines.length - 1].w === w) lines[lines.length - 1].t += ' ' + p.text; else lines.push({ w, t: p.text }); }
+    const live = lines.map(l => `${l.w}: ${l.t}`).join('\n');
+    const prev = String(c.transcript || ''), cut = prev.indexOf('[Live transcript]');
+    const manual = (cut >= 0 ? prev.slice(0, cut) : prev).trim();
+    db.prepare('UPDATE calls SET transcript=? WHERE id=?').run(((manual ? manual + '\n\n' : '') + '[Live transcript]\n' + live).slice(0, 60000), c.id);
+  }
   const softphone = () => !!(process.env.TWILIO_API_KEY && process.env.TWILIO_API_SECRET && acctSid() && twNumber());
   // Phones to ring: admin setting overrides env. Lenient: pulls every valid US number out of the text ("+1 469-267-8472, 515.329.5889").
   const parsePhones = txt => { const out = []; for (const m of String(txt || '').match(/\+?1?[\s.\-()]*\d{3}[\s.\-()]*\d{3}[\s.\-]*\d{4}/g) || []) { const e = e164(m); if (e && !out.includes(e)) out.push(e); } return out.slice(0, 5); };
@@ -50,6 +66,7 @@ module.exports = function mountCalls(app, ctx) {
     const inbound = String(b.Direction || 'inbound').startsWith('inbound'), other = inbound ? b.From : b.To;
     const st = String(b.CallStatus || ''), outcome = st === 'completed' ? 'Answered' : ['no-answer', 'busy', 'canceled', 'failed'].includes(st) ? 'Missed' : null;
     if (!outcome) return res.type('text/xml').send('<Response/>');
+    res.on('finish', () => { try { mergeTranscript(clean(b.CallSid, 64)); } catch { /* */ } });
     const cu = matchCustomer(other), dur = Math.max(0, Math.trunc(Number(b.CallDuration) || 0));
     const cur = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid);
     if (cur) db.prepare("UPDATE calls SET outcome=CASE WHEN outcome IN ('Missed','Voicemail','No answer','Busy') THEN outcome WHEN outcome IN ('Answered') AND source IN ('Click-to-call','Browser') THEN outcome WHEN source IN ('Click-to-call','Browser') AND ?='Missed' THEN 'Missed' WHEN source IN ('Click-to-call','Browser') THEN outcome ELSE ? END, duration_s=CASE WHEN source IN ('Click-to-call','Browser') AND duration_s IS NOT NULL THEN duration_s ELSE ? END WHERE id=?").run(outcome, outcome, dur, cur.id);
@@ -71,7 +88,7 @@ module.exports = function mountCalls(app, ctx) {
     const cli = softphone() ? '<Client>office</Client>' : '';
     const num = ringPhones().filter(p => p !== caller).map(p => `<Number>${esc(p)}</Number>`).join('');
     const xml = (cli || num)
-      ? `<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result">${cli}${num}</Dial>`
+      ? `${liveTranscribe()}<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result">${cli}${num}</Dial>`
       : voicemail();
     res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${xml}</Response>`);
   }));
@@ -161,7 +178,7 @@ module.exports = function mountCalls(app, ctx) {
     if (!c || c.direction !== 'Outbound' || !e164(c.phone)) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Sorry, this call could not be connected.</Say><Hangup/></Response>');
     db.prepare("UPDATE calls SET outcome=CASE WHEN outcome='Dialing' THEN 'Connecting' ELSE outcome END WHERE id=?").run(c.id);
     const name = c.company || c.contact_name;
-    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting your call${name ? ' to ' + esc(name) : ''}.</Say><Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}">${esc(e164(c.phone))}</Dial></Response>`);
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting your call${name ? ' to ' + esc(name) : ''}.</Say>${liveTranscribe()}<Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}">${esc(e164(c.phone))}</Dial></Response>`);
   }));
   // Customer leg outcome: answered → Answered; otherwise No answer / Busy with a follow-up for today.
   app.post('/api/webhooks/twilio/bridge-result', hook((req, res) => {
@@ -207,6 +224,16 @@ module.exports = function mountCalls(app, ctx) {
     const to = e164(c ? c.phone : b.To);
     if (!to || !String(b.From || '').startsWith('client:')) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">This call could not be placed.</Say></Response>');
     if (c && b.CallSid) db.prepare('UPDATE calls SET provider_sid=COALESCE(provider_sid,?) WHERE id=?').run(clean(b.CallSid, 64), c.id);
-    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"${c ? ` action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}"` : ''}>${esc(to)}</Dial></Response>`);
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${liveTranscribe()}<Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"${c ? ` action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}"` : ''}>${esc(to)}</Dial></Response>`);
+  }));
+  app.post('/api/webhooks/twilio/live-transcript', hook((req, res) => {
+    const b = req.body || {}, sid = clean(b.CallSid, 64);
+    if (sid && b.TranscriptionEvent === 'transcription-content' && String(b.Final || 'true') !== 'false') {
+      let d = {}; try { d = JSON.parse(b.TranscriptionData || '{}'); } catch { /* */ }
+      const text = String(d.transcript || '').replace(/\s+/g, ' ').trim();
+      if (text) { db.prepare('INSERT OR IGNORE INTO call_transcript_parts(call_sid, seq, track, text, at) VALUES(?,?,?,?,?)').run(sid, Math.trunc(Number(b.SequenceId) || Date.now()), clean(b.Track, 30), text.slice(0, 2000), now()); mergeTranscript(sid); }
+    }
+    if (sid && b.TranscriptionEvent === 'transcription-stopped') mergeTranscript(sid);
+    res.type('text/xml').send('<Response/>');
   }));
 };

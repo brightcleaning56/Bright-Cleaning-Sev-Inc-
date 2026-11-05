@@ -129,7 +129,7 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
   app.post('/api/admin/ai/calls/:id/analyze', auth, async (req, res) => {
     const c = db.prepare('SELECT * FROM calls WHERE id=?').get(Number(req.params.id)); if (!c) return res.status(404).json({ error: 'Call not found.' });
     const src = String((req.body || {}).transcript || c.transcript || c.summary || '').trim();
-    if (src.length < 40) return res.status(400).json({ error: 'Add the call transcript or detailed notes (at least a few sentences) first.' });
+    if (src.length < 40) return res.status(400).json({ error: 'No transcript yet for this call. Calls placed or received from now on are transcribed automatically; for this one, type a few sentences of notes in the box and click Analyze again.' });
     try {
       const text = await call([{ role: 'user', content: `CALL ANALYSIS for Bright Cleaning Sev Inc. (commercial & construction cleaning, Iowa). Today is ${require('./bizdate').today()}.
 Caller: ${c.contact_name || ''} ${c.company ? '(' + c.company + ')' : ''} · ${c.direction} · purpose logged: ${c.purpose}
