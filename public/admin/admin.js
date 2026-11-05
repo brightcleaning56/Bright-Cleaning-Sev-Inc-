@@ -359,7 +359,7 @@
         openDrawer({ title: 'Customize Live operations', sub: 'Only changes what you see. Business records are not affected.', body: `<p class="muted">Show these groups:</p>${all.map(g => `<label class="chk" style="display:block;margin:6px 0"><input type="checkbox" data-g="${esc(g)}"${hidden.includes(g) ? '' : ' checked'}> ${esc(g)}</label>`).join('')}`,
           footer: '<button class="btn ghost" data-close>Cancel</button><button class="btn" id="custSave">Save</button>' });
         $('#custSave').onclick = async () => { const h = $$('#drawerRoot [data-g]').filter(x => !x.checked).map(x => x.dataset.g); await savePref('command_center', { ...(prefs.command_center || {}), hidden: h }); closeDrawer(); loadLive(); }; };
-    } catch (e) { el.innerHTML = `<p class="msg err">Live operations could not load: ${esc(e.message)} <a href="#" onclick="return false" id="liveRetry">Retry</a></p>`; const r = $('#liveRetry'); if (r) r.onclick = () => loadLive(); }
+    } catch (e) { el.innerHTML = `<p class="msg err">Live operations could not load: ${esc(e.message)} <a href="#" id="liveRetry">Retry</a></p>`; const r = $('#liveRetry'); if (r) r.onclick = ev => { ev.preventDefault(); loadLive(); }; }
     clearTimeout(liveTimer); liveTimer = setTimeout(() => { if (state.view === 'overview' && !document.hidden) loadLive(); }, 60000);
   }
   async function openDrill(key, extra) {
@@ -1431,8 +1431,8 @@
       <tr><td class="num">Paid to date</td><td class="num">${money(i.paid_amount)}</td></tr>
       <tr><td class="num"><b>Balance due</b></td><td class="num due">${money(bal)}</td></tr></tbody></table>
       <p class="muted">Thank you for your business. Please reference ${esc(i.invoice_number)} with your payment.</p>
-      <p class="noprint"><button onclick="print()">Print or save as PDF</button></p></body></html>`);
-    w.document.close();
+      <p class="noprint"><button id="printBtn">Print or save as PDF</button></p></body></html>`);
+    w.document.close(); const pb = w.document.getElementById('printBtn'); if (pb) pb.addEventListener('click', () => w.print());
   }
 
   // ---------- Activity ----------
@@ -1750,8 +1750,8 @@
     renderCalls();
     api('/api/admin/calls-intel').then(x => { const el = $('#callsIntel'); if (!el) return;
       el.innerHTML = `<div class="st"><span>Phone capture</span><b style="font-size:15px;color:${x.connected ? '#17904c' : '#a06a00'}">${x.connected ? 'Connected (Twilio)' : 'Not connected'}</b><small>${x.connected ? (x.forwarding ? 'calls ring your phone, log automatically' : 'calls go to voicemail, log automatically') : 'calls are logged by hand'}</small>${x.connected ? '' : `<small style="word-break:break-all">Twilio voice URL: ${esc(x.voice_url || '')}</small>`}</div>
-        ${x.receptionist ? `<div class="st" style="cursor:pointer" onclick="location.hash='#settings'" title="Change in Settings → Phone"><span>AI receptionist</span><b style="font-size:15px;color:${x.receptionist.answering_now ? '#17904c' : '#a06a00'}">${x.receptionist.mode === 'off' ? 'Off' : !x.receptionist.key ? 'Needs AI key' : x.receptionist.answering_now ? 'On' : 'Waiting (business hours)'}</b><small>${esc({ off: 'people and voicemail only', no_answer: 'answers when no one picks up', after_hours: 'answers after hours', always: 'answers every call first' }[x.receptionist.mode] || '')}</small></div>` : ''}        <div class="st"><span>Last 30 days</span><b>${x.total_30}</b><small>${x.missed_30} missed</small></div>${x.by_intent.slice(0, 3).map(i => `<div class="st"><span>${esc(i.k)}</span><b>${i.n}</b><small>calls (AI)</small></div>`).join('')}
-        <div class="st"><span>Hot leads (score 70+)</span><b>${x.hot_leads.length}</b><small>${x.hot_leads.slice(0, 2).map(h => esc(h.company || h.contact_name || '')).join(', ')}</small></div>`; }).catch(() => {});
+        ${x.receptionist ? `<div class="st" style="cursor:pointer" data-go-settings title="Change in Settings → Phone"><span>AI receptionist</span><b style="font-size:15px;color:${x.receptionist.answering_now ? '#17904c' : '#a06a00'}">${x.receptionist.mode === 'off' ? 'Off' : !x.receptionist.key ? 'Needs AI key' : x.receptionist.answering_now ? 'On' : 'Waiting (business hours)'}</b><small>${esc({ off: 'people and voicemail only', no_answer: 'answers when no one picks up', after_hours: 'answers after hours', always: 'answers every call first' }[x.receptionist.mode] || '')}</small></div>` : ''}        <div class="st"><span>Last 30 days</span><b>${x.total_30}</b><small>${x.missed_30} missed</small></div>${x.by_intent.slice(0, 3).map(i => `<div class="st"><span>${esc(i.k)}</span><b>${i.n}</b><small>calls (AI)</small></div>`).join('')}
+        <div class="st"><span>Hot leads (score 70+)</span><b>${x.hot_leads.length}</b><small>${x.hot_leads.slice(0, 2).map(h => esc(h.company || h.contact_name || '')).join(', ')}</small></div>`; el.querySelectorAll('[data-go-settings]').forEach(b => b.onclick = () => { location.hash = '#settings'; }); }).catch(() => {});
   }
   function renderCalls() {
     const q = $('#callSearch').value.trim().toLowerCase(), due = $('#callFollow').checked, vm = !!($('#callVm') && $('#callVm').checked), t = todayISO();
