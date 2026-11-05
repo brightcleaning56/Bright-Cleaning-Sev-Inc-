@@ -33,6 +33,10 @@ module.exports = function mountCalls(app, ctx) {
   const setS = (k, v) => db.prepare('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at').run(k, v, now());
   const acctSid = () => process.env.TWILIO_ACCOUNT_SID || getS('twilio_account_sid');
   const twNumber = () => process.env.TWILIO_NUMBER || getS('twilio_number');
+  const softphone = () => !!(process.env.TWILIO_API_KEY && process.env.TWILIO_API_SECRET && acctSid() && twNumber());
+  // Phones to ring: admin setting overrides env. Lenient: pulls every valid US number out of the text ("+1 469-267-8472, 515.329.5889").
+  const parsePhones = txt => { const out = []; for (const m of String(txt || '').match(/\+?1?[\s.\-()]*\d{3}[\s.\-()]*\d{3}[\s.\-]*\d{4}/g) || []) { const e = e164(m); if (e && !out.includes(e)) out.push(e); } return out.slice(0, 5); };
+  const ringPhones = () => parsePhones(getS('twilio_ring_phones') || process.env.TWILIO_FORWARD_TO);
   const e164 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 10 ? '+1' + d : d.length === 11 && d[0] === '1' ? '+' + d : ''; };
   const hook = fn => (req, res) => {
     if (!token()) return res.status(503).type('text/plain').send('Phone capture is not set up (TWILIO_AUTH_TOKEN missing).');
@@ -48,7 +52,7 @@ module.exports = function mountCalls(app, ctx) {
     if (!outcome) return res.type('text/xml').send('<Response/>');
     const cu = matchCustomer(other), dur = Math.max(0, Math.trunc(Number(b.CallDuration) || 0));
     const cur = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid);
-    if (cur) db.prepare("UPDATE calls SET outcome=CASE WHEN outcome IN ('Missed','Voicemail','No answer','Busy') THEN outcome WHEN outcome IN ('Answered') AND source='Click-to-call' THEN outcome WHEN source='Click-to-call' AND ?='Missed' THEN 'Missed' WHEN source='Click-to-call' THEN outcome ELSE ? END, duration_s=CASE WHEN source='Click-to-call' AND duration_s IS NOT NULL THEN duration_s ELSE ? END WHERE id=?").run(outcome, outcome, dur, cur.id);
+    if (cur) db.prepare("UPDATE calls SET outcome=CASE WHEN outcome IN ('Missed','Voicemail','No answer','Busy') THEN outcome WHEN outcome IN ('Answered') AND source IN ('Click-to-call','Browser') THEN outcome WHEN source IN ('Click-to-call','Browser') AND ?='Missed' THEN 'Missed' WHEN source IN ('Click-to-call','Browser') THEN outcome ELSE ? END, duration_s=CASE WHEN source IN ('Click-to-call','Browser') AND duration_s IS NOT NULL THEN duration_s ELSE ? END WHERE id=?").run(outcome, outcome, dur, cur.id);
     else {
       const id = db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,outcome,purpose,summary,follow_up_date,created_by,created_at,duration_s,provider_sid,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'Twilio')`)
         .run(inbound ? 'Inbound' : 'Outbound', clean(other, 40), cu ? clean(cu.name, 150) : clean(b.CallerName, 150), cu ? clean(cu.company, 200) : '', cu ? cu.id : null, outcome, 'Other',
@@ -63,9 +67,11 @@ module.exports = function mountCalls(app, ctx) {
   const greeting = () => esc(process.env.TWILIO_GREETING || 'Thanks for calling Bright Cleaning. We are with a customer right now. Please leave your name, number and how we can help, and we will call you back shortly.');
   const voicemail = () => `<Say voice="Polly.Joanna">${greeting()}</Say><Record maxLength="180" playBeep="true" transcribe="true" transcribeCallback="${base()}/api/webhooks/twilio/transcription" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"/><Say voice="Polly.Joanna">We did not get a message. Goodbye.</Say>`;
   app.post('/api/webhooks/twilio/voice', hook((req, res) => {
-    const fwd = String(process.env.TWILIO_FORWARD_TO || '').replace(/[^\d+]/g, '');
-    const xml = /^\+?\d{10,15}$/.test(fwd)
-      ? `<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result">${esc(fwd)}</Dial>`
+    const caller = e164((req.body || {}).From);
+    const cli = softphone() ? '<Client>office</Client>' : '';
+    const num = ringPhones().filter(p => p !== caller).map(p => `<Number>${esc(p)}</Number>`).join('');
+    const xml = (cli || num)
+      ? `<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result">${cli}${num}</Dial>`
       : voicemail();
     res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${xml}</Response>`);
   }));
@@ -105,7 +111,7 @@ module.exports = function mountCalls(app, ctx) {
   });
   app.get('/api/admin/calls-intel', auth, (req, res) => {
     const from = new Date(Date.now() - 30 * 864e5).toISOString(), q = sql => db.prepare(sql).all(from);
-    res.json({ connected: !!token(), forwarding: !!String(process.env.TWILIO_FORWARD_TO || '').replace(/\D/g, ''), webhook: base() + '/api/webhooks/twilio/status', voice_url: base() + '/api/webhooks/twilio/voice',
+    res.json({ connected: !!token(), forwarding: ringPhones().length > 0, webhook: base() + '/api/webhooks/twilio/status', voice_url: base() + '/api/webhooks/twilio/voice',
       by_intent: q("SELECT intent k, COUNT(*) n FROM calls WHERE created_at>=? AND intent IS NOT NULL GROUP BY intent ORDER BY n DESC"),
       by_sentiment: q("SELECT sentiment k, COUNT(*) n FROM calls WHERE created_at>=? AND sentiment IS NOT NULL GROUP BY sentiment"),
       missed_30: db.prepare("SELECT COUNT(*) n FROM calls WHERE created_at>=? AND outcome IN ('Missed','Voicemail')").get(from).n,
@@ -114,20 +120,21 @@ module.exports = function mountCalls(app, ctx) {
   });
   // ---- Click-to-call: ring the staff member's phone first, then bridge to the customer from the Twilio number ----
   const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
-  app.get('/api/admin/phone/settings', auth, (req, res) => res.json({ connected: !!token(), account_sid: acctSid() ? acctSid().slice(0, 6) + '…' + acctSid().slice(-4) : '', number: twNumber(), ring_phone: e164(process.env.TWILIO_FORWARD_TO), can_dial: !!(token() && acctSid() && twNumber()) }));
+  app.get('/api/admin/phone/settings', auth, (req, res) => res.json({ connected: !!token(), account_sid: acctSid() ? acctSid().slice(0, 6) + '…' + acctSid().slice(-4) : '', number: twNumber(), ring_phone: ringPhones()[0] || '', ring_phones: ringPhones(), ring_source: getS('twilio_ring_phones') ? 'admin' : 'render', render_forward_digits: String(process.env.TWILIO_FORWARD_TO || '').replace(/\D/g, '').length, render_forward_parsed: parsePhones(process.env.TWILIO_FORWARD_TO).map(p => '…' + p.slice(-4)), can_dial: !!(token() && acctSid() && twNumber()), softphone: softphone() }));
   app.put('/api/admin/phone/settings', auth, (req, res) => {
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can change phone settings.' });
     const b = req.body || {};
     if (b.account_sid !== undefined) { if (!/^AC[0-9a-f]{32}$/.test(String(b.account_sid))) return res.status(400).json({ error: 'Account SID starts with AC followed by 32 characters (Twilio console home page).' }); setS('twilio_account_sid', b.account_sid); }
+    if (b.ring_phones !== undefined) { const ph = parsePhones(b.ring_phones); if (!ph.length && String(b.ring_phones).trim()) return res.status(400).json({ error: 'Enter at least one 10-digit US phone number (separate several with commas).' }); setS('twilio_ring_phones', ph.join(', ')); }
     if (b.number !== undefined) { if (!e164(b.number)) return res.status(400).json({ error: 'Enter the Twilio number as a 10-digit US number.' }); setS('twilio_number', e164(b.number)); }
     logAction(req, 'changed', 'phone settings', 0, `number ${twNumber()}`);
     res.json({ ok: true, number: twNumber(), can_dial: !!(token() && acctSid() && twNumber()) });
   });
   app.post('/api/admin/calls/dial', auth, async (req, res) => {
-    const b = req.body || {}, to = e164(b.to), agent = (process.env.NODE_ENV !== 'production' && e164(b.agent)) || e164(process.env.TWILIO_FORWARD_TO); // production always rings the configured phone (no caller-chosen numbers)
+    const b = req.body || {}, to = e164(b.to), agent = (process.env.NODE_ENV !== 'production' && e164(b.agent)) || ringPhones()[0]; // production always rings the configured phone (no caller-chosen numbers)
     if (!token() || !acctSid() || !twNumber()) return res.status(503).json({ error: 'Calling is not set up yet (needs the Twilio token, account SID and number).' });
     if (!to) return res.status(400).json({ error: 'Enter a valid 10-digit US phone number to call.' });
-    if (!agent) return res.status(400).json({ error: 'No phone to ring for you. Set TWILIO_FORWARD_TO or choose your phone.' });
+    if (!agent) return res.status(400).json({ error: 'No phone to ring for you. Set the ring phone in Settings → Phone.' });
     if (to === agent) return res.status(400).json({ error: 'That is the same phone that would ring for you.' });
     const cu = b.customer_id ? db.prepare('SELECT id, name, company FROM customers WHERE id=?').get(Number(b.customer_id)) : matchCustomer(to);
     const who = (req.user && req.user.email) || 'staff';
@@ -164,5 +171,42 @@ module.exports = function mountCalls(app, ctx) {
       else db.prepare("UPDATE calls SET outcome=?, follow_up_date=COALESCE(follow_up_date,?), summary=CASE WHEN summary='' OR summary IS NULL THEN ? ELSE summary END WHERE id=?").run(st === 'busy' ? 'Busy' : 'No answer', today(), 'Customer did not answer — try again.', c.id);
     }
     res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+  }));
+  // ---- In-browser phone (Twilio Voice SDK). Needs TWILIO_API_KEY + TWILIO_API_SECRET (a Standard API key). ----
+  async function appSid() {
+    let a = process.env.TWILIO_TWIML_APP_SID || getS('twilio_twiml_app_sid'); if (a) return a;
+    const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
+    const r = await fetch(`${api}/2010-04-01/Accounts/${acctSid()}/Applications.json`, { method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(process.env.TWILIO_API_KEY + ':' + process.env.TWILIO_API_SECRET).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ FriendlyName: 'Bright Clean admin phone', VoiceUrl: `${base()}/api/webhooks/twilio/client-voice`, VoiceMethod: 'POST' }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok || !j.sid) throw new Error(j.message || ('Twilio error ' + r.status));
+    setS('twilio_twiml_app_sid', j.sid); return j.sid;
+  }
+  app.get('/api/admin/voice/token', auth, async (req, res) => {
+    if (!token()) return res.status(503).json({ error: 'Phone is not connected.' });
+    if (!softphone()) return res.status(503).json({ error: 'The browser phone needs a Twilio API key (TWILIO_API_KEY and TWILIO_API_SECRET in Render).', missing: true });
+    try {
+      const app_sid = await appSid(), t = Math.floor(Date.now() / 1000);
+      const jwt = require('jsonwebtoken').sign({ jti: `${process.env.TWILIO_API_KEY}-${t}`, iss: process.env.TWILIO_API_KEY, sub: acctSid(), nbf: t - 5, exp: t + 3600,
+        grants: { identity: 'office', voice: { incoming: { allow: true }, outgoing: { application_sid: app_sid } } } }, process.env.TWILIO_API_SECRET, { algorithm: 'HS256', header: { typ: 'JWT', cty: 'twilio-fpa;v=1' } });
+      res.json({ token: jwt, identity: 'office', ttl: 3600, number: twNumber() });
+    } catch (e) { res.status(502).json({ error: 'Could not prepare the browser phone: ' + e.message }); }
+  });
+  // Before a browser call: create the call record (so it is logged against the customer) and hand back its id.
+  app.post('/api/admin/calls/browser-start', auth, (req, res) => {
+    const b = req.body || {}, to = e164(b.to); if (!to) return res.status(400).json({ error: 'Enter a valid 10-digit US phone number to call.' });
+    if (twNumber() && to === e164(twNumber())) return res.status(400).json({ error: 'That is the business number itself.' });
+    const cu = b.customer_id ? db.prepare('SELECT id, name, company FROM customers WHERE id=?').get(Number(b.customer_id)) : matchCustomer(to);
+    const id = db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,lead_id,outcome,purpose,summary,created_by,created_at,source) VALUES('Outbound',?,?,?,?,?,'Dialing','Other','',?,?,'Browser')`)
+      .run(to, cu ? clean(cu.name, 150) : clean(b.name, 150), cu ? clean(cu.company, 200) : '', cu ? cu.id : null, b.lead_id ? Number(b.lead_id) : null, (req.user && req.user.email) || 'staff', now()).lastInsertRowid;
+    logAction(req, 'started browser call', 'call', id, `to ${to}${cu ? ' (' + (cu.company || cu.name) + ')' : ''}`);
+    res.status(201).json({ call_id: id, to });
+  });
+  // Twilio calls this (signed) when the browser places a call: dial the customer from the business number, recorded.
+  app.post('/api/webhooks/twilio/client-voice', hook((req, res) => {
+    const b = req.body || {}, c = b.call_id ? db.prepare('SELECT * FROM calls WHERE id=?').get(Number(b.call_id)) : null;
+    const to = e164(c ? c.phone : b.To);
+    if (!to || !String(b.From || '').startsWith('client:')) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">This call could not be placed.</Say></Response>');
+    if (c && b.CallSid) db.prepare('UPDATE calls SET provider_sid=COALESCE(provider_sid,?) WHERE id=?').run(clean(b.CallSid, 64), c.id);
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"${c ? ` action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}"` : ''}>${esc(to)}</Dial></Response>`);
   }));
 };
