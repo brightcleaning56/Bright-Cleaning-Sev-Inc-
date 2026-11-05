@@ -11,7 +11,10 @@ function files(root) {
   return out.sort();
 }
 function compute(root = __dirname) {
-  const list = files(root).map(p => ({ path: p, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(root, p))).digest('hex') }));
+  // Text files are hashed with LF line endings, so a Windows checkout (CRLF) and the Linux server give the same fingerprint.
+  const TEXT = /\.(js|html|css|json|txt|md|xml|svg)$/i;
+  const bytesOf = p => { const b = fs.readFileSync(path.join(root, p)); return TEXT.test(p) ? Buffer.from(b.toString('utf8').replace(/\r\n/g, '\n')) : b; };
+  const list = files(root).map(p => ({ path: p, sha256: crypto.createHash('sha256').update(bytesOf(p)).digest('hex') }));
   const fingerprint = crypto.createHash('sha256').update(list.map(f => `${f.path}:${f.sha256}\n`).join('')).digest('hex');
   return { fingerprint, files: list.length, list };
 }
