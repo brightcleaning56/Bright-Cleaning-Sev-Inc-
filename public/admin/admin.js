@@ -194,7 +194,7 @@
   const state = { leads: [], estimates: [], contracts: [], projects: [], invoices: [], customers: [], leadKind: 'bid', view: 'overview' };
 
   // ---------- Auth ----------
-  function signOut(message) {
+  function signOut(message) { try { if (es) { es.close(); es = null; } } catch { /* */ }
     token = null;
     localStorage.removeItem(TOKEN_KEY);
     closeDrawer();
@@ -214,7 +214,7 @@
       localStorage.setItem(TOKEN_KEY, token);
       e.target.reset();
       st.textContent = '';
-      start();
+      loadPrefs().finally(() => { start(); setTimeout(connectLive, 800); setTimeout(() => { if (token) initPhone(); }, 1500); });
     } catch (err) { st.className = 'msg err'; st.textContent = err.message; }
   });
   $('#logout').addEventListener('click', () => signOut());
@@ -302,8 +302,31 @@
   };
   const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
   const chg = c => c === null || c === undefined ? '<small class="flat">no prior data</small>' : `<small class="${c > 0 ? 'up' : c < 0 ? 'down' : 'flat'}">${c > 0 ? '▲' : c < 0 ? '▼' : ''} ${Math.abs(c)}% vs prior</small>`;
-  $('#ccDays').addEventListener('change', () => loadOverview());
+  $('#ccDays').addEventListener('change', () => { savePref('command_center', { ...(prefs.command_center || {}), days: $('#ccDays').value }); loadOverview(); });
   setInterval(() => { if (state.view === 'overview' && document.visibilityState === 'visible' && !document.querySelector('#drawerRoot .drawer')) loadOverview().catch(() => {}); }, 30000);
+  // ---- Personal preferences (per user) ----
+  let prefs = {};
+  async function loadPrefs() { try { prefs = await api('/api/admin/prefs'); } catch { prefs = {}; } }
+  async function savePref(key, value) { prefs[key] = value; try { await api('/api/admin/prefs/' + key, { method: 'PUT', json: value }); } catch (e) { toast('Could not save your view: ' + e.message, true); } }
+  // ---- Live updates: the server pushes "something changed"; the open screen reloads from the API ----
+  let es = null, esTimer = null, esBackoff = 2000, liveOn = false, pending = new Set();
+  function setLiveBadge(on) { liveOn = on; const b = document.querySelector('#todayLine .live'); if (b) { b.textContent = on ? 'Live' : 'Offline — retrying'; b.style.opacity = on ? '1' : '.6'; b.title = on ? 'Updates appear within seconds' : 'Live updates paused; data still refreshes every minute'; } }
+  async function connectLive() {
+    if (!token || es) return;
+    try { const { ticket } = await api('/api/admin/events/ticket', { method: 'POST', json: {} }); es = new EventSource('/api/admin/events?ticket=' + ticket); }
+    catch { return setTimeout(connectLive, esBackoff = Math.min(esBackoff * 2, 60000)); }
+    es.addEventListener('hello', () => { esBackoff = 2000; setLiveBadge(true); });
+    es.addEventListener('change', ev => { try { JSON.parse(ev.data).forEach(e => pending.add(e.entity)); } catch { /* */ } clearTimeout(esTimer); esTimer = setTimeout(applyLive, 1200); });
+    es.onerror = () => { setLiveBadge(false); try { es.close(); } catch { /* */ } es = null; setTimeout(connectLive, esBackoff = Math.min(esBackoff * 2, 60000)); };
+  }
+  function applyLive() {
+    const ents = [...pending]; pending.clear();
+    if ($('#drawerRoot') && $('#drawerRoot').children.length) { ents.forEach(e => pending.add(e)); esTimer = setTimeout(applyLive, 4000); return; } // never refresh under an open panel
+    const v = state.view;
+    if (v === 'overview') loadOverview().catch(() => {});
+    else if (v === 'calls' && ents.some(e => /call/.test(e))) loadCalls().catch(() => {});
+    else if (v === 'leads' && ents.some(e => /lead/.test(e))) loadLeads().catch(() => {});
+  }
   // ---- Live operations: every number opens the exact records behind it ----
   let liveTimer = null, liveData = null;
   const OPEN_BY = { lead: id => openLead(id), estimate: id => openEstimate(id), contract: id => openContract(id), invoice: id => openRecord('invoices', id), project: id => openProject(id), call: id => openCall({ id }),
@@ -312,19 +335,27 @@
     const el = $('#ccLive'); if (!el) return;
     try {
       const d = liveData = await api('/api/admin/command-center/metrics?days=' + $('#ccDays').value);
-      const groups = ['Sales', 'Operations', 'Finance', 'Calls & AI'];
-      el.innerHTML = `<div class="sechead" style="display:flex;justify-content:space-between;align-items:baseline;margin:18px 0 8px"><h2 style="margin:0">Live operations</h2><small class="muted">Click any line to see the exact records · updated ${esc(new Date(d.as_of).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))} · <a href="#" id="liveRefresh">Refresh</a></small></div>
+      const hidden = (prefs.command_center && prefs.command_center.hidden) || [], groups = ['Sales', 'Operations', 'Finance', 'Calls & AI', 'Management'].filter(g => !hidden.includes(g));
+      el.innerHTML = `<div class="sechead" style="display:flex;justify-content:space-between;align-items:baseline;margin:18px 0 8px"><h2 style="margin:0">Live operations</h2><small class="muted">Click any line to see the exact records · updated ${esc(new Date(d.as_of).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))} · <a href="#" id="liveRefresh">Refresh</a> · <a href="#" id="liveCustom">Customize</a>${hidden.length ? ` <span class="muted">(${hidden.length} hidden)</span>` : ''}</small></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px">${groups.map(g => `<div class="card" style="padding:12px 14px"><h3 class="secth" style="margin:0 0 6px">${esc(g)}</h3>${d.metrics.filter(m => m.group === g).map(m => m.error
           ? `<div class="muted" style="font-size:13px;padding:6px 0" title="${esc(m.error)}">${esc(m.label)}: unavailable</div>`
           : `<button type="button" class="liverow" data-drill="${m.key}" style="display:flex;width:100%;justify-content:space-between;align-items:center;gap:8px;padding:7px 4px;border:0;border-bottom:1px solid #eef2f6;background:none;cursor:pointer;text-align:left;font:inherit;color:inherit">
               <span>${esc(m.label)}</span><span style="white-space:nowrap"><b style="color:${m.alert ? '#c0392b' : 'inherit'}">${m.count}</b>${m.amount != null && m.count ? ` <small class="muted">${money(m.amount)}</small>` : ''} ›</span></button>`).join('')}</div>`).join('')}</div>`;
+      if (!hidden.includes('Finance')) { try { const dv = await api('/api/admin/command-center/divisions?days=' + $('#ccDays').value); const tot = dv.rows.reduce((t, r) => t + r.collected, 0);
+        const box = document.createElement('div'); box.className = 'card'; box.style.cssText = 'padding:12px 14px;margin-top:12px';
+        box.innerHTML = `<h3 class="secth" style="margin:0 0 6px">Collected by service (period)</h3>${dv.rows.length ? dv.rows.map(r => `<button type="button" class="liverow" data-svc="${esc(r.service)}" style="display:block;width:100%;border:0;background:none;cursor:pointer;text-align:left;font:inherit;color:inherit;padding:5px 0"><span style="display:flex;justify-content:space-between"><span>${esc(r.service)}</span><b>${money(r.collected)} ›</b></span><span style="display:block;height:6px;background:#e6edf5;border-radius:4px;margin-top:3px"><span style="display:block;height:6px;border-radius:4px;background:#2563eb;width:${tot ? Math.max(2, Math.round(r.collected / tot * 100)) : 0}%"></span></span></button>`).join('') : '<p class="muted" style="margin:0">No payments recorded in this period. Record payments on invoices to see collections by service.</p>'}`;
+        $('#ccLive').appendChild(box); $$('#ccLive [data-svc]').forEach(b => b.onclick = () => openDrill('collected', { service: b.dataset.svc })); } catch { /* optional panel */ } }
       $$('#ccLive [data-drill]').forEach(b => b.onclick = () => openDrill(b.dataset.drill));
       $('#liveRefresh').onclick = ev => { ev.preventDefault(); loadLive(); };
+      $('#liveCustom').onclick = ev => { ev.preventDefault(); const all = ['Sales', 'Operations', 'Finance', 'Calls & AI', 'Management'];
+        openDrawer({ title: 'Customize Live operations', sub: 'Only changes what you see. Business records are not affected.', body: `<p class="muted">Show these groups:</p>${all.map(g => `<label class="chk" style="display:block;margin:6px 0"><input type="checkbox" data-g="${esc(g)}"${hidden.includes(g) ? '' : ' checked'}> ${esc(g)}</label>`).join('')}`,
+          footer: '<button class="btn ghost" data-close>Cancel</button><button class="btn" id="custSave">Save</button>' });
+        $('#custSave').onclick = async () => { const h = $$('#drawerRoot [data-g]').filter(x => !x.checked).map(x => x.dataset.g); await savePref('command_center', { ...(prefs.command_center || {}), hidden: h }); closeDrawer(); loadLive(); }; };
     } catch (e) { el.innerHTML = `<p class="msg err">Live operations could not load: ${esc(e.message)} <a href="#" onclick="return false" id="liveRetry">Retry</a></p>`; const r = $('#liveRetry'); if (r) r.onclick = () => loadLive(); }
     clearTimeout(liveTimer); liveTimer = setTimeout(() => { if (state.view === 'overview' && !document.hidden) loadLive(); }, 60000);
   }
-  async function openDrill(key) {
-    let d; try { d = await api(`/api/admin/command-center/drill/${key}?days=${$('#ccDays').value}`); } catch (e) { return toast(e.message, true); }
+  async function openDrill(key, extra) {
+    let d; try { d = await api(`/api/admin/command-center/drill/${key}?days=${$('#ccDays').value}${extra && extra.service ? '&service=' + encodeURIComponent(extra.service) : ''}`); } catch (e) { return toast(e.message, true); }
     const per = d.days === 1 ? 'today' : `last ${d.days} days`;
     openDrawer({ title: `${d.label} (${d.count})`, sub: `${d.group}${d.amount != null ? ' · total ' + money(d.amount) : ''} · period: ${per} · as of ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
       body: d.rows.length ? `<div>${d.rows.map(r => `<button type="button" class="liverow" data-open="${r.id}" style="display:flex;width:100%;justify-content:space-between;gap:10px;padding:10px 4px;border:0;border-bottom:1px solid #eef2f6;background:none;cursor:pointer;text-align:left;font:inherit;color:inherit">
@@ -1681,8 +1712,8 @@
   const callState = { calls: [], options: null };
   $('#callsAdd').addEventListener('click', () => logCall());
   $('#callSearch').addEventListener('input', () => renderCalls());
-  $('#callFollow').addEventListener('change', () => renderCalls());
-  if ($('#callVm')) $('#callVm').addEventListener('change', () => renderCalls());
+  $('#callFollow').addEventListener('change', () => { savePref('calls_filters', { follow: $('#callFollow').checked, vm: !!($('#callVm') && $('#callVm').checked) }); renderCalls(); });
+  if ($('#callVm')) $('#callVm').addEventListener('change', () => { savePref('calls_filters', { follow: $('#callFollow').checked, vm: $('#callVm').checked }); renderCalls(); });
   const handlingOf = c => c.handling || (c.source === 'Browser' ? 'Browser' : c.outcome === 'Voicemail' ? 'Voicemail' : ['Twilio', 'Click-to-call'].includes(c.source) ? 'Human' : 'Manual');
   async function loadCalls() {
     if (!document.getElementById('dialPadBtn')) { const h = document.querySelector('#v-calls .pagehead'); if (h) { const btn = document.createElement('button'); btn.className = 'btn'; btn.id = 'dialPadBtn'; btn.type = 'button'; btn.textContent = '📞 Call a number'; btn.onclick = () => openDialPad(); const wrap = h.querySelector('.headact') || h; wrap.appendChild(btn); } }
@@ -2659,5 +2690,5 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#drawerRoot').innerHTML) closeDrawer(); });
 
   // ---------- Boot ----------
-  if (token) start(); else signOut();
+  if (token) { loadPrefs().then(() => { const cc = prefs.command_center || {}, cf = prefs.calls_filters || {}; if (cc.days && $('#ccDays') && [...$('#ccDays').options].some(o => o.value === String(cc.days))) $('#ccDays').value = String(cc.days); if ($('#callFollow')) $('#callFollow').checked = !!cf.follow; if ($('#callVm')) $('#callVm').checked = !!cf.vm; }).finally(() => { start(); setTimeout(connectLive, 800); }); } else signOut();
 })();
