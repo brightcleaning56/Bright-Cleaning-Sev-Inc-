@@ -297,6 +297,7 @@ module.exports = function mountCalls(app, ctx) {
     turns INTEGER DEFAULT 0, silences INTEGER DEFAULT 0, lead_id INTEGER, issue_id INTEGER, callback TEXT, transferred INTEGER DEFAULT 0, status TEXT DEFAULT 'active', error TEXT,
     summary TEXT, started_at TEXT, ended_at TEXT, finalized INTEGER DEFAULT 0)`);
   try { if (!db.prepare('PRAGMA table_info(calls)').all().some(c => c.name === 'handling')) db.exec('ALTER TABLE calls ADD COLUMN handling TEXT'); } catch { /* */ }
+  try { if (!db.prepare('PRAGMA table_info(ai_call_sessions)').all().some(c => c.name === 'greeting')) db.exec('ALTER TABLE ai_call_sessions ADD COLUMN greeting TEXT'); } catch { /* */ }
   const aiKey = () => process.env.ANTHROPIC_API_KEY || '';
   const aiMode = () => { const m = getS('ai_receptionist_mode') || process.env.AI_RECEPTIONIST || 'off'; return ['off', 'no_answer', 'after_hours', 'always'].includes(m) ? m : 'off'; };
   const aiHours = () => { try { return JSON.parse(getS('ai_receptionist_hours') || '') } catch { return { days: [1, 2, 3, 4, 5], open: '08:00', close: '17:00' }; } };
@@ -308,8 +309,8 @@ module.exports = function mountCalls(app, ctx) {
   const gather = (say, extra = '') => `<Gather input="speech" action="${base()}/api/webhooks/twilio/ai-turn" method="POST" speechTimeout="auto" speechModel="phone_call" language="en-US" actionOnEmptyResult="true"${extra}><Say voice="${VOICE()}">${esc(say)}</Say></Gather>`;
   function aiStart(b, reason) {
     const sid = clean(b.CallSid, 64), caller = e164(b.From) || clean(b.From, 40), cu = matchCustomer(caller);
-    db.prepare('INSERT OR IGNORE INTO ai_call_sessions(call_sid, caller, customer_id, reason, started_at) VALUES(?,?,?,?,?)').run(sid, caller, cu ? cu.id : null, reason, now());
     const hello = `Thanks for calling Bright Cleaning. This is Bright Clean's virtual assistant, and this call may be recorded. ${cu ? 'It looks like you are calling from a number we have on file. ' : ''}How can I help you today?`;
+    db.prepare('INSERT OR IGNORE INTO ai_call_sessions(call_sid, caller, customer_id, reason, started_at, greeting) VALUES(?,?,?,?,?,?)').run(sid, caller, cu ? cu.id : null, reason, now(), hello);
     return `<?xml version="1.0" encoding="UTF-8"?><Response>${gather(hello)}<Redirect method="POST">${base()}/api/webhooks/twilio/ai-turn</Redirect></Response>`;
   }
   // When nobody answers and the mode is "no_answer" (or after hours), the AI takes the call instead of voicemail.
@@ -421,14 +422,18 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
   ctx.finalizeAi = function finalizeAi(sid) {
     const sess = db.prepare('SELECT * FROM ai_call_sessions WHERE call_sid=? AND finalized=0').get(sid); if (!sess) return;
     const c = db.prepare('SELECT * FROM calls WHERE provider_sid=?').get(sid); if (!c) return;
-    const msgs = JSON.parse(sess.messages || '[]'), lines = [];
+    const msgs = JSON.parse(sess.messages || '[]'), lines = sess.greeting ? [`AI receptionist: ${sess.greeting}`] : [];
     for (const m of msgs) { if (typeof m.content === 'string') lines.push(`Caller: ${m.content}`); else for (const p of m.content || []) { if (p.type === 'text' && p.text.trim()) lines.push(`AI receptionist: ${p.text.trim()}`); if (p.type === 'tool_use') lines.push(`[action: ${p.name}]`); } }
     const ld = sess.lead_id ? db.prepare('SELECT contact_name, company, service FROM leads WHERE id=?').get(sess.lead_id) : null;
+    const heard = msgs.filter(m => typeof m.content === 'string').length, lastAi = [...msgs].reverse().find(m => m.role === 'assistant'), endedByAi = lastAi && Array.isArray(lastAi.content) && lastAi.content.some(p => p.type === 'tool_use' && ['end_call', 'transfer_to_human'].includes(p.name));
+    if (!heard && !sess.transferred) { sess.callback = sess.callback || 'Caller hung up during the AI greeting before saying anything — call back.'; }
+    else if (!endedByAi && !sess.transferred && !sess.error) { sess.callback = (sess.callback ? sess.callback + ' | ' : '') + 'Call ended before the AI finished (details may be missing) — follow up.'; }
     const summary = [ld ? `New inquiry: ${[ld.contact_name, ld.company].filter(Boolean).join(', ')} — ${ld.service || ''}` : '', sess.issue_id ? `Complaint logged (issue #${sess.issue_id}).` : '', sess.callback ? `Callback: ${sess.callback}` : '', sess.transferred ? 'Transferred to a person.' : '', sess.error ? `AI fallback: ${sess.error}` : ''].filter(Boolean).join(' ') || 'AI receptionist call.';
     const prev = String(c.transcript || '');
     db.prepare(`UPDATE calls SET handling='AI', lead_id=COALESCE(lead_id,?), customer_id=COALESCE(customer_id,?), contact_name=COALESCE(NULLIF(contact_name,''),?), company=COALESCE(NULLIF(company,''),?), purpose=CASE WHEN ? THEN 'Complaint' WHEN ? THEN 'New work' ELSE purpose END,
       summary=?, follow_up_date=CASE WHEN ? THEN COALESCE(follow_up_date,?) ELSE follow_up_date END, issue_id=COALESCE(issue_id,?), transcript=? WHERE id=?`)
       .run(sess.lead_id, sess.customer_id, ld && ld.contact_name, ld && ld.company, sess.issue_id ? 1 : 0, sess.lead_id ? 1 : 0, summary.slice(0, 1000), sess.callback || sess.lead_id ? 1 : 0, today(), sess.issue_id, ((prev ? prev + '\n\n' : '') + '[AI receptionist conversation]\n' + lines.join('\n')).slice(0, 60000), c.id);
+    if (!heard && !sess.transferred) db.prepare("UPDATE calls SET outcome='Missed' WHERE id=?").run(c.id);
     db.prepare("UPDATE ai_call_sessions SET finalized=1, status=CASE WHEN status='active' THEN 'completed' ELSE status END, summary=?, ended_at=? WHERE call_sid=?").run(summary.slice(0, 1000), now(), sid);
   };
   ctx.aiWhyNot = () => !aiKey() ? 'AI receptionist needs ANTHROPIC_API_KEY in Render' : !token() ? 'phone not connected' : aiMode() === 'off' ? 'AI receptionist is off (Settings → Phone)' : aiMode() === 'after_hours' && isOpen() ? 'AI receptionist only answers after hours' : 'AI receptionist was available';

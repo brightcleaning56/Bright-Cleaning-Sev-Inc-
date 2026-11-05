@@ -95,9 +95,14 @@ module.exports = function mountCommand(app, ctx) {
     // Finance
     { key: 'outstanding', group: 'Finance', label: 'Outstanding invoices', table: 'invoices', where: () => ["status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<amount", []], title: "invoice_number||' · '||COALESCE(company,customer_name,'')", sub: "'Due '||COALESCE(due_date,'—')", amount: 'amount-COALESCE(paid_amount,0)', date: 'due_date', view: 'invoices', open: 'invoice' },
     { key: 'overdue_invoices', group: 'Finance', label: 'Overdue invoices', table: 'invoices', where: () => ["status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<amount AND due_date IS NOT NULL AND due_date<>'' AND due_date<?", [bd()]], title: "invoice_number||' · '||COALESCE(company,customer_name,'')", sub: "'Due '||due_date", amount: 'amount-COALESCE(paid_amount,0)', date: 'due_date', view: 'invoices', open: 'invoice', alert: true },
-    { key: 'collected', group: 'Finance', label: 'Collected (period)', table: 'payments p JOIN invoices i ON i.id=p.invoice_id', where: d => ["p.received_at>=?", [since(d).slice(0, 10)]], title: "i.invoice_number||' · '||COALESCE(i.company,i.customer_name,'')", sub: "'Payment '||p.received_at", amount: 'p.amount', date: 'p.received_at', id: 'i.id', view: 'invoices', open: 'invoice', period: true },
+    { key: 'collected', group: 'Finance', label: 'Collected (period)', table: 'payments p JOIN invoices i ON i.id=p.invoice_id LEFT JOIN projects pr ON pr.id=i.project_id', where: (d, q) => q && q.service ? ["p.received_at>=? AND COALESCE(NULLIF(pr.service,''),'Unassigned')=?", [since(d).slice(0, 10), String(q.service).slice(0, 80)]] : ["p.received_at>=?", [since(d).slice(0, 10)]], title: "i.invoice_number||' · '||COALESCE(i.company,i.customer_name,'')", sub: "'Payment '||p.received_at", amount: 'p.amount', date: 'p.received_at', id: 'i.id', view: 'invoices', open: 'invoice', period: true },
     { key: 'unbilled', group: 'Finance', label: 'Completed work not invoiced', table: 'projects', where: () => ["status='Completed' AND NOT EXISTS (SELECT 1 FROM invoices x WHERE x.project_id=projects.id AND x.status<>'Void')", []], title: "COALESCE(name,company)", sub: "'Completed · no invoice'", date: 'created_at', view: 'projects', open: 'project', alert: true },
     // Calls & AI
+    // Management
+    { key: 'won_value', group: 'Management', label: 'Won value (period)', table: 'estimates', where: d => ["status='Approved' AND COALESCE(decided_at,updated_at)>=?", [since(d)]], title: "COALESCE(project_name,company,customer_name)", sub: "'Approved '||substr(COALESCE(decided_at,updated_at),1,10)", amount: 'proposal_total', date: 'COALESCE(decided_at,updated_at)', view: 'proposals', open: 'estimate', period: true },
+    { key: 'over_budget', group: 'Management', label: 'Projects over budget', table: 'projects', where: () => ["COALESCE(budget,0)>0 AND (SELECT COALESCE(SUM(amount),0) FROM project_costs c WHERE c.project_id=projects.id)>budget", []], title: "COALESCE(name,company)", sub: "'Costs '||printf('%.0f',(SELECT COALESCE(SUM(amount),0) FROM project_costs c WHERE c.project_id=projects.id))||' vs budget '||printf('%.0f',budget)", amount: "(SELECT COALESCE(SUM(amount),0) FROM project_costs c WHERE c.project_id=projects.id)-budget", date: 'created_at', view: 'projects', open: 'project', alert: true },
+    { key: 'time_unapproved', group: 'Management', label: 'Crew time awaiting approval', table: 'time_entries t LEFT JOIN employees e ON e.id=t.employee_id', where: () => ["t.clock_out IS NOT NULL AND t.approved_at IS NULL", []], title: "COALESCE(e.name,'Employee')", sub: "printf('%.2f h · ',COALESCE(t.minutes,0)/60.0)||substr(t.clock_in,1,10)", date: 't.clock_in', id: 't.id', view: 'schedule', alert: true },
+    { key: 'inspections_passed', group: 'Management', label: 'Inspections passed (period)', table: 'inspections', where: d => ["passed=1 AND COALESCE(date,created_at)>=?", [since(d).slice(0, 10)]], title: 'area', sub: "'Score '||COALESCE(score,'—')", date: 'date', view: 'quality', period: true },
     { key: 'calls', group: 'Calls & AI', label: 'Calls (period)', table: 'calls', where: d => ["created_at>=?", [since(d)]], title: "COALESCE(NULLIF(company,''),NULLIF(contact_name,''),phone)", sub: "direction||' · '||COALESCE(outcome,'')", date: 'created_at', view: 'calls', open: 'call', period: true },
     { key: 'ai_calls', group: 'Calls & AI', label: 'Answered by AI (period)', table: 'calls', where: d => ["handling='AI' AND created_at>=?", [since(d)]], title: "COALESCE(NULLIF(company,''),NULLIF(contact_name,''),phone)", sub: "COALESCE(summary,'')", date: 'created_at', view: 'calls', open: 'call', period: true },
     { key: 'voicemails', group: 'Calls & AI', label: 'Voicemails (period)', table: 'calls', where: d => ["outcome='Voicemail' AND created_at>=?", [since(d)]], title: "COALESCE(NULLIF(company,''),NULLIF(contact_name,''),phone)", sub: "COALESCE(summary,'')", date: 'created_at', view: 'calls', open: 'call', period: true },
@@ -107,8 +112,8 @@ module.exports = function mountCommand(app, ctx) {
     { key: 'ai_fallbacks', group: 'Calls & AI', label: 'AI calls that fell back', table: 'ai_call_sessions s LEFT JOIN calls c ON c.provider_sid=s.call_sid', where: d => ["s.status='fallback' AND s.started_at>=?", [since(d)]], title: "COALESCE(c.phone,s.caller)", sub: "COALESCE(s.error,'')", date: 's.started_at', id: 'c.id', view: 'calls', open: 'call', alert: true, period: true }
   ];
   const daysOf = q => [1, 7, 30, 90, 365].includes(Number(q.days)) ? Number(q.days) : 30;
-  const run = (m, d, list) => {
-    const [w, p] = m.where(d), idc = m.id || (m.table.split(' ')[0] + '.id').replace(/^([a-z_]+)\.id$/, '$1.id');
+  const run = (m, d, list, q) => {
+    const [w, p] = m.where(d, q), idc = m.id || (m.table.split(' ')[0] + '.id').replace(/^([a-z_]+)\.id$/, '$1.id');
     const base = `FROM ${m.table} WHERE ${w}`;
     if (!list) { const r = db.prepare(`SELECT COUNT(*) n${m.amount ? `, COALESCE(SUM(${m.amount}),0) v` : ''} ${base}`).get(...p); return { n: r.n, v: m.amount ? Math.round(r.v * 100) / 100 : null }; }
     return db.prepare(`SELECT ${m.id || idc} id, ${m.title} title, ${m.sub} sub${m.amount ? `, ${m.amount} amount` : ''}, ${m.date} date ${base} ORDER BY ${m.date} DESC LIMIT 200`).all(...p);
@@ -121,7 +126,53 @@ module.exports = function mountCommand(app, ctx) {
   app.get('/api/admin/command-center/drill/:key', auth, (req, res) => {
     const m = M.find(x => x.key === req.params.key); if (!m) return res.status(404).json({ error: 'Unknown metric.' });
     const d = daysOf(req.query);
-    try { const rows = run(m, d, true), c = run(m, d, false); res.json({ key: m.key, label: m.label, group: m.group, days: d, count: c.n, amount: c.v, view: m.view, open: m.open || null, rows }); }
+    try { const rows = run(m, d, true, req.query), c = run(m, d, false, req.query); res.json({ key: m.key, label: m.label + (req.query.service && m.key === 'collected' ? ' — ' + String(req.query.service).slice(0, 80) : ''), group: m.group, days: d, count: c.n, amount: c.v, view: m.view, open: m.open || null, rows }); }
     catch (e) { res.status(500).json({ error: 'This list is not available: ' + e.message }); }
   });
+  // Collected by service line (period): each bar drills into the matching payments.
+  app.get('/api/admin/command-center/divisions', auth, (req, res) => {
+    const d = daysOf(req.query);
+    try { res.json({ days: d, rows: db.prepare(`SELECT COALESCE(NULLIF(pr.service,''),'Unassigned') service, COUNT(*) n, ROUND(SUM(p.amount),2) collected FROM payments p JOIN invoices i ON i.id=p.invoice_id LEFT JOIN projects pr ON pr.id=i.project_id WHERE p.received_at>=? GROUP BY 1 ORDER BY 3 DESC`).all(since(d).slice(0, 10)) }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ---- Personal preferences (per signed-in user; never business data) ----
+  db.exec('CREATE TABLE IF NOT EXISTS user_prefs(email TEXT NOT NULL, key TEXT NOT NULL, value TEXT, updated_at TEXT, PRIMARY KEY(email, key))');
+  const me = req => String((req.user && req.user.email) || '').toLowerCase();
+  const PREF_KEYS = ['command_center', 'calls_filters', 'leads_filters'];
+  app.get('/api/admin/prefs', auth, (req, res) => { const out = {}; for (const r of db.prepare('SELECT key, value FROM user_prefs WHERE email=?').all(me(req))) { try { out[r.key] = JSON.parse(r.value); } catch { /* */ } } res.json(out); });
+  app.put('/api/admin/prefs/:key', auth, (req, res) => {
+    if (!PREF_KEYS.includes(req.params.key)) return res.status(400).json({ error: 'Unknown preference.' });
+    const v = JSON.stringify(req.body || {}); if (v.length > 4000) return res.status(400).json({ error: 'Preference too large.' });
+    db.prepare('INSERT INTO user_prefs(email,key,value,updated_at) VALUES(?,?,?,?) ON CONFLICT(email,key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at').run(me(req), req.params.key, v, new Date().toISOString());
+    res.json({ ok: true });
+  });
+
+  // ---- Live updates: a server-sent event stream fed by the activity log (written on every business change). ----
+  // Clients receive only "what kind of record changed" (no details), then reload from the authoritative API.
+  const crypto = require('crypto'), tickets = new Map(), clients = new Set();
+  let lastId = (db.prepare('SELECT MAX(id) m FROM audit_log').get() || {}).m || 0;
+  // Also watch key tables directly so changes made outside the admin (website forms, customer decisions, webhooks) are pushed too.
+  const WATCH = [['lead', 'SELECT MAX(id) m FROM leads'], ['call', 'SELECT MAX(id) m FROM calls'], ['estimate', 'SELECT MAX(updated_at) m FROM estimates'], ['issue', 'SELECT MAX(updated_at) m FROM customer_issues'], ['payment', 'SELECT MAX(id) m FROM payments'], ['visit', 'SELECT MAX(updated_at) m FROM visits']];
+  const marks = {}; for (const [k, q] of WATCH) { try { marks[k] = (db.prepare(q).get() || {}).m; } catch { marks[k] = undefined; } }
+  app.post('/api/admin/events/ticket', auth, (req, res) => { const t = crypto.randomBytes(24).toString('hex'); tickets.set(t, { email: me(req), exp: Date.now() + 60000 }); res.json({ ticket: t }); });
+  app.get('/api/admin/events', (req, res) => {
+    const tk = tickets.get(String(req.query.ticket || '')); if (!tk || tk.exp < Date.now()) return res.status(401).end();
+    tickets.delete(String(req.query.ticket));
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' }); res.flushHeaders && res.flushHeaders();
+    res.write(`event: hello\ndata: ${JSON.stringify({ last: lastId })}\n\n`);
+    const c = { res }; clients.add(c); req.on('close', () => clients.delete(c));
+  });
+  const tick = () => {
+    try {
+      const rows = db.prepare('SELECT id, entity, action, entity_id FROM audit_log WHERE id>? ORDER BY id LIMIT 200').all(lastId);
+      const evs = rows.map(r => ({ id: r.id, entity: r.entity, action: r.action, entity_id: r.entity_id }));
+      if (rows.length) lastId = rows[rows.length - 1].id;
+      for (const [k, q] of WATCH) { let v; try { v = (db.prepare(q).get() || {}).m; } catch { continue; } if (v != null && v !== marks[k]) { if (marks[k] !== undefined) evs.push({ entity: k, action: 'changed' }); marks[k] = v; } }
+      if (evs.length) { const msg = `event: change\ndata: ${JSON.stringify(evs)}\n\n`; for (const c of clients) { try { c.res.write(msg); } catch { clients.delete(c); } } }
+      for (const [k, v] of tickets) if (v.exp < Date.now()) tickets.delete(k);
+    } catch { /* table may be busy; next tick */ }
+  };
+  const t1 = setInterval(tick, Number(process.env.EVENTS_POLL_MS || 1500)), t2 = setInterval(() => { for (const c of clients) { try { c.res.write(': keep-alive\n\n'); } catch { clients.delete(c); } } }, 25000);
+  t1.unref && t1.unref(); t2.unref && t2.unref();
 };
