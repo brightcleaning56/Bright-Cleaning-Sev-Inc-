@@ -1451,12 +1451,20 @@
     if (v.next !== v.confirm) { m.className = 'msg err'; m.textContent = 'The new passwords don’t match.'; return; }
     if (v.next.length < 14) { m.className = 'msg err'; m.textContent = 'Use at least 14 characters.'; return; }
     m.className = 'msg'; m.textContent = 'Saving…';
-    try { const r = await api('/api/admin/account/password', { method: 'POST', json: { current: v.current, next: v.next } }); e.target.reset(); m.className = 'msg ok'; m.textContent = r.message; }
+    try { const r = await api('/api/admin/account/password', { method: 'POST', json: { current: v.current, next: v.next } }); if (r.token) { token = r.token; localStorage.setItem(TOKEN_KEY, token); } e.target.reset(); m.className = 'msg ok'; m.textContent = r.message; }
     catch (err) { m.className = 'msg err'; m.textContent = err.message; }
   });
 
   async function loadSettings() {
+    addSignOutEverywhere();
     await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings()]);
+  }
+  function addSignOutEverywhere() {
+    const pm = document.getElementById('pwMsg'); if (!pm || document.getElementById('soEverywhere')) return;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost'; b.id = 'soEverywhere'; b.textContent = 'Sign out all other devices'; b.style.marginLeft = '8px';
+    pm.parentNode.insertBefore(b, pm);
+    b.onclick = async () => { if (!confirm('Sign out every other device and browser using your account? This device stays signed in.')) return;
+      try { const r = await api('/api/admin/account/sign-out-everywhere', { method: 'POST', json: {} }); if (r.token) { token = r.token; localStorage.setItem(TOKEN_KEY, token); } pm.className = 'msg ok'; pm.textContent = r.message; } catch (e) { pm.className = 'msg err'; pm.textContent = e.message; } };
   }
   async function loadPhoneSettings() {
     let card = document.getElementById('phoneCard');
