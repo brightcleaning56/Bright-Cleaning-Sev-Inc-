@@ -138,6 +138,7 @@ require('./docs2')(app,{db,auth,logAction,clean,adminEmail,upload,uploadDir});
 require('./engine')(app,{db,auth,logAction,clean});
 require('./contracts2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./calls2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
+require('./complaints')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public')));

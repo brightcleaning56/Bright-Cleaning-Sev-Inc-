@@ -389,10 +389,11 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       const t = now(), id = db.prepare(`INSERT INTO customer_issues(customer_id,type,title,description,priority,status,customer_comms,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'Open','Needs update','AI receptionist',?,?)`)
         .run(sess.customer_id, 'complaint', ('Phone complaint: ' + str(inp.summary, 150)).slice(0, 200), str(inp.summary, 2000) + `\n\nTaken by the AI receptionist from ${sess.caller}.`, inp.urgent ? 'Urgent' : 'High', t, t).lastInsertRowid;
       db.prepare('UPDATE ai_call_sessions SET issue_id=? WHERE call_sid=?').run(id, sess.call_sid); sess.issue_id = id;
+      try { const mk = app.locals.createComplaintCase; if (mk) mk({ source_type: 'AI phone call', source_key: 'issue:' + id, issue_id: id, customer_id: sess.customer_id, description: str(inp.summary, 2000), severity: inp.urgent ? 'Urgent' : 'High', actor: 'AI receptionist' }); } catch (e) { console.error('complaint case:', e.message); }
       db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('AI receptionist', 'created', 'complaint', id, `from call ${sess.call_sid}`, t);
       const m = getMailer && getMailer(), to = process.env.NOTIFY_EMAIL || adminEmail;
       if (m && to) m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || adminEmail, to, subject: `${inp.urgent ? 'URGENT ' : ''}Complaint by phone: ${str(inp.summary, 80)}`, text: `The AI receptionist logged a complaint from ${sess.caller}:\n\n${str(inp.summary, 2000)}\n\nOpen Issues in the admin to follow up.` }).catch(() => {});
-      return 'Complaint logged and a manager notified.';
+      return 'Complaint logged as a quality case and the quality manager notified.';
     }
     if (name === 'request_callback') { const cb = [str(inp.reason, 300), inp.preferred_time && 'Preferred: ' + str(inp.preferred_time, 100)].filter(Boolean).join(' — '); sess.callback = sess.callback ? sess.callback + ' | ' + cb : cb; db.prepare('UPDATE ai_call_sessions SET callback=? WHERE call_sid=?').run(sess.callback, sess.call_sid); return 'Callback arranged for today.'; }
     return 'Unknown action.';
