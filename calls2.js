@@ -38,6 +38,8 @@ module.exports = function mountCalls(app, ctx) {
   db.exec('CREATE TABLE IF NOT EXISTS call_transcript_parts(id INTEGER PRIMARY KEY AUTOINCREMENT, call_sid TEXT NOT NULL, seq INTEGER, track TEXT, text TEXT, at TEXT, UNIQUE(call_sid, seq))');
   const transcribeOn = () => String(process.env.TWILIO_TRANSCRIBE || 'on').toLowerCase() !== 'off';
   const liveTranscribe = () => transcribeOn() ? `<Start><Transcription statusCallbackUrl="${base()}/api/webhooks/twilio/live-transcript" track="both_tracks" languageCode="en-US" partialResults="false"/></Start>` : '';
+  db.exec('CREATE TABLE IF NOT EXISTS call_recordings_pending(call_sid TEXT PRIMARY KEY, url TEXT NOT NULL, at TEXT)');
+  function attachPendingRecording(sid) { const p = db.prepare('SELECT url FROM call_recordings_pending WHERE call_sid=?').get(sid); if (!p) return; const c = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid); if (!c) return; db.prepare('UPDATE calls SET recording_url=COALESCE(recording_url,?) WHERE id=?').run(p.url, c.id); db.prepare('DELETE FROM call_recordings_pending WHERE call_sid=?').run(sid); }
   function mergeTranscript(sid) {
     const c = db.prepare('SELECT id, direction, transcript FROM calls WHERE provider_sid=?').get(sid); if (!c) return;
     const parts = db.prepare('SELECT track, text FROM call_transcript_parts WHERE call_sid=? ORDER BY seq, id').all(sid); if (!parts.length) return;
@@ -66,7 +68,7 @@ module.exports = function mountCalls(app, ctx) {
     const inbound = String(b.Direction || 'inbound').startsWith('inbound'), other = inbound ? b.From : b.To;
     const st = String(b.CallStatus || ''), outcome = st === 'completed' ? 'Answered' : ['no-answer', 'busy', 'canceled', 'failed'].includes(st) ? 'Missed' : null;
     if (!outcome) return res.type('text/xml').send('<Response/>');
-    res.on('finish', () => { try { mergeTranscript(clean(b.CallSid, 64)); } catch { /* */ } });
+    res.on('finish', () => { try { mergeTranscript(clean(b.CallSid, 64)); attachPendingRecording(clean(b.CallSid, 64)); } catch { /* */ } });
     const cu = matchCustomer(other), dur = Math.max(0, Math.trunc(Number(b.CallDuration) || 0));
     const cur = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid);
     if (cur) db.prepare("UPDATE calls SET outcome=CASE WHEN outcome IN ('Missed','Voicemail','No answer','Busy') THEN outcome WHEN outcome IN ('Answered') AND source IN ('Click-to-call','Browser') THEN outcome WHEN source IN ('Click-to-call','Browser') AND ?='Missed' THEN 'Missed' WHEN source IN ('Click-to-call','Browser') THEN outcome ELSE ? END, duration_s=CASE WHEN source IN ('Click-to-call','Browser') AND duration_s IS NOT NULL THEN duration_s ELSE ? END WHERE id=?").run(outcome, outcome, dur, cur.id);
@@ -107,8 +109,10 @@ module.exports = function mountCalls(app, ctx) {
   }));
   // Recording + transcription callbacks attach to the call by CallSid.
   app.post('/api/webhooks/twilio/recording', hook((req, res) => {
-    const b = req.body || {}, c = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(clean(b.CallSid, 64)); if (!c) return res.status(404).send('unknown call');
-    const url = String(b.RecordingUrl || ''); if (!/^https:\/\/api\.twilio\.com\//.test(url)) return res.status(400).send('bad recording url');
+    const b = req.body || {}, sid = clean(b.CallSid, 64), c = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid);
+    const url = String(b.RecordingUrl || ''), testBase = process.env.NODE_ENV !== 'production' && process.env.TWILIO_API_BASE ? process.env.TWILIO_API_BASE.replace(/\/$/, '') + '/' : null;
+    if (!/^https:\/\/api\.twilio\.com\//.test(url) && !(testBase && url.startsWith(testBase))) return res.status(400).send('bad recording url');
+    if (!c) { if (sid) db.prepare('INSERT OR REPLACE INTO call_recordings_pending(call_sid,url,at) VALUES(?,?,?)').run(sid, url.slice(0, 400), now()); return res.type('text/xml').send('<Response/>'); }
     db.prepare('UPDATE calls SET recording_url=? WHERE id=?').run(url.slice(0, 400), c.id); res.type('text/xml').send('<Response/>');
   }));
   app.post('/api/webhooks/twilio/transcription', hook((req, res) => {
@@ -263,5 +267,19 @@ module.exports = function mountCalls(app, ctx) {
     for (const id of ids) up.run(cu.id, cu.name || null, cu.company || null, id);
     logAction(req, 'linked calls', 'customer', cu.id, `${ids.length} call(s) from ${phone}`);
     res.status(created ? 201 : 200).json({ customer: cu, created, linked_calls: ids.length });
+  });
+  // ---- Play a call recording / voicemail inside the admin: the server fetches it from Twilio with the account credentials. ----
+  app.get('/api/admin/calls/:id/recording', auth, async (req, res) => {
+    const c = db.prepare('SELECT id, recording_url FROM calls WHERE id=?').get(Number(req.params.id)); if (!c || !c.recording_url) return res.status(404).json({ error: 'No recording on this call.' });
+    if (!token() || !acctSid()) return res.status(503).json({ error: 'Phone is not connected, so recordings cannot be played.' });
+    let u; try { u = new URL(c.recording_url); } catch { return res.status(400).json({ error: 'Bad recording address.' }); }
+    const testHost = process.env.NODE_ENV !== 'production' && process.env.TWILIO_API_BASE ? new URL(process.env.TWILIO_API_BASE).host : null;
+    if (!(u.protocol === 'https:' && u.host === 'api.twilio.com') && u.host !== testHost) return res.status(400).json({ error: 'Recordings are only played from Twilio.' });
+    try {
+      const r = await fetch(c.recording_url.replace(/\.(mp3|wav)$/i, '') + '.mp3', { headers: { Authorization: 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64') } });
+      if (!r.ok) return res.status(r.status === 404 ? 404 : 502).json({ error: r.status === 404 ? 'Twilio no longer has this recording (it may have been deleted).' : 'Twilio did not return the recording (' + r.status + ').' });
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.set({ 'Content-Type': 'audio/mpeg', 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=3600', 'Content-Disposition': `inline; filename="call-${c.id}.mp3"` }).send(buf);
+    } catch (e) { res.status(502).json({ error: 'Could not reach Twilio: ' + e.message }); }
   });
 };
