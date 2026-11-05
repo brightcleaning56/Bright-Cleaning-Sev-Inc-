@@ -184,10 +184,11 @@ module.exports = function mountOps(app, ctx) {
 
   // ---------------- Health ----------------
   const started = Date.now();
+  const BUILD = (() => { try { const b = require('./buildinfo').compute(); return { short: b.fingerprint.slice(0, 12), files: b.files }; } catch { return { short: 'unknown', files: 0 }; } })();
   const health = (req, res) => {
     try {
       db.prepare('SELECT 1').get();
-      res.json({ ok: true, db: 'ok', uptime_s: Math.round((Date.now() - started) / 1000), version });
+      res.json({ ok: true, db: 'ok', uptime_s: Math.round((Date.now() - started) / 1000), version, build: BUILD.short, build_files: BUILD.files });
     } catch (e) { res.status(503).json({ ok: false, db: 'error' }); }
   };
   app.get('/health', health);
