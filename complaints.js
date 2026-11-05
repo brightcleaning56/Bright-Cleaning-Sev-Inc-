@@ -26,7 +26,7 @@ module.exports = function mountComplaints(app, ctx) {
   const setting = (k, d) => { try { const r = db.prepare('SELECT value FROM settings WHERE key=?').get(k); return r ? r.value : d; } catch { return d; } };
   const qualityManager = () => (setting('quality_manager', '') || adminEmail || '').toLowerCase();
   const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(adminEmail || '').toLowerCase(); if (!ow || e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
-  const manager = req => ['owner', 'manager'].includes(roleOf(req));
+  const manager = req => require('./roles').canRunOperations(roleOf(req)); const inspector = req => require('./roles').canInspect(roleOf(req));
   const who = req => (req && req.user && req.user.email) || 'Autopilot';
   const hist = (id, actor, action, prev, next) => db.prepare('INSERT INTO quality_complaint_history(complaint_id,actor,action,prev,next,created_at) VALUES(?,?,?,?,?,?)').run(id, actor, action, prev == null ? null : String(prev), next == null ? null : String(next), now());
   const op = (refId, step, decided_by, status, evidence, owner, due) => db.prepare('INSERT INTO ops_actions(workflow,ref_type,ref_id,step,decided_by,status,owner,due_at,evidence,created_at,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
@@ -76,7 +76,7 @@ module.exports = function mountComplaints(app, ctx) {
   }
   app.locals.createComplaintCase = createCase;
   // Every complaint issue (any source) gets a case; runs often and on demand, idempotent by source key.
-  function sync() {
+  let sync = function () {
     try {
       const rows = db.prepare("SELECT i.* FROM customer_issues i WHERE i.type='complaint' AND NOT EXISTS (SELECT 1 FROM quality_complaints q WHERE q.source_key='issue:'||i.id) ORDER BY i.id LIMIT 50").all();
       for (const i of rows) {
@@ -93,6 +93,20 @@ module.exports = function mountComplaints(app, ctx) {
       }
     } catch (e) { console.error('complaint sync:', e.message); }
   }
+  // Corrective visit done (by the crew on their phone, or marked done by the office) → action completed, case → Reinspection, manager emailed.
+  function reconcileCorrective(by) {
+    const rows = db.prepare("SELECT a.*, v.status vstatus, v.completed_at FROM quality_complaint_actions a JOIN visits v ON v.id=a.ref_id WHERE a.action_type='corrective_visit' AND a.status='Scheduled' AND v.status IN ('Done','Completed')").all();
+    for (const a of rows) {
+      const c = getC(a.complaint_id); if (!c) continue; const t = now();
+      let photos = 0; try { photos = db.prepare("SELECT COUNT(*) n FROM documents WHERE visit_id=? AND kind='Photos'").get(a.ref_id).n; } catch { /* */ }
+      db.prepare("UPDATE quality_complaint_actions SET status='Completed', completed_at=?, notes=? WHERE id=?").run(a.completed_at || t, `completed${by ? ' by ' + by : ''}; ${photos} photo(s)`, a.id);
+      op(c.id, `Corrective cleaning completed (visit #${a.ref_id}${by ? ', ' + by : ''}, ${photos} photo(s))`, 'AI/system', 'done', 'crew completion verified: checklist done' + (photos ? ', photos attached' : ''));
+      if (c.status === 'CORRECTIVE_ACTION') { db.prepare("UPDATE quality_complaints SET status='REINSPECTION', updated_at=? WHERE id=?").run(t, c.id); hist(c.id, 'Autopilot', 'status', c.status, 'REINSPECTION'); }
+      mail(c.assigned_manager, `Reinspect now: ${number(c)} corrective cleaning is done`, `The crew completed the corrective cleaning (visit #${a.ref_id}) with ${photos} photo(s).\nPlease inspect the area and record the reinspection on ${number(c)}.`, c.id);
+    }
+  }
+  app.locals.onVisitDone = (vid, by) => reconcileCorrective(by);
+  const sync0 = sync; sync = function () { sync0(); try { reconcileCorrective(); } catch (e) { console.error('corrective reconcile:', e.message); } };
   const timer = setInterval(sync, Number(process.env.COMPLAINT_SYNC_MS || 20000)); timer.unref && timer.unref(); setTimeout(sync, 1500).unref?.();
   ctx.syncComplaints = sync;
 
@@ -124,7 +138,7 @@ module.exports = function mountComplaints(app, ctx) {
   const block = (res, msg) => res.status(409).json({ error: msg });
   app.post('/api/admin/quality/complaints/:id/stage', auth, (req, res) => {
     const c = getC(Number(req.params.id)); if (!c) return res.status(404).json({ error: 'Complaint not found.' });
-    if (!manager(req)) return res.status(403).json({ error: 'Only an owner or manager can move a complaint between stages.' });
+    if (!manager(req)) return res.status(403).json({ error: 'Only a supervisor, manager or owner can move a complaint between stages.' });
     const b = req.body || {}, to = String(b.to || ''); if (!STAGES.includes(to) && !SIDE.includes(to)) return res.status(400).json({ error: 'Unknown stage.' });
     const set = {};
     if (b.assigned_manager !== undefined) { const m = clean(b.assigned_manager, 254).toLowerCase(); if (m && m !== String(adminEmail).toLowerCase() && !db.prepare('SELECT 1 FROM admin_users WHERE lower(email)=?').get(m)) return res.status(400).json({ error: 'Assign someone who has access to the admin.' }); set.assigned_manager = m || null; }
@@ -153,27 +167,35 @@ module.exports = function mountComplaints(app, ctx) {
     hist(c.id, who(req), 'investigation note', null, text); res.json({ ok: true });
   });
   // Corrective cleaning = a real scheduled visit with crew (manager decision; no money moves).
-  app.post('/api/admin/quality/complaints/:id/corrective', auth, (req, res) => {
+  app.post('/api/admin/quality/complaints/:id/corrective', auth, async (req, res) => {
     const c = getC(Number(req.params.id)); if (!c) return res.status(404).json({ error: 'Complaint not found.' });
-    if (!manager(req)) return res.status(403).json({ error: 'Only an owner or manager can schedule corrective work.' });
+    if (!manager(req)) return res.status(403).json({ error: 'Only a supervisor, manager or owner can schedule corrective work.' });
     if (!String(c.root_cause || '').trim()) return block(res, 'Record the root cause before scheduling corrective work.');
     const b = req.body || {}; if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ''))) return res.status(400).json({ error: 'Choose the date for the corrective cleaning.' });
     const ids = (Array.isArray(b.employee_ids) ? b.employee_ids : []).map(Number).filter(n => n > 0 && db.prepare('SELECT 1 FROM employees WHERE id=?').get(n));
     const t = now(), vid = db.prepare(`INSERT INTO visits(title,type,date,start_time,end_time,address,customer_id,project_id,notes,status,created_by,created_at,updated_at,issue_id) VALUES(?,?,?,?,?,?,?,?,?,'Scheduled',?,?,?,?)`)
       .run(`Corrective cleaning: ${number(c)}`, 'Corrective work', b.date, /^\d{2}:\d{2}$/.test(b.start_time || '') ? b.start_time : null, null, c.property || null, c.customer_id || null, c.project_id || null, `${clean(b.instructions, 2000) || ''}\n\nComplaint ${number(c)}: ${String(c.description || '').slice(0, 500)}\nRoot cause: ${c.root_cause}`.trim(), who(req), t, t, c.source_issue_id || null).lastInsertRowid;
     for (const e of ids) db.prepare('INSERT OR IGNORE INTO visit_crew(visit_id,employee_id,assigned_by,assigned_at) VALUES(?,?,?,?)').run(vid, e, who(req), t);
+    // Crew job: instructions (no prices) + corrective checklist; dispatched now (the manager scheduling it is the approval) and crew emailed their link.
+    const instr = clean(b.instructions, 2000) || '', steps = instr.split(/\n|;/).map(x => x.trim()).filter(Boolean).slice(0, 8);
+    const checklist = ['Review the complaint and the area with these instructions', 'Take BEFORE photos of the problem area', ...steps, 'Take AFTER photos of the corrected area', 'Walk the area: it now meets the cleaning standard'].map(text => ({ text, done: false }));
+    try { db.prepare('UPDATE visits SET instructions=?, checklist=?, dispatched_at=?, dispatched_by=? WHERE id=?').run(`CORRECTIVE CLEANING for complaint ${number(c)}\n${instr}\n\nCustomer complaint: ${String(c.description || '').slice(0, 400)}`, JSON.stringify(checklist), ids.length ? t : null, ids.length ? who(req) : null, vid); } catch (e) { console.error('corrective job fields:', e.message); }
+    let notified = 0; const m = getMailer && getMailer(), site = (process.env.PUBLIC_BASE_URL || 'https://brightclean.net').replace(/\/$/, '');
+    for (const eid of ids) { const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(eid); if (!emp) continue;
+      let tk = emp.token; if (!tk) { tk = require('crypto').randomBytes(24).toString('hex'); try { db.prepare('UPDATE employees SET token=? WHERE id=?').run(tk, eid); } catch { tk = null; } }
+      if (m && emp.email && tk) { try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || adminEmail, to: emp.email, subject: `Corrective cleaning ${b.date}: ${c.property || 'customer site'}`, text: `You're scheduled for a corrective cleaning on ${b.date}${b.start_time ? ' at ' + b.start_time : ''}.\nAddress: ${c.property || 'see the job'}\n\nWhat to fix:\n${instr || 'See the job instructions.'}\n\nBefore and after photos are required. Open your job: ${site}/crew/${tk}` }); notified++; db.prepare('UPDATE visit_crew SET notified_at=? WHERE visit_id=? AND employee_id=?').run(now(), vid, eid); } catch (e) { op(c.id, `Could not email ${emp.name}`, 'policy', 'failed', e.message); } } }
     db.prepare('INSERT INTO quality_complaint_actions(complaint_id,action_type,description,ref_type,ref_id,assigned_to,due_at,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(c.id, 'corrective_visit', `Corrective cleaning on ${b.date}`, 'visit', vid, ids.length ? ids.join(',') : null, b.date, 'Scheduled', t);
     if (!['CORRECTIVE_ACTION'].includes(c.status)) { db.prepare("UPDATE quality_complaints SET status='CORRECTIVE_ACTION', updated_at=? WHERE id=?").run(t, c.id); hist(c.id, who(req), 'status', c.status, 'CORRECTIVE_ACTION'); }
     db.prepare("UPDATE ops_actions SET status='done', resolved_at=?, evidence=COALESCE(evidence,'')||? WHERE ref_type='complaint' AND ref_id=? AND step='Schedule corrective cleaning' AND status='needs_approval'").run(t, ` → approved by ${who(req)}: visit #${vid}`, c.id);
-    op(c.id, `Corrective cleaning scheduled: visit #${vid} on ${b.date}${ids.length ? ` with ${ids.length} crew` : ' (crew not yet assigned)'}`, 'person', 'done', who(req), null, b.date);
+    op(c.id, `Corrective cleaning scheduled: visit #${vid} on ${b.date}${ids.length ? ` with ${ids.length} crew, dispatched, ${notified} emailed` : ' (crew not yet assigned — not dispatched)'}`, 'person', ids.length ? 'done' : 'blocked', who(req), null, b.date);
     op(c.id, 'Reinspection after corrective cleaning', 'policy', 'needs_approval', 'Supervisor inspects the affected area after the visit', c.assigned_manager, b.date);
     hist(c.id, who(req), 'corrective visit', null, `visit #${vid} ${b.date}`); logAction(req, 'scheduled corrective cleaning', 'complaint', c.id, `${number(c)}: visit #${vid}`);
-    res.status(201).json({ visit_id: vid, complaint: view(getC(c.id)) });
+    res.status(201).json({ visit_id: vid, notified, complaint: view(getC(c.id)) });
   });
   // Reinspection: link a QC inspection of the affected area. Failed → back to corrective action (+ notify).
   app.post('/api/admin/quality/complaints/:id/reinspection', auth, (req, res) => {
     const c = getC(Number(req.params.id)); if (!c) return res.status(404).json({ error: 'Complaint not found.' });
-    if (!manager(req)) return res.status(403).json({ error: 'Only an owner or manager can record reinspections.' });
+    if (!inspector(req)) return res.status(403).json({ error: 'Only an inspector, supervisor or manager can record reinspections.' });
     const insp = db.prepare('SELECT * FROM inspections WHERE id=?').get(Number((req.body || {}).inspection_id)); if (!insp) return res.status(404).json({ error: 'Inspection not found.' });
     if (!insp.signed_at) return block(res, 'The inspection must be completed and signed first.');
     const t = now(), passed = insp.passed === 1;

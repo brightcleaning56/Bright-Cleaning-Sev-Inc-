@@ -152,7 +152,20 @@ module.exports = function mountAdminExt(app, ctx) {
   // Customers are served by ops.js (persistent customer directory).
 
   // ---------- Account & users ----------
-  app.get('/api/admin/me', auth, (req, res) => res.json({ email: req.user && req.user.email }));
+  app.get('/api/admin/me', auth, (req, res) => { const R = require('./roles'), e = req.user && req.user.email, ow = String(adminEmail || '').toLowerCase(); const role = !ow || String(e || '').toLowerCase() === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(String(e || '').toLowerCase()) || {}).role || 'staff');
+    const nm = role === 'owner' && String(e || '').toLowerCase() === ow ? ownerName() : ((db.prepare('SELECT name FROM admin_users WHERE lower(email)=?').get(String(e || '').toLowerCase()) || {}).name || '');
+    res.json({ email: e, name: nm, role, label: (R.ROLES[role] || {}).label || role, views: R.VIEWS[role] || null, home: R.HOME[role] || 'overview', sees_money: R.seesMoney(role) }); });
+  const ownerName = () => { try { const r = db.prepare("SELECT value FROM settings WHERE key='owner_name'").get(); return (r && r.value) || process.env.ADMIN_NAME || 'Owner'; } catch { return process.env.ADMIN_NAME || 'Owner'; } };
+  // Each person sets their own display name (owner account from the environment is stored in settings).
+  app.put('/api/admin/account/name', auth, (req, res) => {
+    const name = clean((req.body || {}).name, 120); if (!name) return res.status(400).json({ error: 'Enter your name.' });
+    const e = String((req.user && req.user.email) || '').toLowerCase();
+    const row = db.prepare('SELECT id FROM admin_users WHERE lower(email)=?').get(e);
+    if (row) db.prepare('UPDATE admin_users SET name=? WHERE id=?').run(name, row.id);
+    if (e === String(adminEmail || '').toLowerCase()) { db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)'); db.prepare("INSERT INTO settings(key,value,updated_at) VALUES('owner_name',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(name, new Date().toISOString()); }
+    logAction(req, 'updated display name', 'account', row ? row.id : 0, name); res.json({ ok: true, name });
+  });
+  app.get('/api/admin/roles', auth, (req, res) => res.json({ roles: Object.entries(require('./roles').ROLES).map(([key, v]) => ({ key, ...v })) }));
 
   app.post('/api/admin/account/password', auth, async (req, res) => {
     const email = req.user && req.user.email;
@@ -181,11 +194,11 @@ module.exports = function mountAdminExt(app, ctx) {
     const rows = db.prepare('SELECT id,email,name,role,created_at,last_login_at FROM admin_users ORDER BY id').all();
     const envListed = adminEmail && !rows.some(r => r.email === adminEmail);
     res.json({ me: { email: req.user && req.user.email, role: roleOf(req.user && req.user.email) }, can_manage_roles: roleOf(req.user && req.user.email) === 'owner',
-      users: [...(envListed ? [{ id: 0, email: adminEmail, name: 'Owner', role: 'owner', env_owner: true, created_at: '', last_login_at: '', owner: true }] : []), ...rows.map(r => ({ ...r, role: r.email === adminEmail ? 'owner' : r.role, env_owner: r.email === adminEmail, owner: r.email === adminEmail }))] });
+      users: [...(envListed ? [{ id: 0, email: adminEmail, name: ownerName(), role: 'owner', env_owner: true, created_at: '', last_login_at: '', owner: true }] : []), ...rows.map(r => ({ ...r, role: r.email === adminEmail ? 'owner' : r.role, env_owner: r.email === adminEmail, owner: r.email === adminEmail }))] });
   });
   app.patch('/api/admin/users/:id/role', auth, (req, res) => {
     if (roleOf(req.user && req.user.email) !== 'owner') return res.status(403).json({ error: 'Only an owner can change roles.' });
-    const role = String((req.body || {}).role || ''); if (!['owner', 'manager', 'staff'].includes(role)) return res.status(400).json({ error: 'Choose owner, manager or staff.' });
+    const role = String((req.body || {}).role || ''); if (!require('./roles').isRole(role)) return res.status(400).json({ error: 'Choose a valid role: owner, manager, supervisor, inspector or staff.' });
     const u = db.prepare('SELECT * FROM admin_users WHERE id=?').get(Number(req.params.id)); if (!u) return res.status(404).json({ error: 'User not found.' });
     if (u.email === adminEmail) return res.status(400).json({ error: 'The main owner account is always an owner.' });
     db.prepare('UPDATE admin_users SET role=? WHERE id=?').run(role, u.id);
@@ -200,7 +213,8 @@ module.exports = function mountAdminExt(app, ctx) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
     if (password.length < 14) return res.status(400).json({ error: 'Temporary password must be at least 14 characters.' });
     if (email === adminEmail || db.prepare('SELECT id FROM admin_users WHERE email=?').get(email)) return res.status(409).json({ error: 'That email already has access.' });
-    const r = db.prepare('INSERT INTO admin_users(email,name,password_hash,created_at) VALUES(?,?,?,?)').run(email, name, await bcrypt.hash(password, 12), new Date().toISOString());
+    const newRole = String((req.body || {}).role || 'staff'); if (!require('./roles').isRole(newRole) || newRole === 'owner') return res.status(400).json({ error: 'Choose a role: manager, supervisor, inspector or staff (owners are set by changing a role).' });
+    const r = db.prepare('INSERT INTO admin_users(email,name,password_hash,created_at,role) VALUES(?,?,?,?,?)').run(email, name, await bcrypt.hash(password, 12), new Date().toISOString(), newRole);
     logAction(req, 'added user', 'account', r.lastInsertRowid, email);
     res.status(201).json({ id: r.lastInsertRowid });
   });

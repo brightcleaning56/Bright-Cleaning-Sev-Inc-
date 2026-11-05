@@ -2,6 +2,7 @@
 // "not connected" with what is required, instead of showing sample data.
 module.exports = function mountCommand(app, ctx) {
   const { db, auth } = ctx;
+  const roleOfReq = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; return ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e) || {}).role) || 'staff'; };
 
   db.exec(`CREATE TABLE IF NOT EXISTS payments(
     id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, amount REAL NOT NULL, note TEXT,
@@ -127,11 +128,13 @@ module.exports = function mountCommand(app, ctx) {
     return db.prepare(`SELECT ${m.id || idc} id, ${m.title} title, ${m.sub} sub${m.amount ? `, ${m.amount} amount` : ''}, ${m.date} date ${base} ORDER BY ${m.date} DESC LIMIT 200`).all(...p);
   };
   app.get('/api/admin/command-center/metrics', auth, (req, res) => {
+    const _rl = roleOfReq(req), _x = (() => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; return ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e) || {}).role) || 'staff'; })(), _money = require('./roles').seesMoney(_rl);
     const d = daysOf(req.query), out = [];
     for (const m of M) { try { const r = run(m, d, false); out.push({ key: m.key, group: m.group, label: m.label, count: r.n, amount: r.v, alert: !!m.alert && r.n > 0, period: !!m.period, view: m.view }); } catch (e) { out.push({ key: m.key, group: m.group, label: m.label, error: 'Not available: ' + e.message.slice(0, 80) }); } }
-    res.json({ days: d, as_of: new Date().toISOString(), today: bd(), metrics: out });
+    res.json({ days: d, as_of: new Date().toISOString(), today: bd(), metrics: _money ? out : out.filter(x => !['Finance', 'Management', 'Sales'].includes(x.group)) });
   });
   app.get('/api/admin/command-center/drill/:key', auth, (req, res) => {
+    { const mm = M.find(x => x.key === req.params.key); if (mm && ['Finance', 'Management', 'Sales'].includes(mm.group) && !require('./roles').seesMoney(roleOfReq(req))) return res.status(403).json({ error: 'This figure is limited to roles that handle sales and finance.' }); }
     const m = M.find(x => x.key === req.params.key); if (!m) return res.status(404).json({ error: 'Unknown metric.' });
     const d = daysOf(req.query);
     try { const rows = run(m, d, true, req.query), c = run(m, d, false, req.query); res.json({ key: m.key, label: m.label + (req.query.service && m.key === 'collected' ? ' — ' + String(req.query.service).slice(0, 80) : ''), group: m.group, days: d, count: c.n, amount: c.v, view: m.view, open: m.open || null, rows }); }

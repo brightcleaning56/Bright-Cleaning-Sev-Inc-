@@ -98,7 +98,7 @@ module.exports = function mountSched(app, ctx) {
   });
   // The crew link is only shown to owners/managers (it grants access to the crew page).
   app.get('/api/admin/employees/:id/link', auth, (req, res) => {
-    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only owners and managers can see crew links.' });
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can see crew links.' });
     const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
     res.json({ url: `/crew/${e.token}` });
   });
@@ -172,7 +172,7 @@ module.exports = function mountSched(app, ctx) {
   });
   app.post('/api/admin/dispatch/visits/:id/dispatch', auth, async (req, res) => {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
-    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can dispatch crews.' });
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only an owner, manager or supervisor can dispatch crews.' });
     const crew = crewOf(v.id); if (!crew.length) return res.status(409).json({ error: 'Assign at least one crew member before dispatching.' });
     if (v.status === 'Tentative') return res.status(409).json({ error: 'This work order is still tentative: the project needs dispatch approval first.' });
     if (v.project_id) { const p = db.prepare('SELECT status, dispatch_approved_by FROM projects WHERE id=?').get(v.project_id); if (p && !p.dispatch_approved_by && p.status === 'Planning') return res.status(409).json({ error: 'The project is still in Planning: approve dispatch on the project first.' }); }
@@ -255,7 +255,8 @@ module.exports = function mountSched(app, ctx) {
           crew: crewOf(v.id).map(x => x.name), access: near ? (site.access || '') : 'Shown the day before the job.', site_contact: near ? (site.contact || '') : '', safety: site.safety || '', arrived_at: v.arrived_at, completed_at: v.completed_at };
       }) });
   });
-  app.post('/api/crew/:token/jobs/:vid/:action', async (req, res) => {
+  app.post('/api/crew/:token/jobs/:vid/:action', async (req, res, next) => {
+    if (req.params.action === 'photos') return next(); // photo uploads have their own route below (was unreachable: D-22)
     const e = crewAuth(req, res); if (!e) return;
     const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' });
     const a = req.params.action, t = now();
@@ -284,9 +285,11 @@ module.exports = function mountSched(app, ctx) {
     if (a === 'complete') {
       const list = J(v.checklist, []), left = list.filter(x => !x.done).length;
       if (left) return res.status(409).json({ error: `${left} checklist item(s) are not done yet.` });
+      if (v.type === 'Corrective work') { let n = 0; try { n = db.prepare("SELECT COUNT(*) n FROM documents WHERE visit_id=? AND kind='Photos' AND title LIKE 'After –%'").get(v.id).n; } catch { n = 0; } if (!n) return res.status(409).json({ error: 'Take at least one AFTER photo of the corrected area before completing this job.' }); }
       const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND visit_id=? AND clock_out IS NULL').get(e.id, v.id); if (open) closeEntry(open, t, 'crew');
       db.prepare("UPDATE visits SET status='Done', completed_at=?, departed_at=COALESCE(departed_at,?), updated_at=? WHERE id=?").run(t, t, t, v.id);
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'completed', 'visit', v.id, v.title, t);
+      try { if (app.locals.onVisitDone) app.locals.onVisitDone(v.id, e.name); } catch (err) { console.error('visit done hook:', err.message); }
       return res.json({ ok: true });
     }
     if (a === 'incident') {
@@ -309,8 +312,9 @@ module.exports = function mountSched(app, ctx) {
     app.post('/api/crew/:token/jobs/:vid/photos', (req, res, next) => { const e = crewAuth(req, res); if (!e) return; const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); req.crewEmp = e; req.crewVisit = v; next(); }, up.array('photos', 6), require('./filecheck').verifyUploads, (req, res) => {
       const files = req.files || []; if (!files.length) return res.status(400).json({ error: 'Choose at least one photo.' });
       const stage = ['Before', 'After', 'Issue'].includes(req.body.stage) ? req.body.stage : 'After', t = now();
-      const ids = files.map(f => db.prepare('INSERT INTO documents(project_id,customer_id,title,kind,file_name,file_url,size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
-        .run(req.crewVisit.project_id || null, req.crewVisit.customer_id || null, `${stage} – ${req.crewVisit.title} ${req.crewVisit.date}`, 'Photos', f.originalname, '/api/files/' + path.basename(f.path), f.size, 'crew: ' + req.crewEmp.name, t).lastInsertRowid);
+      try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* */ }
+      const ids = files.map(f => db.prepare('INSERT INTO documents(project_id,customer_id,title,kind,file_name,file_url,size,uploaded_by,created_at,visit_id) VALUES(?,?,?,?,?,?,?,?,?,?)')
+        .run(req.crewVisit.project_id || null, req.crewVisit.customer_id || null, `${stage} – ${req.crewVisit.title} ${req.crewVisit.date}`, 'Photos', f.originalname, '/api/files/' + path.basename(f.path), f.size, 'crew: ' + req.crewEmp.name, t, req.crewVisit.id).lastInsertRowid);
       res.status(201).json({ ids });
     });
   } catch (err) { console.error('crew photo upload disabled:', err.message); }
