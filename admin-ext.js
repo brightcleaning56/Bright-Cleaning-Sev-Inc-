@@ -198,7 +198,7 @@ module.exports = function mountAdminExt(app, ctx) {
   });
   app.patch('/api/admin/users/:id/role', auth, (req, res) => {
     if (roleOf(req.user && req.user.email) !== 'owner') return res.status(403).json({ error: 'Only an owner can change roles.' });
-    const role = String((req.body || {}).role || ''); if (!require('./roles').isRole(role)) return res.status(400).json({ error: 'Choose a valid role: owner, manager, supervisor, inspector or staff.' });
+    const role = String((req.body || {}).role || ''); if (!require('./roles').isRole(role)) return res.status(400).json({ error: 'Choose a valid role: owner, manager, supervisor, inspector, sales or staff.' });
     const u = db.prepare('SELECT * FROM admin_users WHERE id=?').get(Number(req.params.id)); if (!u) return res.status(404).json({ error: 'User not found.' });
     if (u.email === adminEmail) return res.status(400).json({ error: 'The main owner account is always an owner.' });
     db.prepare('UPDATE admin_users SET role=? WHERE id=?').run(role, u.id);
@@ -213,7 +213,7 @@ module.exports = function mountAdminExt(app, ctx) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
     if (password.length < 14) return res.status(400).json({ error: 'Temporary password must be at least 14 characters.' });
     if (email === adminEmail || db.prepare('SELECT id FROM admin_users WHERE email=?').get(email)) return res.status(409).json({ error: 'That email already has access.' });
-    const newRole = String((req.body || {}).role || 'staff'); if (!require('./roles').isRole(newRole) || newRole === 'owner') return res.status(400).json({ error: 'Choose a role: manager, supervisor, inspector or staff (owners are set by changing a role).' });
+    const newRole = String((req.body || {}).role || 'staff'); if (!require('./roles').isRole(newRole) || newRole === 'owner') return res.status(400).json({ error: 'Choose a role: manager, supervisor, inspector, sales or staff (owners are set by changing a role).' });
     const r = db.prepare('INSERT INTO admin_users(email,name,password_hash,created_at,role) VALUES(?,?,?,?,?)').run(email, name, await bcrypt.hash(password, 12), new Date().toISOString(), newRole);
     logAction(req, 'added user', 'account', r.lastInsertRowid, email);
     res.status(201).json({ id: r.lastInsertRowid });

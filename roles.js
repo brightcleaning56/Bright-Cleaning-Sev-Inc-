@@ -6,21 +6,30 @@ const ROLES = {
   manager: { label: 'Manager', desc: 'All operations, approvals and finance. Cannot manage users, roles or backups.' },
   supervisor: { label: 'Supervisor', desc: 'Field operations: schedule and dispatch, quality and complaints (corrective work, reinspections), issues, calls, projects, customers and documents. No pricing, proposals, contracts, invoices or financial reports.' },
   inspector: { label: 'Inspector', desc: 'Quality only: inspections, reinspections and complaint notes, with read-only schedule, customers and documents.' },
+  sales: { label: 'Sales', desc: 'Leads, customers, estimates and proposals, contracts, calls, email and documents. No invoices, payments, financial reports, settings or user management.' },
   staff: { label: 'Office staff', desc: 'Day-to-day office work. Approvals, payments, financial reports and settings stay with managers.' }
 };
 const ALL_VIEWS = null; // null = every page
 const VIEWS = {
   owner: ALL_VIEWS, manager: ALL_VIEWS, staff: ALL_VIEWS,
   supervisor: ['overview', 'issues', 'calls', 'customers', 'schedule', 'quality', 'projects', 'documents', 'scopes', 'settings'],
-  inspector: ['quality', 'schedule', 'customers', 'documents', 'settings']
+  inspector: ['quality', 'schedule', 'customers', 'documents', 'settings'],
+  sales: ['overview', 'leads', 'customers', 'proposals', 'contracts', 'projects', 'calls', 'emails', 'issues', 'documents', 'scopes', 'takeoffs']
 };
-const HOME = { inspector: 'quality' };
+const HOME = { inspector: 'quality', sales: 'leads' };
 // Supervisor: everything a staff member may do EXCEPT money, sales and system administration.
 const SUPERVISOR_DENY = [
   /^\/api\/admin\/(invoices|next-invoice-number|financial-summary|estimates|bids|leads|approvals|approval-rules|templates|contracts|contracts2|takeoffs|emails|inbox|email-undeliverable|reports|ai|ai-receptionist|automation|backups|users|system-health|audit-log|m365)(\/|$)/,
   /^\/api\/admin\/(dashboard|command-center|command-center\/divisions)$/,
   /^\/api\/admin\/pm\/.*cost/, /^\/api\/admin\/customers\/\d+\/(invoices|billing|statement)/,
   [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(settings|phone\/settings|phone\/callback-owner|issues\/config|quality\/settings)(\/|$)/]
+];
+// Sales: sales work (leads, estimates, proposals, contracts, calls, email). Refused: money, finance, settings and people admin.
+const SALES_DENY = [
+  /^\/api\/admin\/(invoices|next-invoice-number|financial-summary|reports|audit-log|backups|users|system-health|automation|ai-receptionist|approval-rules|dashboard)(\/|$)/,
+  /^\/api\/admin\/pm\/.*cost/, /^\/api\/admin\/customers\/\d+\/(invoices|billing|statement)/,
+  /^\/api\/admin\/settings(\/|$)/, /^\/api\/admin\/(ai\/settings|automation\/ai-settings)(\/|$)/,
+  [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(phone\/settings|phone\/callback-owner|issues\/config|quality\/settings)(\/|$)/]
 ];
 // Inspector: an explicit allow-list; anything not listed is refused.
 const INSPECTOR_ALLOW = [
@@ -35,6 +44,10 @@ function check(role, method, path) {
     for (const r of SUPERVISOR_DENY) { const [m, p] = Array.isArray(r) ? r : [null, r]; if ((!m || m.test(method)) && p.test(path)) return 'Supervisors do not have access to this (pricing, sales, finance and system settings stay with managers).'; }
     return null;
   }
+  if (role === 'sales') {
+    for (const r of SALES_DENY) { const [m, p] = Array.isArray(r) ? r : [null, r]; if ((!m || m.test(method)) && p.test(path)) return 'Sales does not have access to this (invoices, finance, settings and user administration stay with managers).'; }
+    return null;
+  }
   if (role === 'inspector') return INSPECTOR_ALLOW.some(([m, p]) => m.test(method) && p.test(path)) ? null : 'Inspectors only have access to quality and inspections.';
   return null;
 }
@@ -42,5 +55,5 @@ const isRole = r => Object.prototype.hasOwnProperty.call(ROLES, r);
 // Operational authority (dispatch crews, move complaint cases, schedule corrective work).
 const canRunOperations = r => ['owner', 'manager', 'supervisor'].includes(r);
 const canInspect = r => ['owner', 'manager', 'supervisor', 'inspector'].includes(r);
-const seesMoney = r => ['owner', 'manager', 'staff'].includes(r);
+const seesMoney = r => ['owner', 'manager', 'staff'].includes(r); // sales figures (Command Center money) stay with managers and office staff
 module.exports = { ROLES, VIEWS, HOME, check, isRole, canRunOperations, canInspect, seesMoney };

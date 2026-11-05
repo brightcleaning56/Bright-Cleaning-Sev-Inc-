@@ -197,6 +197,7 @@
   function signOut(message) { try { if (es) { es.close(); es = null; } } catch { /* */ }
     token = null;
     localStorage.removeItem(TOKEN_KEY);
+    try { $('#tbName').textContent = '—'; $('#tbRole').textContent = ''; } catch { /* */ }
     closeDrawer();
     $('#app').hidden = true;
     $('#login').hidden = false;
@@ -1591,7 +1592,7 @@
   async function loadUsers() {
     const r = await api('/api/admin/users'), users = r.users || [], canRoles = !!r.can_manage_roles;
     const me = $('#whoEmail').textContent;
-    $('#userList').innerHTML = users.map(u => `<div class="userrow"><span><b>${esc(u.name || u.email)}</b><small>${esc(u.email)} · ${esc(u.role ? u.role[0].toUpperCase() + u.role.slice(1) : (u.owner ? 'Owner' : 'Staff'))}${u.role !== 'staff' ? ' (can approve proposals)' : ''}${u.last_login_at ? ' · last signed in ' + esc(ago(u.last_login_at)) : ''}</small></span>${u.id && !u.env_owner ? `<select data-role="${u.id}" aria-label="Role for ${esc(u.email)}"${canRoles ? '' : ' disabled'}>${['owner', 'manager', 'supervisor', 'inspector', 'staff'].map(r => `<option value="${r}"${u.role === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select>` : ''}${!u.owner && u.email !== me && u.id ? `<button class="btn small danger" data-deluser="${u.id}" data-email="${esc(u.email)}">Remove</button>` : ''}</div>`).join('');
+    $('#userList').innerHTML = users.map(u => `<div class="userrow"><span><b>${esc(u.name || u.email)}</b><small>${esc(u.email)} · ${esc(u.role ? u.role[0].toUpperCase() + u.role.slice(1) : (u.owner ? 'Owner' : 'Staff'))}${['owner', 'manager'].includes(u.role) ? ' (can approve proposals)' : ''}${u.last_login_at ? ' · last signed in ' + esc(ago(u.last_login_at)) : ''}</small></span>${u.id && !u.env_owner ? `<select data-role="${u.id}" aria-label="Role for ${esc(u.email)}"${canRoles ? '' : ' disabled'}>${['owner', 'manager', 'supervisor', 'inspector', 'sales', 'staff'].map(r => `<option value="${r}"${u.role === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select>` : ''}${!u.owner && u.email !== me && u.id ? `<button class="btn small danger" data-deluser="${u.id}" data-email="${esc(u.email)}">Remove</button>` : ''}</div>`).join('');
     $$('[data-role]').forEach(sel => sel.onchange = async () => { try { await api(`/api/admin/users/${sel.dataset.role}/role`, { method: 'PATCH', json: { role: sel.value } }); toast('Role updated'); loadUsers(); } catch (err) { toast(err.message, true); loadUsers(); } });
     $$('[data-deluser]').forEach(b => b.onclick = async () => {
       if (!confirm(`Remove access for ${b.dataset.email}?`)) return;
@@ -1659,15 +1660,15 @@
   $$('.tbicons [data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
   const kt = (icon, tone, label, value, sub) => `<div class="ktile"><span class="chip ${tone}">${ic(icon)}</span><div style="min-width:0"><span>${esc(label)}</span><b>${esc(value)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div></div>`;
   async function loadTopbar() {
-    try {
-      const [u, iss, mail, calls] = await Promise.all([api('/api/admin/users'), api('/api/admin/issues?status=open'), api('/api/admin/emails'), api('/api/admin/calls')]);
-      const role = (u.me && u.me.role) || 'staff', me = (u.users || []).find(x => x.email === (u.me && u.me.email)) || {};
-      $('#tbName').textContent = me.name && me.name !== 'Owner' ? me.name : (u.me && u.me.email) || '';
-      $('#tbRole').textContent = { owner: 'Owner', manager: 'Manager', staff: 'Staff' }[role] || role;
-      const alerts = (iss.issues || []).filter(i => i.type === 'complaint' || i.overdue).length;
-      const setDot = (id, n) => { $(id).hidden = !n; $(id).textContent = n > 99 ? '99+' : n; };
-      setDot('#tbAlerts', alerts); setDot('#tbMail', mail.summary ? mail.summary.failed_30d : 0); setDot('#tbCalls', calls.follow_ups_due || 0);
-    } catch { /* top bar is optional */ }
+    // Identity comes from /me for the signed-in account, so it can never show someone else's name or role.
+    try { const me = await api('/api/admin/me'); $('#tbName').textContent = me.name && me.name !== 'Owner' ? me.name : me.email || ''; $('#tbRole').textContent = me.label || me.role || ''; } catch { /* identity is optional here */ }
+    // Badges load separately: a role that cannot see one of these (e.g. inspectors have no issues or email) just shows no badge.
+    const get = p => api(p).catch(() => null);
+    const setDot = (id, n) => { $(id).hidden = !n; $(id).textContent = n > 99 ? '99+' : n; };
+    const [iss, mail, calls] = await Promise.all([get('/api/admin/issues?status=open'), get('/api/admin/emails'), get('/api/admin/calls')]);
+    setDot('#tbAlerts', iss ? (iss.issues || []).filter(i => i.type === 'complaint' || i.overdue).length : 0);
+    setDot('#tbMail', mail && mail.summary ? mail.summary.failed_30d : 0);
+    setDot('#tbCalls', calls ? calls.follow_ups_due || 0 : 0);
   }
   setInterval(() => { if (document.visibilityState === 'visible' && token) loadTopbar(); }, 60000);
 
