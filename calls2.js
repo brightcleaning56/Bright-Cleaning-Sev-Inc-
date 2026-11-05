@@ -86,14 +86,21 @@ module.exports = function mountCalls(app, ctx) {
   const esc = x => String(x).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
   const greeting = () => esc(process.env.TWILIO_GREETING || 'Thanks for calling Bright Cleaning. We are with a customer right now. Please leave your name, number and how we can help, and we will call you back shortly.');
   const voicemail = () => `<Say voice="Polly.Joanna">${greeting()}</Say><Record maxLength="180" playBeep="true" transcribe="true" transcribeCallback="${base()}/api/webhooks/twilio/transcription" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"/><Say voice="Polly.Joanna">We did not get a message. Goodbye.</Say>`;
+  // Record a call as Voicemail (with why it went there) — the call row may not exist yet.
+  function recordVoicemail(b, why) {
+    const sid = clean(b.CallSid, 64); if (!sid) return; const cu = matchCustomer(b.From), note = `Voicemail — call back. (Why: ${why}.)`;
+    const cur = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid);
+    if (cur) db.prepare("UPDATE calls SET outcome='Voicemail', handling='Voicemail', summary=CASE WHEN summary IS NULL OR summary='' THEN ? ELSE summary END, follow_up_date=COALESCE(follow_up_date,?) WHERE id=?").run(note, today(), cur.id);
+    else db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,outcome,purpose,summary,follow_up_date,created_by,created_at,provider_sid,source,handling) VALUES('Inbound',?,?,?,?,'Voicemail','Other',?,?,'phone system',?,?,'Twilio','Voicemail')`)
+      .run(clean(b.From, 40), cu ? clean(cu.name, 150) : clean(b.CallerName, 150), cu ? clean(cu.company, 200) : '', cu ? cu.id : null, note, today(), now(), sid);
+  }
   app.post('/api/webhooks/twilio/voice', hook((req, res) => {
     const caller = e164((req.body || {}).From);
     if (aiAnswersNow()) return res.type('text/xml').send(aiStart(req.body || {}, 'answered by AI'));
     const cli = softphone() ? '<Client>office</Client>' : '';
     const num = ringPhones().filter(p => p !== caller).map(p => `<Number>${esc(p)}</Number>`).join('');
-    const xml = (cli || num)
-      ? `${liveTranscribe()}<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result">${cli}${num}</Dial>`
-      : voicemail();
+    if (!cli && !num) { const ai = ctx.aiTakeover && ctx.aiTakeover(req.body || {}); if (ai) return res.type('text/xml').send(ai); recordVoicemail(req.body || {}, 'no phone is set to ring'); return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${voicemail()}</Response>`); }
+    const xml = `${liveTranscribe()}<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result">${cli}${num}</Dial>`;
     res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${xml}</Response>`);
   }));
   // After the <Dial>: answered → done; otherwise record the outcome now and take a voicemail.
@@ -101,13 +108,7 @@ module.exports = function mountCalls(app, ctx) {
     const b = req.body || {}, st = String(b.DialCallStatus || '');
     if (st === 'completed' || st === 'answered') return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
     if (!req.query.ai && ctx.aiTakeover) { const x = ctx.aiTakeover(b); if (x) return res.type('text/xml').send(x); }
-    const sid = clean(b.CallSid, 64), cu = matchCustomer(b.From);
-    if (sid) {
-      const cur = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(sid);
-      if (cur) db.prepare("UPDATE calls SET outcome='Voicemail', follow_up_date=COALESCE(follow_up_date,?) WHERE id=?").run(today(), cur.id);
-      else db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,outcome,purpose,summary,follow_up_date,created_by,created_at,provider_sid,source) VALUES('Inbound',?,?,?,?,'Voicemail','Other','Voicemail — call back.',?,'phone system',?,?,'Twilio')`)
-        .run(clean(b.From, 40), cu ? clean(cu.name, 150) : clean(b.CallerName, 150), cu ? clean(cu.company, 200) : '', cu ? cu.id : null, today(), now(), sid);
-    }
+    recordVoicemail(b, req.query.ai ? 'AI receptionist transferred the caller; no one answered' : 'no one answered' + (ctx.aiWhyNot ? ' — ' + ctx.aiWhyNot() : ''));
     res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${voicemail()}</Response>`);
   }));
   // Recording + transcription callbacks attach to the call by CallSid.
@@ -135,7 +136,7 @@ module.exports = function mountCalls(app, ctx) {
   });
   app.get('/api/admin/calls-intel', auth, (req, res) => {
     const from = new Date(Date.now() - 30 * 864e5).toISOString(), q = sql => db.prepare(sql).all(from);
-    res.json({ connected: !!token(), forwarding: ringPhones().length > 0, webhook: base() + '/api/webhooks/twilio/status', voice_url: base() + '/api/webhooks/twilio/voice',
+    res.json({ receptionist: ctx.aiStatus ? ctx.aiStatus() : null, connected: !!token(), forwarding: ringPhones().length > 0, webhook: base() + '/api/webhooks/twilio/status', voice_url: base() + '/api/webhooks/twilio/voice',
       by_intent: q("SELECT intent k, COUNT(*) n FROM calls WHERE created_at>=? AND intent IS NOT NULL GROUP BY intent ORDER BY n DESC"),
       by_sentiment: q("SELECT sentiment k, COUNT(*) n FROM calls WHERE created_at>=? AND sentiment IS NOT NULL GROUP BY sentiment"),
       missed_30: db.prepare("SELECT COUNT(*) n FROM calls WHERE created_at>=? AND outcome IN ('Missed','Voicemail')").get(from).n,
@@ -430,4 +431,25 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       .run(sess.lead_id, sess.customer_id, ld && ld.contact_name, ld && ld.company, sess.issue_id ? 1 : 0, sess.lead_id ? 1 : 0, summary.slice(0, 1000), sess.callback || sess.lead_id ? 1 : 0, today(), sess.issue_id, ((prev ? prev + '\n\n' : '') + '[AI receptionist conversation]\n' + lines.join('\n')).slice(0, 60000), c.id);
     db.prepare("UPDATE ai_call_sessions SET finalized=1, status=CASE WHEN status='active' THEN 'completed' ELSE status END, summary=?, ended_at=? WHERE call_sid=?").run(summary.slice(0, 1000), now(), sid);
   };
+  ctx.aiWhyNot = () => !aiKey() ? 'AI receptionist needs ANTHROPIC_API_KEY in Render' : !token() ? 'phone not connected' : aiMode() === 'off' ? 'AI receptionist is off (Settings → Phone)' : aiMode() === 'after_hours' && isOpen() ? 'AI receptionist only answers after hours' : 'AI receptionist was available';
+  ctx.aiStatus = () => ({ mode: aiMode(), ready: aiReady(), key: !!aiKey(), open_now: isOpen(), answering_now: aiReady() && aiMode() !== 'off' && !(aiMode() === 'after_hours' && isOpen()), why: ctx.aiWhyNot() });
+  // Text test of the receptionist: same prompt, tools and model, but nothing is saved.
+  app.post('/api/admin/ai-receptionist/test', auth, async (req, res) => {
+    if (!aiKey()) return res.status(503).json({ error: 'AI is off: add ANTHROPIC_API_KEY in Render.' });
+    const hist = Array.isArray((req.body || {}).messages) ? req.body.messages.slice(-20) : [], msgs = [];
+    for (const m of hist) { const t = String(m.text || '').slice(0, 600); if (t) msgs.push({ role: m.role === 'ai' ? 'assistant' : 'user', content: t }); }
+    if (!msgs.length || msgs[msgs.length - 1].role !== 'user') return res.status(400).json({ error: 'Type what the caller says.' });
+    const fake = { caller: '+15555550100', call_sid: 'TEST' }, actions = [];
+    try {
+      let say = '';
+      for (let round = 0; round < 3; round++) {
+        const j = await claudeTurn(msgs, SYSTEM(fake, null) + '\nTHIS IS A TEST FROM THE ADMIN: actions are simulated and nothing is saved.'), content = j.content || [];
+        msgs.push({ role: 'assistant', content }); say = content.filter(c => c.type === 'text').map(c => c.text).join(' ').trim();
+        const uses = content.filter(c => c.type === 'tool_use'); if (!uses.length) break;
+        msgs.push({ role: 'user', content: uses.map(u => { actions.push({ action: u.name, details: u.input }); return { type: 'tool_result', tool_use_id: u.id, content: u.name === 'end_call' ? 'Ending call.' : u.name === 'transfer_to_human' ? 'Transferring now.' : 'Done (test — not saved).' }; }) });
+        if (uses.some(u => ['end_call', 'transfer_to_human'].includes(u.name))) { if (!say) say = uses.some(u => u.name === 'transfer_to_human') ? 'One moment while I connect you.' : 'Thank you for calling Bright Clean. Goodbye.'; break; }
+      }
+      res.json({ reply: say || '(no reply)', actions });
+    } catch (e) { res.status(502).json({ error: 'The AI did not answer: ' + e.message + '. On a real call this would fall back to ringing your phones.' }); }
+  });
 };
