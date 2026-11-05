@@ -306,7 +306,7 @@ module.exports = function mountSched(app, ctx) {
     const dir = uploadDir || path.join(process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'));
     const up = multer({ storage: multer.diskStorage({ destination: (r, f, cb) => { fs.mkdirSync(dir, { recursive: true }); cb(null, dir); }, filename: (r, f, cb) => cb(null, crypto.randomBytes(12).toString('hex') + (path.extname(f.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '') || '.jpg')) }),
       limits: { fileSize: 12 * 1024 * 1024, files: 6 }, fileFilter: (r, f, cb) => cb(null, /^image\//.test(f.mimetype)) });
-    app.post('/api/crew/:token/jobs/:vid/photos', (req, res, next) => { const e = crewAuth(req, res); if (!e) return; const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); req.crewEmp = e; req.crewVisit = v; next(); }, up.array('photos', 6), (req, res) => {
+    app.post('/api/crew/:token/jobs/:vid/photos', (req, res, next) => { const e = crewAuth(req, res); if (!e) return; const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); req.crewEmp = e; req.crewVisit = v; next(); }, up.array('photos', 6), require('./filecheck').verifyUploads, (req, res) => {
       const files = req.files || []; if (!files.length) return res.status(400).json({ error: 'Choose at least one photo.' });
       const stage = ['Before', 'After', 'Issue'].includes(req.body.stage) ? req.body.stage : 'After', t = now();
       const ids = files.map(f => db.prepare('INSERT INTO documents(project_id,customer_id,title,kind,file_name,file_url,size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)')

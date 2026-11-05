@@ -165,7 +165,13 @@ module.exports = function mountAdminExt(app, ctx) {
     if (row) db.prepare('UPDATE admin_users SET password_hash=? WHERE id=?').run(hash, row.id);
     else db.prepare('INSERT INTO admin_users(email,name,password_hash,created_at) VALUES(?,?,?,?)').run(email, 'Owner', hash, new Date().toISOString());
     logAction(req, 'changed password', 'account', row ? row.id : 0);
-    res.json({ ok: true, message: 'Password changed. Use the new password next time you sign in.' });
+    ctx.bumpTv(email); // every other session ends now; this device gets a fresh token
+    res.json({ ok: true, token: ctx.signToken(email), message: 'Password changed. Other devices have been signed out.' });
+  });
+  app.post('/api/admin/account/sign-out-everywhere', auth, (req, res) => {
+    const email = req.user && req.user.email; ctx.bumpTv(email);
+    logAction(req, 'signed out other sessions', 'account', 0);
+    res.json({ ok: true, token: ctx.signToken(email), message: 'All other devices are signed out.' });
   });
 
   // Roles: owner (approves, manages roles and rules), manager (approves proposals), staff (prepares, requests approval).
