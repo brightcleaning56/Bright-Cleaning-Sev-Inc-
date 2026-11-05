@@ -126,7 +126,9 @@ require('./intake')(app,{db,upload,clean,isEmail,notify,logLead,getOps:()=>ops,p
 require('./approvals')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./suite')(app,{db,auth,logAction,clean,upload,path,fs,getOps:()=>ops,isEmail});
 // Email Center log: record every email the system sends (or fails to send) through the configured provider.
-if(mailer&&!mailer.__logged){const send=mailer.sendMail.bind(mailer);const prov=mailer.provider||'smtp';const rec=(o,st,err)=>{try{db.prepare('INSERT INTO email_log(to_addr,subject,body,status,error,provider,created_at) VALUES(?,?,?,?,?,?,?)').run(String([].concat(o.to||'').join(', ')).slice(0,500),String(o.subject||'').slice(0,300),String(o.text||'').slice(0,20000),st,err?String(err).slice(0,500):null,prov,new Date().toISOString())}catch(e){console.error('email log failed',e.message)}};mailer.sendMail=async o=>{try{const r=await send(o);rec(o,'sent');return r}catch(e){rec(o,'failed',e.message);throw e}};mailer.__logged=true}
+function markUndeliverable(to,e){if(!([406,300].includes(Number(e&&e.code))||/inactive|invalid email|recipient.*(rejected|suppress)/i.test((e&&e.message)||'')))return false;e.recipientRejected=true;try{db.exec('CREATE TABLE IF NOT EXISTS email_undeliverable(address TEXT PRIMARY KEY, reason TEXT, first_at TEXT, last_at TEXT, count INTEGER DEFAULT 1)');for(const a of [].concat(to||'').join(',').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean))db.prepare('INSERT INTO email_undeliverable(address,reason,first_at,last_at) VALUES(?,?,?,?) ON CONFLICT(address) DO UPDATE SET count=count+1,last_at=excluded.last_at,reason=excluded.reason').run(a,String(e.message).slice(0,300),new Date().toISOString(),new Date().toISOString())}catch{}return true}
+if(process.env.MONITORING_TEST_ROUTE==='1'&&process.env.NODE_ENV!=='production')app.post('/api/test/reject',(req,res)=>{const e=new Error('Postmark 422 code 406: You tried to send to recipient(s) that have been marked as inactive.');e.code=406;markUndeliverable('typo@bortuncoo.test',e);res.status(502).json({error:'Email could not be sent: '+e.message})});
+if(mailer&&!mailer.__logged){const send=mailer.sendMail.bind(mailer);const prov=mailer.provider||'smtp';const rec=(o,st,err)=>{try{db.prepare('INSERT INTO email_log(to_addr,subject,body,status,error,provider,created_at) VALUES(?,?,?,?,?,?,?)').run(String([].concat(o.to||'').join(', ')).slice(0,500),String(o.subject||'').slice(0,300),String(o.text||'').slice(0,20000),st,err?String(err).slice(0,500):null,prov,new Date().toISOString())}catch(e){console.error('email log failed',e.message)}};mailer.sendMail=async o=>{try{const r=await send(o);rec(o,'sent');return r}catch(e){rec(o,'failed',e.message);markUndeliverable(o.to,e);throw e}};mailer.__logged=true}
 require('./ai')(app,{db,auth,logAction,clean,path,uploadDir,getMailer:()=>mailer,isEmail});
 require('./autobid')(app,{db,auth,logAction});
 require('./crm')(app,{db,auth,logAction,clean,isEmail,adminEmail,getMailer:()=>mailer});
@@ -140,6 +142,7 @@ require('./engine')(app,{db,auth,logAction,clean});
 require('./contracts2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./calls2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./complaints')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
+require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public')));

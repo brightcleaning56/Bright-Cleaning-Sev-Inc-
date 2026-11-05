@@ -21,7 +21,14 @@ module.exports = function mountMonitoring(app, ctx) {
     } catch { /* never let monitoring break a request */ }
   };
   // 5xx responses (route errors are already turned into responses by handlers)
-  app.use((req, res, next) => { res.on('finish', () => { if (res.statusCode >= 500 && res.statusCode !== 503) record('http', { method: req.method, path: req.originalUrl, status: res.statusCode, message: res.statusMessage }); }); next(); });
+  // A 502 caused by the email provider refusing the RECIPIENT is not a server fault: answer 422 with guidance, no alert.
+  const REJECT = /code (406|300)|inactive|invalid email|recipient.*(rejected|suppress)/i;
+  app.use((req, res, next) => {
+    const json = res.json.bind(res);
+    res.json = body => { if (res.statusCode === 502 && body && REJECT.test(String(body.error || ''))) { res.status(422); body = { ...body, error: String(body.error) + ' — The email provider refused this address: it bounced before or was marked as spam. Check the spelling of the email address (for example the domain) and correct it on the record; if it is correct, the address must be reactivated in Postmark.', recipient_rejected: true }; } return json(body); };
+    res.on('finish', () => { if (res.statusCode >= 500 && res.statusCode !== 503) record('http', { method: req.method, path: req.originalUrl, status: res.statusCode, message: res.statusMessage }); });
+    next();
+  });
   process.on('unhandledRejection', e => record('unhandledRejection', { message: (e && e.stack) || String(e) }));
   process.on('uncaughtExceptionMonitor', e => record('uncaughtException', { message: (e && e.stack) || String(e) }));
   ctx.recordError = record;
@@ -44,5 +51,6 @@ module.exports = function mountMonitoring(app, ctx) {
     res.json({ errors: db.prepare('SELECT kind, method, path, status, message, count, first_at, last_at FROM app_errors ORDER BY last_at DESC LIMIT 50').all(),
       csp: { enforced_scripts: process.env.CSP_ENFORCE_SCRIPTS === '1', reports: db.prepare('SELECT directive, blocked, page, sample, count, first_at, last_at FROM csp_reports ORDER BY last_at DESC LIMIT 50').all() } });
   });
+  app.get('/api/admin/email-undeliverable', auth, (req, res) => { try { res.json({ addresses: db.prepare('SELECT address, reason, last_at, count FROM email_undeliverable ORDER BY last_at DESC LIMIT 500').all() }); } catch { res.json({ addresses: [] }); } });
   ctx.errorsLastHour = () => { try { return db.prepare('SELECT COALESCE(SUM(count),0) n FROM app_errors WHERE last_at>=?').get(new Date(Date.now() - 3600e3).toISOString()).n; } catch { return null; } };
 };
