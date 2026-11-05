@@ -1470,6 +1470,17 @@
       <dt>Browser phone</dt><dd>${r.softphone ? '<span class="badge green">On</span>' : '<span class="badge amber">Off</span> <small class="muted">needs TWILIO_API_KEY + TWILIO_API_SECRET in Render</small>'}</dd></dl>${warn}
       <form id="ringForm" style="margin-top:10px"><div class="f"><label for="ringPh">Phones to ring (separate several with commas)</label><input id="ringPh" value="${esc(r.ring_phones.join(', '))}" placeholder="+1 469 267 8472, +1 515 329 5889"></div>
       <div class="formbar"><button class="btn">Save ring phones</button><span class="msg" id="ringMsg" role="status"></span></div></form>`;
+    { const hb = document.createElement('div'); hb.style.marginTop = '14px';
+      hb.innerHTML = `<form id="cbForm" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><div class="f" style="flex:1;min-width:220px"><label for="cbOwner">Callbacks and voicemails are assigned to</label><input id="cbOwner" type="email" value="${esc(r.callback_owner || '')}" placeholder="name@brightclean.net"></div><button class="btn ghost">Save</button><span class="msg" id="cbMsg" role="status"></span></form>
+        <div style="margin-top:12px"><button class="btn" type="button" id="phHealth">Run health check</button> <small class="muted">Tests Twilio, the number's routing, a real AI request, ring phones and fallback.</small><div id="phHealthOut" style="margin-top:8px"></div></div>`;
+      card.appendChild(hb);
+      $('#cbForm').onsubmit = async ev => { ev.preventDefault(); try { await api('/api/admin/phone/callback-owner', { method: 'PUT', json: { email: $('#cbOwner').value } }); $('#cbMsg').textContent = 'Saved.'; } catch (e) { $('#cbMsg').textContent = e.message; } };
+      $('#phHealth').onclick = async ev => { const b = ev.target; b.disabled = true; b.textContent = 'Checking…';
+        try { const h = await api('/api/admin/phone/health'); const ic = { pass: '✅', warn: '⚠️', fail: '❌' };
+          $('#phHealthOut').innerHTML = `<p><b>${ic[h.overall]} ${h.overall === 'pass' ? 'Everything is working' : h.overall === 'warn' ? 'Working, with warnings' : 'Something needs fixing'}</b> <small class="muted">${esc(new Date(h.checked_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</small></p><table class="tbl" style="width:100%"><tbody>${h.checks.map(c => `<tr><td style="width:28px">${ic[c.status]}</td><td><b>${esc(c.label)}</b><br><small class="muted">${esc(c.detail || '')}</small></td></tr>`).join('')}</tbody></table>`; }
+        catch (e) { $('#phHealthOut').innerHTML = `<p class="msg err">${esc(e.message)}</p>`; }
+        b.disabled = false; b.textContent = 'Run health check'; };
+    }
     { const ai = r.ai_receptionist || { mode: 'off', hours: { days: [1, 2, 3, 4, 5], open: '08:00', close: '17:00' } }, D = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const box = document.createElement('div'); box.style.marginTop = '18px';
       box.innerHTML = `<h3 class="secth">AI receptionist</h3><p class="muted">Answers calls as Bright Clean's virtual assistant: talks with the caller, creates the lead or complaint, arranges callbacks and transfers to a person on request. It never quotes prices or promises dates. ${ai.ai_key ? '' : '<b>Needs ANTHROPIC_API_KEY in Render.</b>'}</p>
