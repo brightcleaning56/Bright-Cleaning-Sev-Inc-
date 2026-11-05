@@ -62,6 +62,7 @@ const ROLE_RULES=[
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/reports\/schedules(\/.*)?$/,roles:['owner','manager'],why:'Report schedules are limited to owners and managers.'},
   {m:/^GET$/,p:/^\/api\/admin\/audit-log$/,roles:['owner','manager'],why:'The full activity log is limited to owners and managers.'},
   {m:/^GET$/,p:/^\/api\/admin\/financial-summary$/,roles:['owner','manager'],why:'Financial totals are limited to owners and managers.'},
+  {m:/^(GET|POST)$/,p:/^\/api\/admin\/api-keys(\/\d+\/revoke)?$/,roles:['owner'],why:'Only an owner can create or revoke API keys.'},
   {m:/^(GET|POST|PATCH|DELETE)$/,p:/^\/api\/admin\/site-media(\/(\d+|reorder))?$/,roles:['owner','manager','staff'],why:'Only owners, managers and office staff can change website photos and videos.'},
   {m:/^POST$/,p:/^\/api\/admin\/issues\/run-reminders$/,roles:['owner','manager'],why:'Only an owner or manager can run reminder emails manually.'}];
 const roleFor=email=>{const e=String(email||'').toLowerCase();if(adminEmail&&e===String(adminEmail).toLowerCase())return'owner';try{const r=db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e);return(r&&r.role)||'staff'}catch{return'staff'}};
@@ -123,6 +124,7 @@ app.get('/proposal/:token',(req,res)=>res.sendFile(path.join(ROOT,'public','prop
 
 require('./admin-ext')(app,{bumpTv,signToken,db,auth,logAction,clean,num,required,estimateMath,uploadDir,bcrypt,adminEmail,adminHash});
 require('./sitemedia')(app,{db,auth,logAction,clean,uploadDir});
+require('./integrations')(app,{db,auth,logAction,clean,isEmail,notify});
 require('./scopes')(app,{db,auth,logAction,clean});
 require('./command')(app,{db,auth,adminEmail});
 require('./intake')(app,{db,upload,clean,isEmail,notify,logLead,getOps:()=>ops,path,fs});

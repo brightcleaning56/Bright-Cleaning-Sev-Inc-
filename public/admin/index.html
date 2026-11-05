@@ -753,6 +753,20 @@
         <div class="formbar" style="margin-top:0"><button class="btn" id="backupNow">Back up now</button><span class="msg" id="backupMsg" role="status"></span></div>
         <div id="backupList" style="margin-top:12px"></div>
       </div>
+      <div class="card" id="apiKeysCard" style="margin-top:14px">
+        <h2>Connect other sources (API keys)</h2>
+        <p class="hint">Partner sites, ad landing pages, Zapier or a CRM can send leads straight into Leads. Create a key for each source. A key is shown once: copy it when it appears. Revoke a key any time to stop it.</p>
+        <div class="headact" style="margin:10px 0"><button class="btn" id="apiKeyNew">New API key</button></div>
+        <p class="msg" id="apiKeyNote" role="status"></p>
+        <div class="tablewrap" style="overflow-x:auto"><table class="isst"><thead><tr><th>Name</th><th>Key starts with</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody id="apiKeyRows"></tbody></table></div>
+        <details style="margin-top:12px"><summary>How to send a lead</summary>
+          <p class="hint">POST to <code>https://brightclean.net/api/integrations/leads</code> with the key in the <code>X-API-Key</code> header and JSON fields: <code>name</code>, <code>email</code>, <code>phone</code>, <code>company</code>, <code>project_name</code>, <code>service</code>, <code>details</code>, and optional <code>source</code> (for example "spring-campaign"). Send at least a name, email or phone.</p>
+          <pre style="white-space:pre-wrap;font-size:12px;background:#f3f6fa;padding:10px;border-radius:8px">curl -X POST https://brightclean.net/api/integrations/leads \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_KEY" \
+  -d '{"name":"Jane Doe","email":"jane@example.com","company":"Example Co","details":"Needs weekly janitorial","source":"partner-site"}'</pre>
+        </details>
+      </div>
     </section>
   </main>
 </div>

@@ -271,7 +271,12 @@ Only report what you can read on a sheet, and always give the sheet. Never guess
     const mailer = getMailer();
     if (!mailer) return res.status(503).json({ error: 'Email is not set up yet, so the reply could not be sent.' });
     try { await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject, text: body }); }
-    catch (e) { return res.status(502).json({ error: 'Email could not be sent: ' + e.message }); }
+    catch (e) {
+      // Postmark refuses addresses that bounced or unsubscribed earlier (code 406). Say so plainly; nothing was sent.
+      if (/code (406|300)|inactive|invalid email|recipient.*(rejected|suppress)/i.test(String(e.message || '')))
+        return res.status(422).json({ error: 'This address cannot receive email (it bounced or unsubscribed earlier), so nothing was sent. Call the customer or ask for a new email address.' });
+      return res.status(502).json({ error: 'Email could not be sent: ' + e.message });
+    }
     if (l.status === 'New') db.prepare("UPDATE leads SET status='In Review' WHERE id=?").run(l.id);
     logAction(req, 'replied to', 'lead', l.id, subject);
     res.json({ ok: true });

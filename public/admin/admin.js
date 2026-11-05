@@ -1477,7 +1477,23 @@
 
   async function loadSettings() {
     addSignOutEverywhere();
-    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings()]);
+    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings(), loadApiKeys()]);
+  }
+  async function loadApiKeys() {
+    if (!$('#apiKeyRows')) return;
+    let r; try { r = await api('/api/admin/api-keys'); } catch (e) { $('#apiKeyRows').innerHTML = `<tr><td colspan="6" class="muted">${esc(e.message)}</td></tr>`; $('#apiKeyNew').hidden = true; return; }
+    $('#apiKeyNew').hidden = false;
+    $('#apiKeyRows').innerHTML = (r.keys || []).map(k => `<tr><td><b>${esc(k.name)}</b></td><td><code>${esc(k.prefix)}…</code></td><td>${esc(fmtWhen(k.created_at))}</td><td>${k.last_used_at ? esc(fmtWhen(k.last_used_at)) : 'Never'}</td><td>${k.revoked_at ? '<span class="chip">Revoked</span>' : '<span class="chip green">Active</span>'}</td><td>${k.revoked_at ? '' : `<button class="btn small danger" data-apirevoke="${k.id}" data-name="${esc(k.name)}">Revoke</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No keys yet.</td></tr>';
+    $$('#apiKeyRows [data-apirevoke]').forEach(b => b.onclick = async () => {
+      if (!confirm(`Revoke the key “${b.dataset.name}”? Sources using it will stop sending leads.`)) return;
+      try { await api(`/api/admin/api-keys/${b.dataset.apirevoke}/revoke`, { method: 'POST' }); toast('Key revoked'); loadApiKeys(); } catch (e) { toast(e.message, true); }
+    });
+    $('#apiKeyNew').onclick = () => openForm({
+      title: 'New API key', sub: 'For a partner site, ad page or tool that sends leads.',
+      defs: [{ name: 'name', label: 'Name', type: 'text', hint: 'For example "Partner website" or "Zapier". Shown on every lead from this source.' }],
+      submit: body => api('/api/admin/api-keys', { method: 'POST', json: { name: body.name } }),
+      after: res => { $('#apiKeyNote').textContent = ''; openDrawer({ title: 'Copy this key now', sub: 'It will not be shown again.', body: `<p>Key for <b>${esc(res.name)}</b>:</p><pre style="white-space:pre-wrap;word-break:break-all;background:#f3f6fa;padding:12px;border-radius:8px">${esc(res.key)}</pre><p class="hint">Paste it into the other system's X-API-Key header. Anyone with this key can send leads, so keep it private.</p>` }); loadApiKeys(); }
+    });
   }
   function addSignOutEverywhere() {
     const pm0 = document.getElementById('pwMsg');
