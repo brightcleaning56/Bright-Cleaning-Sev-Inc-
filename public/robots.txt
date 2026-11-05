@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /admin/
 Disallow: /api/
-Sitemap: https://www.brightclean.net/sitemap.xml
+Sitemap: https://brightclean.net/sitemap.xml
