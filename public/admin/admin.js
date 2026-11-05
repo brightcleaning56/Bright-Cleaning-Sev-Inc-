@@ -502,12 +502,14 @@
     bindOpeners($('#leadRows'));
   }
 
+  // Flag email addresses the email provider refused (bounced / spam complaint / suppressed).
+  function markBounced() { const spans = $$('#drawerRoot [data-bounce]'); if (!spans.length) return; api('/api/admin/email-undeliverable').then(r => { const bad = new Map((r.addresses || []).map(a => [a.address, a])); spans.forEach(sp => { const a = bad.get(sp.dataset.bounce); if (a) { sp.innerHTML = '<span class="pill" style="background:#c0392b;color:#fff" title="' + esc(a.reason || '') + '">⚠ Email bounced — check the spelling</span>'; } }); }).catch(() => {}); }
   async function openLead(id) {
     let l;
     try { l = (await api('/api/admin/leads/' + id)).lead; } catch (err) { return toast(err.message, true); }
     const facts = [
       ['Type', KIND_LABEL[l.kind] || l.kind], ['Received', fmtWhen(l.created_at)], ['Contact', l.contact_name], ['Company', l.company],
-      ['Email', l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : ''], ['Phone', l.phone ? `<a href="tel:${esc(l.phone)}">${esc(l.phone)}</a>` + ` <button type="button" class="btn small ghost" data-dial="${esc(l.phone)}" data-lead="${l.id}" data-name="${esc(l.company || l.contact_name || '')}">📞 Call</button>` : ''],
+      ['Email', l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a> <span data-bounce="${esc(String(l.email).toLowerCase())}"></span>` : ''], ['Phone', l.phone ? `<a href="tel:${esc(l.phone)}">${esc(l.phone)}</a>` + ` <button type="button" class="btn small ghost" data-dial="${esc(l.phone)}" data-lead="${l.id}" data-name="${esc(l.company || l.contact_name || '')}">📞 Call</button>` : ''],
       ['Project', l.project_name], ['Project type', l.project_type], ['Services', l.service], ['Site address', l.address],
       ['Square footage', l.square_footage], ['Bid due', l.bid_due_date && fmtDate(l.bid_due_date)], ['Start date', l.start_date && fmtDate(l.start_date)],
       ['Frequency', l.frequency], ['Walkthrough', l.walkthrough]
@@ -546,6 +548,7 @@
       try { await api('/api/admin/leads/' + l.id, { method: 'DELETE' }); toast('Lead deleted'); closeDrawer(); load(state.view); }
       catch (err) { toast(err.message, true); }
     };
+    markBounced();
   }
 
   async function downloadFile(f) {
@@ -2203,10 +2206,32 @@
   const mailState = { emails: [] };
   $('#emailSearch').addEventListener('input', () => renderEmails()); $('#emailStatus').addEventListener('change', () => renderEmails());
   async function loadEmails() {
-    const r = await api('/api/admin/emails'); mailState.emails = r.emails;
-    kpiTiles('#emailsKpis', [{ label: 'Sent (30 days)', value: r.summary.sent_30d }, { label: 'Failed (30 days)', value: r.summary.failed_30d, alert: r.summary.failed_30d > 0 }, { label: 'Total (30 days)', value: r.summary.total_30d }, { label: 'Outlook inbox here', value: 'Not connected', sub: 'needs Microsoft 365 app' }]);
+    const [r, ms] = await Promise.all([api('/api/admin/emails'), api('/api/admin/m365/status').catch(() => ({}))]); mailState.emails = r.emails;
+    kpiTiles('#emailsKpis', [{ label: 'Sent (30 days)', value: r.summary.sent_30d }, { label: 'Failed (30 days)', value: r.summary.failed_30d, alert: r.summary.failed_30d > 0 }, { label: 'Total (30 days)', value: r.summary.total_30d }, { label: 'Outlook inbox here', value: ms.connected ? 'Connected' : ms.configured ? 'Ready to connect' : 'Not set up', sub: ms.connected ? `${ms.account || ''} · ${ms.messages} messages${ms.last_sync ? ' · synced ' + fmtWhen(ms.last_sync) : ''}` : ms.configured ? 'click to connect' : 'click for setup steps', alert: !!ms.last_error }]);
     $('#navEmails').hidden = !r.summary.failed_30d; $('#navEmails').textContent = r.summary.failed_30d;
+    { const tiles = $$('#emailsKpis > *'); const t = tiles[3]; if (t) { t.style.cursor = 'pointer'; t.onclick = () => openM365(ms); } }
+    let ib = document.getElementById('inboxCard');
+    if (ms.connected) { if (!ib) { ib = document.createElement('div'); ib.id = 'inboxCard'; ib.className = 'card'; ib.style.cssText = 'margin:14px 0;padding:14px'; $('#emailsKpis').after(ib); }
+      const m = await api('/api/admin/inbox').catch(() => ({ messages: [] }));
+      ib.innerHTML = `<h2 style="margin:0 0 8px;font-size:17px">Inbox (Outlook)</h2>${m.messages.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Received</th><th>From</th><th>Subject</th><th>Linked to</th></tr></thead><tbody>${m.messages.slice(0, 50).map(x => `<tr><td>${esc(fmtWhen(x.received_at))}</td><td>${esc(x.from_name || x.from_addr)}<small>${esc(x.from_addr)}</small></td><td>${x.web_link ? `<a href="${esc(x.web_link)}" target="_blank" rel="noopener">${esc(x.subject || '(no subject)')}</a>` : esc(x.subject || '')}<small>${esc(String(x.preview || '').slice(0, 120))}</small></td><td>${x.lead_id ? `<a href="#" data-ilead="${x.lead_id}">Lead #${x.lead_id}</a>` : ''}${x.customer_id ? ` <a href="#" data-icust="${x.customer_id}">Customer #${x.customer_id}</a>` : ''}${!x.lead_id && !x.customer_id ? '<span class="muted">—</span>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No messages synced yet.</p>'}`;
+      $$('#inboxCard [data-ilead]').forEach(a => a.onclick = ev => { ev.preventDefault(); go('leads'); setTimeout(() => openLead(Number(a.dataset.ilead)), 350); });
+      $$('#inboxCard [data-icust]').forEach(a => a.onclick = ev => { ev.preventDefault(); go('customers'); setTimeout(() => openCustomerPage(Number(a.dataset.icust)), 350); });
+    } else if (ib) ib.remove();
     renderEmails();
+  }
+  function openM365(ms) {
+    const steps = `<ol style="padding-left:18px;line-height:1.6"><li>Sign in to <b>portal.azure.com</b> with the Microsoft 365 admin account → <b>Microsoft Entra ID</b> → <b>App registrations</b> → <b>New registration</b>.</li>
+      <li>Name: <i>Bright Clean Operations</i>. Supported accounts: <i>this organizational directory only</i>. Redirect URI (Web): <code>${esc(ms.redirect_uri || 'https://brightclean.net/api/m365/callback')}</code></li>
+      <li><b>API permissions</b> → Add → Microsoft Graph → <b>Delegated</b>: <code>Mail.Read</code>, <code>User.Read</code>, <code>offline_access</code> → Grant admin consent.</li>
+      <li><b>Certificates &amp; secrets</b> → New client secret → copy its <b>Value</b>.</li>
+      <li>In Render → brightclean-web → Environment add <code>MS365_CLIENT_ID</code> (Application ID), <code>MS365_TENANT_ID</code> (Directory ID) and <code>MS365_CLIENT_SECRET</code> (the secret value). Save.</li>
+      <li>Come back here and click <b>Connect Outlook</b>.</li></ol><p class="muted">Read-only: the system can read the inbox to link replies to leads and customers. It cannot send, move or delete mail.</p>`;
+    openDrawer({ title: 'Outlook inbox (Microsoft 365)', sub: ms.connected ? `Connected as ${ms.account}` : ms.configured ? 'Ready to connect' : 'Not set up yet',
+      body: `${ms.last_error ? `<p class="msg err">Last problem: ${esc(ms.last_error)}</p>` : ''}${ms.connected ? `<p>Connected as <b>${esc(ms.account || '')}</b>. ${ms.messages} messages synced${ms.last_sync ? `, last sync ${esc(fmtWhen(ms.last_sync))}` : ''}. New mail is checked every 3 minutes.</p>` : ms.configured ? '<p>The app registration is in place. Click Connect Outlook and sign in with the mailbox to read (for example info@brightclean.net).</p>' : steps}`,
+      footer: `<button class="btn ghost" data-close>Close</button>${ms.connected ? '<button class="btn ghost" id="m365Sync">Sync now</button><button class="btn ghost" id="m365Disc">Disconnect</button>' : ms.configured ? '<button class="btn" id="m365Conn">Connect Outlook</button>' : ''}` });
+    if ($('#m365Conn')) $('#m365Conn').onclick = async () => { try { const r = await api('/api/admin/m365/connect', { method: 'POST', json: {} }); location.href = r.url; } catch (e) { toast(e.message, true); } };
+    if ($('#m365Sync')) $('#m365Sync').onclick = async () => { try { const r = await api('/api/admin/m365/sync', { method: 'POST', json: {} }); toast(r.error ? 'Sync problem: ' + r.error : `Synced: ${r.added || 0} new`, !!r.error); closeDrawer(); loadEmails(); } catch (e) { toast(e.message, true); } };
+    if ($('#m365Disc')) $('#m365Disc').onclick = async () => { if (!confirm('Disconnect the Outlook inbox? Already-synced messages stay.')) return; try { await api('/api/admin/m365/disconnect', { method: 'POST', json: {} }); toast('Disconnected'); closeDrawer(); loadEmails(); } catch (e) { toast(e.message, true); } };
   }
   function renderEmails() {
     const q = $('#emailSearch').value.trim().toLowerCase(), st = $('#emailStatus').value;
