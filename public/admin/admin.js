@@ -572,6 +572,7 @@
       const stages = ['New', 'In Review', 'Site Walkthrough', 'Proposal in Progress', 'Proposal Sent', 'Won', 'Lost'];
       if ($('#leadPipe')) { $('#leadPipe').innerHTML = stages.map(st => `<button type="button" data-pipe="${esc(st)}" class="${leadStatusSel.value === st && state.leadKind === 'bid' ? 'on' : ''}"><span>${esc(st)}</span><b>${L.filter(l => l.status === st).length}</b></button>`).join('');
         $$('#leadPipe [data-pipe]').forEach(b => b.onclick = () => { state.leadKind = 'bid'; leadStatusSel.value = leadStatusSel.value === b.dataset.pipe ? 'open' : b.dataset.pipe; renderLeads(); }); } }
+    { const fo = leadStatusSel.querySelector('option[value="stage:followup"]'); if (fo) fo.textContent = `Follow-ups scheduled (${state.leads.filter(l => l.stage === 'followup').length})`; }
     $$('#leadKinds button').forEach(b => {
       const n = state.leads.filter(l => (l.kind || 'bid') === b.dataset.kind && l.status === 'New').length;
       b.classList.toggle('active', b.dataset.kind === state.leadKind);
