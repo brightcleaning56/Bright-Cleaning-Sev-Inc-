@@ -270,7 +270,10 @@ Only report what you can read on a sheet, and always give the sheet. Never guess
     if (/\$\s?\d/.test(body)) return res.status(400).json({ error: 'Replies from here cannot include prices. Send pricing through a proposal so approval rules apply.' });
     const mailer = getMailer();
     if (!mailer) return res.status(503).json({ error: 'Email is not set up yet, so the reply could not be sent.' });
-    try { await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject, text: body }); }
+    // The reply names the person who sent it (name and role), so the customer and the team know who wrote it.
+    const sender = (() => { const em = String((req.user && req.user.email) || '').toLowerCase(); const row = db.prepare('SELECT name, role FROM admin_users WHERE lower(email)=?').get(em); const owner = em && process.env.ADMIN_EMAIL && em === String(process.env.ADMIN_EMAIL).toLowerCase(); const name = owner ? (process.env.ADMIN_NAME || 'Eric Moore') : ((row && row.name) || em); const role = owner ? 'Owner' : ({ owner: 'Owner', manager: 'Manager', supervisor: 'Supervisor', inspector: 'Inspector', sales: 'Sales', staff: 'Office staff' }[(row && row.role) || 'staff'] || 'Staff'); return `${name}, ${role}`; })();
+    const signed = `${body}\n\nSent by ${sender}, Bright Clean`;
+    try { await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject, text: signed }); }
     catch (e) {
       // Postmark refuses addresses that bounced or unsubscribed earlier (code 406). Say so plainly; nothing was sent.
       if (/code (406|300)|inactive|invalid email|recipient.*(rejected|suppress)/i.test(String(e.message || '')))

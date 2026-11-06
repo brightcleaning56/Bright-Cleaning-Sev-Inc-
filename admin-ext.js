@@ -165,6 +165,15 @@ module.exports = function mountAdminExt(app, ctx) {
     if (e === String(adminEmail || '').toLowerCase()) { db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)'); db.prepare("INSERT INTO settings(key,value,updated_at) VALUES('owner_name',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(name, new Date().toISOString()); }
     logAction(req, 'updated display name', 'account', row ? row.id : 0, name); res.json({ ok: true, name });
   });
+  // Names and roles of the people who sign in (for showing who did or was assigned what). No passwords.
+  app.get('/api/admin/people', auth, (req, res) => {
+    const R = require('./roles');
+    const rows = db.prepare('SELECT email,name,role FROM admin_users').all().filter(r => !adminEmail || r.email.toLowerCase() !== String(adminEmail).toLowerCase());
+    const people = [];
+    if (adminEmail) people.push({ email: adminEmail, name: ownerName(), role: 'owner' });
+    for (const r of rows) people.push({ email: r.email, name: r.name || '', role: r.role });
+    res.json({ people: people.map(p => ({ ...p, label: (R.ROLES[p.role] || {}).label || p.role })) });
+  });
   app.get('/api/admin/roles', auth, (req, res) => res.json({ roles: Object.entries(require('./roles').ROLES).map(([key, v]) => ({ key, ...v })) }));
 
   app.post('/api/admin/account/password', auth, async (req, res) => {

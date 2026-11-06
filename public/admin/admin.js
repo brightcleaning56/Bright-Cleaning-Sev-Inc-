@@ -223,6 +223,7 @@
   async function start() {
     try {
       const me = await api('/api/admin/me'); state.me = me;
+      state.people = {}; try { for (const x of ((await api('/api/admin/people')).people || [])) state.people[String(x.email).toLowerCase()] = x; } catch { /* names fall back to email */ }
       $('#whoEmail').textContent = me.email || ''; loadTopbar();
       { const lbl = document.querySelector('#whoRole') || (() => { const x = document.createElement('small'); x.id = 'whoRole'; x.style.cssText = 'display:block;opacity:.75'; $('#whoEmail').after(x); return x; })(); lbl.textContent = [me.name, me.label].filter(Boolean).join(' · '); }
       if (Array.isArray(me.views)) { $$('#nav [data-view]').forEach(b => { b.hidden = !me.views.includes(b.dataset.view); }); if (!me.views.includes((location.hash || '').slice(1) || 'overview')) location.hash = '#' + (me.home || me.views[0]); }
@@ -1477,6 +1478,9 @@
 
   async function loadSettings() {
     addSignOutEverywhere();
+    // Only owners and managers manage company settings. Everyone else sees just their own password and name.
+    const own = state.me && !['owner', 'manager'].includes(state.me.role);
+    if (own) { $$('#v-settings .card').forEach(c => { if (c.id !== 'pwForm') c.hidden = true; }); return; }
     await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings(), loadApiKeys()]);
   }
   async function loadApiKeys() {
@@ -2412,6 +2416,9 @@
   const issState = { issues: [], options: null, counts: {}, group: '', page: 1 };
   const ITYPE = { complaint: ['issues', 'red', 'Issue'], service_request: ['scopes', 'green', 'Request'], incident: ['issues', 'amber', 'Incident'], task: ['cal', 'blue', 'Task'], follow_up: ['calls', 'blue', 'Follow-up'], note: ['note', 'purple', 'Note'] };
   const initials = e => { const n = String(e || '').split('@')[0].split(/[._-]/).filter(Boolean); return ((n[0] || '?')[0] + ((n[1] || '')[0] || '')).toUpperCase(); };
+  // "Name · Role" for an account email, falling back to the email itself.
+  const who = e => { const p = state.people && state.people[String(e || '').toLowerCase()]; return p ? `${p.name || p.email}${p.label ? ' · ' + p.label : ''}` : String(e || ''); };
+  const personInitials = e => { const p = state.people && state.people[String(e || '').toLowerCase()]; return p && p.name ? initials(p.name.replace(/\s+/g, '.')) : initials(e); };
   const pillCls = s => String(s).replace(/\s+/g, '-');
   ['#issStatus', '#issCat', '#issPri', '#issAssigned', '#issSource', '#issCust', '#issType', '#issMine'].forEach(sel => $(sel).addEventListener('change', () => { issState.page = 1; loadIssues(); }));
   let issT; $('#issSearch').addEventListener('input', () => { clearTimeout(issT); issT = setTimeout(() => { issState.page = 1; loadIssues(); }, 250); });
@@ -2453,7 +2460,7 @@
       <td>${esc(i.property_name || i.property || '—')}<small>${esc(i.project_name || i.work_order || '')}</small></td>
       <td><span class="pill t-${i.type}">${esc((ITYPE[i.type] || [])[2] || o.types[i.type])}</span></td><td>${esc(i.category || '—')}</td>
       <td><span class="pill p-${i.priority}">${esc(i.priority)}</span></td>
-      <td>${i.assigned_to ? `<span class="avs"><i>${initials(i.assigned_to)}</i>${esc(i.assigned_to.split('@')[0])}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${i.assigned_to ? `<span class="avs"><i>${personInitials(i.assigned_to)}</i>${esc(who(i.assigned_to))}</span>` : '<span class="muted">—</span>'}</td>
       <td class="${i.overdue ? 'due-late' : ''}">${i.due_date ? fmtDate(i.due_date) : '—'}${i.overdue ? '<small style="color:#d1382f">overdue</small>' : ''}</td>
       <td><span class="pill s-${pillCls(i.status)}">${esc(i.status)}</span></td></tr>`; }).join('')
       : `<tr><td class="emptyrow" colspan="9">${$('#issStatus').value === 'open' ? 'No open items. Nice.' : 'Nothing matches.'}</td></tr>`;
