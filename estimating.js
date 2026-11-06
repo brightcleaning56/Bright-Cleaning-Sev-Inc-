@@ -24,12 +24,14 @@ const EXTRA_COLUMNS = [
   ['minimum_charge', 'REAL DEFAULT 0'], ['use_line_items', 'INTEGER DEFAULT 0'], ['crew_days', 'REAL DEFAULT 0'],
   ['line_items_total', 'REAL DEFAULT 0'], ['template_key', 'TEXT'], ['scope_category', 'TEXT'],
   ['sent_at', 'TEXT'], ['viewed_at', 'TEXT'], ['last_viewed_at', 'TEXT'], ['view_count', 'INTEGER DEFAULT 0'],
-  ['decided_at', 'TEXT'], ['decision_ip', 'TEXT'], ['decision_agent', 'TEXT']
+  ['decided_at', 'TEXT'], ['decision_ip', 'TEXT'], ['decision_agent', 'TEXT'], ['unit_condition', 'TEXT']
 ];
 
+// Unit condition charge added on top of every deep clean line (price book: Light $40, Moderate $60, Heavy $80).
+const CONDITION_CHARGE = { Light: 40, Moderate: 60, Heavy: 80 };
 function lineItemsOf(b) {
   const arr = Array.isArray(b.line_items) ? b.line_items : (() => { try { return JSON.parse(b.line_items || '[]'); } catch { return []; } })();
-  return arr.slice(0, 100).map(x => {
+  const out = arr.slice(0, 100).map(x => {
     const item = { description: String(x.description || '').trim().slice(0, 500), amount: num(x.amount) };
     // Lines priced from the scope library keep a snapshot of the rates they were priced at.
     if (x.scope_id) Object.assign(item, {
@@ -39,6 +41,11 @@ function lineItemsOf(b) {
     });
     return item;
   });
+  const level = Object.keys(CONDITION_CHARGE).find(k => k.toLowerCase() === String(b.unit_condition || '').toLowerCase());
+  const isDeep = out.some(i => /deep/i.test(i.description) && !/add-on/i.test(i.description));
+  const label = level ? `Unit condition add-on – ${level}` : '';
+  if (level && isDeep && !out.some(i => i.description === label)) out.push({ description: label, amount: CONDITION_CHARGE[level] });
+  return out;
 }
 
 function estimateMath(b) {
@@ -81,7 +88,8 @@ function extraValues(b, m) {
     disposal_cost: num(b.disposal_cost), insurance_pct: num(b.insurance_pct), contingency_pct: num(b.contingency_pct),
     minimum_charge: num(b.minimum_charge), use_line_items: m.used_line_items ? 1 : 0, crew_days: m.crew_days,
     line_items_total: m.line_items_total, template_key: String(b.template_key || '').slice(0, 60) || null,
-    scope_category: ['construction', 'multifamily', 'janitorial', 'specialty'].includes(b.scope_category) ? b.scope_category : null
+    scope_category: ['construction', 'multifamily', 'janitorial', 'specialty'].includes(b.scope_category) ? b.scope_category : null,
+    unit_condition: ['Light', 'Moderate', 'Heavy'].includes(b.unit_condition) ? b.unit_condition : null
   };
 }
 
