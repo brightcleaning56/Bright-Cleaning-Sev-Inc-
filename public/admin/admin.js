@@ -413,7 +413,8 @@
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:8px;align-items:start">${[['Awaiting your decision', ap.awaiting, 'Nothing waiting.'], ['Exceptions', ap.exceptions, 'None.'], ['Recent actions', ap.recent, 'No activity yet.']].map(([t, list, empty], k) => `<div><b>${t}${k < 2 ? ` (${list.length})` : ''}</b>${list.slice(0, 3).map(row).join('') || `<p class="muted">${empty}</p>`}${list.length > 3 ? `<details><summary class="muted" style="cursor:pointer;font-size:13px;margin-top:4px">Show all ${list.length}</summary>${list.slice(3).map(row).join('')}</details>` : ''}</div>`).join('')}</div>`;
         $('#ccLive').appendChild(ab); $$('#ccLive [data-cmpo]').forEach(b => b.onclick = () => { go('quality'); setTimeout(() => openComplaint(Number(b.dataset.cmpo)), 350); });
       } catch { /* optional panel */ }
-      $$('#ccLive [data-drill]').forEach(b => b.onclick = () => openDrill(b.dataset.drill));
+      const LEAD_LISTS = { new_leads: ['all', ''], uncontacted_leads: ['all', ''], bids_due_7: ['bid', ''] };
+      $$('#ccLive [data-drill]').forEach(b => b.onclick = () => LEAD_LISTS[b.dataset.drill] ? openLeadList(...LEAD_LISTS[b.dataset.drill]) : openDrill(b.dataset.drill));
       $('#liveRefresh').onclick = ev => { ev.preventDefault(); loadLive(); };
       $('#liveCustom').onclick = ev => { ev.preventDefault(); const all = ['Quality', 'Sales', 'Operations', 'Finance', 'Calls & AI', 'Management'];
         openDrawer({ title: 'Customize Live operations', sub: 'Only changes what you see. Business records are not affected.', body: `<p class="muted">Show these groups:</p>${all.map(g => `<label class="chk" style="display:block;margin:6px 0"><input type="checkbox" data-g="${esc(g)}"${hidden.includes(g) ? '' : ' checked'}> ${esc(g)}</label>`).join('')}`,
@@ -462,7 +463,7 @@
         title: `Proposals awaiting approval ${att.awaiting_approval} · open complaints ${att.open_complaints} · overdue tasks ${att.overdue_tasks} · overdue invoices ${att.overdue_invoices} · late projects ${att.late_projects} · leads waiting 2+ days ${att.leads_waiting_2_days} · failed emails (7 days) ${att.failed_emails_7_days}` }
     ];
     $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
-    $$('#ccKpis .kpi').forEach(b => b.onclick = () => { const t = tiles[b.dataset.i]; if (t.label === 'Needs attention') return openAttention(); if (t.drill) return openDrill(t.drill); go(t.to); });
+    $$('#ccKpis .kpi').forEach(b => b.onclick = () => { const t = tiles[b.dataset.i]; if (t.label === 'Needs attention') return openAttention(); if (t.drill === 'new_leads') return openLeadList('all', ''); if (t.drill) return openDrill(t.drill); go(t.to); });
     loadLive();
     if (!window.matchMedia || !matchMedia('(prefers-reduced-motion: reduce)').matches) $$('#ccKpis .kpi b').forEach(el => {
       const txt = el.textContent, m = txt.match(/^(\$?)([\d,]+)(\.\d+)?$/); if (!m) return;
@@ -556,6 +557,9 @@
     refresh();
   }
   const leadView = (kind, st) => { state.leadKind = kind; leadStatusSel.value = st; renderLeads(); };
+  const inKind = (l, k) => k === 'all' ? (l.kind || 'bid') !== 'career' : (l.kind || 'bid') === k;
+  // Opens the Leads page on the matching tab and filter (used by the Command Center cards and Live operations lines).
+  const openLeadList = (kind, st) => { state.leadKind = kind; leadStatusSel.value = st; go('leads'); };
   function renderLeads() {
     { const L = state.leads.filter(l => (l.kind || 'bid') === 'bid'), now = Date.now(), wk = L.filter(l => now - Date.parse(l.created_at) < 7 * 864e5).length, mo = L.filter(l => String(l.created_at).slice(0, 7) === todayISO().slice(0, 7)).length;
       const won = L.filter(l => l.status === 'Won').length, lost = L.filter(l => l.status === 'Lost').length, open = L.filter(l => !['Won', 'Lost', 'Archived'].includes(l.status)).length;
@@ -570,22 +574,24 @@
     $$('#leadKinds button').forEach(b => {
       const n = state.leads.filter(l => (l.kind || 'bid') === b.dataset.kind && l.status === 'New').length;
       b.classList.toggle('active', b.dataset.kind === state.leadKind);
-      b.textContent = { bid: 'Bid requests', inquiry: 'Contact messages', career: 'Job applications' }[b.dataset.kind] + (n ? ` (${n} new)` : '');
+      b.textContent = { all: 'All leads', bid: 'Bid requests', inquiry: 'Contact messages', career: 'Job applications' }[b.dataset.kind] + (b.dataset.kind === 'all' ? '' : n ? ` (${n} new)` : '');
     });
     const k = state.leadKind;
     const q = $('#leadSearch').value.trim().toLowerCase();
     const st = leadStatusSel.value;
-    const rows = state.leads.filter(l => (l.kind || 'bid') === k)
+    const rows = state.leads.filter(l => inKind(l, k))
       .filter(l => st === 'open' ? (l.stage === 'new' || (l.stage === 'followup' && l.follow_up_date && l.follow_up_date <= todayISO())) : st === 'review' ? (l.review || 'unreviewed') === 'unreviewed' : st.startsWith('stage:') ? l.stage === st.slice(6) : !st || l.status === st)
       .filter(l => !q || [l.contact_name, l.company, l.email, l.phone, l.project_name, l.address, l.service, l.details].join(' ').toLowerCase().includes(q));
     const heads = {
       bid: ['Received', 'Contact / company', 'Project', 'Services', 'Bid due', 'Status'],
       inquiry: ['Received', 'Name', 'Email / phone', 'Message', 'Status'],
-      career: ['Received', 'Name', 'Email / phone', 'Role / message', 'Status']
+      career: ['Received', 'Name', 'Email / phone', 'Role / message', 'Status'],
+      all: ['Received', 'Contact / company', 'Type', 'Project / message', 'Status']
     }[k];
     $('#leadHead').innerHTML = '<tr><th><input type="checkbox" id="leadPickAll" aria-label="Select all leads on this list"></th>' + heads.map(h => `<th>${h}</th>`).join('') + '</tr>';
     const snippet = (t, n = 90) => esc(String(t || '').replace(/\s+/g, ' ').slice(0, n)) + (String(t || '').length > n ? '…' : '');
     $('#leadRows').innerHTML = rows.length ? rows.map(l => {
+      if (k === 'all') return `<tr class="click" data-lead="${l.id}"><td class="pick"><input type="checkbox" class="leadPick" value="${l.id}" aria-label="Select this lead"></td><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name || l.company || '—')}</b><small>${esc(l.company || l.email || '')}</small></td><td>${(l.kind || 'bid') === 'bid' ? 'Bid request' : 'Message'}</td><td>${esc(l.project_name || '—')}<small>${snippet(l.details || l.service, 70)}</small></td><td>${badge(l.status)}${reviewTag(l)}</td></tr>`;
       if (k === 'bid') return `<tr class="click" data-lead="${l.id}"><td class="pick"><input type="checkbox" class="leadPick" value="${l.id}" aria-label="Select this lead"></td><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name)}</b><small>${esc(l.company)}</small></td><td>${esc(l.project_name || '—')}<small>${esc(l.address || '')}</small></td><td>${snippet(l.service, 60) || '—'}</td><td>${fmtDate(l.bid_due_date)}</td><td>${badge(l.status)}${reviewTag(l)}</td></tr>`;
       return `<tr class="click" data-lead="${l.id}"><td class="pick"><input type="checkbox" class="leadPick" value="${l.id}" aria-label="Select this lead"></td><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name)}</b></td><td>${esc(l.email)}<small>${esc(l.phone || '')}</small></td><td>${snippet(l.details)}</td><td>${badge(l.status)}${reviewTag(l)}</td></tr>`;
     }).join('') : `<tr><td class="emptyrow" colspan="${heads.length + 1}">${q || (st && st !== 'open') ? 'No leads match your search.' : 'Nothing here yet. New website submissions will show up automatically.'}</td></tr>`;
@@ -674,7 +680,7 @@
 
   $('#exportCsv').addEventListener('click', () => {
     const k = state.leadKind;
-    const rows = state.leads.filter(l => (l.kind || 'bid') === k);
+    const rows = state.leads.filter(l => inKind(l, k));
     const cols = ['id', 'created_at', 'kind', 'status', 'contact_name', 'company', 'email', 'phone', 'project_name', 'project_type', 'service', 'address', 'square_footage', 'bid_due_date', 'start_date', 'frequency', 'details', 'notes'];
     const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
     const blob = new Blob([[cols.join(','), ...rows.map(r => cols.map(c => q(r[c])).join(','))].join('\n')], { type: 'text/csv' });
