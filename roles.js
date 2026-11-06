@@ -20,6 +20,7 @@ const HOME = { inspector: 'quality', sales: 'leads' };
 // Supervisor: everything a staff member may do EXCEPT money, sales and system administration.
 const SUPERVISOR_DENY = [
   /^\/api\/admin\/(invoices|next-invoice-number|financial-summary|estimates|bids|leads|approvals|approval-rules|templates|contracts|contracts2|takeoffs|emails|inbox|email-undeliverable|reports|ai|ai-receptionist|automation|backups|users|system-health|audit-log|m365)(\/|$)/,
+  /^\/api\/admin\/settings(\/|$)/, // company settings and the reminder log (customer contact details); own password and name stay available
   /^\/api\/admin\/(dashboard|command-center|command-center\/divisions)$/,
   /^\/api\/admin\/pm\/.*cost/, /^\/api\/admin\/customers\/\d+\/(invoices|billing|statement)/,
   [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(settings|phone\/settings|phone\/callback-owner|issues\/config|quality\/settings)(\/|$)/]
