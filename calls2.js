@@ -557,7 +557,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
   // What the caller hears when the call is answered (signed like every Twilio webhook).
   app.post('/api/webhooks/twilio/outbound', hook((req, res) => {
     const lead = Number(req.query.lead) || 0;
-    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Hello. This is an automated assistant calling for Bright Clean. This call may be recorded. You asked us to call you back. Press 1 to be connected to our team now, or hang up and we will follow up.</Say><Gather numDigits="1" timeout="8" action="${base()}/api/webhooks/twilio/outbound-press?lead=${lead}" method="POST"/><Say voice="Polly.Joanna">Thank you. Our team will follow up with you. Goodbye.</Say></Response>`);
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${req.query.test ? '<Say voice="Polly.Joanna">This is a test call from Bright Clean. This is an automated assistant. This call may be recorded. You can hang up now. Goodbye.</Say>' : ''}${req.query.test ? '' : '<Say voice="Polly.Joanna">Hello. This is an automated assistant calling for Bright Clean. This call may be recorded. You asked us to call you back. Press 1 to be connected to our team now, or hang up and we will follow up.</Say><Gather numDigits="1" timeout="8" action="${base()}/api/webhooks/twilio/outbound-press?lead=${lead}" method="POST"/><Say voice="Polly.Joanna">Thank you. Our team will follow up with you. Goodbye.</Say>'}</Response>`);
   }));
   // Caller pressed a key: 1 connects to the team's phones; anything else ends the call politely.
   app.post('/api/webhooks/twilio/outbound-press', hook((req, res) => {
@@ -596,5 +596,22 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     if (!x.changes) return res.status(404).json({ error: 'Lead not found.' });
     logAction(req, req.body && req.body.requested ? 'marked call back requested' : 'cleared call back request', 'lead', id, '');
     res.json({ ok: true });
+  });
+  // ---- One-time test call (owner only). Places a single call to a number the owner types, with the automated-assistant
+  // disclosure, so the call and its audio can be checked. It does not turn on automatic callbacks, and it is logged.
+  app.post('/api/admin/test-call', auth, async (req, res) => {
+    if (roleOfEmail(req.user && req.user.email) !== 'owner') return res.status(403).json({ error: 'Only the owner can place a test call.' });
+    const to = e164((req.body || {}).to);
+    if (!to) return res.status(400).json({ error: 'Enter a US phone number with area code.' });
+    if (!token() || !acctSid() || !twNumber()) return res.status(503).json({ error: 'The phone provider is not connected.' });
+    const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
+    try {
+      const r = await fetch(`${api}/2010-04-01/Accounts/${acctSid()}/Calls.json`, { method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ To: to, From: twNumber(), Url: `${base()}/api/webhooks/twilio/outbound?test=1`, StatusCallback: `${base()}/api/webhooks/twilio/status`, Timeout: '25' }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return res.status(502).json({ error: 'The call could not be placed: ' + (j.message || r.status) });
+      logAction(req, 'placed test call', 'phone', 0, to);
+      res.json({ ok: true, sid: j.sid || null, to });
+    } catch (e) { res.status(502).json({ error: 'The call could not be placed: ' + e.message }); }
   });
 };

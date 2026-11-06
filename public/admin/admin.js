@@ -131,7 +131,7 @@
     const withPhone = custs.filter(c => c.phone);
     openDrawer({ title: 'Call a number', body: `<form id="dpForm" class="ig"><div class="wide"><label for="dpNum">Phone number</label><input id="dpNum" type="tel" inputmode="tel" autocomplete="off" placeholder="(515) 555-0123" value="${esc(prefill || '')}" required style="font-size:20px;letter-spacing:.5px"></div>
       <div class="wide"><label for="dpWho">Or pick a customer</label><input id="dpWho" list="dpList" placeholder="Start typing a name or company…"><datalist id="dpList">${withPhone.map(c => `<option value="${esc((c.company || c.name) + ' — ' + c.phone)}">`).join('')}</datalist></div>
-      <div class="wide" id="dpKeys" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:280px">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', '⌫'].map(k => `<button type="button" class="btn ghost" data-k="${k}" style="font-size:18px;padding:12px 0">${k}</button>`).join('')}</div></form>`,
+      <div class="wide" id="dpKeys" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:170px">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', '⌫'].map(k => `<button type="button" class="btn small ghost" data-k="${k}" style="font-size:18px;padding:12px 0">${k}</button>`).join('')}</div></form>`,
       footer: '<button class="btn ghost" data-close>Close</button><button class="btn" id="dpGo">📞 Call</button>' });
     const num = $('#dpNum'); num.focus();
     $$('#dpKeys [data-k]').forEach(k => k.onclick = () => { num.value = k.dataset.k === '⌫' ? num.value.slice(0, -1) : num.value + k.dataset.k; num.focus(); });
