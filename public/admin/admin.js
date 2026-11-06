@@ -47,9 +47,10 @@
   const fmtNum = n => { const d = String(n || '').replace(/\D/g, '').slice(-10); return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : (n || 'Unknown'); };
   function inCallUI(label) {
     const t0 = Date.now(); clearInterval(callTimer);
-    showPanel(`<b>📞 ${esc(label)}</b><div id="phT" class="muted" style="margin:4px 0 10px">Connecting…</div><button class="btn small ghost" id="phMute">Mute</button> <button class="btn small" id="phEnd" style="background:#c0392b;border-color:#c0392b">Hang up</button>`);
+    showPanel(`<b>📞 ${esc(label)}</b><div id="phT" class="muted" style="margin:4px 0 10px">Connecting…</div><div id="phKeys" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:150px;margin:0 0 10px">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map(k => `<button type="button" class="btn small ghost" data-d="${k}" style="padding:4px 0;font-size:15px">${k}</button>`).join('')}</div><button class="btn small ghost" id="phMute">Mute</button> <button class="btn small" id="phEnd" style="background:#c0392b;border-color:#c0392b">Hang up</button>`);
     callTimer = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000), el = document.getElementById('phT'); if (el && activeCall && activeCall.status && activeCall.status() === 'open') el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }, 1000);
     document.getElementById('phEnd').onclick = () => activeCall && activeCall.disconnect();
+    document.querySelectorAll('#phKeys [data-d]').forEach(b => b.onclick = () => { if (activeCall && activeCall.status && activeCall.status() === 'open') { activeCall.sendDigits(b.dataset.d); } });
     document.getElementById('phMute').onclick = ev => { if (!activeCall) return; const m = !activeCall.isMuted(); activeCall.mute(m); ev.target.textContent = m ? 'Unmute' : 'Mute'; };
   }
   function wireCall(call, label) {
