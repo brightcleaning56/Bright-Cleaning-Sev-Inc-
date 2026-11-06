@@ -94,6 +94,16 @@ module.exports = function mountQC(app, ctx) {
   app.patch('/api/admin/qc/inspections/:id', auth, (req, res) => {
     const cur = get(req.params.id); if (!cur) return res.status(404).json({ error: 'Inspection not found.' });
     if (cur.signed_at) return res.status(409).json({ error: 'This inspection is signed and locked. Start a reinspection to record new results.' });
+    if ('status' in (req.body || {})) {
+      // Only Cancelled can be set here, and only by an owner or manager (for example a test or duplicate record).
+      const em = String((req.user && req.user.email) || '').toLowerCase();
+      const role = (adminEmail && em === String(adminEmail).toLowerCase()) ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
+      if (!['owner', 'manager'].includes(role)) return res.status(403).json({ error: 'Only an owner or manager can cancel an inspection.' });
+      if (req.body.status !== 'Cancelled') return res.status(400).json({ error: 'Only Cancelled can be set here.' });
+      db.prepare("UPDATE inspections SET status='Cancelled', updated_at=? WHERE id=?").run(now(), cur.id);
+      logAction(req, 'cancelled inspection', 'inspection', cur.id, cur.area || '');
+      return res.json({ inspection: get(cur.id) });
+    }
     const { out, errs } = validate(req.body || {}, cur); if (errs.length) return res.status(400).json({ error: errs.join(' ') });
     const c = Object.keys(out); if (c.length) db.prepare(`UPDATE inspections SET ${c.map(k => k + '=?').join(',')}, updated_at=? WHERE id=?`).run(...c.map(k => out[k]), now(), cur.id);
     res.json({ inspection: get(cur.id) });
