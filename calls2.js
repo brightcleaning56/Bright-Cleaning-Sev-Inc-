@@ -562,8 +562,9 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
   // Caller pressed a key: 1 connects to the team's phones; anything else ends the call politely.
   app.post('/api/webhooks/twilio/outbound-press', hook((req, res) => {
     const lead = Number(req.query.lead) || 0, phones = ringPhones();
-    if (String((req.body || {}).Digits || '') === '1' && phones.length) {
-      const num = phones.map(p => `<Number>${esc(p)}</Number>`).join('');
+    if (String((req.body || {}).Digits || '') === '1' && (phones.length || softphone())) {
+      // Rings the phones to ring and the browser phone (admin open in a browser) so someone can answer.
+      const num = phones.map(p => `<Number>${esc(p)}</Number>`).join('') + (softphone() ? '<Client>office</Client>' : '');
       if (lead) db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','callback connected','lead',?,?,?)").run(lead, 'caller pressed 1', new Date().toISOString());
       return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting you now.</Say><Dial callerId="${esc(twNumber())}" timeout="25">${num}</Dial></Response>`);
     }
