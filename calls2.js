@@ -630,7 +630,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     if (!rs) return res.status(400).json({ error: 'This call has no recording to transcribe.' });
     if (!token() || !acctSid()) return res.status(503).json({ error: 'The phone provider is not connected.' });
     try {
-      const r = await twApi('/Transcriptions.json', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ RecordingSid: rs }) });
+      const r = await twApi(`/Recordings/${encodeURIComponent(rs)}/Transcriptions.json`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({}) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return res.status(502).json({ error: 'Twilio could not start the transcription: ' + (j.message || r.status) });
       db.prepare('UPDATE calls SET transcript_sid=? WHERE id=?').run(String(j.sid || ''), c.id);
