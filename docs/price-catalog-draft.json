@@ -6,9 +6,9 @@
     "rows": [
       {
         "property": "1 bed / 1 bath",
-        "monthly": 110,
-        "biweekly": 210,
-        "weekly": 400
+        "monthly": 130,
+        "biweekly": 260,
+        "weekly": 520
       },
       {
         "property": "2 bed / 1 bath",
@@ -53,15 +53,15 @@
     "rows": [
       {
         "property": "Studio",
-        "monthly": 85,
-        "biweekly": 165,
-        "weekly": 320
+        "monthly": 90,
+        "biweekly": 175,
+        "weekly": 345
       },
       {
         "property": "1 bed / 1 bath",
-        "monthly": 110,
-        "biweekly": 210,
-        "weekly": 400
+        "monthly": 130,
+        "biweekly": 260,
+        "weekly": 520
       },
       {
         "property": "2 bed / 1 bath",
@@ -188,5 +188,6 @@
       "Interior appliances"
     ],
     "how_priced": "Quoted per project from cleaning scopes: square footage, production rates, labor hours, supplies, insurance and margin (see docs/BUSINESS_PLAN.md sections 5 and 8)."
-  }
+  },
+  "_decision": "Margin decision (30% target, 3 hrs per regular visit at $30 productive hour; studio at 2 hrs, the bottom of the range, as the smallest unit). Studio and 1 bed raised to meet 30%. Draft only; live quotes not changed."
 }
