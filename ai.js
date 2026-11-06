@@ -273,7 +273,7 @@ Only report what you can read on a sheet, and always give the sheet. Never guess
     // The reply names the person who sent it (name and role), so the customer and the team know who wrote it.
     const sender = (() => { const em = String((req.user && req.user.email) || '').toLowerCase(); const row = db.prepare('SELECT name, role FROM admin_users WHERE lower(email)=?').get(em); const owner = em && process.env.ADMIN_EMAIL && em === String(process.env.ADMIN_EMAIL).toLowerCase(); const name = owner ? (process.env.ADMIN_NAME || 'Eric Moore') : ((row && row.name) || em); const role = owner ? 'Owner' : ({ owner: 'Owner', manager: 'Manager', supervisor: 'Supervisor', inspector: 'Inspector', sales: 'Sales', staff: 'Office staff' }[(row && row.role) || 'staff'] || 'Staff'); return `${name}, ${role}`; })();
     const signed = `${body}\n\nSent by ${sender}, Bright Clean`;
-    try { await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject, text: signed }); }
+    try { await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject, text: signed }); if (app.locals.setLeadWaiting) app.locals.setLeadWaiting(l.id); }
     catch (e) {
       // Postmark refuses addresses that bounced or unsubscribed earlier (code 406). Say so plainly; nothing was sent.
       if (/code (406|300)|inactive|invalid email|recipient.*(rejected|suppress)/i.test(String(e.message || '')))
@@ -297,6 +297,7 @@ Only report what you can read on a sheet, and always give the sheet. Never guess
       await m.sendMail({ from: process.env.FROM_EMAIL || 'info@brightclean.net', to: l.email, subject: ai.reply_subject, text: ai.reply_body });
       const cur = JSON.parse(db.prepare('SELECT ai FROM leads WHERE id=?').get(id).ai || '{}'); cur.info_requested_at = now();
       db.prepare("UPDATE leads SET ai=?, status=CASE WHEN status='New' THEN 'In Review' ELSE status END WHERE id=?").run(JSON.stringify(cur), id);
+      if (app.locals.setLeadWaiting) app.locals.setLeadWaiting(id);
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','requested information','lead',?,?,?)").run(id, ai.missing.join('; ').slice(0, 300), now());
       logRun('ai_info_request', id, 'ok', l.email);
     } catch (e) { logRun('ai_info_request', id, 'failed', e.message); }

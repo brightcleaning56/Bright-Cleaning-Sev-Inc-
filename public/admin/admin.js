@@ -469,7 +469,7 @@
 
   // ---------- Leads ----------
   const leadStatusSel = $('#leadStatusFilter');
-  leadStatusSel.innerHTML = '<option value="open">All open</option><option value="">Everything (incl. archived)</option>' + options(STATUS.leads);
+  leadStatusSel.innerHTML = '<option value="open">Open (new and due follow-ups)</option><option value="stage:worked">Being worked</option><option value="stage:waiting">Waiting on customer</option><option value="stage:followup">Follow-ups (all dates)</option><option value="">Everything (incl. archived)</option>' + options(STATUS.leads);
   $$('#leadKinds button').forEach(b => b.onclick = () => { state.leadKind = b.dataset.kind; renderLeads(); });
   $('#leadSearch').addEventListener('input', () => renderLeads());
   leadStatusSel.addEventListener('change', () => renderLeads());
@@ -479,7 +479,8 @@
     renderLeads();
   }
 
-  const reviewTag = l => l.review === 'real' ? ' <span class="chip green">Real</span>' : l.review === 'fake' ? ' <span class="chip">Fake</span>' : '';
+  const stageTag = l => l.stage === 'worked' ? ' <small class="muted">Being worked</small>' : l.stage === 'waiting' ? ' <small class="muted">Waiting on customer</small>' : l.stage === 'followup' ? ` <small class="muted">Follow up ${esc(l.follow_up_date || '')}</small>` : '';
+  const reviewTag = l => (l.review === 'real' ? ' <span class="chip green">Real</span>' : l.review === 'fake' ? ' <span class="chip">Fake</span>' : '') + stageTag(l);
   // Bulk review for the leads list: pick rows, then mark real, mark fake (archives), archive or restore. Every action asks first.
   function wireLeadBulk() {
     const tb = $('#leadRows').closest('table');
@@ -517,7 +518,7 @@
     const q = $('#leadSearch').value.trim().toLowerCase();
     const st = leadStatusSel.value;
     const rows = state.leads.filter(l => (l.kind || 'bid') === k)
-      .filter(l => st === 'open' ? l.status !== 'Archived' : !st || l.status === st)
+      .filter(l => st === 'open' ? (l.stage === 'new' || (l.stage === 'followup' && l.follow_up_date && l.follow_up_date <= todayISO())) : st.startsWith('stage:') ? l.stage === st.slice(6) : !st || l.status === st)
       .filter(l => !q || [l.contact_name, l.company, l.email, l.phone, l.project_name, l.address, l.service, l.details].join(' ').toLowerCase().includes(q));
     const heads = {
       bid: ['Received', 'Contact / company', 'Project', 'Services', 'Bid due', 'Status'],
@@ -563,6 +564,7 @@
         <div class="grid">
           <div class="f"><label for="ls">Status</label><select id="ls">${options(STATUS.leads, l.status)}</select></div>
           <div class="f wide"><label for="ln">Internal notes</label><textarea id="ln" placeholder="Calls, site walk notes, next steps. Only visible here.">${esc(l.notes || '')}</textarea></div>
+          <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
         </div>`,
       footer: `<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
     });
@@ -575,6 +577,16 @@
       } catch (err) { toast(err.message, true); }
     };
     if ($('#lQuote')) $('#lQuote').onclick = () => { closeDrawer(); openEstimator(null, l); };
+    $('#lFuSave').onclick = async () => {
+      const d = $('#lFu').value;
+      if (!d) { toast('Choose a follow-up date', true); return; }
+      try { await api(`/api/admin/leads/${l.id}/follow-up`, { method: 'POST', json: { date: d, note: $('#lFuNote').value } }); toast('Follow-up saved'); closeDrawer(); load(state.view); }
+      catch (err) { toast(err.message, true); }
+    };
+    if ($('#lFuClear')) $('#lFuClear').onclick = async () => {
+      try { await api(`/api/admin/leads/${l.id}/follow-up`, { method: 'DELETE' }); toast('Follow-up cleared'); closeDrawer(); load(state.view); }
+      catch (err) { toast(err.message, true); }
+    };
     $('#lDel').onclick = async () => {
       if (!confirm(`Delete this lead from ${l.contact_name || 'this contact'}? Attachments are deleted too. This can’t be undone.`)) return;
       try { await api('/api/admin/leads/' + l.id, { method: 'DELETE' }); toast('Lead deleted'); closeDrawer(); load(state.view); }

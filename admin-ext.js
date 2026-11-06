@@ -171,7 +171,7 @@ module.exports = function mountAdminExt(app, ctx) {
     real: "review='real'",
     fake: "review='fake', status='Archived'",
     archive: "status='Archived'",
-    restore: "status='New'",
+    restore: "status='New', stage=CASE WHEN follow_up_date IS NOT NULL AND follow_up_date<>'' THEN 'followup' ELSE 'new' END",
     unreviewed: "review='unreviewed'"
   };
   app.post('/api/admin/leads/bulk', auth, (req, res) => {
@@ -183,6 +183,7 @@ module.exports = function mountAdminExt(app, ctx) {
     if (!set) return res.status(400).json({ error: 'Choose what to do: real, fake, archive, restore or unreviewed.' });
     const stmt = db.prepare(`UPDATE leads SET ${set} WHERE id=?`);
     db.transaction(() => ids.forEach(id => stmt.run(id)))();
+    if (b.action !== 'restore') ids.forEach(id => { if (app.locals.recomputeLeadStage) app.locals.recomputeLeadStage(id); });
     logAction(req, 'bulk lead review: ' + b.action, 'lead', 0, `${ids.length} lead(s): ${ids.slice(0, 50).join(', ')}`);
     res.json({ ok: true, changed: ids.length });
   });
