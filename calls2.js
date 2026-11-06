@@ -622,19 +622,24 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
     return fetch(`${api}/2010-04-01/Accounts/${acctSid()}${path}`, { ...init, headers: { Authorization: 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64'), ...(init.headers || {}) } });
   };
+  // Twilio only creates transcripts while a call is being recorded, so this fetches the transcript Twilio already made
+  // for the recording (if it made one). It cannot create one after the fact.
   app.post('/api/admin/calls/:id/transcribe', auth, async (req, res) => {
     const c = db.prepare('SELECT id, recording_url, transcript FROM calls WHERE id=?').get(Number(req.params.id));
     if (!c) return res.status(404).json({ error: 'Call not found.' });
     if (c.transcript) return res.json({ ok: true, transcript: c.transcript, already: true });
     const rs = recordingSidOf(c.recording_url);
-    if (!rs) return res.status(400).json({ error: 'This call has no recording to transcribe.' });
+    if (!rs) return res.status(400).json({ error: 'This call has no recording.' });
     if (!token() || !acctSid()) return res.status(503).json({ error: 'The phone provider is not connected.' });
     try {
-      const r = await twApi(`/Recordings/${encodeURIComponent(rs)}/Transcriptions.json`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({}) });
+      const r = await twApi(`/Recordings/${encodeURIComponent(rs)}/Transcriptions.json`);
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) return res.status(502).json({ error: 'Twilio could not start the transcription: ' + (j.message || r.status) });
-      db.prepare('UPDATE calls SET transcript_sid=? WHERE id=?').run(String(j.sid || ''), c.id);
-      res.json({ ok: true, status: j.status || 'in-progress', transcription_sid: j.sid || null });
+      if (!r.ok) return res.status(502).json({ error: 'Twilio could not be checked: ' + (j.message || r.status) });
+      const list = Array.isArray(j.transcriptions) ? j.transcriptions : [];
+      if (!list.length) return res.status(409).json({ error: 'Twilio has no transcript for this recording. Live transcription was not running on this call, and Twilio cannot make one afterwards.' });
+      const t = list.find(x => x.status === 'completed') || list[0];
+      db.prepare('UPDATE calls SET transcript_sid=? WHERE id=?').run(String(t.sid || ''), c.id);
+      res.json({ ok: true, status: t.status || 'unknown', transcription_sid: t.sid || null });
     } catch (e) { res.status(502).json({ error: 'Twilio could not be reached: ' + e.message }); }
   });
   // Checks on the transcription; when Twilio has the text, it is saved to the call.
