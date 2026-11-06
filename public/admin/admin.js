@@ -581,7 +581,7 @@
     const q = $('#leadSearch').value.trim().toLowerCase();
     const st = leadStatusSel.value;
     const rows = state.leads.filter(l => inKind(l, k))
-      .filter(l => st === 'open' ? (l.stage === 'new' || (l.stage === 'followup' && l.follow_up_date && l.follow_up_date <= todayISO())) : st === 'review' ? (l.review || 'unreviewed') === 'unreviewed' : st.startsWith('stage:') ? l.stage === st.slice(6) : !st || l.status === st)
+      .filter(l => st === 'open' ? (!['Won', 'Lost', 'Archived'].includes(l.status) && l.stage !== 'converted' && (!l.follow_up_date || l.follow_up_date <= todayISO())) : st === 'review' ? (l.review || 'unreviewed') === 'unreviewed' : st.startsWith('stage:') ? l.stage === st.slice(6) : !st || l.status === st)
       .filter(l => !q || [l.contact_name, l.company, l.email, l.phone, l.project_name, l.address, l.service, l.details].join(' ').toLowerCase().includes(q));
     const heads = {
       bid: ['Received', 'Contact / company', 'Project', 'Services', 'Bid due', 'Status'],

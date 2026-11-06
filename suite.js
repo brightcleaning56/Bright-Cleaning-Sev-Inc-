@@ -98,6 +98,9 @@ module.exports = function mountSuite(app, ctx) {
     const info = db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,lead_id,outcome,purpose,summary,follow_up_date,created_by,created_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(pick(b.direction, CALL.direction, 'Inbound'), clean(b.phone, 40), clean(b.contact_name, 150), clean(b.company, 200), cid, leadId,
       pick(b.outcome, CALL.outcome, 'Answered'), purpose, clean(b.summary, 4000), isDate(b.follow_up_date) ? b.follow_up_date : null, who(req), now());
+    { const digits = String(b.phone || '').replace(/\D/g, '').slice(-10);
+      const target = leadId || (digits.length === 10 ? (db.prepare(`SELECT id FROM leads WHERE status NOT IN ('Won','Lost','Archived') AND substr(replace(replace(replace(replace(replace(replace(phone,'-',''),' ',''),'(',''),')',''),'+',''),'.',''), -10) = ? ORDER BY id DESC LIMIT 1`).get(digits) || {}).id : null);
+      if (target && app.locals.touchLead) app.locals.touchLead(target, isDate(b.follow_up_date) ? b.follow_up_date : null, b.summary); }
     logAction(req, 'logged', 'call', info.lastInsertRowid, `${purpose}: ${clean(b.company || b.contact_name || b.phone, 200)}`);
     res.status(201).json({ call: callRow(info.lastInsertRowid), lead_id: leadId });
   });
@@ -110,6 +113,7 @@ module.exports = function mountSuite(app, ctx) {
     if ('outcome' in b) set.outcome = pick(b.outcome, CALL.outcome, cur.outcome);
     const cols = Object.keys(set);
     if (cols.length) db.prepare(`UPDATE calls SET ${cols.map(c => c + '=?').join(',')} WHERE id=?`).run(...cols.map(c => set[c]), cur.id);
+    if (cur.lead_id && app.locals.touchLead && ('follow_up_date' in b || 'outcome' in b)) app.locals.touchLead(cur.lead_id, set.follow_up_date, cur.summary);
     logAction(req, 'updated', 'call', cur.id, cols.join(', '));
     res.json({ call: callRow(cur.id) });
   });

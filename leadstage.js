@@ -30,6 +30,16 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
   // Marks a lead as waiting on the customer (a reply or questions were emailed).
   const setWaiting = id => db.prepare(`UPDATE leads SET stage = 'waiting' WHERE id=? AND stage NOT IN ('done','followup')`).run(Number(id));
   app.locals.recomputeLeadStage = recompute;
+  // Any call, reply or callback touches the lead ("new" becomes "worked"). A follow-up date from that call hides the lead
+  // from the open list until the date arrives.
+  const touchLead = (id, followUp, note) => {
+    const n = Number(id); if (!n) return;
+    const t = new Date().toISOString();
+    db.prepare("UPDATE leads SET stage = CASE WHEN stage = 'new' THEN 'worked' ELSE stage END, updated_at=? WHERE id=?").run(t, n);
+    if (validDate(followUp)) db.prepare('UPDATE leads SET follow_up_date=?, follow_up_note=?, updated_at=? WHERE id=?').run(followUp, clean(note, 300) || 'Follow up after a call', t, n);
+    recompute(n);
+  };
+  app.locals.touchLead = touchLead;
   app.locals.setLeadWaiting = setWaiting;
 
   const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));

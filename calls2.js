@@ -184,6 +184,7 @@ module.exports = function mountCalls(app, ctx) {
     const who = (req.user && req.user.email) || 'staff';
     const id = db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,lead_id,outcome,purpose,summary,created_by,created_at,source) VALUES('Outbound',?,?,?,?,?,'Dialing','Other',?,?,?,'Click-to-call')`)
       .run(to, cu ? clean(cu.name, 150) : clean(b.name, 150), cu ? clean(cu.company, 200) : '', cu ? cu.id : null, b.lead_id ? Number(b.lead_id) : null, clean(b.note, 500) || '', who, now()).lastInsertRowid;
+    if (b.lead_id && app.locals.touchLead) app.locals.touchLead(Number(b.lead_id));
     try {
       const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
       const r = await fetch(`${api}/2010-04-01/Accounts/${acctSid()}/Calls.json`, { method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -242,6 +243,7 @@ module.exports = function mountCalls(app, ctx) {
     const cu = b.customer_id ? db.prepare('SELECT id, name, company FROM customers WHERE id=?').get(Number(b.customer_id)) : matchCustomer(to);
     const id = db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,lead_id,outcome,purpose,summary,created_by,created_at,source) VALUES('Outbound',?,?,?,?,?,'Dialing','Other','',?,?,'Browser')`)
       .run(to, cu ? clean(cu.name, 150) : clean(b.name, 150), cu ? clean(cu.company, 200) : '', cu ? cu.id : null, b.lead_id ? Number(b.lead_id) : null, (req.user && req.user.email) || 'staff', now()).lastInsertRowid;
+    if (b.lead_id && app.locals.touchLead) app.locals.touchLead(Number(b.lead_id));
     logAction(req, 'started browser call', 'call', id, `to ${to}${cu ? ' (' + (cu.company || cu.name) + ')' : ''}`);
     res.status(201).json({ call_id: id, to });
   });
@@ -547,6 +549,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
         db.prepare('UPDATE leads SET last_callback_at=?, callback_calls=COALESCE(callback_calls,0)+1 WHERE id=?').run(t, l.id);
         db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','outbound callback placed','lead',?,?,?)").run(l.id, to, t);
         placed.push(l.id);
+        if (app.locals.touchLead) app.locals.touchLead(l.id);
       } catch (e) { console.error('outbound callback failed:', e.message); }
     }
     return { placed: placed.length };
