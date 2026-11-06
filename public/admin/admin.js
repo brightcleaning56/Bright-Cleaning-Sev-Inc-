@@ -78,7 +78,27 @@
       device.on('error', e => console.warn('phone:', e && e.message));
       await device.register();
       const chip = document.createElement('div'); chip.id = 'phoneChip'; chip.title = 'Browser phone is on: calls to ' + fmtNum(phoneCfg.number) + ' ring here too';
-      chip.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9998;background:#1e8e3e;color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.15)'; chip.textContent = '📞 Phone on'; chip.style.cursor = 'pointer'; chip.title += ' — click to dial'; chip.onclick = () => openDialPad(); document.body.appendChild(chip);
+      chip.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9998;background:#1e8e3e;color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.15)'; chip.textContent = '📞 Phone on'; chip.style.cursor = 'pointer'; chip.title += ' — click to dial'; chip.onclick = () => { if (chip.dataset.moved === '1') { chip.dataset.moved = ''; return; } openDialPad(); }; document.body.appendChild(chip);
+  // The phone button can be dragged to any spot; a small press still counts as a click. The spot is remembered on this browser.
+  (function (el) {
+    let saved = null; try { saved = JSON.parse(localStorage.getItem('bc_phone_pos') || 'null'); } catch { /* private browsing */ }
+    const clampTo = (x, y) => ({ x: Math.min(Math.max(0, x), innerWidth - el.offsetWidth), y: Math.min(Math.max(0, y), innerHeight - el.offsetHeight) });
+    const placeAt = (x, y) => { const p = clampTo(x, y); el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; };
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) placeAt(saved.x, saved.y);
+    let press = null;
+    el.addEventListener('pointerdown', e => { press = { sx: e.clientX, sy: e.clientY, l: el.offsetLeft, t: el.offsetTop, moved: false }; try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ } });
+    el.addEventListener('pointermove', e => {
+      if (!press) return;
+      const dx = e.clientX - press.sx, dy = e.clientY - press.sy;
+      if (!press.moved && Math.hypot(dx, dy) < 6) return;
+      press.moved = true; el.dataset.moved = '1';
+      placeAt(press.l + dx, press.t + dy);
+    });
+    const end = () => { if (press && press.moved) { try { localStorage.setItem('bc_phone_pos', JSON.stringify({ x: el.offsetLeft, y: el.offsetTop })); } catch { /* ignore */ } } press = null; };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    window.addEventListener('resize', () => { if (el.style.left) placeAt(el.offsetLeft, el.offsetTop); });
+  })(chip);
     } catch (e) { console.warn('phone off:', e.message); device = null; }
   }
   // Any [data-dial] button: call from this computer when the browser phone is on; otherwise ring the user's phone first.
@@ -566,7 +586,7 @@
           <div class="f wide"><label for="ln">Internal notes</label><textarea id="ln" placeholder="Calls, site walk notes, next steps. Only visible here.">${esc(l.notes || '')}</textarea></div>
           <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
         </div>`,
-      footer: `<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
+      footer: `<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}${l.customer_id ? '<button class="btn ghost" id="lOpenCust">Open customer</button>' : '<button class="btn ghost" id="lConvert">Convert to customer</button>'}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
     });
     $$('[data-file]').forEach(b => b.onclick = () => downloadFile(files[b.dataset.file]));
     renderLeadAI(l);
@@ -577,6 +597,12 @@
       } catch (err) { toast(err.message, true); }
     };
     if ($('#lQuote')) $('#lQuote').onclick = () => { closeDrawer(); openEstimator(null, l); };
+    if ($('#lConvert')) $('#lConvert').onclick = async () => {
+      if (!confirm('Convert this lead into a customer? The customer keeps this lead’s details, and quotes can be built from it.')) return;
+      try { const r = await api(`/api/admin/leads/${l.id}/convert`, { method: 'POST' }); toast('Converted to a customer'); closeDrawer(); await refreshNewCount(); go('customers'); setTimeout(() => openCustomerPage(r.customer_id), 350); }
+      catch (err) { toast(err.message, true); }
+    };
+    if ($('#lOpenCust')) $('#lOpenCust').onclick = () => { closeDrawer(); go('customers'); setTimeout(() => openCustomerPage(l.customer_id), 350); };
     $('#lFuSave').onclick = async () => {
       const d = $('#lFu').value;
       if (!d) { toast('Choose a follow-up date', true); return; }

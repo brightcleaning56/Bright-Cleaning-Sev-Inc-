@@ -126,7 +126,7 @@ app.get('/proposal/:token',(req,res)=>res.sendFile(path.join(ROOT,'public','prop
 require('./admin-ext')(app,{bumpTv,signToken,db,auth,logAction,clean,num,required,estimateMath,uploadDir,bcrypt,adminEmail,adminHash});
 require('./sitemedia')(app,{db,auth,logAction,clean,uploadDir});
 require('./integrations')(app,{db,auth,logAction,clean,isEmail,notify});
-require('./leadstage')(app,{db,auth,logAction,clean,roleOf:roleFor});
+require('./leadstage')(app,{db,auth,logAction,clean,roleOf:roleFor,ops});
 require('./scopes')(app,{db,auth,logAction,clean});
 require('./command')(app,{db,auth,adminEmail});
 require('./intake')(app,{db,upload,clean,isEmail,notify,logLead,getOps:()=>ops,path,fs});

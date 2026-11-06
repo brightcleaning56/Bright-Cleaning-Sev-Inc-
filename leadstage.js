@@ -7,9 +7,9 @@
 // Stage changes are made by the system at each action, so nobody has to remember to update them.
 const FOLLOW_ROLES = ['owner', 'manager', 'staff', 'sales'];
 
-module.exports = function (app, { db, auth, logAction, clean, roleOf, who }) {
+module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
   const cols = db.prepare('PRAGMA table_info(leads)').all().map(c => c.name);
-  for (const [c, t] of [['stage', "TEXT NOT NULL DEFAULT 'new'"], ['follow_up_date', 'TEXT'], ['follow_up_note', 'TEXT'], ['follow_up_issue_id', 'INTEGER']]) {
+  for (const [c, t] of [['stage', "TEXT NOT NULL DEFAULT 'new'"], ['follow_up_date', 'TEXT'], ['follow_up_note', 'TEXT'], ['follow_up_issue_id', 'INTEGER'], ['customer_id', 'INTEGER']]) {
     if (!cols.includes(c)) db.exec(`ALTER TABLE leads ADD COLUMN ${c} ${t}`);
   }
   // One-time backfill for leads that existed before stages: anything touched is "worked", closed ones are "done".
@@ -23,6 +23,7 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, who }) {
   // Recalculates a lead's stage from its state (used after notes, status, bulk or follow-up changes).
   const recompute = id => db.prepare(`UPDATE leads SET stage = CASE
       WHEN status IN ('Won','Lost','Archived') THEN 'done'
+      WHEN customer_id IS NOT NULL THEN 'converted'
       WHEN follow_up_date IS NOT NULL AND follow_up_date <> '' THEN 'followup'
       WHEN stage = 'waiting' THEN 'waiting'
       ELSE 'worked' END WHERE id=?`).run(Number(id));
@@ -32,6 +33,22 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, who }) {
   app.locals.setLeadWaiting = setWaiting;
 
   const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));
+
+  // Turn a lead into a customer. The customer is matched on email or company first, so the same business is never listed twice.
+  // The lead keeps its quote history and stays linked; it moves to "converted" and leaves the open list.
+  app.post('/api/admin/leads/:id/convert', auth, (req, res) => {
+    if (!FOLLOW_ROLES.includes(roleOf(req.user && req.user.email))) return res.status(403).json({ error: 'Your role cannot convert leads.' });
+    const lead = db.prepare('SELECT * FROM leads WHERE id=?').get(Number(req.params.id));
+    if (!lead) return res.status(404).json({ error: 'Lead not found.' });
+    if (lead.customer_id) return res.json({ ok: true, customer_id: lead.customer_id, already: true });
+    if (!ops || !ops.upsertCustomer) return res.status(500).json({ error: 'Customer records are not available right now.' });
+    const cid = ops.upsertCustomer({ name: lead.contact_name, company: lead.company, email: lead.email, phone: lead.phone, address: lead.address }, 'converted lead #' + lead.id);
+    if (!cid) return res.status(400).json({ error: 'Add a name, company, email or phone to the lead before converting it.' });
+    db.prepare('UPDATE leads SET customer_id=?, updated_at=? WHERE id=?').run(cid, new Date().toISOString(), lead.id);
+    recompute(lead.id);
+    logAction(req, 'converted lead to customer', 'lead', lead.id, `customer #${cid}`);
+    res.json({ ok: true, customer_id: cid });
+  });
 
   // Set a follow-up: the lead leaves the open list until that date, and a task appears in Issues & tasks.
   app.post('/api/admin/leads/:id/follow-up', auth, (req, res) => {
