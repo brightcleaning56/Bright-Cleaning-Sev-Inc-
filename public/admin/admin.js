@@ -1930,7 +1930,7 @@
         ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}${aiHtml}
         <label for="callTr"><b>Transcript or detailed notes</b></label><textarea id="callTr" rows="6" style="width:100%" placeholder="Paste the call transcript or write what was said…">${esc(c.transcript || '')}</textarea>
         <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity.</p>'}</div>`,
-      footer: `<button class="btn ghost" data-close>Close</button>${!c.customer_id && c.phone ? '<button class="btn" id="callSaveCust">Save as customer</button>' : ''}${c.customer_id && !c.issue_id ? '<button class="btn ghost" id="callIssue">Create issue</button>' : ''}<button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : ''}` });
+      footer: `<button class="btn ghost" data-close>Close</button>${c.recording_url && !c.transcript ? '<button class="btn ghost" id="callTranscribe">Transcribe recording</button>' : ''}${!c.customer_id && c.phone ? '<button class="btn" id="callSaveCust">Save as customer</button>' : ''}${c.customer_id && !c.issue_id ? '<button class="btn ghost" id="callIssue">Create issue</button>' : ''}<button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : ''}` });
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     act('#callLead', () => { closeDrawer(); go('leads'); openLead(c.lead_id); });
     act('#callSaveCust', () => openSaveCaller(c));
@@ -1946,6 +1946,20 @@
     };
     act('#callIssue', async () => { try { const r = await api(`/api/admin/calls/${c.id}/issue`, { method: 'POST', json: {} }); toast(`${r.issue.number} created from this call`); closeDrawer(); go('issues'); openIssue(r.issue); } catch (e) { toast(e.message, true); } });
     act('#callDone', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_done: true } }); toast('Follow-up done'); closeDrawer(); loadCalls(); } catch (e) { toast(e.message, true); } });
+    if ($('#callTranscribe')) $('#callTranscribe').onclick = async () => {
+      const b = $('#callTranscribe'); b.disabled = true; b.textContent = 'Transcribing…';
+      try {
+        await api(`/api/admin/calls/${c.id}/transcribe`, { method: 'POST' });
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 4000));
+          const st = await api(`/api/admin/calls/${c.id}/transcribe-status`);
+          if (st.status === 'completed') { toast('Transcript ready'); openCall({ id: c.id }); return; }
+          if (st.status === 'failed' || st.status === 'absent') { toast('Twilio could not transcribe this recording', true); break; }
+        }
+        toast('Still transcribing. Open the call again in a minute.');
+      } catch (e) { toast(e.message, true); }
+      b.disabled = false; b.textContent = 'Transcribe recording';
+    };
     act('#callAnalyze', async () => { const b = $('#callAnalyze'); b.disabled = true; b.textContent = 'Analyzing…'; try { await api(`/api/admin/ai/calls/${c.id}/analyze`, { method: 'POST', json: { transcript: $('#callTr').value } }); toast('Call analyzed'); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Analyze with AI'; } });
     act('#callUseFu', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_date: a.follow_up_date, follow_up_done: false } }); toast('Follow-up set for ' + a.follow_up_date); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); } });
     act('#callCopy', async () => { try { await navigator.clipboard.writeText(a.reply_draft); toast('Reply copied'); } catch { toast('Select the text to copy', true); } });

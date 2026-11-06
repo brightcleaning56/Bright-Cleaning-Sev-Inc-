@@ -614,4 +614,44 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       res.json({ ok: true, sid: j.sid || null, to });
     } catch (e) { res.status(502).json({ error: 'The call could not be placed: ' + e.message }); }
   });
+  { const cc = db.prepare('PRAGMA table_info(calls)').all().map(c => c.name); if (!cc.includes('transcript_sid')) db.exec('ALTER TABLE calls ADD COLUMN transcript_sid TEXT'); }
+  // ---- Transcribe a saved recording on request. Works even when live transcription missed the call. ----
+  // Asks Twilio to transcribe the call's recording, then fills in the call's transcript when Twilio has the text.
+  const recordingSidOf = url => { const m = /\/Recordings\/(RE[0-9a-f]{32})/i.exec(String(url || '')); return m ? m[1] : null; };
+  const twApi = (path, init = {}) => {
+    const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
+    return fetch(`${api}/2010-04-01/Accounts/${acctSid()}${path}`, { ...init, headers: { Authorization: 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64'), ...(init.headers || {}) } });
+  };
+  app.post('/api/admin/calls/:id/transcribe', auth, async (req, res) => {
+    const c = db.prepare('SELECT id, recording_url, transcript FROM calls WHERE id=?').get(Number(req.params.id));
+    if (!c) return res.status(404).json({ error: 'Call not found.' });
+    if (c.transcript) return res.json({ ok: true, transcript: c.transcript, already: true });
+    const rs = recordingSidOf(c.recording_url);
+    if (!rs) return res.status(400).json({ error: 'This call has no recording to transcribe.' });
+    if (!token() || !acctSid()) return res.status(503).json({ error: 'The phone provider is not connected.' });
+    try {
+      const r = await twApi('/Transcriptions.json', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ RecordingSid: rs }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return res.status(502).json({ error: 'Twilio could not start the transcription: ' + (j.message || r.status) });
+      db.prepare('UPDATE calls SET transcript_sid=? WHERE id=?').run(String(j.sid || ''), c.id);
+      res.json({ ok: true, status: j.status || 'in-progress', transcription_sid: j.sid || null });
+    } catch (e) { res.status(502).json({ error: 'Twilio could not be reached: ' + e.message }); }
+  });
+  // Checks on the transcription; when Twilio has the text, it is saved to the call.
+  app.get('/api/admin/calls/:id/transcribe-status', auth, async (req, res) => {
+    const c = db.prepare('SELECT id, transcript, transcript_sid FROM calls WHERE id=?').get(Number(req.params.id));
+    if (!c) return res.status(404).json({ error: 'Call not found.' });
+    if (c.transcript) return res.json({ status: 'completed', transcript: c.transcript });
+    if (!c.transcript_sid) return res.json({ status: 'not-started' });
+    try {
+      const r = await twApi(`/Transcriptions/${encodeURIComponent(c.transcript_sid)}.json`);
+      const j = await r.json().catch(() => ({}));
+      if (j.status === 'completed' && j.transcription_text) {
+        const text = String(j.transcription_text).replace(/\s+/g, ' ').trim().slice(0, 20000);
+        db.prepare('UPDATE calls SET transcript=? WHERE id=?').run(text, c.id);
+        return res.json({ status: 'completed', transcript: text });
+      }
+      res.json({ status: j.status || 'in-progress' });
+    } catch (e) { res.status(502).json({ error: 'Twilio could not be reached: ' + e.message }); }
+  });
 };
