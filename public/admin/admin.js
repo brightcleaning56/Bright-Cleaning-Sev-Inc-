@@ -1435,7 +1435,7 @@
       h1{font-size:30px;margin:0;color:#10263e}.co b{font-size:18px;color:#10263e}.muted{color:#637587}
       table{width:100%;border-collapse:collapse;margin:26px 0}td,th{padding:10px;border-bottom:1px solid #dce5ec;text-align:left}th{font-size:12px;color:#637587}
       .num{text-align:right}.due{font-size:20px;font-weight:800;color:#10263e}.pre{white-space:pre-wrap}@media print{.noprint{display:none}}</style></head><body>
-      <div class="top"><div class="co"><b>Bright Cleaning Sev Inc.</b><br><span class="muted">info@brightclean.net · 515-329-5889<br>brightclean.net</span></div>
+      <div class="top"><div class="co"><b>Bright Cleaning Sev Inc.</b><br><span class="muted">info@brightclean.net · +1 (515) 303-3024<br>brightclean.net</span></div>
       <div style="text-align:right"><h1>INVOICE</h1><div>${esc(i.invoice_number)}</div><div class="muted">Date: ${fmtDate(i.issue_date || (i.created_at || '').slice(0, 10))}<br>Due: ${fmtDate(i.due_date)}</div></div></div>
       <p style="margin-top:22px"><span class="muted">Bill to</span><br><b>${esc(i.company || i.customer_name || '')}</b>${i.company && i.customer_name ? '<br>' + esc(i.customer_name) : ''}</p>
       <table><thead><tr><th>Description</th><th class="num">Amount</th></tr></thead><tbody>
@@ -1517,7 +1517,7 @@
       <dl class="facts"><dt>Phone service</dt><dd>${r.connected ? '<span class="badge green">Connected</span>' : '<span class="badge amber">Not connected</span>'}</dd>
       <dt>Click-to-call</dt><dd>${r.can_dial && r.ring_phones.length ? '<span class="badge green">Ready</span>' : '<span class="badge amber">Needs a ring phone</span>'}</dd>
       <dt>Browser phone</dt><dd>${r.softphone ? '<span class="badge green">On</span>' : '<span class="badge amber">Off</span> <small class="muted">needs TWILIO_API_KEY + TWILIO_API_SECRET in Render</small>'}</dd></dl>${warn}
-      <form id="ringForm" style="margin-top:10px"><div class="f"><label for="ringPh">Phones to ring (separate several with commas)</label><input id="ringPh" value="${esc(r.ring_phones.join(', '))}" placeholder="+1 469 267 8472, +1 515 329 5889"></div>
+      <form id="ringForm" style="margin-top:10px"><div class="f"><label for="ringPh">Phones to ring (separate several with commas)</label><input id="ringPh" value="${esc(r.ring_phones.join(', '))}" placeholder="+1 469 267 8472, +1 515 303 3024"></div>
       <div class="formbar"><button class="btn">Save ring phones</button><span class="msg" id="ringMsg" role="status"></span></div></form>`;
     { const hb = document.createElement('div'); hb.style.marginTop = '14px';
       hb.innerHTML = `<form id="cbForm" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><div class="f" style="flex:1;min-width:220px"><label for="cbOwner">Callbacks and voicemails are assigned to</label><input id="cbOwner" type="email" value="${esc(r.callback_owner || '')}" placeholder="name@brightclean.net"></div><button class="btn ghost">Save</button><span class="msg" id="cbMsg" role="status"></span></form>

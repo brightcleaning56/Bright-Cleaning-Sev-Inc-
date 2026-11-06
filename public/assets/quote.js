@@ -109,7 +109,7 @@
     try {
       const r = await fetch('/api/quotes', { method: 'POST', body: fd });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || 'Something went wrong. Please call 515-329-5889.');
+      if (!r.ok) throw new Error(j.error || 'Something went wrong. Please call +1 (515) 303-3024.');
       store.clear();
       $('qStep3').hidden = true; $('qDone').hidden = false; if ($('qDone').scrollIntoView) $('qDone').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
@@ -137,5 +137,5 @@
       choose(draft.service_key, draft);
       $('qErr').textContent = 'We restored the answers you started earlier.'; $('qErr').className = 'form-status';
     } else if (want && schema[want]) choose(want);
-  }).catch(() => { $('qSvc').innerHTML = '<p>Unable to load the form. Please call 515-329-5889 or use the <a href="/request-a-quote.html">bid request form</a>.</p>'; });
+  }).catch(() => { $('qSvc').innerHTML = '<p>Unable to load the form. Please call +1 (515) 303-3024 or use the <a href="/request-a-quote.html">bid request form</a>.</p>'; });
 })();

@@ -10,7 +10,7 @@
     const k = d.contract, open = ['Sent', 'Viewed'].includes(k.signature_status);
     $('#app').innerHTML = `<div class="card"><h1>${esc(k.title || 'Services contract')}</h1><div class="muted">${esc(k.kind || 'Contract')} ${esc(k.number)} · ${esc(k.company || k.customer_name || '')}</div>
       <dl><dt>Term</dt><dd>${esc(k.start_date || '—')} to ${esc(k.end_date || '—')}</dd><dt>Contract value</dt><dd>${money(k.value)}</dd>${k.payment_terms ? `<dt>Payment terms</dt><dd>${esc(k.payment_terms)}</dd>` : ''}${k.billing ? `<dt>Billing</dt><dd>${esc(k.billing)}</dd>` : ''}${k.auto_renew ? `<dt>Renewal</dt><dd>Renews automatically unless either party gives ${k.notice_days || 30} days' notice</dd>` : ''}</dl>
-      <div class="row"><a class="btn ghost" href="/api/contract/${token}/pdf">Download PDF</a></div><p class="muted" style="margin:10px 0 0">Questions? Office 515-329-5889 · Eric Moore (Owner) 469-267-8472 · info@brightclean.net</p></div>
+      <div class="row"><a class="btn ghost" href="/api/contract/${token}/pdf">Download PDF</a></div><p class="muted" style="margin:10px 0 0">Questions? Office +1 (515) 303-3024 · Eric Moore (Owner) 469-267-8472 · info@brightclean.net</p></div>
       <div class="card"><h2>Scope of work</h2><div class="pre">${esc(k.scope || '')}</div></div>
       <div class="card"><h2>Terms and conditions</h2><div class="pre">${esc(k.terms || '')}</div></div>
       ${k.signature_status === 'Customer signed' || k.signature_status === 'Signed' ? `<div class="card"><h2>Signed</h2><p>Signed by <b>${esc(k.signer_name)}</b> on ${esc(String(k.signed_at).slice(0, 10))}.${k.countersigned_at ? ' Countersigned by Bright Cleaning Sev Inc. — this contract is in effect.' : ' Bright Cleaning Sev Inc. will countersign shortly.'}</p></div>` : ''}

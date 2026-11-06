@@ -52,7 +52,7 @@ module.exports = function mountCalls(app, ctx) {
     db.prepare('UPDATE calls SET transcript=? WHERE id=?').run(((manual ? manual + '\n\n' : '') + '[Live transcript]\n' + live).slice(0, 60000), c.id);
   }
   const softphone = () => !!(process.env.TWILIO_API_KEY && process.env.TWILIO_API_SECRET && acctSid() && twNumber());
-  // Phones to ring: admin setting overrides env. Lenient: pulls every valid US number out of the text ("+1 469-267-8472, 515.329.5889").
+  // Phones to ring: admin setting overrides env. Lenient: pulls every valid US number out of the text ("+1 469-267-8472, 515.303.3024").
   const parsePhones = txt => { const out = []; for (const m of String(txt || '').match(/\+?1?[\s.\-()]*\d{3}[\s.\-()]*\d{3}[\s.\-]*\d{4}/g) || []) { const e = e164(m); if (e && !out.includes(e)) out.push(e); } return out.slice(0, 5); };
   const ringPhones = () => parsePhones(getS('twilio_ring_phones') || process.env.TWILIO_FORWARD_TO);
   const e164 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 10 ? '+1' + d : d.length === 11 && d[0] === '1' ? '+' + d : ''; };

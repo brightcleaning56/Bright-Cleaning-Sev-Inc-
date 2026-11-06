@@ -247,7 +247,7 @@ module.exports = function mountOps(app, ctx) {
           if (stage === 'day3' && sentAlready('proposal_reminder', e.id, 'day7')) continue;
           const link = `${baseUrl()}/proposal/${e.public_token}`;
           const ok = await send('proposal_reminder', e.id, stage, e.email, `Following up: Bright Clean proposal for ${e.project_name || 'your project'}`,
-            `Hello ${e.customer_name},\n\nWe wanted to follow up on the proposal we sent for ${e.project_name || 'your project'}.\n\nReview the proposal: ${link}\n\nIf you have questions or need changes to the scope, reply to this email or call 515-329-5889.\n\nBright Cleaning Sev Inc.`);
+            `Hello ${e.customer_name},\n\nWe wanted to follow up on the proposal we sent for ${e.project_name || 'your project'}.\n\nReview the proposal: ${link}\n\nIf you have questions or need changes to the scope, reply to this email or call +1 (515) 303-3024.\n\nBright Cleaning Sev Inc.`);
           if (ok) { result.proposal_reminders++; if (stage === 'day7' && !sentAlready('proposal_reminder', e.id, 'day3')) log('proposal_reminder', e.id, 'day3', e.email, 'sent', 'covered by day-7 reminder'); }
         }
       }
@@ -263,7 +263,7 @@ module.exports = function mountOps(app, ctx) {
           const bal = Number(i.amount) - Number(i.paid_amount || 0);
           const subject = stage === 'due3' ? `Reminder: invoice ${i.invoice_number} is due ${i.due_date}` : `Past due: invoice ${i.invoice_number}`;
           const ok = await send('invoice_reminder', i.id, stage, i.email, subject,
-            `Hello ${i.customer_name || i.company || ''},\n\nThis is a reminder that invoice ${i.invoice_number} has a balance of ${money(bal)}${stage === 'due3' ? `, due ${i.due_date}` : `, which was due ${i.due_date}`}.\n\nIf you have already sent payment, thank you, and please disregard this message. For questions, reply to this email or call 515-329-5889.\n\nBright Cleaning Sev Inc.`);
+            `Hello ${i.customer_name || i.company || ''},\n\nThis is a reminder that invoice ${i.invoice_number} has a balance of ${money(bal)}${stage === 'due3' ? `, due ${i.due_date}` : `, which was due ${i.due_date}`}.\n\nIf you have already sent payment, thank you, and please disregard this message. For questions, reply to this email or call +1 (515) 303-3024.\n\nBright Cleaning Sev Inc.`);
           if (ok) result.invoice_reminders++;
         }
       }

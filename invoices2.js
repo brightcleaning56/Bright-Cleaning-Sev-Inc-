@@ -24,14 +24,14 @@ module.exports = function mountInvoices(app, ctx) {
   function pdf(inv) {
     const d = new Doc(), paid = Number(inv.paid_amount || 0), bal = Math.max(0, Number(inv.amount || 0) - paid), k = contractFor(inv);
     d.box(0, 742, 612, 50, '0.06 0.15 0.26'); d.y = 768; d.text('BRIGHT CLEANING SEV INC.', { size: 15, bold: true, color: '1 1 1' }); d.text('INVOICE', { size: 15, bold: true, color: '1 1 1', align: 'right' }); d.y = 752;
-    d.text('Office 515-329-5889  |  Eric Moore, Owner: 469-267-8472  |  info@brightclean.net  |  brightclean.net', { size: 8, color: '0.8 0.88 0.95' }); d.y = 718;
+    d.text('Office +1 (515) 303-3024  |  Eric Moore, Owner: 469-267-8472  |  info@brightclean.net  |  brightclean.net', { size: 8, color: '0.8 0.88 0.95' }); d.y = 718;
     d.text(`Invoice ${inv.invoice_number}`, { size: 12, bold: true }); d.text(`Issued ${String(inv.issue_date || inv.sent_at || inv.created_at).slice(0, 10)}${inv.due_date ? '   Due ' + inv.due_date : ''}`, { size: 9, align: 'right' }); d.y -= 22;
     d.heading('Bill to', 11); d.para([inv.company, inv.customer_name, inv.email].filter(Boolean).join('\n') || '-');
     if (k) { d.heading('For', 11); d.para(`${k.title || 'Contract #' + k.id}`); }
     d.heading('Amount', 11);
     d.table([{ label: 'Description', w: 70 }, { label: 'Amount', w: 30, align: 'right' }], [[inv.notes ? String(inv.notes).split('\n')[0].slice(0, 90) : 'Cleaning services', money(inv.amount)], ['Payments received', '-' + money(paid)]]);
     d.gap(4); d.text('Balance due', { size: 13, bold: true }); d.text(money(bal), { size: 13, bold: true, align: 'right' }); d.y -= 22;
-    d.heading('Payment', 11); d.para(inv.terms || 'Payment is due by the due date shown. Please reference the invoice number with your payment. Questions: office 515-329-5889.');
+    d.heading('Payment', 11); d.para(inv.terms || 'Payment is due by the due date shown. Please reference the invoice number with your payment. Questions: office +1 (515) 303-3024.');
     d.footer(`Bright Cleaning Sev Inc. - Invoice ${inv.invoice_number}`);
     return d.toBuffer();
   }
@@ -62,7 +62,7 @@ module.exports = function mountInvoices(app, ctx) {
     const m = getMailer && getMailer(); if (!m) return res.status(503).json({ error: 'Email is not set up, so the invoice was not sent.' });
     try {
       await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || adminEmail, to, subject: `Invoice ${inv.invoice_number} from Bright Cleaning Sev Inc. — ${money(Math.max(0, inv.amount - (inv.paid_amount || 0)))} due ${inv.due_date}`,
-        text: `Hello${inv.customer_name ? ' ' + inv.customer_name : ''},\n\nPlease find invoice ${inv.invoice_number} attached.\nAmount: ${money(inv.amount)}\nBalance due: ${money(Math.max(0, inv.amount - (inv.paid_amount || 0)))}\nDue date: ${inv.due_date}\n\nThank you for your business.\nBright Cleaning Sev Inc.\nOffice 515-329-5889 · Eric Moore (Owner) 469-267-8472`,
+        text: `Hello${inv.customer_name ? ' ' + inv.customer_name : ''},\n\nPlease find invoice ${inv.invoice_number} attached.\nAmount: ${money(inv.amount)}\nBalance due: ${money(Math.max(0, inv.amount - (inv.paid_amount || 0)))}\nDue date: ${inv.due_date}\n\nThank you for your business.\nBright Cleaning Sev Inc.\nOffice +1 (515) 303-3024 · Eric Moore (Owner) 469-267-8472`,
         attachments: [{ filename: `${inv.invoice_number || 'invoice'}.pdf`, content: pdf(inv), contentType: 'application/pdf' }] });
     } catch (e) {
       logAction(req, 'invoice send FAILED', 'invoice', inv.id, `${inv.invoice_number} to ${to}: ${e.message}`);

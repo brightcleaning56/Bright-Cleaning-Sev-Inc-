@@ -145,7 +145,7 @@ module.exports = function mountBids(app, ctx) {
   function proposalPdf(e) {
     const d = new Doc(), money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     d.box(0, 742, 612, 50, '0.06 0.15 0.26'); d.y = 768; d.text('BRIGHT CLEANING SEV INC.', { size: 15, bold: true, color: '1 1 1' }); d.text('PROPOSAL', { size: 15, bold: true, color: '1 1 1', align: 'right' }); d.y = 752;
-    d.text('Office 515-329-5889  |  Eric Moore, Owner: 469-267-8472  |  info@brightclean.net  |  brightclean.net', { size: 8, color: '0.8 0.88 0.95' }); d.y = 718;
+    d.text('Office +1 (515) 303-3024  |  Eric Moore, Owner: 469-267-8472  |  info@brightclean.net  |  brightclean.net', { size: 8, color: '0.8 0.88 0.95' }); d.y = 718;
     d.text(`${number(e)}  v${e.version || 1}`, { size: 11, bold: true }); d.text(`Date: ${String(e.sent_at || e.created_at).slice(0, 10)}${e.expires_on ? `   Valid until: ${e.expires_on}` : ''}`, { size: 9, align: 'right' }); d.y -= 22;
     d.heading('Prepared for', 11); d.para([e.company, e.customer_name, e.email, e.site_address].filter(Boolean).join('\n'));
     if (e.project_name) { d.heading('Project', 11); d.para(e.project_name); }
@@ -167,7 +167,7 @@ module.exports = function mountBids(app, ctx) {
     d.heading('Acceptance', 11);
     if (e.signed_at) d.para(`Accepted electronically by ${e.signer_name}${e.signer_title ? ', ' + e.signer_title : ''} on ${String(e.signed_at).slice(0, 16).replace('T', ' ')} UTC.`);
     else { d.gap(18); d.rule('0.3 0.3 0.3'); d.para('Authorized signature / name / title / date', { size: 8 }); }
-    d.footer(`Bright Cleaning Sev Inc. - ${number(e)} v${e.version || 1} - Office 515-329-5889 - Eric Moore (Owner) 469-267-8472`);
+    d.footer(`Bright Cleaning Sev Inc. - ${number(e)} v${e.version || 1} - Office +1 (515) 303-3024 - Eric Moore (Owner) 469-267-8472`);
     return d.toBuffer();
   }
   app.get('/api/admin/bids/:id/pdf', auth, (req, res) => {
