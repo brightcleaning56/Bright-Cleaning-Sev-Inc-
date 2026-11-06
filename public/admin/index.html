@@ -313,6 +313,7 @@
   .drawer .body { padding: 18px 22px; overflow-y: auto; flex: 1; }
   .drawer footer { padding: 14px 22px; border-top: 1px solid var(--line2); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .drawer footer .grow { flex: 1; }
+  @media (max-width: 760px) { .drawer footer { padding-bottom: 84px; } } /* keeps Delete and Save clear of the floating Phone button on phones */
   .drawer .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   dl.facts { display: grid; grid-template-columns: 140px 1fr; gap: 8px 14px; margin: 0 0 16px; font-size: 14px; }
   dl.facts dt { color: var(--muted); }
