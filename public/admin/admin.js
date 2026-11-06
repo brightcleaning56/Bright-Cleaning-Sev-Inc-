@@ -584,6 +584,7 @@
         <div class="grid">
           <div class="f"><label for="ls">Status</label><select id="ls">${options(STATUS.leads, l.status)}</select></div>
           <div class="f wide"><label for="ln">Internal notes</label><textarea id="ln" placeholder="Calls, site walk notes, next steps. Only visible here.">${esc(l.notes || '')}</textarea></div>
+          <div class="f wide"><label class="chk"><input type="checkbox" id="lCb" ${l.callback_requested ? 'checked' : ''}> Call back requested (automatic calls only go to leads marked this way)</label></div>
           <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
         </div>`,
       footer: `<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}${l.customer_id ? '<button class="btn ghost" id="lOpenCust">Open customer</button>' : '<button class="btn ghost" id="lConvert">Convert to customer</button>'}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
@@ -597,6 +598,7 @@
       } catch (err) { toast(err.message, true); }
     };
     if ($('#lQuote')) $('#lQuote').onclick = () => { closeDrawer(); openEstimator(null, l); };
+    if ($('#lCb')) $('#lCb').onchange = async () => { try { await api(`/api/admin/leads/${l.id}/callback-request`, { method: 'POST', json: { requested: $('#lCb').checked } }); toast($('#lCb').checked ? 'Marked: call back requested' : 'Cleared call back request'); } catch (err) { toast(err.message, true); } };
     if ($('#lConvert')) $('#lConvert').onclick = async () => {
       if (!confirm('Convert this lead into a customer? The customer keeps this lead’s details, and quotes can be built from it.')) return;
       try { const r = await api(`/api/admin/leads/${l.id}/convert`, { method: 'POST' }); toast('Converted to a customer'); closeDrawer(); await refreshNewCount(); go('customers'); setTimeout(() => openCustomerPage(r.customer_id), 350); }
@@ -1540,7 +1542,19 @@
     // Only owners and managers manage company settings. Everyone else sees just their own password and name.
     const own = state.me && !['owner', 'manager'].includes(state.me.role);
     if (own) { $$('#v-settings .card').forEach(c => { if (c.id !== 'pwForm') c.hidden = true; }); return; }
-    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings(), loadApiKeys()]);
+    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings(), loadApiKeys(), loadCallbackSettings()]);
+  }
+  async function loadCallbackSettings() {
+    if (!$('#callbackForm')) return;
+    let r; try { r = await api('/api/admin/outbound-callbacks'); } catch { $('#callbackCard').hidden = true; return; }
+    const st = r.settings;
+    $('#cbLegal').checked = !!st.legal_review_confirmed; $('#cbOn').checked = !!st.enabled; $('#cbLimit').value = st.daily_limit; $('#cbStart').value = st.start_hour; $('#cbEnd').value = st.end_hour;
+    $('#cbSent').textContent = `Sent today: ${r.sent_today} of ${st.daily_limit}.`;
+    $('#callbackForm').onsubmit = async ev => {
+      ev.preventDefault();
+      try { await api('/api/admin/outbound-callbacks', { method: 'PUT', json: { legal_review_confirmed: $('#cbLegal').checked, enabled: $('#cbOn').checked, daily_limit: Number($('#cbLimit').value), start_hour: Number($('#cbStart').value), end_hour: Number($('#cbEnd').value) } }); $('#cbMsg').textContent = 'Saved.'; loadCallbackSettings(); }
+      catch (e) { $('#cbMsg').textContent = e.message; }
+    };
   }
   async function loadApiKeys() {
     if (!$('#apiKeyRows')) return;

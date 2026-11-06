@@ -754,6 +754,19 @@
         <div class="formbar" style="margin-top:0"><button class="btn" id="backupNow">Back up now</button><span class="msg" id="backupMsg" role="status"></span></div>
         <div id="backupList" style="margin-top:12px"></div>
       </div>
+      <div class="card" id="callbackCard" style="margin-top:14px">
+        <h2>Automatic callbacks (off until the legal review is done)</h2>
+        <p class="hint">When turned on, the system calls leads marked “Call back requested”. The caller hears that it is an automated assistant, that the call may be recorded, and can press 1 to reach the team. Calls stay inside business hours and under the daily limit.</p>
+        <form id="callbackForm" class="two" style="margin-top:10px">
+          <label class="chk"><input type="checkbox" id="cbLegal"> Legal review is done and the script is approved</label>
+          <label class="chk"><input type="checkbox" id="cbOn"> Automatic callbacks are on</label>
+          <div class="f"><label for="cbLimit">Daily limit (0 to 50)</label><input id="cbLimit" type="number" min="0" max="50" value="10"></div>
+          <div class="f"><label for="cbStart">Start hour (0 to 23)</label><input id="cbStart" type="number" min="0" max="23" value="9"></div>
+          <div class="f"><label for="cbEnd">End hour (1 to 24)</label><input id="cbEnd" type="number" min="1" max="24" value="17"></div>
+          <div><button class="btn" type="submit">Save automatic callbacks</button> <span class="msg" id="cbMsg" role="status"></span></div>
+        </form>
+        <p class="hint" id="cbSent"></p>
+      </div>
       <div class="card" id="apiKeysCard" style="margin-top:14px">
         <h2>Connect other sources (API keys)</h2>
         <p class="hint">Partner sites, ad landing pages, Zapier or a CRM can send leads straight into Leads. Create a key for each source. A key is shown once: copy it when it appears. Revoke a key any time to stop it.</p>

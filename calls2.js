@@ -511,4 +511,90 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     if (e !== ow && !db.prepare('SELECT 1 FROM admin_users WHERE lower(email)=?').get(e)) return res.status(400).json({ error: 'Choose someone who has access to the admin.' });
     setS('callback_owner', e); logAction(req, 'set callback owner', 'phone settings', 0, e); res.json({ ok: true, owner: e });
   });
+  // Columns for automatic callbacks on leads.
+  { const lc = db.prepare('PRAGMA table_info(leads)').all().map(c => c.name); for (const [c, t] of [['callback_requested', 'INTEGER NOT NULL DEFAULT 0'], ['last_callback_at', 'TEXT'], ['callback_calls', 'INTEGER NOT NULL DEFAULT 0']]) if (!lc.includes(c)) db.exec(`ALTER TABLE leads ADD COLUMN ${c} ${t}`); }
+  const roleOfEmail = e => { const em = String(e || '').toLowerCase(); if (process.env.ADMIN_EMAIL && em === String(process.env.ADMIN_EMAIL).toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em); return r ? r.role : 'staff'; };
+  // ---- Automatic callbacks for leads who asked for one. OFF until the owner enables it AND confirms the legal review. ----
+  // A lead is only called when someone has marked it "Call back requested". The caller hears a disclosure (automated assistant,
+  // recorded call), and presses 1 to be connected to the team. Calls stay inside business hours and under a daily limit.
+  const OB_KEY = 'outbound_callbacks';
+  const obDefaults = { enabled: false, legal_review_confirmed: false, daily_limit: 10, start_hour: 9, end_hour: 17 };
+  const obGet = () => { try { return { ...obDefaults, ...(JSON.parse(getS(OB_KEY) || '{}')) }; } catch { return { ...obDefaults }; } };
+  const localHour = () => { try { return Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: process.env.BUSINESS_TZ || 'America/Chicago' }).format(new Date())) % 24; } catch { return new Date().getHours(); } };
+  const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
+  const obSentToday = () => (db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='outbound callback placed' AND created_at>=?").get(startOfToday()) || {}).n || 0;
+
+  // Places one call per eligible lead, up to the daily limit. Returns what happened, so it can be tested and shown to the owner.
+  async function runOutboundSweep() {
+    const s = obGet();
+    if (!s.enabled || !s.legal_review_confirmed) return { skipped: 'off' };
+    const h = localHour();
+    if (h < s.start_hour || h >= s.end_hour) return { skipped: 'outside business hours' };
+    if (!token() || !acctSid() || !twNumber()) return { skipped: 'phone provider not connected' };
+    const remaining = Math.max(0, s.daily_limit - obSentToday());
+    if (!remaining) return { skipped: 'daily limit reached' };
+    const day = new Date(Date.now() - 86400000).toISOString();
+    const leads = db.prepare("SELECT id, phone FROM leads WHERE callback_requested=1 AND phone IS NOT NULL AND phone<>'' AND stage NOT IN ('done','converted') AND (last_callback_at IS NULL OR last_callback_at<?) ORDER BY id LIMIT ?").all(day, remaining);
+    const placed = [];
+    const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
+    for (const l of leads) {
+      const to = e164(l.phone); if (!to) continue;
+      try {
+        const r = await fetch(`${api}/2010-04-01/Accounts/${acctSid()}/Calls.json`, { method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ To: to, From: twNumber(), Url: `${base()}/api/webhooks/twilio/outbound?lead=${l.id}`, StatusCallback: `${base()}/api/webhooks/twilio/status`, Timeout: '25' }) });
+        if (!r.ok) continue;
+        const t = new Date().toISOString();
+        db.prepare('UPDATE leads SET last_callback_at=?, callback_calls=COALESCE(callback_calls,0)+1 WHERE id=?').run(t, l.id);
+        db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','outbound callback placed','lead',?,?,?)").run(l.id, to, t);
+        placed.push(l.id);
+      } catch (e) { console.error('outbound callback failed:', e.message); }
+    }
+    return { placed: placed.length };
+  }
+  app.locals.runOutboundSweep = runOutboundSweep;
+  if (!process.env.DISABLE_SCHEDULER) setInterval(() => { runOutboundSweep().catch(() => {}); }, 5 * 60 * 1000).unref?.();
+
+  // What the caller hears when the call is answered (signed like every Twilio webhook).
+  app.post('/api/webhooks/twilio/outbound', hook((req, res) => {
+    const lead = Number(req.query.lead) || 0;
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Hello. This is an automated assistant calling for Bright Clean. This call may be recorded. You asked us to call you back. Press 1 to be connected to our team now, or hang up and we will follow up.</Say><Gather numDigits="1" timeout="8" action="${base()}/api/webhooks/twilio/outbound-press?lead=${lead}" method="POST"/><Say voice="Polly.Joanna">Thank you. Our team will follow up with you. Goodbye.</Say></Response>`);
+  }));
+  // Caller pressed a key: 1 connects to the team's phones; anything else ends the call politely.
+  app.post('/api/webhooks/twilio/outbound-press', hook((req, res) => {
+    const lead = Number(req.query.lead) || 0, phones = ringPhones();
+    if (String((req.body || {}).Digits || '') === '1' && phones.length) {
+      const num = phones.map(p => `<Number>${esc(p)}</Number>`).join('');
+      if (lead) db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','callback connected','lead',?,?,?)").run(lead, 'caller pressed 1', new Date().toISOString());
+      return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting you now.</Say><Dial callerId="${esc(twNumber())}" timeout="25">${num}</Dial></Response>`);
+    }
+    res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Thank you. Our team will follow up. Goodbye.</Say></Response>');
+  }));
+
+  // Settings: owners only. Turning it on requires the legal-review confirmation.
+  app.get('/api/admin/outbound-callbacks', auth, (req, res) => {
+    if (roleOfEmail(req.user && req.user.email) !== 'owner') return res.status(403).json({ error: 'Only the owner can change automatic callbacks.' });
+    res.json({ settings: obGet(), sent_today: obSentToday(), defaults: obDefaults });
+  });
+  app.put('/api/admin/outbound-callbacks', auth, (req, res) => {
+    if (roleOfEmail(req.user && req.user.email) !== 'owner') return res.status(403).json({ error: 'Only the owner can change automatic callbacks.' });
+    const b = req.body || {}, cur = obGet(), next = { ...cur };
+    if (b.daily_limit !== undefined) { const v = Number(b.daily_limit); if (!Number.isInteger(v) || v < 0 || v > 50) return res.status(400).json({ error: 'Daily limit must be a whole number from 0 to 50.' }); next.daily_limit = v; }
+    if (b.start_hour !== undefined) { const v = Number(b.start_hour); if (!Number.isInteger(v) || v < 0 || v > 23) return res.status(400).json({ error: 'Start hour must be 0 to 23.' }); next.start_hour = v; }
+    if (b.end_hour !== undefined) { const v = Number(b.end_hour); if (!Number.isInteger(v) || v < 1 || v > 24) return res.status(400).json({ error: 'End hour must be 1 to 24.' }); next.end_hour = v; }
+    if (b.legal_review_confirmed !== undefined) next.legal_review_confirmed = !!b.legal_review_confirmed;
+    if (b.enabled !== undefined) next.enabled = !!b.enabled;
+    if (next.enabled && !next.legal_review_confirmed) return res.status(400).json({ error: 'Confirm the legal review before turning automatic callbacks on.' });
+    if (next.start_hour >= next.end_hour) return res.status(400).json({ error: 'The window must end after it starts.' });
+    setS(OB_KEY, JSON.stringify(next));
+    logAction(req, 'changed automatic callbacks', 'settings', 0, JSON.stringify(next));
+    res.json({ ok: true, settings: next });
+  });
+  // Mark or unmark a lead as "Call back requested" (staff can do this; the automatic calls only go to marked leads).
+  app.post('/api/admin/leads/:id/callback-request', auth, (req, res) => {
+    const id = Number(req.params.id);
+    const x = db.prepare('UPDATE leads SET callback_requested=? WHERE id=?').run(req.body && req.body.requested ? 1 : 0, id);
+    if (!x.changes) return res.status(404).json({ error: 'Lead not found.' });
+    logAction(req, req.body && req.body.requested ? 'marked call back requested' : 'cleared call back request', 'lead', id, '');
+    res.json({ ok: true });
+  });
 };
