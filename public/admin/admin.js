@@ -501,7 +501,7 @@
 
   // ---------- Leads ----------
   const leadStatusSel = $('#leadStatusFilter');
-  leadStatusSel.innerHTML = '<option value="open">Open (new and due follow-ups)</option><option value="stage:worked">Being worked</option><option value="stage:waiting">Waiting on customer</option><option value="stage:followup">Follow-ups (all dates)</option><option value="">Everything (incl. archived)</option>' + options(STATUS.leads);
+  leadStatusSel.innerHTML = '<option value="open">Open (new and due follow-ups)</option><option value="review">Needs review (not yet real or fake)</option><option value="stage:worked">Being worked</option><option value="stage:waiting">Waiting on customer</option><option value="stage:followup">Follow-ups (all dates)</option><option value="">Everything (incl. archived)</option>' + options(STATUS.leads);
   $$('#leadKinds button').forEach(b => b.onclick = () => { state.leadKind = b.dataset.kind; renderLeads(); });
   $('#leadSearch').addEventListener('input', () => renderLeads());
   leadStatusSel.addEventListener('change', () => renderLeads());
@@ -550,7 +550,7 @@
     const q = $('#leadSearch').value.trim().toLowerCase();
     const st = leadStatusSel.value;
     const rows = state.leads.filter(l => (l.kind || 'bid') === k)
-      .filter(l => st === 'open' ? (l.stage === 'new' || (l.stage === 'followup' && l.follow_up_date && l.follow_up_date <= todayISO())) : st.startsWith('stage:') ? l.stage === st.slice(6) : !st || l.status === st)
+      .filter(l => st === 'open' ? (l.stage === 'new' || (l.stage === 'followup' && l.follow_up_date && l.follow_up_date <= todayISO())) : st === 'review' ? (l.review || 'unreviewed') === 'unreviewed' : st.startsWith('stage:') ? l.stage === st.slice(6) : !st || l.status === st)
       .filter(l => !q || [l.contact_name, l.company, l.email, l.phone, l.project_name, l.address, l.service, l.details].join(' ').toLowerCase().includes(q));
     const heads = {
       bid: ['Received', 'Contact / company', 'Project', 'Services', 'Bid due', 'Status'],
