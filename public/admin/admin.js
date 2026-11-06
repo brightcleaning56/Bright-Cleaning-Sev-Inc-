@@ -317,7 +317,7 @@
   // Top cards can be dragged into a new order. The order is remembered on this browser for each card set.
   function arrangeKpis(sel, key) {
     const box = document.querySelector(sel); if (!box) return;
-    const labelOf = el => (el.querySelector('span') ? el.querySelector('span').textContent.trim() : el.textContent.trim().slice(0, 40));
+    const labelOf = el => cardLabel(el);
     let order = []; try { order = JSON.parse(localStorage.getItem(key) || '[]'); } catch { /* private browsing */ }
     const cards = [...box.children];
     cards.sort((a, b) => { const ia = order.indexOf(labelOf(a)), ib = order.indexOf(labelOf(b)); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
@@ -555,6 +555,7 @@
     });
     refresh();
   }
+  const leadView = (kind, st) => { state.leadKind = kind; leadStatusSel.value = st; renderLeads(); };
   function renderLeads() {
     { const L = state.leads.filter(l => (l.kind || 'bid') === 'bid'), now = Date.now(), wk = L.filter(l => now - Date.parse(l.created_at) < 7 * 864e5).length, mo = L.filter(l => String(l.created_at).slice(0, 7) === todayISO().slice(0, 7)).length;
       const won = L.filter(l => l.status === 'Won').length, lost = L.filter(l => l.status === 'Lost').length, open = L.filter(l => !['Won', 'Lost', 'Archived'].includes(l.status)).length;
@@ -562,6 +563,7 @@
       if ($('#leadKpis')) $('#leadKpis').innerHTML = [kt('leads', 'blue', 'New bid requests', L.filter(l => l.status === 'New').length, `${wk} this week`), kt('overview', 'navy', 'Open pipeline', open, `${mo} received this month`), kt('check', 'green', 'Won', won, ''), kt('issues', 'red', 'Lost', lost, ''),
         kt('reports', 'teal', 'Win rate', won + lost ? Math.round(won / (won + lost) * 100) + '%' : '—', won + lost ? `${won} of ${won + lost} decided` : 'no decisions yet'), kt('emails', 'amber', 'Messages & applicants', inq + jobs, `${inq} messages · ${jobs} applicants`)].join('');
       if ($('#leadKpis')) arrangeKpis('#leadKpis', 'bc_leadkpi_order');
+      wireTiles('#leadKpis', { 'New bid requests': () => leadView('bid', 'New'), 'Open pipeline': () => leadView('bid', 'open'), 'Won': () => leadView('bid', 'Won'), 'Lost': () => leadView('bid', 'Lost'), 'Win rate': () => leadView('bid', 'Won'), 'Messages & applicants': () => leadView('inquiry', 'open') });
       const stages = ['New', 'In Review', 'Site Walkthrough', 'Proposal in Progress', 'Proposal Sent', 'Won', 'Lost'];
       if ($('#leadPipe')) { $('#leadPipe').innerHTML = stages.map(st => `<button type="button" data-pipe="${esc(st)}" class="${leadStatusSel.value === st && state.leadKind === 'bid' ? 'on' : ''}"><span>${esc(st)}</span><b>${L.filter(l => l.status === st).length}</b></button>`).join('');
         $$('#leadPipe [data-pipe]').forEach(b => b.onclick = () => { state.leadKind = 'bid'; leadStatusSel.value = leadStatusSel.value === b.dataset.pipe ? 'open' : b.dataset.pipe; renderLeads(); }); } }
@@ -1789,6 +1791,18 @@
   $$('#nav button').forEach(b => { if (!b.querySelector('.ic')) b.insertAdjacentHTML('afterbegin', ic(b.dataset.view)); });
   $$('.tbicons [data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
   const kt = (icon, tone, label, value, sub) => `<div class="ktile"><span class="chip ${tone}">${ic(icon)}</span><div style="min-width:0"><span>${esc(label)}</span><b>${esc(value)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div></div>`;
+  // Makes KPI cards clickable. Each card's label (the text before its big number) picks what it opens.
+  function cardLabel(el) {
+    const s = [...el.querySelectorAll('span')].find(x => x.nextElementSibling && x.nextElementSibling.tagName === 'B');
+    return s ? s.textContent.trim() : el.textContent.trim().slice(0, 40);
+  }
+  function wireTiles(sel, map) {
+    $$(sel + ' > *').forEach(el => {
+      const fn = map[cardLabel(el)]; if (!fn) return;
+      el.style.cursor = 'pointer'; el.title = 'Click to review';
+      el.onclick = () => fn();
+    });
+  }
   async function loadTopbar() {
     // Identity comes from /me for the signed-in account, so it can never show someone else's name or role.
     try { const me = await api('/api/admin/me'); $('#tbName').textContent = me.name && me.name !== 'Owner' ? me.name : me.email || ''; $('#tbRole').textContent = me.label || me.role || ''; } catch { /* identity is optional here */ }
@@ -1892,6 +1906,8 @@
     if (!document.getElementById('dialPadBtn')) { const h = document.querySelector('#v-calls .pagehead'); if (h) { const btn = document.createElement('button'); btn.className = 'btn'; btn.id = 'dialPadBtn'; btn.type = 'button'; btn.textContent = '📞 Call a number'; btn.onclick = () => openDialPad(); const wrap = h.querySelector('.headact') || h; wrap.appendChild(btn); } }
     const r = await api('/api/admin/calls'); Object.assign(callState, r);
     kpiTiles('#callsKpis', [{ label: "Today's calls", value: r.today.total }, { label: 'Answered', value: r.today.answered }, { label: 'Missed / voicemail', value: r.today.missed, alert: r.today.missed > 0 }, { label: 'Follow-ups due', value: r.follow_ups_due, alert: r.follow_ups_due > 0 }]);
+    const callFilter = (follow, vm) => { $('#callFollow').checked = follow; $('#callVm').checked = vm; renderCalls(); };
+    wireTiles('#callsKpis', { "Today's calls": () => callFilter(false, false), 'Answered': () => callFilter(false, false), 'Missed / voicemail': () => callFilter(false, true), 'Follow-ups due': () => callFilter(true, false) });
     $('#navCalls').hidden = !r.follow_ups_due; $('#navCalls').textContent = r.follow_ups_due;
     renderCalls();
     api('/api/admin/calls-intel').then(x => { const el = $('#callsIntel'); if (!el) return;
@@ -2368,6 +2384,7 @@
     kpiTiles('#emailsKpis', [{ label: 'Sent (30 days)', value: r.summary.sent_30d }, { label: 'Failed (30 days)', value: r.summary.failed_30d, alert: r.summary.failed_30d > 0 }, { label: 'Total (30 days)', value: r.summary.total_30d }, { label: 'Outlook inbox here', value: ms.connected ? 'Connected' : ms.configured ? 'Ready to connect' : 'Not set up', sub: ms.connected ? `${ms.account || ''} · ${ms.messages} messages${ms.last_sync ? ' · synced ' + fmtWhen(ms.last_sync) : ''}` : ms.configured ? 'click to connect' : 'click for setup steps', alert: !!ms.last_error }]);
     $('#navEmails').hidden = !r.summary.failed_30d; $('#navEmails').textContent = r.summary.failed_30d;
     { const tiles = $$('#emailsKpis > *'); const t = tiles[3]; if (t) { t.style.cursor = 'pointer'; t.onclick = () => openM365(ms); } }
+    { const sf = v => { $('#emailStatus').value = v; renderEmails(); }; wireTiles('#emailsKpis', { 'Sent (30 days)': () => sf('sent'), 'Failed (30 days)': () => sf('failed'), 'Total (30 days)': () => sf('') }); }
     let ib = document.getElementById('inboxCard');
     if (ms.connected) { if (!ib) { ib = document.createElement('div'); ib.id = 'inboxCard'; ib.className = 'card'; ib.style.cssText = 'margin:14px 0;padding:14px'; $('#emailsKpis').after(ib); }
       const m = await api('/api/admin/inbox').catch(() => ({ messages: [] }));
@@ -2568,6 +2585,8 @@
     const k = r.counts;
     $('#issKpis').innerHTML = [['issues', 'red', 'Open issues', k.open, 'Awaiting resolution', ''], ['issues', 'amber', 'High priority', k.high, k.urgent ? `${k.urgent} urgent` : 'Require attention', ''], ['cal', 'blue', 'Due today', k.due_today, 'Tasks and follow-ups', ''], ['clock', 'red', 'Overdue', k.overdue, 'Past due date', k.overdue ? 'alert' : ''], ['check', 'green', 'Resolved (this month)', k.resolved_month, 'Completed records', 'good']]
       .map(([icn, tone, l, v, sub, cls]) => kt(icn, tone, l, v, sub).replace('class="ktile"', `class="ktile ${cls}"`)).join('');
+    const issView = (st, pri = '') => { $('#issStatus').value = st; $('#issPri').value = pri; loadIssues(); };
+    wireTiles('#issKpis', { 'Open issues': () => issView('open'), 'High priority': () => issView('open', 'High'), 'Due today': () => issView('today'), 'Overdue': () => issView('overdue'), 'Resolved (this month)': () => issView('done') });
     $('#issTabs').innerHTML = [['', 'All items', k.all_n], ['issues', 'Issues', k.n_issues], ['tasks', 'Tasks', k.n_tasks], ['notes', 'Notes', k.n_notes], ['requests', 'Requests', k.n_requests], ['incidents', 'Incidents', k.n_incidents]]
       .map(([g, l, c]) => `<button role="tab" data-g="${g}" class="${issState.group === g ? 'on' : ''}">${l} (${c})</button>`).join('');
     $$('#issTabs button').forEach(b => b.onclick = () => { issState.group = b.dataset.g; issState.page = 1; loadIssues(); });
