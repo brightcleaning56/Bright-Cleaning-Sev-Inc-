@@ -314,6 +314,29 @@
     refreshNewCount();
   }
 
+  // Top cards can be dragged into a new order. The order is remembered on this browser for each card set.
+  function arrangeKpis(sel, key) {
+    const box = document.querySelector(sel); if (!box) return;
+    const labelOf = el => (el.querySelector('span') ? el.querySelector('span').textContent.trim() : el.textContent.trim().slice(0, 40));
+    let order = []; try { order = JSON.parse(localStorage.getItem(key) || '[]'); } catch { /* private browsing */ }
+    const cards = [...box.children];
+    cards.sort((a, b) => { const ia = order.indexOf(labelOf(a)), ib = order.indexOf(labelOf(b)); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
+    cards.forEach(c => box.appendChild(c));
+    cards.forEach(c => {
+      c.setAttribute('draggable', 'true'); c.style.cursor = 'grab'; c.title = 'Drag to move this card';
+      c.ondragstart = e => { e.dataTransfer.setData('text/plain', labelOf(c)); c.style.opacity = '0.5'; };
+      c.ondragend = () => { c.style.opacity = ''; };
+      c.ondragover = e => e.preventDefault();
+      c.ondrop = e => {
+        e.preventDefault();
+        const from = [...box.children].find(x => labelOf(x) === e.dataTransfer.getData('text/plain'));
+        if (!from || from === c) return;
+        const kids = [...box.children];
+        if (kids.indexOf(from) < kids.indexOf(c)) box.insertBefore(from, c.nextSibling); else box.insertBefore(from, c);
+        try { localStorage.setItem(key, JSON.stringify([...box.children].map(labelOf))); } catch { /* ignore */ }
+      };
+    });
+  }
   async function refreshNewCount() {
     try {
       const a = (await api('/api/admin/leads')).leads || [];
@@ -538,6 +561,7 @@
       const inq = state.leads.filter(l => l.kind === 'inquiry' && l.status === 'New').length, jobs = state.leads.filter(l => l.kind === 'career' && l.status === 'New').length;
       if ($('#leadKpis')) $('#leadKpis').innerHTML = [kt('leads', 'blue', 'New bid requests', L.filter(l => l.status === 'New').length, `${wk} this week`), kt('overview', 'navy', 'Open pipeline', open, `${mo} received this month`), kt('check', 'green', 'Won', won, ''), kt('issues', 'red', 'Lost', lost, ''),
         kt('reports', 'teal', 'Win rate', won + lost ? Math.round(won / (won + lost) * 100) + '%' : '—', won + lost ? `${won} of ${won + lost} decided` : 'no decisions yet'), kt('emails', 'amber', 'Messages & applicants', inq + jobs, `${inq} messages · ${jobs} applicants`)].join('');
+      if ($('#leadKpis')) arrangeKpis('#leadKpis', 'bc_leadkpi_order');
       const stages = ['New', 'In Review', 'Site Walkthrough', 'Proposal in Progress', 'Proposal Sent', 'Won', 'Lost'];
       if ($('#leadPipe')) { $('#leadPipe').innerHTML = stages.map(st => `<button type="button" data-pipe="${esc(st)}" class="${leadStatusSel.value === st && state.leadKind === 'bid' ? 'on' : ''}"><span>${esc(st)}</span><b>${L.filter(l => l.status === st).length}</b></button>`).join('');
         $$('#leadPipe [data-pipe]').forEach(b => b.onclick = () => { state.leadKind = 'bid'; leadStatusSel.value = leadStatusSel.value === b.dataset.pipe ? 'open' : b.dataset.pipe; renderLeads(); }); } }
