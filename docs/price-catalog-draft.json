@@ -4,59 +4,189 @@
   "residential_monthly": {
     "unit": "USD per month",
     "rows": [
-      { "property": "1 bed / 1 bath", "monthly": 110, "biweekly": 210, "weekly": 400 },
-      { "property": "2 bed / 1 bath", "monthly": 135, "biweekly": 260, "weekly": 500 },
-      { "property": "2 bed / 2 bath", "monthly": 150, "biweekly": 290, "weekly": 560 },
-      { "property": "3 bed / 2 bath", "monthly": 185, "biweekly": 355, "weekly": 680 },
-      { "property": "4 bed / 2 bath", "monthly": 225, "biweekly": 435, "weekly": 840 },
-      { "property": "4 bed / 3 bath", "monthly": 250, "biweekly": 485, "weekly": 940 },
-      { "property": "5 bed / 3 bath", "monthly": 285, "biweekly": 550, "weekly": 1070 }
+      {
+        "property": "1 bed / 1 bath",
+        "monthly": 110,
+        "biweekly": 210,
+        "weekly": 400
+      },
+      {
+        "property": "2 bed / 1 bath",
+        "monthly": 135,
+        "biweekly": 260,
+        "weekly": 500
+      },
+      {
+        "property": "2 bed / 2 bath",
+        "monthly": 150,
+        "biweekly": 290,
+        "weekly": 560
+      },
+      {
+        "property": "3 bed / 2 bath",
+        "monthly": 185,
+        "biweekly": 355,
+        "weekly": 680
+      },
+      {
+        "property": "4 bed / 2 bath",
+        "monthly": 225,
+        "biweekly": 435,
+        "weekly": 840
+      },
+      {
+        "property": "4 bed / 3 bath",
+        "monthly": 250,
+        "biweekly": 485,
+        "weekly": 940
+      },
+      {
+        "property": "5 bed / 3 bath",
+        "monthly": 285,
+        "biweekly": 550,
+        "weekly": 1070
+      }
     ]
   },
   "apartment_monthly": {
     "unit": "USD per month",
     "rows": [
-      { "property": "Studio", "monthly": 85, "biweekly": 165, "weekly": 320 },
-      { "property": "1 bed / 1 bath", "monthly": 110, "biweekly": 210, "weekly": 400 },
-      { "property": "2 bed / 1 bath", "monthly": 135, "biweekly": 260, "weekly": 500 },
-      { "property": "2 bed / 2 bath", "monthly": 150, "biweekly": 290, "weekly": 560 },
-      { "property": "3 bed / 2 bath", "monthly": 195, "biweekly": 375, "weekly": 720 },
-      { "property": "4 bed / 2 bath", "monthly": 250, "biweekly": 485, "weekly": 940 }
+      {
+        "property": "Studio",
+        "monthly": 85,
+        "biweekly": 165,
+        "weekly": 320
+      },
+      {
+        "property": "1 bed / 1 bath",
+        "monthly": 110,
+        "biweekly": 210,
+        "weekly": 400
+      },
+      {
+        "property": "2 bed / 1 bath",
+        "monthly": 135,
+        "biweekly": 260,
+        "weekly": 500
+      },
+      {
+        "property": "2 bed / 2 bath",
+        "monthly": 150,
+        "biweekly": 290,
+        "weekly": 560
+      },
+      {
+        "property": "3 bed / 2 bath",
+        "monthly": 195,
+        "biweekly": 375,
+        "weekly": 720
+      },
+      {
+        "property": "4 bed / 2 bath",
+        "monthly": 250,
+        "biweekly": 485,
+        "weekly": 940
+      }
     ]
   },
   "office_monthly": {
     "unit": "USD per month",
-    "columns": ["weekly", "twice_weekly", "three_times_weekly", "five_times_weekly"],
+    "columns": [
+      "weekly",
+      "twice_weekly",
+      "three_times_weekly",
+      "five_times_weekly"
+    ],
     "rows": [
-      { "sq_ft": 1000, "weekly": 520, "twice_weekly": 1040, "three_times_weekly": 1560, "five_times_weekly": 2600 },
-      { "sq_ft": 2500, "weekly": 1300, "twice_weekly": 2600, "three_times_weekly": 3900, "five_times_weekly": 6500 },
-      { "sq_ft": 5000, "weekly": 2600, "twice_weekly": 5200, "three_times_weekly": 7800, "five_times_weekly": 13000 },
-      { "sq_ft": 10000, "weekly": 4765, "twice_weekly": 9530, "three_times_weekly": 14295, "five_times_weekly": 23825 },
-      { "sq_ft": 20000, "weekly": 9100, "twice_weekly": 18200, "three_times_weekly": 27300, "five_times_weekly": 45500 },
-      { "sq_ft": 50000, "weekly": 19500, "twice_weekly": 39000, "three_times_weekly": 58500, "five_times_weekly": 97500 }
+      {
+        "sq_ft": 1000,
+        "weekly": 520,
+        "twice_weekly": 1040,
+        "three_times_weekly": 1560,
+        "five_times_weekly": 2600
+      },
+      {
+        "sq_ft": 2500,
+        "weekly": 1300,
+        "twice_weekly": 2600,
+        "three_times_weekly": 3900,
+        "five_times_weekly": 6500
+      },
+      {
+        "sq_ft": 5000,
+        "weekly": 2600,
+        "twice_weekly": 5200,
+        "three_times_weekly": 7800,
+        "five_times_weekly": 13000
+      },
+      {
+        "sq_ft": 10000,
+        "weekly": 4765,
+        "twice_weekly": 9530,
+        "three_times_weekly": 14295,
+        "five_times_weekly": 23825
+      },
+      {
+        "sq_ft": 20000,
+        "weekly": 9100,
+        "twice_weekly": 18200,
+        "three_times_weekly": 27300,
+        "five_times_weekly": 45500
+      },
+      {
+        "sq_ft": 50000,
+        "weekly": 19500,
+        "twice_weekly": 39000,
+        "three_times_weekly": 58500,
+        "five_times_weekly": 97500
+      }
     ],
     "note": "Office contracts require a detailed scope and labor estimate before final approval."
   },
   "regional_adjustments": {
-    "lower_cost_market": -0.10,
+    "lower_cost_market": -0.1,
     "below_national_average": -0.05,
     "national_baseline": 0,
     "above_average": 0.05,
-    "high_cost_market": 0.10,
+    "high_cost_market": 0.1,
     "premium_market": 0.15,
-    "exceptional_market": 0.20,
+    "exceptional_market": 0.2,
     "rule": "Regional adjustments never override minimum profitability requirements."
   },
   "quoted_separately": [
-    "Deep cleaning", "Vacant unit preparation", "Excessive buildup", "Interior appliances", "Windows", "Specialty services"
+    "Deep cleaning",
+    "Vacant unit preparation",
+    "Excessive buildup",
+    "Interior appliances",
+    "Windows",
+    "Specialty services"
   ],
   "labor_assumptions": {
     "base_wage_per_hour": 20,
-    "payroll_burden": 0.20,
+    "payroll_burden": 0.2,
     "loaded_paid_hour_cost": 24,
-    "productive_utilization": 0.80,
+    "productive_utilization": 0.8,
     "productive_labor_hour_cost": 30,
-    "target_contribution_margin": 0.30,
+    "target_contribution_margin": 0.3,
     "_note": "Planning assumptions. Overtime, state wage rules, paid leave and benefits are not modeled yet."
+  },
+  "not_covered_by_these_tables": {
+    "rule": "These tables are ONLY for recurring residential, apartment and office monthly cleaning. Do not use them for any project or one-time job.",
+    "excluded": [
+      "Post-construction final cleaning",
+      "Rough and progress construction cleaning",
+      "Final touch-up / punch-list cleaning",
+      "Interior and exterior window cleaning",
+      "Power washing",
+      "Parking lot cleanup and maintenance",
+      "Valet trash services",
+      "Floor stripping and waxing",
+      "Carpet extraction",
+      "Deep cleaning",
+      "Vacant unit preparation",
+      "Excessive buildup",
+      "Interior appliances"
+    ],
+    "how_priced": "Quoted per project from cleaning scopes: square footage, production rates, labor hours, supplies, insurance and margin (see docs/BUSINESS_PLAN.md sections 5 and 8)."
   }
 }
