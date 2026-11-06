@@ -165,6 +165,27 @@ module.exports = function mountAdminExt(app, ctx) {
     if (e === String(adminEmail || '').toLowerCase()) { db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)'); db.prepare("INSERT INTO settings(key,value,updated_at) VALUES('owner_name',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(name, new Date().toISOString()); }
     logAction(req, 'updated display name', 'account', row ? row.id : 0, name); res.json({ ok: true, name });
   });
+  // Lead review: every lead can be marked real or fake, and many can be archived or restored at once (each change is audited).
+  if (!db.prepare('PRAGMA table_info(leads)').all().some(x => x.name === 'review')) db.exec("ALTER TABLE leads ADD COLUMN review TEXT NOT NULL DEFAULT 'unreviewed'");
+  const LEAD_BULK = {
+    real: "review='real'",
+    fake: "review='fake', status='Archived'",
+    archive: "status='Archived'",
+    restore: "status='New'",
+    unreviewed: "review='unreviewed'"
+  };
+  app.post('/api/admin/leads/bulk', auth, (req, res) => {
+    if (!['owner', 'manager', 'staff', 'sales'].includes(roleOf(req.user && req.user.email))) return res.status(403).json({ error: 'Your role cannot review leads.' });
+    const b = req.body || {};
+    const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isInteger).slice(0, 500);
+    if (!ids.length) return res.status(400).json({ error: 'Select at least one lead.' });
+    const set = LEAD_BULK[String(b.action || '')];
+    if (!set) return res.status(400).json({ error: 'Choose what to do: real, fake, archive, restore or unreviewed.' });
+    const stmt = db.prepare(`UPDATE leads SET ${set} WHERE id=?`);
+    db.transaction(() => ids.forEach(id => stmt.run(id)))();
+    logAction(req, 'bulk lead review: ' + b.action, 'lead', 0, `${ids.length} lead(s): ${ids.slice(0, 50).join(', ')}`);
+    res.json({ ok: true, changed: ids.length });
+  });
   // Names and roles of the people who sign in (for showing who did or was assigned what). No passwords.
   app.get('/api/admin/people', auth, (req, res) => {
     const R = require('./roles');

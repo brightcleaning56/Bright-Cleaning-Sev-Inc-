@@ -479,6 +479,26 @@
     renderLeads();
   }
 
+  const reviewTag = l => l.review === 'real' ? ' <span class="chip green">Real</span>' : l.review === 'fake' ? ' <span class="chip">Fake</span>' : '';
+  // Bulk review for the leads list: pick rows, then mark real, mark fake (archives), archive or restore. Every action asks first.
+  function wireLeadBulk() {
+    const tb = $('#leadRows').closest('table');
+    if (!tb) return;
+    if (!$('#leadBulk')) tb.insertAdjacentHTML('beforebegin', '<div id="leadBulk" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px" hidden><span id="leadPickCount" class="muted"></span><button class="btn small" data-lb="real">Mark real</button><button class="btn small danger" data-lb="fake">Mark fake and archive</button><button class="btn small ghost" data-lb="archive">Archive</button><button class="btn small ghost" data-lb="restore">Restore to New</button></div>');
+    const picks = () => [...document.querySelectorAll('#leadRows .leadPick:checked')].map(x => Number(x.value));
+    const refresh = () => { const n = picks().length; const bar = $('#leadBulk'); bar.hidden = !n; $('#leadPickCount').textContent = `${n} selected`; const all = $('#leadPickAll'); if (all) all.checked = !!document.querySelectorAll('#leadRows .leadPick').length && document.querySelectorAll('#leadRows .leadPick:not(:checked)').length === 0; };
+    document.querySelectorAll('#leadRows .leadPick').forEach(x => { x.onclick = ev => { ev.stopPropagation(); refresh(); }; });
+    document.querySelectorAll('#leadRows td.pick').forEach(td => { td.onclick = ev => ev.stopPropagation(); });
+    const all = $('#leadPickAll'); if (all) all.onclick = ev => { ev.stopPropagation(); document.querySelectorAll('#leadRows .leadPick').forEach(x => { x.checked = all.checked; }); refresh(); };
+    $$('#leadBulk [data-lb]').forEach(btn => btn.onclick = async () => {
+      const ids = picks(); if (!ids.length) return;
+      const words = { real: `Mark ${ids.length} lead(s) as real?`, fake: `Mark ${ids.length} lead(s) as fake and archive them? They can be restored later.`, archive: `Archive ${ids.length} lead(s)?`, restore: `Restore ${ids.length} lead(s) to New?` };
+      if (!confirm(words[btn.dataset.lb])) return;
+      try { await api('/api/admin/leads/bulk', { method: 'POST', json: { ids, action: btn.dataset.lb } }); toast(`Updated ${ids.length} lead(s)`); await refreshNewCount(); renderLeads(); }
+      catch (e) { toast(e.message, true); }
+    });
+    refresh();
+  }
   function renderLeads() {
     { const L = state.leads.filter(l => (l.kind || 'bid') === 'bid'), now = Date.now(), wk = L.filter(l => now - Date.parse(l.created_at) < 7 * 864e5).length, mo = L.filter(l => String(l.created_at).slice(0, 7) === todayISO().slice(0, 7)).length;
       const won = L.filter(l => l.status === 'Won').length, lost = L.filter(l => l.status === 'Lost').length, open = L.filter(l => !['Won', 'Lost', 'Archived'].includes(l.status)).length;
@@ -504,12 +524,13 @@
       inquiry: ['Received', 'Name', 'Email / phone', 'Message', 'Status'],
       career: ['Received', 'Name', 'Email / phone', 'Role / message', 'Status']
     }[k];
-    $('#leadHead').innerHTML = '<tr>' + heads.map(h => `<th>${h}</th>`).join('') + '</tr>';
+    $('#leadHead').innerHTML = '<tr><th><input type="checkbox" id="leadPickAll" aria-label="Select all leads on this list"></th>' + heads.map(h => `<th>${h}</th>`).join('') + '</tr>';
     const snippet = (t, n = 90) => esc(String(t || '').replace(/\s+/g, ' ').slice(0, n)) + (String(t || '').length > n ? '…' : '');
     $('#leadRows').innerHTML = rows.length ? rows.map(l => {
-      if (k === 'bid') return `<tr class="click" data-lead="${l.id}"><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name)}</b><small>${esc(l.company)}</small></td><td>${esc(l.project_name || '—')}<small>${esc(l.address || '')}</small></td><td>${snippet(l.service, 60) || '—'}</td><td>${fmtDate(l.bid_due_date)}</td><td>${badge(l.status)}</td></tr>`;
-      return `<tr class="click" data-lead="${l.id}"><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name)}</b></td><td>${esc(l.email)}<small>${esc(l.phone || '')}</small></td><td>${snippet(l.details)}</td><td>${badge(l.status)}</td></tr>`;
-    }).join('') : `<tr><td class="emptyrow" colspan="${heads.length}">${q || (st && st !== 'open') ? 'No leads match your search.' : 'Nothing here yet. New website submissions will show up automatically.'}</td></tr>`;
+      if (k === 'bid') return `<tr class="click" data-lead="${l.id}"><td class="pick"><input type="checkbox" class="leadPick" value="${l.id}" aria-label="Select this lead"></td><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name)}</b><small>${esc(l.company)}</small></td><td>${esc(l.project_name || '—')}<small>${esc(l.address || '')}</small></td><td>${snippet(l.service, 60) || '—'}</td><td>${fmtDate(l.bid_due_date)}</td><td>${badge(l.status)}${reviewTag(l)}</td></tr>`;
+      return `<tr class="click" data-lead="${l.id}"><td class="pick"><input type="checkbox" class="leadPick" value="${l.id}" aria-label="Select this lead"></td><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name)}</b></td><td>${esc(l.email)}<small>${esc(l.phone || '')}</small></td><td>${snippet(l.details)}</td><td>${badge(l.status)}${reviewTag(l)}</td></tr>`;
+    }).join('') : `<tr><td class="emptyrow" colspan="${heads.length + 1}">${q || (st && st !== 'open') ? 'No leads match your search.' : 'Nothing here yet. New website submissions will show up automatically.'}</td></tr>`;
+    wireLeadBulk();
     bindOpeners($('#leadRows'));
   }
 
