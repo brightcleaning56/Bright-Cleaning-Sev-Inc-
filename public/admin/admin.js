@@ -126,17 +126,29 @@
     catch (e) { toast(e.message, true); }
   }
   // Dial pad: call any number (optionally matched to a customer as you type).
+  // The dial pad is a small panel in the corner, not a full-screen drawer.
+  function closeDialPanel() { document.getElementById('dialPanel')?.remove(); }
+  function openDialPanel({ title, body, footer }) {
+    closeDialPanel();
+    const p = document.createElement('div');
+    p.id = 'dialPanel'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', title);
+    p.style.cssText = 'position:fixed;right:18px;bottom:64px;z-index:9999;width:300px;max-width:calc(100vw - 36px);max-height:75vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 12px 34px rgba(0,0,0,.25);padding:14px';
+    p.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:16px">${esc(title)}</b><button type="button" id="dialClose" class="btn small ghost" aria-label="Close">✕</button></div><div>${body}</div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">${footer}</div>`;
+    document.body.appendChild(p);
+    $('#dialClose').onclick = closeDialPanel;
+    p.querySelectorAll('[data-close]').forEach(b => { b.onclick = closeDialPanel; });
+  }
   async function openDialPad(prefill) {
     let custs = []; try { custs = (await api('/api/admin/customers')).customers || []; } catch { /* */ }
     const withPhone = custs.filter(c => c.phone);
-    openDrawer({ title: 'Call a number', body: `<form id="dpForm" class="ig"><div class="wide"><label for="dpNum">Phone number</label><input id="dpNum" type="tel" inputmode="tel" autocomplete="off" placeholder="(515) 555-0123" value="${esc(prefill || '')}" required style="font-size:20px;letter-spacing:.5px"></div>
+    openDialPanel({ title: 'Call a number', body: `<form id="dpForm" class="ig"><div class="wide"><label for="dpNum">Phone number</label><input id="dpNum" type="tel" inputmode="tel" autocomplete="off" placeholder="(515) 555-0123" value="${esc(prefill || '')}" required style="font-size:20px;letter-spacing:.5px"></div>
       <div class="wide"><label for="dpWho">Or pick a customer</label><input id="dpWho" list="dpList" placeholder="Start typing a name or company…"><datalist id="dpList">${withPhone.map(c => `<option value="${esc((c.company || c.name) + ' — ' + c.phone)}">`).join('')}</datalist></div>
       <div class="wide" id="dpKeys" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:170px">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', '⌫'].map(k => `<button type="button" class="btn small ghost" data-k="${k}" style="font-size:18px;padding:12px 0">${k}</button>`).join('')}</div></form>`,
       footer: '<button class="btn ghost" data-close>Close</button><button class="btn" id="dpGo">📞 Call</button>' });
     const num = $('#dpNum'); num.focus();
     $$('#dpKeys [data-k]').forEach(k => k.onclick = () => { num.value = k.dataset.k === '⌫' ? num.value.slice(0, -1) : num.value + k.dataset.k; num.focus(); });
     $('#dpWho').oninput = ev => { const m = withPhone.find(c => (c.company || c.name) + ' — ' + c.phone === ev.target.value); if (m) { num.value = m.phone; num.dataset.cust = m.id; num.dataset.name = m.company || m.name; } };
-    const go = () => { const v = num.value.trim(); if (String(v).replace(/\D/g, '').length < 10) { toast('Enter a 10-digit phone number.', true); return; } closeDrawer(); startDial({ dial: v, cust: num.dataset.cust || '', name: num.dataset.name || '' }); };
+    const go = () => { const v = num.value.trim(); if (String(v).replace(/\D/g, '').length < 10) { toast('Enter a 10-digit phone number.', true); return; } closeDialPanel(); startDial({ dial: v, cust: num.dataset.cust || '', name: num.dataset.name || '' }); };
     $('#dpGo').onclick = go; $('#dpForm').onsubmit = ev => { ev.preventDefault(); go(); };
   }
   // Save an unknown caller as a customer (or link to an existing one).
