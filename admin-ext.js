@@ -174,6 +174,25 @@ module.exports = function mountAdminExt(app, ctx) {
     for (const r of rows) people.push({ email: r.email, name: r.name || '', role: r.role });
     res.json({ people: people.map(p => ({ ...p, label: (R.ROLES[p.role] || {}).label || p.role })) });
   });
+  // Labor assumptions from the business plan (planning values). Stored in settings. The estimator keeps using per-scope
+  // labor rates until these are wired in as a separate, previewed change.
+  const LABOR_DEFAULTS = { base_wage_per_hour: 20, payroll_burden_pct: 20, loaded_paid_hour_cost: 24, productive_utilization_pct: 80, productive_labor_hour_cost: 30, target_contribution_margin_pct: 30 };
+  const laborGet = () => { try { const r = db.prepare("SELECT value FROM settings WHERE key='labor_assumptions'").get(); return { ...LABOR_DEFAULTS, ...(r ? JSON.parse(r.value) : {}) }; } catch { return { ...LABOR_DEFAULTS }; } };
+  app.get('/api/admin/labor-assumptions', auth, (req, res) => res.json({ labor: laborGet(), defaults: LABOR_DEFAULTS, can_change: ['owner', 'manager'].includes(roleOf(req.user && req.user.email)) }));
+  app.put('/api/admin/labor-assumptions', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req.user && req.user.email))) return res.status(403).json({ error: 'Only an owner or manager can change labor assumptions.' });
+    const b = req.body || {}, next = laborGet();
+    for (const k of Object.keys(LABOR_DEFAULTS)) {
+      if (b[k] === undefined) continue;
+      const v = Number(b[k]);
+      if (!Number.isFinite(v) || v < 0 || v > 1000) return res.status(400).json({ error: `${k.replace(/_/g, ' ')} must be a number from 0 to 1000.` });
+      next[k] = v;
+    }
+    db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
+    db.prepare("INSERT INTO settings(key,value,updated_at) VALUES('labor_assumptions',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(JSON.stringify(next), new Date().toISOString());
+    logAction(req, 'changed labor assumptions', 'settings', 0, JSON.stringify(next).slice(0, 400));
+    res.json({ ok: true, labor: next });
+  });
   app.get('/api/admin/roles', auth, (req, res) => res.json({ roles: Object.entries(require('./roles').ROLES).map(([key, v]) => ({ key, ...v })) }));
 
   app.post('/api/admin/account/password', auth, async (req, res) => {
