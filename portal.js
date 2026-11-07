@@ -20,7 +20,11 @@ module.exports = function mountPortal(app, ctx) {
   const base = () => (process.env.PUBLIC_BASE_URL || 'https://brightclean.net').replace(/\/$/, '');
 
   // Step 1: ask for a link. Same answer whether or not the email is on file.
+  // At most 5 sign-in requests per address space (IP) every 10 minutes, to stop mail flooding.
+  const hits = new Map();
+  const tooMany = ip => { const t = Date.now(), a = (hits.get(ip) || []).filter(x => t - x < 600000); a.push(t); hits.set(ip, a); return a.length > 5; };
   app.post('/api/portal/request', async (req, res) => {
+    if (tooMany(req.ip || 'x')) return res.status(429).json({ error: 'Too many requests. Please wait a few minutes and try again.' });
     const email = norm((req.body || {}).email);
     const done = () => res.json({ ok: true, message: 'If this email is on file with Bright Clean, a sign-in link is on its way. The link expires in 30 minutes.' });
     if (!isEmail(email)) return done();
