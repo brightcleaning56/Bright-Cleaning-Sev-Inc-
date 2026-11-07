@@ -1,0 +1,13 @@
+PASS  menu routing (every menu item opens its own page)
+PASS  every screen loads without errors
+PASS  dead controls (main accounts)
+PASS  dead controls (rich project incl. profile tabs)
+PASS  super admin phase 3 (projects, packages, plan access, documents, mobile menu)
+PASS  plan room + addenda flow
+PASS  bid leveling + prequalification
+PASS  super admin portal (dashboard, companies, suspend/reactivate, users, roles, audit, mobile)
+PASS  super admin phase 4 + MFA (subscriptions, sources, AI limits, authenticator sign-in, phone cards)
+PASS  project publishing (draft → checklist → publish → invited)
+PASS  drawing takeoff (6,400 SF / 80 LF)
+PASS  AI analysis → estimate → bid
+mode: CORE_READS=off · screenshots and logs: /tmp/tmp.ICobtbHuRw/logs/qa-core-off

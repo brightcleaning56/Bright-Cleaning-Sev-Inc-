@@ -1,0 +1,37 @@
+[
+  {
+    "_instructions": "Fill every null with Bright Clean's real numbers. Percentages are fractions (0.22 = 22%). The API rejects any null, so nothing is priced until you finish this.",
+    "serviceName": "Final construction clean",
+    "category": "post_construction",
+    "unit": "sqft",
+    "productionRate": null,
+    "laborRate": null,
+    "payrollBurdenPct": null,
+    "equipmentPerUnit": null,
+    "suppliesPerUnit": null,
+    "mobilization": null,
+    "overheadPct": null,
+    "contingencyPct": null,
+    "targetMarginPct": null,
+    "minimumPrice": null,
+    "effectiveDate": "2026-11-02",
+    "appliesTo": []
+  },
+  {
+    "serviceName": "Interior window cleaning (post-construction)",
+    "category": "windows",
+    "unit": "sqft",
+    "productionRate": null,
+    "laborRate": null,
+    "payrollBurdenPct": null,
+    "equipmentPerUnit": null,
+    "suppliesPerUnit": null,
+    "mobilization": null,
+    "overheadPct": null,
+    "contingencyPct": null,
+    "targetMarginPct": null,
+    "minimumPrice": null,
+    "effectiveDate": "2026-11-02",
+    "appliesTo": ["office", "retail", "medical", "education"]
+  }
+]

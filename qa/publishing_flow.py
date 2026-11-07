@@ -1,0 +1,38 @@
+import os, datetime
+BASE = 'http://127.0.0.1:' + os.environ.get('QA_PORT', '4401')
+from playwright.sync_api import sync_playwright
+due = (datetime.date.today() + datetime.timedelta(days=14)).isoformat()
+steps, problems = [], []
+def watch(pg, who):
+    pg.on('pageerror', lambda e: problems.append(f'{who} JS error: {e}'))
+    pg.on('response', lambda r: r.status >= 500 and problems.append(f'{who} HTTP {r.status} {r.url}'))
+with sync_playwright() as p:
+    b = p.chromium.launch()
+    def login(email, who):
+        pg = b.new_page(viewport={'width': 1400, 'height': 1100}); watch(pg, who)
+        pg.goto(BASE + '/'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1200); return pg
+    sub = login('sub@em.test', 'sub'); sub.click('nav button[data-t="plan"]'); sub.wait_for_timeout(600)
+    sub.check('input[name=ptr][value=electrical]'); sub.click('#pff button.primary'); sub.wait_for_timeout(500)
+    gc = login('pm@acme.test', 'gc')
+    steps.append('1 verified publisher badge: ' + str('Verified publisher' in gc.inner_text('#verc')))
+    gc.click('#newpub'); gc.wait_for_timeout(300)
+    for k, v in {'title': 'Delaware Medical Office', 'address': '1200 Pike St', 'city': 'Seattle', 'state': 'WA', 'description': 'New 120,000 SF medical office building'}.items(): gc.fill(f'#npf [name={k}]', v)
+    gc.select_option('#npf [name=projectType]', 'medical'); gc.click('#npf button.primary'); gc.wait_for_timeout(1200)
+    t = gc.inner_text('#pubm'); steps.append('2 draft created, checklist shown, relationship matches company type (property manager): ' + str('draft' in t and 'Checklist' in t and 'Property manager for the owner' in t))
+    gc.fill('#pkf [name=title]', 'Electrical'); gc.fill('#pkf [name=dueDate]', due); gc.select_option('#pkf [name=trade]', 'electrical')
+    gc.fill('#pkf [name=description]', 'Complete electrical per E-series drawings and Division 26'); gc.click('#pkf button.primary'); gc.wait_for_timeout(1200)
+    gc.click('#pbpub'); gc.wait_for_timeout(800)
+    steps.append('3 publish blocked by checklist (no documents): ' + str('no documents' in gc.inner_text('#pberr')))
+    gc.click('[data-nodocs]'); gc.wait_for_timeout(1200); gc.click('#pbpub'); gc.wait_for_timeout(1200)
+    pop = gc.inner_text('.pop') if gc.query_selector('.pop') else ''
+    steps.append('4 published, invitation sent: ' + str('Published: 1 package(s) opened, 1' in pop))
+    if gc.query_selector('.pop button'): gc.click('.pop button')
+    gc.wait_for_timeout(600); steps.append('5 coverage shows published + invited: ' + str('published' in gc.inner_text('#pubc')))
+    sub.click('nav button[data-t="invitations"]'); sub.wait_for_timeout(1200)
+    steps.append('6 subscriber sees the invitation: ' + str('Electrical' in sub.inner_text('#pbody') and 'Acme' in sub.inner_text('#pbody')))
+    sub.click('nav button[data-t="subscription"]'); sub.wait_for_timeout(800); steps.append('7 subscription center: ' + str('Seats' in sub.inner_text('#pbody')))
+    adm = login('eric@bc.test', 'owner'); adm.click('nav button[data-t="publishers"]'); adm.wait_for_timeout(1000)
+    steps.append('8 publisher review lists the GC: ' + str('Acme' in adm.inner_text('#pbody')))
+    gc.screenshot(path=os.path.join(os.environ.get('QA_OUT', '/tmp'), 'publishing.png'), full_page=True)
+    b.close()
+print('\n'.join(steps)); print('PROBLEMS:', [x for x in problems if 'ERR_NAME' not in x])

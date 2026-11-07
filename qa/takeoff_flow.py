@@ -1,0 +1,30 @@
+import os
+BASE = 'http://127.0.0.1:' + os.environ.get('QA_PORT', '4400')
+F = lambda n: os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', n)
+OUT = lambda n: os.path.join(os.environ.get('QA_OUT', '/tmp'), n)
+from playwright.sync_api import sync_playwright
+steps, problems = [], []
+with sync_playwright() as p:
+    b = p.chromium.launch(); pg = b.new_page(viewport={'width': 1700, 'height': 1450})
+    pg.on('pageerror', lambda e: problems.append(str(e))); pg.on('response', lambda r: r.status >= 500 and problems.append(f'{r.status} {r.url}'))
+    pg.goto(BASE + '/'); pg.fill('#e', 'est@prairie.test'); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1500)
+    pg.click('nav button[data-t="invitations"]'); pg.wait_for_timeout(1500)
+    pg.click('[data-measure]'); pg.wait_for_timeout(2500)
+    steps.append('1 sheet rendered by self-hosted pdf.js: ' + str(pg.evaluate("() => { const c = document.querySelector('#tkc'); return !!c && c.width > 1000; }")))
+    pg.select_option('#tksc', '1/8" = 1\'-0"'); pg.wait_for_timeout(1500)
+    pg.click('[data-tool=area]'); pg.wait_for_timeout(800)
+    box = pg.locator('#tks').bounding_box(); rs = 1.2
+    for x, y in [(100, 180), (820, 180), (820, 900), (100, 900)]:   # viewport coords (y flipped: 1000 - 820 = 180)
+        pg.mouse.click(box['x'] + x * rs, box['y'] + y * rs); pg.wait_for_timeout(150)
+    pg.click('#tkfin'); pg.wait_for_timeout(300); pg.fill('#tkask', 'Exam rooms LVT'); pg.click('.tkbar form button.primary'); pg.wait_for_timeout(1500)
+    t = pg.inner_text('#tkl'); steps.append('2 area saved = 6,400 SF: ' + str('6,400 SF' in t))
+    pg.click('[data-tool=linear]'); pg.wait_for_timeout(600); box = pg.locator('#tks').bounding_box()
+    pg.mouse.click(box['x'] + 100 * rs, box['y'] + 180 * rs); pg.mouse.click(box['x'] + 820 * rs, box['y'] + 180 * rs); pg.wait_for_timeout(150)
+    pg.click('#tkfin'); pg.wait_for_timeout(300); pg.fill('#tkask', 'North wall base'); pg.click('.tkbar form button.primary'); pg.wait_for_timeout(1500)
+    t = pg.inner_text('#tkl'); steps.append('3 length saved = 80 LF: ' + str('80 LF' in t))
+    pg.screenshot(path=OUT('tk1.png'))
+    for c in pg.query_selector_all('[data-pick-m]'): c.check()
+    pg.click('#tkest'); pg.wait_for_timeout(2000)
+    t = pg.inner_text('body'); steps.append('4 estimate lines from measurements: ' + str('measured' in t.lower() or 'Exam rooms LVT' in pg.content()) + ' / qty 6400: ' + str('6400' in pg.content()))
+    b.close()
+print('\n'.join(steps)); print('PROBLEMS:', [x for x in problems if 'ERR_NAME' not in x])

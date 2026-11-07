@@ -1,195 +1,192 @@
-'use strict';
+import { config } from './config.js';
+import { now } from './store.js';
+import { canCollect } from './sources/registry.js';
+import { ADAPTERS } from './sources/adapters.js';
+import { ingestPermits } from './permits.js';
+import { activeRateCards, estimateOpportunity } from './estimate.js';
+import { scoreOpportunity, resolveRecipients, transition } from './domain.js';
+import { outboundIssues, renderProposal, buildEmail, sendEmail } from './outbound.js';
+import { draftMarketplaceBids, dispatchMarketplaceBids, inviteMatches } from './marketplace.js';
+import { sendFollowUps, runRetention } from './engagement.js';
+import { credentialBlockers, proposalCredentialText } from './credentials.js';
 
-const { newId } = require('./util');
-const { audit } = require('./store');
-const { syncSource, loadSourceRegistry } = require('./ingest/sources');
-const { matchPermit } = require('./domain/matching');
-const { estimate, selectRateCard } = require('./domain/estimating');
-const { renderProposal } = require('./domain/proposal');
-const { transitionBid } = require('./domain/bids');
-const { checkOutbound, BID_SENDABLE_STATUSES } = require('./domain/compliance');
-const { isSuppressed, buildBidMessage, dispatchBid } = require('./service');
+const QUALIFY_SCORE = 70;
+export const PERMIT_SERVICES = ['post_construction', 'windows', 'floor_care', 'pressure_washing'];
 
-/** Syncs every authorised source in the registry. Blocked sources are reported, not run. */
-function syncAllSources(store, config, now) {
-  const registry = loadSourceRegistry(config.sourcesFile);
-  return registry.map((source) => syncSource(store, source, { allowSample: config.allowSampleData, now }));
-}
-
-/**
- * Finds a recipient for a permit's GC. The GC must already exist as a
- * contact the owner has verified. An AI or the system never invents one.
- */
-function pickRecipient(store, orgId, permit) {
-  if (!permit.gc) return null;
-  const company = String(permit.gc).trim().toLowerCase();
-  return store.list('contacts', orgId, (c) => (
-    String(c.company).trim().toLowerCase() === company && BID_SENDABLE_STATUSES.includes(c.status)
-  ))[0] || null;
-}
-
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-/**
- * Turns one matched opportunity into a priced proposal and a bid. It stops at
- * the first point where a human must decide (pricing missing, no verified
- * recipient, compliance problem, or above the auto-approval limit).
- */
-async function processOpportunity({ store, config, transport, org, permit, opportunity, now }) {
-  const outcome = (status, detail) => {
-    store.update('opportunities', org.id, opportunity.id, { status, statusDetail: detail || null });
-    return { opportunityId: opportunity.id, status, detail: detail || null };
-  };
-
-  const card = selectRateCard(org.pricing && org.pricing.rateCards, permit.projectType);
-  if (!card) return outcome('needs_pricing', 'no rate card covers this project type');
-  if (!permit.squareFeet) return outcome('needs_square_footage', 'permit does not state square footage');
-
-  const est = estimate({
-    squareFeet: permit.squareFeet,
-    productionRate: card.productionRate,
-    laborRate: card.laborRate,
-    burdenPct: card.burdenPct ?? 0,
-    supervisionPct: card.supervisionPct ?? 0,
-    overheadPct: card.overheadPct ?? 0,
-    marginPct: card.marginPct ?? 0,
-    materialsPerSqFt: card.materialsPerSqFt ?? 0,
-    equipmentPerDay: card.equipmentPerDay ?? 0,
-    days: card.days ?? 1,
-    travelFee: card.travelFee ?? 0,
-    minimumBid: card.minimumBid ?? 0,
-  });
-
-  const rendered = renderProposal({
-    org,
-    opportunity,
-    permit,
-    estimate: est,
-    validUntil: addDays(now, 30),
-  });
-  const proposal = store.insert('proposals', {
-    orgId: org.id,
-    opportunityId: opportunity.id,
-    version: 1,
-    status: 'draft',
-    estimate: est,
-    subject: rendered.subject,
-    html: rendered.html,
-    hash: rendered.hash,
-  });
-
-  const recipient = pickRecipient(store, org.id, permit);
-  if (!recipient) {
-    store.insert('bids', {
-      orgId: org.id, opportunityId: opportunity.id, proposalId: proposal.id,
-      recipientContactId: null, status: 'draft', total: est.total, history: [], receipt: null,
-      blockers: ['no verified recipient for the GC'],
-    });
-    return outcome('needs_recipient', 'verify the GC contact before a bid can be sent');
-  }
-
-  const message = buildBidMessage(org, opportunity, permit, proposal, recipient, rendered);
-  const problems = checkOutbound({
-    message, recipient, org, suppressed: isSuppressed(store, recipient.email),
-  });
-  let bid = store.insert('bids', {
-    orgId: org.id, opportunityId: opportunity.id, proposalId: proposal.id,
-    recipientContactId: recipient.id, status: 'draft', total: est.total, history: [], receipt: null,
-    blockers: problems,
-  });
-  if (problems.length) return outcome('blocked_compliance', problems.join('; '));
-
-  const policy = org.autopilot || {};
-  const needsOwner = !policy.enabled
-    || opportunity.needsReview
-    || est.total > (policy.autoApproveMaxTotal || 0);
-
-  if (needsOwner) {
-    bid = store.update('bids', org.id, bid.id, transitionBid(bid, 'pending_approval', {
-      actor: 'autopilot', note: 'routed to owner approval queue',
-    }));
-    return outcome('awaiting_owner', 'bid is in the owner approval queue');
-  }
-
-  bid = store.update('bids', org.id, bid.id, transitionBid(bid, 'approved', {
-    actor: 'autopilot', note: `auto-approved under policy (limit ${policy.autoApproveMaxTotal})`,
-  }));
-  audit(store, org.id, 'autopilot', 'bid.auto_approved', bid.id, { total: est.total });
-  const dispatch = await dispatchBid({ store, config, transport, orgId: org.id, bidId: bid.id });
-  return outcome(dispatch.status === 'sent' ? 'sent' : 'approved', dispatch.mode || dispatch.status);
-}
-
-/**
- * One full autonomous cycle: ingest, match, price, draft, approve or queue, and
- * dispatch. Every decision is written to the audit log and returned in the report.
- */
-async function runCycle({ store, config, transport, now = new Date() }) {
-  const report = {
-    startedAt: now.toISOString(),
-    sources: syncAllSources(store, config, now),
-    orgs: [],
-  };
-
-  const orgs = store.list('orgs', null, (o) => o.status === 'active');
-  for (const org of orgs) {
-    const orgReport = { orgId: org.id, name: org.name, matched: 0, results: [] };
-    report.orgs.push(orgReport);
-    if (!(org.autopilot && org.autopilot.enabled)) {
-      orgReport.skipped = 'autopilot disabled for this organisation';
+export async function collectSources(store, { fetchImpl, only } = {}) {   // only: one source id (admin retry)
+  const results = [];
+  const order = s => (s.adapter === 'license-socrata' ? 2 : ['legistar', 'signals-socrata'].includes(s.adapter) ? 1 : 0);
+  for (const src of store.list('sources').sort((a, b) => order(a) - order(b))) {
+    if (only && src.id !== only) continue;
+    if (!src.enabled) continue;
+    if (!canCollect(src)) { results.push({ source: src.key, skipped: 'not authorized' }); continue; }
+    if (['license-socrata', 'legistar', 'signals-socrata'].includes(src.adapter)) {
+      try {
+        const { syncLicenses, syncLegistar, syncLandUseSignals } = await import('./enrichment.js');
+        const fn = { legistar: syncLegistar, 'signals-socrata': syncLandUseSignals, 'license-socrata': syncLicenses }[src.adapter];
+        const r = await fn(store, src, { fetchImpl });
+        Object.assign(src, { lastSuccessAt: now(), lastError: null }); store.put('sources', src);
+        store.put('jobs', { type: 'collect', sourceId: src.id, status: 'ok', result: r });
+        results.push({ source: src.key, ...r });
+      } catch (e) {
+        Object.assign(src, { lastFailureAt: now(), lastError: e.message }); store.put('sources', src);
+        store.put('jobs', { type: 'collect', sourceId: src.id, status: 'failed', error: e.message });   // failures belong in the import history too
+        results.push({ source: src.key, error: e.message });
+      }
       continue;
     }
-    const permits = store.list('permits', null, (p) => config.allowSampleData || !p.isSample);
-    for (const permit of permits) {
-      const already = store.list('opportunities', org.id, (o) => o.permitId === permit.id).length > 0;
-      if (already) continue;
-      const m = matchPermit(permit, org.profile, { allowSample: config.allowSampleData });
-      if (!m.match) continue;
-      const opportunity = store.insert('opportunities', {
-        id: newId('opp'),
-        orgId: org.id,
-        permitId: permit.id,
-        score: m.score,
-        reasons: m.reasons,
-        needsReview: m.needsReview,
-        status: 'new',
-        statusDetail: null,
-      });
-      orgReport.matched += 1;
-      // One failing permit must not stop the cycle for other permits or other tenants.
-      try {
-        const result = await processOpportunity({ store, config, transport, org, permit, opportunity, now });
-        orgReport.results.push({ permit: permit.permitId, ...result });
-      } catch (err) {
-        store.update('opportunities', org.id, opportunity.id, { status: 'error', statusDetail: err.message });
-        audit(store, org.id, 'autopilot', 'opportunity.error', opportunity.id, { error: err.message });
-        orgReport.results.push({ permit: permit.permitId, opportunityId: opportunity.id, status: 'error', detail: err.message });
-      }
+    const adapter = ADAPTERS[src.adapter];
+    if (!adapter) continue; // file_import sources are fed through the import endpoint
+    try {
+      const raw = await adapter(src, { since: src.adapter === 'socrata' ? src.syncCursor : src.lastRecordDate, fetchImpl });
+      const r = ingestPermits(store, src, raw);
+      const latest = raw.map(x => x.issuedDate || x.appliedDate).filter(Boolean).map(String).sort().pop();
+      const cursor = raw.map(x => x._cursor).filter(Boolean).sort().pop();
+      Object.assign(src, { lastSuccessAt: now(), lastError: null,
+        lastRecordDate: latest && (!src.lastRecordDate || latest > src.lastRecordDate) ? latest : src.lastRecordDate,
+        syncCursor: cursor || src.syncCursor || null });
+      store.put('sources', src);
+      store.put('jobs', { type: 'collect', sourceId: src.id, status: 'ok', result: r });
+      results.push({ source: src.key, ...r });
+    } catch (e) {
+      Object.assign(src, { lastFailureAt: now(), lastError: e.message });
+      store.put('sources', src);
+      store.put('jobs', { type: 'collect', sourceId: src.id, status: 'failed', error: e.message });
+      results.push({ source: src.key, error: e.message });
     }
   }
-
-  report.finishedAt = new Date().toISOString();
-  store.insert('jobs', { type: 'autopilot.cycle', summary: summarize(report), finishedAt: report.finishedAt });
-  return report;
+  return results;
 }
 
-function summarize(report) {
-  const count = (status) => report.orgs.reduce(
-    (n, o) => n + o.results.filter((r) => r.status === status).length, 0,
-  );
-  return {
-    sourcesRun: report.sources.filter((s) => s.status === 'ok').length,
-    sourcesBlocked: report.sources.filter((s) => s.status === 'blocked').length,
-    awaitingOwner: count('awaiting_owner'),
-    needsPricing: count('needs_pricing'),
-    needsRecipient: count('needs_recipient'),
-    blockedCompliance: count('blocked_compliance'),
-    sent: count('sent'),
-    errors: count('error'),
-  };
+export function qualifyForOrg(store, org) {
+  const cards = activeRateCards(store, org.id);
+  if (!cards.length) return { evaluated: 0, skipped: 'no approved rate cards — nothing is priced until the owner approves rates' };
+  const credBlock = credentialBlockers(store, org);
+  if (credBlock.length) return { evaluated: 0, skipped: credBlock[0] + ' — bidding paused until one is added' };
+  const seen = new Set(store.tlist('opportunities', org.id).map(o => o.permitId));
+  const stats = { evaluated: 0, qualified: 0, needsMeasurement: 0, rejected: 0 };
+  for (const p of store.list('permits', p => p.commercial && !p.archived && !seen.has(p.id))) {
+    stats.evaluated++;
+    // A permit means construction is ending: price construction-clean services only, never recurring janitorial.
+    const est = estimateOpportunity(cards, p, { categories: org.settings?.permitServices || PERMIT_SERVICES });
+    const m = scoreOpportunity(org, p, est);
+    m.blockers.push(...credBlock);
+    let status = 'rejected';
+    if (m.blockers.length === 0 && est.missing.includes('squareFeet') && !est.lines.length) status = 'needs_measurement';
+    else if (m.blockers.length === 0 && est.lines.length && m.score >= QUALIFY_SCORE) status = 'qualified';
+    stats[status === 'qualified' ? 'qualified' : status === 'needs_measurement' ? 'needsMeasurement' : 'rejected']++;
+    store.tput('opportunities', org.id, { permitId: p.id, status, score: m.score, reasons: m.reasons, blockers: m.blockers, estimate: est });
+  }
+  return stats;
 }
 
-module.exports = { runCycle, syncAllSources, pickRecipient, addDays };
+export function draftBids(store, org) {
+  const stats = { drafted: 0, needsContact: 0, autoApproved: 0 };
+  const a = org.settings?.autoApprove || {};
+  for (const opp of store.tlist('opportunities', org.id, o => o.status === 'qualified' && !o.bidId)) {
+    const permit = store.get('permits', opp.permitId);
+    const { company, recipients, reason } = resolveRecipients(store, permit);
+    if (!recipients.length) { opp.status = 'needs_contact'; opp.contactReason = reason; store.tput('opportunities', org.id, opp); stats.needsContact++; continue; }
+    const rendered = renderProposal(org, permit, opp.estimate, { recipientCompany: company.name, credentials: proposalCredentialText(store, org) });
+    const proposal = store.tput('proposals', org.id, { opportunityId: opp.id, version: 1, ...rendered, deadline: permit.responseDeadline || null });
+    let bid = store.tput('bids', org.id, { opportunityId: opp.id, proposalId: proposal.id, recipientIds: recipients.map(r => r.id), total: rendered.total, status: 'draft' });
+    bid = transition(store, bid, 'pending_approval', 'autopilot');
+    opp.bidId = bid.id; opp.status = 'bid_drafted'; store.tput('opportunities', org.id, opp);
+    stats.drafted++;
+    if (a.enabled && rendered.total <= (a.maxTotal || 0) && opp.score >= (a.minScore || 100)) {
+      transition(store, bid, 'approved', 'autopilot', { rule: `auto-approve <= $${a.maxTotal}, score >= ${a.minScore}` });
+      stats.autoApproved++;
+    }
+  }
+  return stats;
+}
+
+export async function dispatchBids(store, org, { fetchImpl } = {}) {
+  const stats = { sent: 0, failed: 0, previewed: 0 };
+  for (const bid of store.tlist('bids', org.id, b => b.status === 'approved' && b.channel !== 'marketplace')) {
+    const proposal = store.tget('proposals', org.id, bid.proposalId);
+    const opp = store.tget('opportunities', org.id, bid.opportunityId);
+    const permit = store.get('permits', opp.permitId);
+    const contacts = bid.recipientIds.map(id => store.get('contacts', id)).filter(Boolean);
+    const issues = contacts.length ? contacts.flatMap(c => outboundIssues(store, org, c, proposal)) : ['no recipients'];
+
+    if (config.emailMode !== 'live' || !org.settings?.liveSending) {
+      // Dry-run: render exactly what would go out; the bid stays "approved". Never marked sent.
+      for (const c of contacts) store.put('messages', { orgId: org.id, bidId: bid.id, dryRun: true, issues, preview: issues.length ? null : buildEmail(org, c, permit, proposal, bid.id) });
+      bid.lastDryRunAt = now(); bid.lastDryRunIssues = issues; store.tput('bids', org.id, bid);
+      stats.previewed++; continue;
+    }
+    transition(store, bid, 'sending', 'autopilot');
+    if (issues.length) { transition(store, bid, 'failed', 'autopilot', { issues }); stats.failed++; continue; }
+    const receipts = [];
+    for (const c of contacts) {
+      const r = await sendEmail(buildEmail(org, c, permit, proposal, bid.id), { fetchImpl });
+      receipts.push({ contactId: c.id, ...r });
+      if (r.ok) store.put('messages', { orgId: org.id, bidId: bid.id, contactId: c.id, messageId: r.messageId, dryRun: false, sentAt: now() });
+    }
+    const okReceipts = receipts.filter(r => r.ok && r.messageId);
+    bid.receipts = receipts; bid.submittedCopyId = proposal.id;
+    if (okReceipts.length) { transition(store, bid, 'sent', 'autopilot', { messageIds: okReceipts.map(r => r.messageId) }); stats.sent++; }
+    else { transition(store, bid, 'failed', 'autopilot', { receipts }); stats.failed++; }
+  }
+  return stats;
+}
+
+// One pull at a time, shared by the hourly schedule and "run now", with a watchdog so a stuck pull can't block forever.
+let cycleState = { running: false, startedAt: null };
+export function cycleStatus() { return { ...cycleState }; }
+export async function runCycleGuarded(store, opts = {}, { maxMinutes = 20 } = {}) {
+  if (cycleState.running && Date.now() - Date.parse(cycleState.startedAt) < maxMinutes * 60e3) return { skipped: 'a pull is already running', since: cycleState.startedAt };
+  cycleState = { running: true, startedAt: new Date().toISOString() };
+  try {
+    const r = await store.withLock('cycle', () => runCycle(store, opts));
+    return r.ran ? r.result : { skipped: r.skipped };
+  }
+  catch (e) { store.put('jobs', { type: 'cycle', status: 'failed', error: e.message }); store.save(); throw e; }
+  finally { cycleState = { running: false, startedAt: null }; }
+}
+
+export async function runCycle(store, opts = {}) {
+  const started = now();
+  const collect = await collectSources(store, opts);
+  const orgs = [];
+  for (const org of store.list('orgs', o => o.status === 'active' && o.kind !== 'buyer')) {
+    orgs.push({ org: org.slug,
+      qualify: qualifyForOrg(store, org), draft: draftBids(store, org),
+      marketplace: { ...draftMarketplaceBids(store, org), ...dispatchMarketplaceBids(store, org) },
+      dispatch: await dispatchBids(store, org, opts),
+      followUps: await sendFollowUps(store, org, opts) });
+  }
+  // Project Intelligence Core: link anything new (idempotent).
+  let core = null; try { const { backfillCore } = await import('./core.js'); core = backfillCore(store); } catch (e) { console.error('core linking failed', e.message); }
+  let planRoom = null; try { const { syncPlanRoom } = await import('./planroom.js'); planRoom = await syncPlanRoom(store); } catch (e) { console.error('plan room sync failed', e.message); }
+  // Open requests reach companies that joined or added trades since the request was posted.
+  let invited = 0;
+  for (const r of store.list('bidRequests', x => x.status === 'open' && Date.parse(x.dueDate) > Date.now())) invited += inviteMatches(store, r);
+  let invitationNotices = [];
+  try { const { sendInvitationNotices } = await import('./digest.js'); invitationNotices = await sendInvitationNotices(store, opts); } catch (e) { console.error('invitation notices failed', e.message); }
+  const retention = runRetention(store);
+  const job = store.put('jobs', { type: 'cycle', status: 'ok', started, finished: now(), collect, orgs, retention, invited, invitationNotices: invitationNotices.length, core, planRoom });
+  store.save();
+  return job;
+}
+
+/** Postmark delivery/bounce/spam webhook. Delivery evidence moves bids forward; complaints suppress. */
+export function handleEmailEvent(store, ev) {
+  const msg = store.list('messages', m => m.messageId && m.messageId === ev.MessageID)[0];
+  if (!msg) return { ok: false, reason: 'unknown message' };
+  const bid = store.tget('bids', msg.orgId, msg.bidId);
+  const contact = store.get('contacts', msg.contactId);
+  switch (ev.RecordType) {
+    case 'Delivery': if (bid?.status === 'sent') transition(store, bid, 'delivered', 'postmark', { at: ev.DeliveredAt }); break;
+    case 'Open': if (bid?.status === 'delivered') transition(store, bid, 'opened', 'postmark'); break;
+    case 'Bounce':
+      if (ev.Type === 'HardBounce' && contact) { contact.status = 'outdated'; store.put('contacts', contact); }
+      if (bid?.status === 'sent') transition(store, bid, 'failed', 'postmark', { bounce: ev.Type });
+      break;
+    case 'SpamComplaint': case 'SubscriptionChange':
+      if (contact?.email) store.suppressEverywhere(contact.email, ev.RecordType, 'postmark');
+      break;
+  }
+  return { ok: true };
+}

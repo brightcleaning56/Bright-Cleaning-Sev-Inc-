@@ -1,183 +1,145 @@
-'use strict';
+import './_env.js';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { config } from '../src/config.js';
+import { runCycle, handleEmailEvent } from '../src/autopilot.js';
+import { transition } from '../src/domain.js';
+import { createBackup, restoreTest } from '../src/backup.js';
+import { readiness } from '../src/readiness.js';
+import { samgov } from '../src/sources/adapters.js';
+import { world, authorize, DALLAS_ROWS, stubFetch } from './_fixtures.js';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const path = require('path');
-const fs = require('fs');
-const { makeEnv, makeStore, seedBrightClean } = require('./helpers');
-const { runCycle } = require('../src/autopilot');
-const { createTransport } = require('../src/transport');
-const { addContact, verifyContact, unsubscribe, approveBid, dispatchBid } = require('../src/service');
+const socrata = stubFetch([['dallasopendata.com', () => ({ body: DALLAS_ROWS })]]);
 
-function setup(opts = {}) {
-  const { env, dir } = makeEnv();
-  const { store, config } = makeStore(env);
-  const seeded = seedBrightClean(store, opts);
-  const transport = createTransport(config); // dry_run by default
-  return { store, config, transport, dir, ...seeded };
-}
+test('full cycle in dry-run: collect → qualify → estimate → draft → approve → preview, never marked sent', async () => {
+  const { store, org } = world();
+  authorize(store, 'dallas-socrata');
+  config.emailMode = 'dry-run';
+  const job = await runCycle(store, { fetchImpl: socrata });
+  const c = job.collect.find(x => x.source === 'dallas-socrata');
+  assert.deepEqual([c.inserted, c.skippedNonCommercial], [2, 1]);
 
-const statusOf = (report, permitId) => {
-  for (const org of report.orgs) {
-    const r = org.results.find((x) => x.permit === permitId);
-    if (r) return r.status;
-  }
-  return undefined;
-};
+  const opps = store.tlist('opportunities', org.id);
+  const byPermit = Object.fromEntries(opps.map(o => [store.get('permits', o.permitId).permitId, o]));
+  assert.equal(byPermit['BU-1001'].status, 'bid_drafted');
+  assert.equal(byPermit['BU-1001'].estimate.total, 3823.38);
+  assert.equal(byPermit['BU-1003'].status, 'needs_measurement'); // no sqft → no invented quantity
 
-test('full cycle: matches, prices, drafts, routes to owner, previews, and never claims a send', async () => {
-  const { store, config, transport, org } = setup();
-  const report = await runCycle({ store, config, transport, now: new Date('2026-11-01T12:00:00Z') });
-
-  assert.equal(report.sources.find((s) => s.sourceId === 'sample-demo').status, 'ok');
-  assert.ok(report.sources.filter((s) => s.status === 'blocked').length >= 2, 'unreviewed sources stay blocked');
-
-  // DEMO-0001 is unconfirmed, so it needs a human even though it has a verified GC.
-  assert.equal(statusOf(report, 'DEMO-2026-0001'), 'awaiting_owner');
-  // DEMO-0002 is probable, under the auto-approval limit, and to a verified GC, so it is previewed (not sent).
-  assert.equal(statusOf(report, 'DEMO-2026-0002'), 'approved');
-  // DEMO-0003 has no square footage and the tenant has a 5,000 sq ft minimum, so it is
-  // excluded at matching. The system must not guess a size to make it qualify.
-  assert.equal(statusOf(report, 'DEMO-2026-0003'), undefined);
-  const demo3 = store.list('permits', null).find((p) => p.permitId === 'DEMO-2026-0003');
-  assert.equal(store.list('opportunities', org.id, (o) => o.permitId === demo3.id).length, 0, 'no opportunity created for an unsized permit');
-
-  const bids = store.list('bids', org.id);
-  assert.ok(bids.every((b) => b.status !== 'sent'), 'nothing is marked sent in dry-run mode');
-  const previewed = bids.find((b) => b.dispatch && b.dispatch.mode === 'dry_run');
-  assert.ok(previewed, 'approved bid was previewed');
-  assert.ok(fs.existsSync(previewed.dispatch.previewFile));
-  const preview = JSON.parse(fs.readFileSync(previewed.dispatch.previewFile, 'utf8'));
-  assert.equal(preview.purpose, 'bid_submission');
-  assert.equal(preview.to, 'estimator@demo-gc.example');
-  assert.equal(preview.from, 'owner@brightclean.example');
+  const [bid] = store.tlist('bids', org.id);
+  assert.equal(bid.status, 'pending_approval'); // human approval by default
+  transition(store, bid, 'approved', 'owner@test');
+  await runCycle(store, { fetchImpl: socrata });
+  assert.equal(store.tget('bids', org.id, bid.id).status, 'approved'); // dry-run never marks sent
+  const preview = store.list('messages', m => m.bidId === bid.id && m.dryRun && m.preview).pop().preview;
+  assert.match(preview.TextBody, /100 Test St, Ankeny, IA 50023/);
+  assert.match(preview.TextBody, /Unsubscribe: https:\/\/app\.buildintel\.test\/u\//);
+  assert.ok(preview.Headers.some(h => h.Name === 'List-Unsubscribe'));
 });
 
-test('re-running the cycle does not duplicate opportunities or bids', async () => {
-  const { store, config, transport, org } = setup();
-  await runCycle({ store, config, transport, now: new Date('2026-11-01T12:00:00Z') });
-  const before = store.list('opportunities', org.id).length;
-  const bidsBefore = store.list('bids', org.id).length;
-  const second = await runCycle({ store, config, transport, now: new Date('2026-11-01T12:30:00Z') });
-  assert.equal(store.list('opportunities', org.id).length, before);
-  assert.equal(store.list('bids', org.id).length, bidsBefore);
-  assert.equal(second.orgs[0].matched, 0);
+test('auto-approve rule approves only within owner limits', async () => {
+  const { store, org } = world();
+  authorize(store, 'dallas-socrata');
+  org.settings.autoApprove = { enabled: true, maxTotal: 3000, minScore: 90 };
+  await runCycle(store, { fetchImpl: socrata });
+  assert.equal(store.tlist('bids', org.id)[0].status, 'pending_approval'); // $3,823 > $3,000 limit
+  const { store: s2, org: o2 } = world();
+  authorize(s2, 'dallas-socrata');
+  o2.settings.autoApprove = { enabled: true, maxTotal: 5000, minScore: 90 };
+  config.emailMode = 'dry-run';
+  await runCycle(s2, { fetchImpl: socrata });
+  assert.equal(s2.tlist('bids', o2.id)[0].status, 'approved');
 });
 
-test('without rate cards nothing is priced: the system needs owner pricing first', async () => {
-  const { store, config, transport, org } = setup({ withPricing: false });
-  const report = await runCycle({ store, config, transport, now: new Date('2026-11-01T12:00:00Z') });
-  assert.equal(statusOf(report, 'DEMO-2026-0002'), 'needs_pricing');
-  assert.equal(store.list('bids', org.id).length, 0, 'no bid is created without a price');
-  assert.equal(store.list('proposals', org.id).length, 0);
+test('live sending: sent only with a provider MessageID; webhooks drive delivery, bounce and suppression', async () => {
+  const { store, org, contact } = world();
+  authorize(store, 'dallas-socrata');
+  org.settings.autoApprove = { enabled: true, maxTotal: 10000, minScore: 90 };
+  org.settings.liveSending = true;
+  Object.assign(config, { emailMode: 'live', postmarkToken: 'tok', emailDomainVerified: true });
+  const sent = [];
+  const fetchImpl = stubFetch([
+    ['dallasopendata.com', () => ({ body: DALLAS_ROWS })],
+    ['postmarkapp.com', (u, o) => { sent.push(JSON.parse(o.body)); return { body: { MessageID: 'pm-123', ErrorCode: 0 } }; }],
+  ]);
+  try {
+    await runCycle(store, { fetchImpl });
+    const [bid] = store.tlist('bids', org.id);
+    assert.equal(bid.status, 'sent');
+    assert.equal(sent.length, 1); assert.equal(sent[0].To, 'pat@weitz.test');
+    handleEmailEvent(store, { RecordType: 'Delivery', MessageID: 'pm-123', DeliveredAt: '2026-11-01' });
+    assert.equal(store.tget('bids', org.id, bid.id).status, 'delivered');
+    handleEmailEvent(store, { RecordType: 'SpamComplaint', MessageID: 'pm-123' });
+    assert.equal(store.isSuppressed(contact.email), true);
+  } finally { Object.assign(config, { emailMode: 'dry-run', postmarkToken: '', emailDomainVerified: false }); }
 });
 
-test('without a verified GC contact no recipient is invented', async () => {
-  const { store, config, transport, org } = setup({ withContact: false });
-  const report = await runCycle({ store, config, transport, now: new Date('2026-11-01T12:00:00Z') });
-  assert.equal(statusOf(report, 'DEMO-2026-0002'), 'needs_recipient');
-  const bid = store.list('bids', org.id)[0];
-  assert.equal(bid.status, 'draft');
-  assert.equal(bid.recipientContactId, null);
+test('live sending: provider error marks bid failed, not sent; missing postal address blocks sending', async () => {
+  const { store, org } = world();
+  authorize(store, 'dallas-socrata');
+  org.settings.autoApprove = { enabled: true, maxTotal: 10000, minScore: 90 };
+  org.settings.liveSending = true;
+  Object.assign(config, { emailMode: 'live', postmarkToken: 'tok', emailDomainVerified: true });
+  const fetchImpl = stubFetch([
+    ['dallasopendata.com', () => ({ body: DALLAS_ROWS })],
+    ['postmarkapp.com', () => ({ status: 422, body: { ErrorCode: 300, Message: 'Invalid email' } })],
+  ]);
+  try {
+    await runCycle(store, { fetchImpl });
+    const [bid] = store.tlist('bids', org.id);
+    assert.equal(bid.status, 'failed');
+    assert.equal(bid.receipts[0].error, 'Invalid email');
+
+    const w2 = world(); authorize(w2.store, 'dallas-socrata');
+    w2.org.legal.postalAddress = '';
+    w2.org.settings.autoApprove = { enabled: true, maxTotal: 10000, minScore: 90 }; w2.org.settings.liveSending = true;
+    await runCycle(w2.store, { fetchImpl });
+    const b2 = w2.store.tlist('bids', w2.org.id)[0];
+    assert.equal(b2.status, 'failed');
+    assert.ok(b2.history.at(-1).detail.issues.some(i => /postal address/.test(i)));
+  } finally { Object.assign(config, { emailMode: 'dry-run', postmarkToken: '', emailDomainVerified: false }); }
 });
 
-test('an unsubscribe immediately blocks bids to that address across tenants', async () => {
-  const { store, config, transport, org, contact } = setup();
-  unsubscribe(store, 'estimator@demo-gc.example');
-  const report = await runCycle({ store, config, transport, now: new Date('2026-11-01T12:00:00Z') });
-  assert.equal(store.get('contacts', org.id, contact.id).status, 'opted_out');
-  assert.notEqual(statusOf(report, 'DEMO-2026-0002'), 'approved');
+test('source failures are recorded, not swallowed', async () => {
+  const { store } = world();
+  authorize(store, 'dallas-socrata');
+  await runCycle(store, { fetchImpl: stubFetch([['dallasopendata.com', () => ({ status: 503, body: {} })]]) });
+  const s = store.list('sources', x => x.key === 'dallas-socrata')[0];
+  assert.equal(s.lastError, 'socrata 503'); assert.ok(s.lastFailureAt);
 });
 
-test('a bid above the auto-approval limit waits for the owner, and owner approval previews it', async () => {
-  const { store, config, transport, org } = setup({ autopilot: { enabled: true, autoApproveMaxTotal: 100 } });
-  const report = await runCycle({ store, config, transport, now: new Date('2026-11-01T12:00:00Z') });
-  assert.equal(statusOf(report, 'DEMO-2026-0002'), 'awaiting_owner');
-  const pending = store.list('bids', org.id, (b) => b.status === 'pending_approval')[0];
-  assert.ok(pending);
-  approveBid(store, org.id, pending.id, 'user:owner');
-  const result = await dispatchBid({ store, config, transport, orgId: org.id, bidId: pending.id });
-  assert.equal(result.status, 'approved');
-  assert.equal(result.mode, 'dry_run');
-  assert.equal(store.get('bids', org.id, pending.id).status, 'approved', 'dry run never moves a bid to sent');
+test('SAM.gov adapter maps federal solicitations with deadlines and source links', async () => {
+  process.env.SAM_API_KEY = 'k';
+  const { store } = world();
+  const src = { ...authorize(store, 'sam-gov'), rateLimitPerMin: 100000, adapterConfig: { naics: ['561720'], states: ['IA'] } };
+  const rows = await samgov(src, { fetchImpl: stubFetch([['api.sam.gov', () => ({ body: { opportunitiesData: [
+    { solicitationNumber: 'W9128F-26-Q-0001', title: 'Janitorial services, Camp Dodge', type: 'Solicitation', postedDate: '2026-10-28',
+      responseDeadLine: '2026-11-20T17:00:00-05:00', uiLink: 'https://sam.gov/opp/abc/view', placeOfPerformance: { city: { name: 'Johnston' } } }] } })]]) });
+  assert.equal(rows[0].permitId, 'W9128F-26-Q-0001');
+  assert.equal(rows[0].responseDeadline, '2026-11-20T17:00:00-05:00');
+  assert.equal(rows[0].sourceUrl, 'https://sam.gov/opp/abc/view');
+  delete process.env.SAM_API_KEY;
 });
 
-test('the organisation with autopilot disabled is skipped entirely', async () => {
-  const { store, config, transport, org } = setup({ autopilot: { enabled: false, autoApproveMaxTotal: 0 } });
-  const report = await runCycle({ store, config, transport, now: new Date('2026-11-01T12:00:00Z') });
-  assert.match(report.orgs[0].skipped, /disabled/);
-  assert.equal(store.list('opportunities', org.id).length, 0);
+test('backup: encrypted, restorable with matching checksum; tampering detected', () => {
+  const { store } = world();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bi-'));
+  const k = crypto.randomBytes(32).toString('hex');
+  const b = createBackup(store, dir, k);
+  assert.ok(!fs.readFileSync(b.file).toString('latin1').includes('Bright Clean')); // not plaintext
+  assert.equal(restoreTest(b.file, b.checksum, k).ok, true);
+  const buf = fs.readFileSync(b.file); buf[buf.length - 1] ^= 0xff; fs.writeFileSync(b.file, buf);
+  assert.equal(restoreTest(b.file, b.checksum, k).ok, false);
 });
 
-test('live send mode with no provider adapter refuses to start', () => {
-  const { env } = makeEnv({ BUILDINTEL_SEND_MODE: 'live' });
-  const { config } = makeStore(env);
-  assert.throws(() => createTransport(config), /BUILDINTEL_EMAIL_PROVIDER=postmark/);
-});
-
-async function approvedBidAfterCycle() {
-  const ctx = setup();
-  await runCycle({ store: ctx.store, config: ctx.config, transport: ctx.transport, now: new Date('2026-11-01T12:00:00Z') });
-  const bid = ctx.store.list('bids', ctx.org.id, (b) => b.status === 'approved')[0];
-  assert.ok(bid, 'precondition: an approved bid exists');
-  return { ...ctx, bid, liveConfig: { ...ctx.config, sendMode: 'live' } };
-}
-
-test('live mode marks a bid sent only with a provider acceptance receipt', async () => {
-  const { store, org, bid, liveConfig } = await approvedBidAfterCycle();
-  const okTransport = {
-    async send() { return { providerMessageId: 'prov-1', acceptedAt: '2026-11-01T12:00:00Z' }; },
-    async preview() { throw new Error('preview must not be used in live mode'); },
-  };
-  const result = await dispatchBid({ store, config: liveConfig, transport: okTransport, orgId: org.id, bidId: bid.id });
-  assert.equal(result.status, 'sent');
-  const sent = store.get('bids', org.id, bid.id);
-  assert.equal(sent.status, 'sent');
-  assert.equal(sent.receipt.providerMessageId, 'prov-1');
-});
-
-test('live mode fails the bid when the provider returns no receipt', async () => {
-  const { store, org, bid, liveConfig } = await approvedBidAfterCycle();
-  const silentTransport = {
-    async send() { return {}; },
-    async preview() { return { file: 'x' }; },
-  };
-  const result = await dispatchBid({ store, config: liveConfig, transport: silentTransport, orgId: org.id, bidId: bid.id });
-  assert.equal(result.status, 'failed');
-  const failed = store.get('bids', org.id, bid.id);
-  assert.equal(failed.status, 'failed', 'a bid with no receipt must never read as sent');
-  assert.equal(failed.receipt, null);
-});
-
-test('dispatch refuses a bid that is not approved', async () => {
-  const { store, org, config, transport } = setup();
-  const bid = store.insert('bids', {
-    orgId: org.id, opportunityId: 'none', proposalId: null, recipientContactId: null,
-    status: 'draft', total: 1, history: [], receipt: null,
-  });
-  await assert.rejects(dispatchBid({ store, config, transport, orgId: org.id, bidId: bid.id }), /not approved/);
-});
-
-test('the store refuses cross-tenant reads: tenant data is scoped to its own org', async () => {
-  const { store, org } = setup();
-  assert.throws(() => store.list('bids', undefined), /orgId is required/);
-  assert.equal(store.list('bids', 'some-other-org').length, 0);
-  assert.ok(org.id);
-});
-
-test('a failing bid dispatch is isolated: the cycle completes and the error is recorded', async () => {
-  const { store, config, org } = setup();
-  const brokenTransport = {
-    mode: 'dry_run',
-    async preview() { throw new Error('disk full'); },
-    async send() { throw new Error('not used'); },
-  };
-  const report = await runCycle({ store, config, transport: brokenTransport, now: new Date('2026-11-01T12:00:00Z') });
-  const results = report.orgs[0].results;
-  assert.ok(results.length >= 2, 'every matched permit was still processed');
-  assert.ok(results.some((r) => r.status === 'error' && /disk full/.test(r.detail)));
-  const errored = store.list('opportunities', org.id, (o) => o.status === 'error');
-  assert.ok(errored.length >= 1, 'error is stored on the opportunity');
-  assert.ok(store.list('audit', org.id).some((e) => e.action === 'opportunity.error'));
-  assert.ok(report.finishedAt, 'the cycle finished and returned a report');
+test('readiness: fresh deployment is NO-GO and every gate carries evidence + an owner', () => {
+  const { store } = world();
+  const r = readiness(store);
+  assert.equal(r.verdict, 'NO-GO');
+  for (const g of r.gates) { assert.ok(g.evidence); assert.ok(g.owner); }
+  assert.equal(r.gates.find(g => g.id === 'attorney').status, 'owner_action');
+  assert.equal(r.gates.find(g => g.id === 'rates').status, 'pass');
 });

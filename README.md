@@ -1,98 +1,104 @@
 # BUILDINTEL
 
-Commercial construction intelligence and bid automation for Bright Clean Inc. and future tenants.
-Built with Node.js 20+ and no runtime dependencies.
+**Construction lead intelligence for contractors and suppliers** (the iSqFt / BidClerk category), built on
+automated public permit data, plus an optional bid autopilot and a buyer portal for GCs and property managers.
 
-Start with **[docs/LAUNCH_24_HOURS.md](docs/LAUNCH_24_HOURS.md)**. It explains what can and cannot go
-live in 24 hours, the gates, the runbook and the known gaps.
+## Acceptance evidence
+**Release check:** `TEST_DATABASE_URL=postgres://… bash scripts/verify-release.sh` (clean install, all tests with no skips, audit, browser QA in both modes) → `docs/RELEASE-VERIFICATION.md`. Latest: PASS.
+Design for the next version: `docs/PROJECT-CORE.md` (Project Intelligence Core).
+Backups include plan-room drawings (encrypted vault + restore drill). Off-site copies: set `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_REGION`, `BACKUP_S3_KEY_ID`, `BACKUP_S3_SECRET`.
+Database TLS: verified by default; `PGSSL_CA` for a provider CA; `PGSSL_NO_VERIFY=true` only as an explicit (gate-failing) override.
+Browser QA (dead controls, menu routing, every screen, all core flows): `bash qa/run.sh` (see `qa/README.md`).
+Automated tests: `npm test`; the 2 PostgreSQL integration tests run only when `TEST_DATABASE_URL` points at a test database.
+See `docs/ACCEPTANCE.md` (status of all 20 departments + the 12 required reports) and `docs/TEST-INVENTORY.md`.
+AI accuracy: `ANTHROPIC_API_KEY=… node scripts/ai-accuracy.mjs <folder of PDFs + .truth.json>`.
 
-## Quick start
+## Publishing & subscriptions (v5)
+Verified publishers publish projects with several trade packages (draft → checklist → publish); subscribers discover projects and bid. One entitlement catalog (`src/entitlements.js`, proposed prices). See `docs/V5-PUBLISHING.md`.
 
-```bash
-npm test                         # full test suite, should all pass
-node src/cli.js readiness        # go-live gate report (exit 2 = NO-GO)
-BUILDINTEL_ADMIN_KEY=... BUILDINTEL_UNSUBSCRIBE_SECRET=... npm start
+## How the system flows (iSqFt-style bidding + automated project discovery)
+1. **Discover:** permits and land-use applications arrive hourly from city feeds → job sites, schedules, contractors, licenses.
+2. **Subscriber acts on a lead:** saved-search alerts → project page → track → email the GC from the platform (compliant, logged).
+3. **GC / property manager asks for bids:** posts a request for any of 24 trades (plans link, due date) → every subscriber whose trades
+   and territory match is invited automatically (late joiners too) and notified.
+4. **Subscriber responds:** will bid / won't bid → submits a bid (amount, scope, exclusions, documents); can revise until award.
+   Cleaning companies with approved rates can also auto-price cleaning requests.
+   Plan room: the GC uploads drawings/specs (PDF) to the request; sheets are indexed by discipline from file names; only the GC and
+   invited bidders can open them (10-minute signed links); addenda are numbered, bidders are emailed and must acknowledge every
+   addendum before bidding; the GC sees a planholder list (who opened plans, acknowledged addenda, bid).
+5. **GC decides:** sees invited / will-bid / won't-bid counts and every bid side by side → awards with an e-signature → contract
+   record for both sides.
+
+## Command center & AI
+- Command center: real KPIs for the company's territory (active job sites, new this month, reported value with its coverage %, open bid
+  requests, early signals), live coverage list, project map (OpenStreetMap; move to a licensed tile provider before heavy use).
+- AI floor-plan analyzer (needs ANTHROPIC_API_KEY): reads a plan-room drawing, returns sheets, rooms, printed areas, finishes and scopes,
+  each with its source sheet. Areas not printed on the drawing are left blank — never estimated. Results are "unverified" until a person
+  confirms them. Private to each company; AI_DAILY_LIMIT caps cost.
+
+## Takeoff → estimate → bid
+- Start an estimate from a CONFIRMED AI analysis (unconfirmed readings are refused): one line per room with a printed area, each keeping
+  its sheet and room as the source; edited quantities are flagged "adjusted". Or build an estimate manually.
+- Labor + material unit costs, waste %, overhead and profit (money math in integer cents — exact to the cent), plus rate-card lines for
+  cleaning companies. "Submit as bid" sends the total as the bid; the bid lists every quantity with its source. Locked once submitted.
+
+## Subscriber product (lead intelligence)
+- Self-serve signup for any trade: 14-day trial, one state, no card.
+- Project search across the subscriber's territory: keywords, city, building type, stage, value, verified-contact filter; sort by newest, value or soonest start.
+- Project page: official record link, stage history, contractor/owner/architect from the record with verified contacts and evidence links, and an estimated schedule showing when each trade is likely on site (interior jobs vs new builds), clearly labeled as an estimate.
+- Saved searches with daily email alerts for new projects and stage changes.
+- Tracking (watching → contacted → bidding → won/lost) with notes; CSV export by plan.
+- Plans priced by territory: Local (1 state), Regional (3), National (all). Prices are placeholders set in Stripe.
+- Contractor pages (permit activity per GC, built from city records) with state license status where a license register is connected (Washington L&I).
+- Planning pipeline: land-use items from city council records (Legistar), ahead of permits.
+- Freshness on every lead (when it was last checked against the city record) and stage-change alerts for tracked projects.
+- New data feeds: Austin, Chicago, Seattle open data (confirm each field map with POST /api/sources/:id/probe before enabling).
+
+Construction intelligence + bid autopilot for commercial cleaning contractors (tenant #1: Bright Clean),
+general contractors and property managers.
+
+**Launch:** read `docs/LAUNCH_24H.md`.
+
+## What runs without people
+Every `CYCLE_MINUTES` the autopilot:
+1. Pulls new records from authorized sources (Socrata permits, SAM.gov solicitations, CSV imports). Unauthorized sources are blocked in code.
+2. Normalizes, validates, dedupes and classifies them (office, retail, warehouse, medical…), keeping the source link on every record. Missing values stay empty.
+3. Scores each project per tenant: service area, project type, scope ends in a clean, permit status, size, minimum contract.
+4. Estimates from owner-approved rate cards (cost-plus: labor + burden + equipment + supplies + mobilization + overhead + contingency, priced to margin, floored at the minimum). No square footage → "needs measurement", never a guess.
+5. Finds a verified GC contact (evidence required), renders the proposal and creates the bid.
+6. Auto-approves within the owner's limits, otherwise waits for one click.
+7. Sends through Postmark with CAN-SPAM identity, postal address and one-click unsubscribe. "Sent" only with a provider message ID; webhooks drive delivered / bounced / complaint → suppression.
+8. Prices open buyer requests (GCs, property managers) and submits proposals into their inbox; their award marks the bid won.
+9. Sends one follow-up after `followUpDays`; GC replies attach to the bid and stop it; "remove me" replies suppress.
+10. Applies the retention schedule (expired sessions, old previews, contacts unverified for 24 months, expired requests).
+11. Pauses all bidding if there's no current general liability certificate on file; proposals state insurance and licenses as "on file" until verified with the issuer.
+12. Buyer awards are electronically signed: signer name, consent wording, time, IP, browser and a SHA-256 of the exact proposal, downloadable by both sides with a tamper check.
+Weekly (Monday): digest email to owners — what to approve, replies, GC contacts to add, expiring insurance, failing sources, launch gates.
+Daily: encrypted backup + real restore test.
+
+Owner-facing: launch gates, overview (pipeline value, win rate by channel), bids with replies, opportunities,
+"Add GCs next" (contractors blocking the most bid value), pricing, data sources. Buyer-facing: signup with email
+verification, post requests, compare proposals, award.
+
+## Run locally
+```
+cp .env.example .env    # fill APP_SECRET, OWNER_EMAIL, OWNER_PASSWORD, BACKUP_KEY
+set -a; . ./.env; set +a
+npm test                # 150 tests (set TEST_DATABASE_URL to include the Postgres integration tests)
+npm start               # http://localhost:3000
+npm run readiness       # launch gates with evidence
 ```
 
-## Owner console (web app)
-
-Everything can be run from the browser. Open the server's root URL (for example `http://localhost:8080/`)
-and sign in with `BUILDINTEL_ADMIN_KEY`. The key is kept in this browser tab only.
-
-- **Dashboard:** readiness gates, tenant list, and a button to run the autopilot cycle now.
-- **New tenant:** create an organisation. The tenant's own API key is shown once.
-- **Tenant page:** autopilot on/off and auto-approve limit, rate cards (validated on save), contacts
-  (add, then verify with a recorded source), opportunities, bids (approve or withdraw), and audit.
-- **Approval queue:** every bid waiting for your decision, across all tenants.
-
-The console is plain HTML and JavaScript with a strict Content-Security-Policy (`script-src 'self'`,
-no inline scripts or styles). Owner actions on a tenant use the admin key plus `x-org-id`, so no tenant key is
-needed in the browser.
-
-## Configuration (environment variables)
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `PORT` | HTTP port | `8080` |
-| `BUILDINTEL_ADMIN_KEY` | Admin API key (24+ chars). Admin routes are disabled without it. | unset |
-| `BUILDINTEL_UNSUBSCRIBE_SECRET` | HMAC secret for unsubscribe links (24+ chars) | unset |
-| `BUILDINTEL_PUBLIC_URL` | Public base URL used in links | `http://localhost:PORT` |
-| `BUILDINTEL_DATA_FILE` | State file path (use a persistent, backed-up location) | `data/state.json` |
-| `BUILDINTEL_SEND_MODE` | `dry_run` (default) or `live` (needs a provider adapter; refuses to start otherwise) | `dry_run` |
-| `BUILDINTEL_AUTOPILOT` | `on` starts the scheduled autonomous cycle | off |
-| `BUILDINTEL_AUTOPILOT_INTERVAL_MIN` | Minutes between cycles | `60` |
-| `BUILDINTEL_RATE_LIMIT_PER_MIN` | Requests per minute per caller (per API key, or per IP when no key). Health checks are exempt. | `120` |
-| `BUILDINTEL_TRUST_PROXY` | `1` only behind a trusted proxy (Render), so client IPs come from X-Forwarded-For | off |
-| `BUILDINTEL_CORS_ORIGINS` | Comma-separated browser origins allowed to call the API (the Netlify console) | none |
-| `BUILDINTEL_ALLOW_SAMPLE` | `1` enables synthetic demo permits. Never in production. | off |
-
-## Tenant setup
-
-1. Copy `data/examples/brightclean.org.example.json`, replace every `REPLACE` value.
-2. `node src/cli.js create-org <file>`. The API key is shown once. Store it securely.
-3. Add rate cards (`PUT /api/me/pricing`), contacts (`POST /api/contacts`, then owner verification),
-   and the autopilot policy (`POST /api/me/autopilot`).
-
-## API
-
-Organisation routes take the header `x-org-key: <key>`. Admin routes take `x-admin-key: <key>`.
-
-| Method | Path | Auth | Purpose |
-|---|---|---|---|
-| GET | `/health` | none | Liveness |
-| GET | `/api/readiness` | admin | Go-live gates |
-| POST | `/api/orgs` | admin | Create a tenant (returns its API key once) |
-| GET | `/api/admin/orgs` | admin | List tenants (no key material) |
-| GET | `/api/admin/orgs/:id/overview` | admin | One tenant: profile, contacts, opportunities, bids, audit |
-| GET | `/api/me` | org | Tenant profile |
-| PUT | `/api/me/profile` | org | Territories, project types, minimum size |
-| PUT | `/api/me/pricing` | org | Rate cards (validated on save) |
-| POST | `/api/me/autopilot` | org | Enable autopilot and set the auto-approval limit |
-| POST | `/api/contacts` | org | Add a contact (starts `unverified`) |
-| POST | `/api/contacts/:id/verify` | admin | Owner verifies a contact with a source |
-| POST | `/api/estimates` | org | Calculate an estimate (not stored) |
-| GET | `/api/opportunities` | org | Matched permits with reasons |
-| GET | `/api/bids` | org | Bids for this tenant only |
-| POST | `/api/bids/:id/approve` | org | Approve and dispatch (preview in dry-run) |
-| POST | `/api/bids/:id/withdraw` | org | Withdraw a bid |
-| GET | `/api/audit` | org | Last 100 audit events for this tenant |
-| GET | `/api/unsubscribe?email=&token=` | HMAC token | Opt out across the platform |
-| POST | `/api/admin/sync` | admin | Sync authorised sources now |
-| POST | `/api/admin/autopilot/run` | admin | Run one autopilot cycle now |
-| GET | `/api/admin/queue` | admin | Bids waiting for owner approval |
-| GET | `/api/admin/jobs` | admin | Recent autopilot runs |
-
-## Compliance guarantees enforced in code
-
-- Scraping, login bypass, CAPTCHA bypass and paywall bypass are refused (`src/ingest/sources.js`).
-- A source runs only with reviewed terms and confirmed commercial reuse. Today none is authorised.
-- A bid is never marked `sent` without a provider acceptance receipt, and never `delivered` without a delivery receipt.
-- Bids cannot be approved without an attached proposal, and cannot skip states.
-- Only verified or source-confirmed contacts can receive a bid. The system never invents a GC or an email address.
-- Opt-outs are honoured platform-wide immediately. Marketing email needs an unsubscribe link and a postal address.
-- Tenant data is scoped by `orgId`. Cross-tenant access returns 404 (tested over HTTP).
-- Proposal content is HTML-escaped and carries a no-guarantee-of-award disclaimer.
-
 ## Layout
+`src/store.js` tenant-isolated store + audit · `src/permits.js` normalization/dedupe ·
+`src/sources/` registry (compliance gate) + adapters · `src/estimate.js` rate cards + engine ·
+`src/domain.js` matching, contacts, bid state machine · `src/outbound.js` compliance + proposal + Postmark ·
+`src/autopilot.js` cycle + email webhooks · `src/marketplace.js` buyer requests/awards · `src/engagement.js` follow-ups, replies, retention, analytics, GC directory · `src/credentials.js` insurance/licenses · `src/digest.js` weekly email · `src/pgstore.js` Postgres · `src/billing.js` Stripe · `src/backup.js` · `src/readiness.js` ·
+`src/server.js` API + scheduler · `public/index.html` operator dashboard · `docs/policies/` drafts for counsel.
 
-See the file map in `docs/LAUNCH_24_HOURS.md`.
+## Storage
+PostgreSQL when `DATABASE_URL` is set (render.yaml provisions it); JSON file otherwise.
+`node src/cli.js migrate-to-pg` moves a pilot over. See docs/SCALING.md. One runtime dependency: `pg`.
+
+## CI
+`.github/workflows/ci.yml` runs every test against a real Postgres 16 plus `npm audit` on each push.

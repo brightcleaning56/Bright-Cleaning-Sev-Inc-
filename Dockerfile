@@ -1,14 +1,12 @@
-# BUILDINTEL API server. No runtime dependencies, so there is no npm install step.
 FROM node:22-alpine
 WORKDIR /app
-ENV NODE_ENV=production \
-    PORT=8080 \
-    BUILDINTEL_DATA_FILE=/var/data/state.json \
-    BUILDINTEL_OUTBOX_DIR=/var/data/outbox \
-    BUILDINTEL_READINESS_FILE=/var/data/readiness.json
-COPY package.json ./
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 COPY src ./src
 COPY public ./public
-COPY data ./data
-EXPOSE 8080
-CMD ["node", "src/index.js"]
+COPY docs ./docs
+ENV NODE_ENV=production PORT=3000
+USER node
+EXPOSE 3000
+HEALTHCHECK CMD wget -qO- http://localhost:3000/health || exit 1
+CMD ["node", "src/server.js"]

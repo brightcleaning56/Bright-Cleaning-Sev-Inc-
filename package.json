@@ -1,18 +1,25 @@
 {
   "name": "buildintel",
-  "version": "0.1.0",
-  "private": true,
-  "description": "BUILDINTEL - commercial construction intelligence and bid automation platform (Bright Clean Inc. first tenant)",
-  "main": "src/index.js",
-  "license": "UNLICENSED",
+  "version": "1.9.0",
+  "description": "BUILDINTEL — construction intelligence, estimating and bid autopilot for cleaning contractors, GCs and property managers",
+  "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13.0"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "test": "node --test test/*.test.js",
-    "readiness": "node src/cli.js readiness"
+    "start": "node src/server.js",
+    "test:ci": "node scripts/test-ci.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "readiness": "node src/cli.js readiness",
+    "cycle": "node src/cli.js cycle",
+    "backup": "node src/cli.js backup",
+    "restore-test": "node src/cli.js restore-test"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "pdfjs-dist": "6.4.299",
+    "pg": "^8.13.1"
+  }
 }
