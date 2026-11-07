@@ -79,10 +79,43 @@ module.exports = function mountPortal(app, ctx) {
       .forEach(x => activity.push({ at: x.created_at, text: 'Invoice ' + x.invoice_number + ' (' + x.status + ')' }));
     visits.filter(v => v.status === 'Done').forEach(v => activity.push({ at: v.date, text: 'Service completed: ' + v.title }));
     activity.sort((x, y) => String(y.at).localeCompare(String(x.at)));
-    res.json({ email: e, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10) });
+    // Properties: the site addresses on this customer's projects, proposals and visits.
+    const siteRows = db.prepare(`SELECT p.site_address AS a, p.name AS n, p.status AS s FROM projects p JOIN contracts k ON k.id=p.contract_id WHERE lower(k.email)=? AND p.site_address IS NOT NULL AND p.site_address<>''
+      UNION SELECT site_address AS a, project_name AS n, status AS s FROM estimates WHERE lower(email)=? AND site_address IS NOT NULL AND site_address<>'' AND status NOT IN ('Draft','Ready','Superseded','Withdrawn')`).all(e, e);
+    const seen = new Map();
+    siteRows.forEach(r => { const k = String(r.a).trim().toLowerCase(); if (!seen.has(k)) seen.set(k, { address: r.a, name: r.n || r.a, status: r.s || '' }); });
+    const properties = [...seen.values()];
+    // Service requests this customer sent from the portal, with their status.
+    const requests = db.prepare(`SELECT id, service, status, created_at FROM leads WHERE lower(email)=? AND details LIKE 'Source: client portal%' ORDER BY id DESC LIMIT 20`).all(e)
+      .map(r => ({ id: r.id, service: r.service || 'Service request', status: r.status, at: r.created_at }));
+    const messages = db.prepare('SELECT id, subject, body, created_at FROM portal_messages WHERE lower(email)=? ORDER BY id DESC LIMIT 20').all(e)
+      .map(m => ({ id: m.id, subject: m.subject, body: m.body, at: m.created_at }));
+    res.json({ email: e, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages });
   });
 
   // A signed-in customer requests service from inside the portal. It becomes a bid lead on their own email.
+  db.exec(`CREATE TABLE IF NOT EXISTS portal_messages(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL)`);
+  const msgHits = new Map();
+  // Customer message from the portal. Saved to the account and sent to the office.
+  app.post('/api/portal/messages', async (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    const t = Date.now(), recent = (msgHits.get(sess.email) || []).filter(x => t - x < 3600000);
+    if (recent.length >= 5) return res.status(429).json({ error: 'You have sent several messages. Please call (515) 303-3024 for urgent help.' });
+    recent.push(t); msgHits.set(sess.email, recent);
+    const subject = String((req.body || {}).subject || '').trim().slice(0, 200) || 'Message from the client portal';
+    const body = String((req.body || {}).body || '').trim().slice(0, 4000);
+    if (body.length < 5) return res.status(400).json({ error: 'Write your message first.' });
+    const at = now();
+    const id = db.prepare('INSERT INTO portal_messages(email,subject,body,created_at) VALUES(?,?,?,?)').run(sess.email, subject, body, at).lastInsertRowid;
+    const m = getMailer && getMailer();
+    if (m) {
+      const from = process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net';
+      try { await m.sendMail({ from, to: process.env.NOTIFY_EMAIL || 'info@brightclean.net', subject: 'Client portal message: ' + subject, text: 'From: ' + sess.email + '\n\n' + body + '\n\nReply to this email to answer the customer.', replyTo: sess.email }); } catch (e) { console.error('portal message notice not sent', e.message); }
+      try { await m.sendMail({ from, to: sess.email, subject: 'We received your message', text: 'Thank you. We received your message and will reply soon.\n\nBright Cleaning Sev Inc. · +1 (515) 303-3024' }); } catch (e) { console.error('portal message ack not sent', e.message); }
+    }
+    res.status(201).json({ ok: true, id, message: 'Thank you. Your message was sent to the Bright Clean team.' });
+  });
   const reqHits = new Map();
   app.post('/api/portal/request-service', async (req, res) => {
     const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));

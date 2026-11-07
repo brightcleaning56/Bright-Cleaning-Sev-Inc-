@@ -13,8 +13,8 @@
     projects: ['Projects', 'Project progress and closeout information.'],
     quality: ['Quality & Inspections', 'Quality results and corrective actions.'],
     documents: ['Documents', 'Approved proposals, contracts and project files.'],
-    messages: ['Messages & Support', 'Contact Bright Clean about your requests.'],
     request: ['Request a Service', 'Tell us what you need. We review every request and follow up with you.'],
+    messages: ['Messages & Support', 'Send a message to the Bright Clean team and see your conversation.'],
     settings: ['Account Settings', 'Your sign-in and account details.']
   };
   var data = null, email = '', page = 'overview', session = null;
@@ -81,15 +81,22 @@
     } else if (page === 'projects') {
       html = table(['Project', 'Status', 'Progress', 'Site'], d.projects.map(function (p) { return [esc(p.name), esc(p.status), esc(p.progress) + '%', esc(p.site || '—')]; }));
     } else if (page === 'properties') {
-      html = d.projects.length ? table(['Site'], d.projects.map(function (p) { return [esc(p.site || p.name)]; })) : empty('No properties yet', 'Properties appear here once a project is set up for your account.');
+      html = d.properties.length ? table(['Property', 'Address', 'Status'], d.properties.map(function (x) { return [esc(x.name), esc(x.address), esc(x.status || '—')]; })) : empty('No properties yet', 'Properties appear here once a proposal or project is set up for your account. To add one, send a service request.');
+      html += '<p style="margin-top:14px"><button class="primary-button" type="button" data-go="request">Request a service at a new property</button></p>';
     } else if (page === 'services') {
-      html = visitsHtml(d.visits, 50);
+      html = '<div class="panel"><h2>Scheduled visits</h2>' + visitsHtml(d.visits, 50) + '</div>' +
+        '<div class="panel" style="margin-top:16px"><h2>Your service requests</h2>' + (d.requests.length ? table(['Requested', 'Service', 'Status'], d.requests.map(function (r) { return [esc(String(r.at).slice(0, 10)), esc(r.service), esc(r.status)]; })) : empty('No service requests yet', 'Requests you send from this portal appear here, with their status.')) + '</div>';
     } else if (page === 'quality') {
-      html = empty('No inspections yet', 'Quality results and corrective actions will appear here after a service is inspected.');
+      html = empty('No inspection reports yet', 'Approved inspection reports appear here after a service is inspected. If something needs attention, report it below and our team will follow up.') + '<p style="margin-top:14px"><button class="primary-button" type="button" data-go="messages">Report a service issue</button></p>';
     } else if (page === 'documents') {
-      html = empty('No documents yet', 'Approved proposals, contracts and project files will appear here.');
+      var docs = [];
+      d.proposals.forEach(function (x) { docs.push([esc('Proposal: ' + x.title), 'Proposal', esc(x.status), link(x.link, 'View')]); });
+      d.contracts.forEach(function (x) { docs.push([esc('Contract: ' + x.title), 'Contract', esc(x.signature), link(x.link, x.link ? 'Review' : 'Signed')]); });
+      d.invoices.forEach(function (x) { docs.push([esc('Invoice ' + x.number), 'Invoice', esc(x.status), '<span class="muted">Pay on Invoices &amp; Payments</span>']); });
+      html = table(['Document', 'Type', 'Status', ''], docs);
     } else if (page === 'messages') {
-      html = '<div class="panel"><p>Call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>. We reply during business hours.</p></div>';
+      html = '<div class="panel"><h2>Send a message</h2><form id="msgForm"><div class="field"><label>Subject</label><input name="subject" placeholder="For example: schedule change"></div><div class="field" style="margin-top:12px"><label>Message *</label><textarea name="body" rows="4" required></textarea></div><p style="margin-top:14px"><button class="primary-button" type="submit">Send message</button></p></form><p class="msg" id="msgMsg" role="status"></p><p class="muted">Urgent? Call <a href="tel:+15153033024">+1 (515) 303-3024</a>.</p></div>' +
+        '<div class="panel" style="margin-top:16px"><h2>Your conversation</h2>' + (d.messages.length ? '<ul style="list-style:none;padding:0;margin:0">' + d.messages.map(function (m) { return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + '</small><br><b>' + esc(m.subject) + '</b><br>' + esc(m.body) + '</li>'; }).join('') + '</ul>' : empty('No messages yet', 'Messages you send and replies from the Bright Clean team will appear here.')) + '</div>';
     } else if (page === 'request') {
       html = '<div class="panel"><form id="rsForm">' +
         '<div class="field"><label>Service needed *</label><select name="service" required><option value="">Choose a service</option><option>Post-construction final cleaning</option><option>Rough / progress cleaning</option><option>Punch-list / touch-up cleaning</option><option>Window cleaning (interior / exterior)</option><option>Commercial janitorial</option><option>Apartment common-area cleaning</option><option>Unit turnover / move-out</option><option>Commercial restroom cleaning</option><option>Floor care</option><option>Power washing</option><option>Other</option></select></div>' +
@@ -105,6 +112,15 @@
     }
     c.innerHTML = html;
     var so = $('signOut'); if (so) so.addEventListener('click', signOut);
+    var mf = $('msgForm');
+    if (mf) mf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      $('msgMsg').textContent = 'Sending…';
+      fetch('/api/portal/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session }, body: JSON.stringify({ subject: e.target.subject.value, body: e.target.body.value }) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) { $('msgMsg').textContent = x.ok ? x.j.message : (x.j.error || 'Could not send.'); if (x.ok) { toast('Message sent'); setTimeout(function () { refreshData(); }, 400); } })
+        .catch(function () { $('msgMsg').textContent = 'Could not send. Please try again or call (515) 303-3024.'; });
+    });
     var rf = $('rsForm');
     if (rf) rf.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -145,6 +161,10 @@
   }
   function load(token) {
     return fetch('/api/portal/me', { headers: { Authorization: 'Bearer ' + token } }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
+  }
+  function refreshData() {
+    if (!session) return;
+    load(session).then(function (d) { if (d.ok) { data = d.j; render(); } });
   }
   function signOut() {
     try { sessionStorage.removeItem(KEY); } catch (e) { /* private window */ }
