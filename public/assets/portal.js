@@ -27,6 +27,19 @@
     return '<div class="panel"><table class="t"><thead><tr>' + head.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
       rows.map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
   }
+  function visitsHtml(list, max) {
+    if (!list.length) return empty('No scheduled visits yet', 'Confirmed cleaning visits will appear here.');
+    return '<ul style="list-style:none;padding:0;margin:0">' + list.slice(0, max).map(function (v) {
+      var when = esc(v.date) + (v.start ? ' · ' + esc(v.start) + (v.end ? '–' + esc(v.end) : '') : '');
+      return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><b>' + esc(v.title) + '</b><br><small>' + when + (v.address ? ' · ' + esc(v.address) : '') + ' · ' + esc(v.status) + '</small></li>';
+    }).join('') + '</ul>';
+  }
+  function activityHtml(list) {
+    if (!list.length) return empty('No activity yet', 'Updates to your proposals, contracts, invoices and services will appear here.');
+    return '<ul style="list-style:none;padding:0;margin:0">' + list.map(function (a) {
+      return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(a.at || '').slice(0, 10)) + '</small><br>' + esc(a.text) + '</li>';
+    }).join('') + '</ul>';
+  }
   function setPage(p) {
     page = p;
     document.querySelectorAll('.nav-item').forEach(function (b) { b.classList.toggle('active', b.dataset.page === p); });
@@ -49,8 +62,9 @@
         '<article class="stat-card"><div class="stat-top">Open invoices <span class="stat-icon">＄</span></div><div class="stat-value">' + openCount + '</div><div class="stat-note">' + (open ? money(open) + ' balance due' : 'Nothing due') + '</div></article>' +
         '<article class="stat-card"><div class="stat-top">Pending proposals <span class="stat-icon">▤</span></div><div class="stat-value">' + pending + '</div><div class="stat-note">' + (pending ? 'Review and approve' : 'Nothing to review') + '</div></article></div>';
       html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px">' +
-        '<div class="panel"><h2>Upcoming services</h2>' + empty('No scheduled visits yet', 'Confirmed cleaning visits will appear here.') + '</div>' +
+        '<div class="panel"><h2>Upcoming services</h2>' + visitsHtml(d.visits, 5) + '</div>' +
         '<div class="panel"><h2>Recent invoices</h2>' + (d.invoices.length ? '<table class="t"><tbody>' + d.invoices.slice(0, 5).map(function (i) { return '<tr><td><b>' + esc(i.number) + '</b></td><td>' + money(i.amount) + '</td><td>' + (i.balance > 0 ? '<span class="badge amber">Open</span> <small>call to pay</small>' : '<span class="badge green">Paid</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : empty('No invoices yet', 'Invoices will appear here.')) + '</div></div>';
+      html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px"><div class="panel"><h2>Recent activity</h2>' + activityHtml(d.activity) + '</div><div></div></div>';
       html += '<div class="panel" style="margin-top:16px"><h2>Quick actions</h2><div class="grid" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' +
         '<a class="nav-item" href="/request-a-quote.html"><span>＋</span> Request service</a>' +
         '<button class="nav-item" data-go="proposals"><span>▤</span> View proposals</button>' +
@@ -68,7 +82,7 @@
     } else if (page === 'properties') {
       html = d.projects.length ? table(['Site'], d.projects.map(function (p) { return [esc(p.site || p.name)]; })) : empty('No properties yet', 'Properties appear here once a project is set up for your account.');
     } else if (page === 'services') {
-      html = empty('No scheduled visits yet', 'Your recurring services and confirmed visits will appear here.');
+      html = visitsHtml(d.visits, 50);
     } else if (page === 'quality') {
       html = empty('No inspections yet', 'Quality results and corrective actions will appear here after a service is inspected.');
     } else if (page === 'documents') {

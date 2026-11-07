@@ -65,6 +65,20 @@ module.exports = function mountPortal(app, ctx) {
       .map(i => ({ number: i.invoice_number, amount: i.amount, paid: i.paid_amount || 0, balance: Math.max(0, (i.amount || 0) - (i.paid_amount || 0)), due: i.due_date, status: i.status }));
     const projects = db.prepare(`SELECT p.name, p.status, p.progress, p.site_address FROM projects p JOIN contracts k ON k.id=p.contract_id WHERE lower(k.email)=? ORDER BY p.id DESC`).all(e)
       .map(p => ({ name: p.name, status: p.status, progress: p.progress || 0, site: p.site_address || '' }));
-    res.json({ email: e, proposals, contracts, invoices, projects });
+    // Scheduled visits: confirmed or in progress (tentative visits are not shown until they are confirmed).
+    // Scheduled visits: confirmed, in progress, or done in the last two weeks. Tentative visits are not shown.
+    const visits = db.prepare(`SELECT v.id, v.title, v.type, v.date, v.start_time, v.end_time, v.address, v.status, p.name AS project FROM visits v JOIN projects p ON p.id=v.project_id JOIN contracts k ON k.id=p.contract_id WHERE lower(k.email)=? AND v.status IN ('Scheduled','In progress','Done') AND v.date >= date('now','-14 days') ORDER BY v.date, v.start_time LIMIT 25`).all(e)
+      .map(v => ({ id: v.id, title: v.title || v.type, type: v.type, date: v.date, start: v.start_time || '', end: v.end_time || '', address: v.address || '', status: v.status, project: v.project || '' }));
+    // Recent activity: only this customer's own records, newest first. No internal notes.
+    const activity = [];
+    db.prepare(`SELECT project_name, status, created_at FROM estimates WHERE lower(email)=? AND status NOT IN ('Draft','Ready','Superseded','Withdrawn') ORDER BY created_at DESC LIMIT 10`).all(e)
+      .forEach(x => activity.push({ at: x.created_at, text: 'Proposal: ' + (x.project_name || 'Proposal') + ' (' + x.status + ')' }));
+    db.prepare(`SELECT title, signature_status, created_at, signed_at FROM contracts WHERE lower(email)=? AND status NOT IN ('Draft','Superseded') ORDER BY id DESC LIMIT 10`).all(e)
+      .forEach(x => activity.push({ at: x.signed_at || x.created_at, text: 'Contract: ' + (x.title || 'Contract') + ' (' + x.signature_status + ')' }));
+    db.prepare(`SELECT invoice_number, status, created_at FROM invoices WHERE lower(email)=? AND status NOT IN ('Draft','Void') ORDER BY id DESC LIMIT 10`).all(e)
+      .forEach(x => activity.push({ at: x.created_at, text: 'Invoice ' + x.invoice_number + ' (' + x.status + ')' }));
+    visits.filter(v => v.status === 'Done').forEach(v => activity.push({ at: v.date, text: 'Service completed: ' + v.title }));
+    activity.sort((x, y) => String(y.at).localeCompare(String(x.at)));
+    res.json({ email: e, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10) });
   });
 };
