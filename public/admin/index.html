@@ -385,6 +385,7 @@
       <button data-view="contracts">Contracts</button>
       <button data-view="projects">Projects</button>
       <button data-view="invoices">Invoices</button>
+      <button data-view="subscriptions">Subscriptions</button>
       <button data-view="schedule">Schedule</button>
       <button data-view="quality">Quality &amp; inspections</button>
       <button data-view="documents">Drawings &amp; documents</button>
@@ -690,9 +691,12 @@
       <div id="pjWork" hidden></div>
     </section>
 
+    <section class="view" id="v-subscriptions">
+      <div class="pagehead"><div><h1>Subscriptions</h1><p>Monthly service plans for ongoing customers. Each month, billing creates one draft invoice per active subscription. Drafts are reviewed and sent from Invoices.</p></div></div>
+      <div class="card" id="subsCard" hidden style="margin-bottom:14px"></div>
+    </section>
     <section class="view" id="v-invoices">
       <div class="pagehead"><div><h1>Invoices</h1><p>Track what you’ve billed and collected. Payments are recorded here, not processed.</p></div><button class="btn" data-new="invoices">New invoice</button></div>
-      <div class="card" id="subsCard" hidden style="margin-bottom:14px"></div>
       <div class="kpis6" id="regKpis-invoices"></div><div class="stats" id="finStats" hidden></div>
       <div class="card pipe" id="invAging"></div><div class="segtabs" id="regTabs-invoices" role="tablist"></div>
       <div class="toolbar"><input type="search" data-search="invoices" placeholder="Search invoices…" aria-label="Search invoices"><select data-filter="invoices" aria-label="Filter by status"></select></div>

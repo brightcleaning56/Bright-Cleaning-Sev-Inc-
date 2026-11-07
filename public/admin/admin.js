@@ -267,7 +267,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['website', 'overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['website', 'overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (view === 'customer') view = 'customers';
     if (!VIEWS.includes(view)) view = 'overview';
@@ -299,7 +299,7 @@
       if (view === 'customers') await loadCustomers();
       if (view === 'proposals') await loadEstimates();
       if (['contracts', 'projects', 'invoices'].includes(view)) await loadRegister(view);
-      if (view === 'invoices') loadSubscriptions();
+      if (view === 'subscriptions') loadSubscriptions();
       if (view === 'issues') await loadIssues();
       if (view === 'calls') await loadCalls();
       if (view === 'schedule') await loadSchedule();
