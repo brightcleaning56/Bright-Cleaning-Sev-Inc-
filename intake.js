@@ -31,6 +31,7 @@ const SERVICES = {
       { name: 'floors', label: 'Number of floors', type: 'number', min: 1 },
       { name: 'phases', label: 'Cleaning phases', type: 'multi', required: true, options: ['Rough clean', 'Final clean', 'Touch-up / punch list'] },
       { name: 'windows', label: 'Window cleaning', type: 'select', required: true, options: ['Interior only', 'Interior and exterior', 'No windows', 'Not sure'] },
+      { name: 'window_count', label: 'Approximate number of windows (interior and exterior)', type: 'number', min: 1 },
       { name: 'exterior_height', label: 'Exterior glass height', type: 'select', options: ['Ground level only', '2–3 stories', '4+ stories (lift or rope access)'], show_if: { field: 'windows', is: 'Interior and exterior' } },
       { name: 'restrooms', label: 'Number of restrooms', type: 'number', min: 0 },
       { name: 'plans', label: 'Drawings and specifications', type: 'select', required: true, options: ['Uploading them now', 'Will send them later', 'No drawings available'] },

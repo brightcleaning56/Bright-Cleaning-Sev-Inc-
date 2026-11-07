@@ -13,22 +13,25 @@ module.exports = function mountAutobid(app, ctx) {
   function plan(service, a) {
     const assumptions = [], missing = [];
     if (service === 'construction_final') {
-      if (!(a.square_footage > 0)) return { missing: ['Building square footage'] };
+      if (!(a.square_footage > 0)) return { missing: ['What is the building square footage (gross sq ft)?'] };
       const ph = [].concat(a.phases || []);
       const want = new Set();
       if (ph.includes('Rough clean')) want.add('Clean #1');
       if (ph.includes('Final clean')) { want.add('Clean #2'); want.add('Clean #3'); }
       if (ph.includes('Touch-up / punch list')) { want.add('Clean #3'); assumptions.push('Touch-up / punch list included in Clean #3.'); }
-      if (!want.size) want.add('Clean #3');
+      if (!want.size) return { missing: ['Which cleaning phases do you want: rough clean, final clean, or touch-up / punch list?'] };
       const lines = [...want].sort().map(p => { const it = item('construction', p); return it ? { scope_id: it.id, quantity: a.square_footage } : null; }).filter(Boolean);
       if (!lines.length) return { missing: ['Construction prices (import the price book)'] };
-      if (a.windows && a.windows !== 'No windows') missing.push('Window cleaning is not in the price book yet: add a window line or price it separately');
+      if (a.windows && a.windows !== 'No windows') {
+        if (!(Number(a.window_count) > 0)) return { missing: ['How many windows are there, approximately (interior and exterior)?'] };
+        missing.push('Window cleaning price is not set in Cleaning Scopes (owner to price it)');
+      }
       if (a.plans !== 'Uploading them now') missing.push('Drawings to confirm the square footage');
       return { category: 'construction', lines, assumptions, missing };
     }
     if (service === 'unit_turnover') {
       const types = [].concat(a.unit_types || []).filter(t => SIZE[t]);
-      if (!types.length || !(a.turns_per_month > 0)) return { missing: ['Unit types and turns per month'] };
+      if (!types.length || !(a.turns_per_month > 0)) return { missing: ['Which unit types, and how many move-outs or turns per month?'] };
       const per = Math.floor(a.turns_per_month / types.length), extra = a.turns_per_month - per * types.length;
       const lines = types.map((t, i) => { const it = item('multifamily', 'Move-in / move-out clean – ' + SIZE[t]); const q = per + (i === 0 ? extra : 0); return it && q > 0 ? { scope_id: it.id, quantity: q } : null; }).filter(Boolean);
       if (types.length > 1) assumptions.push(`${a.turns_per_month} turns per month split evenly across ${types.join(', ')}; confirm the actual mix.`);
@@ -40,12 +43,12 @@ module.exports = function mountAutobid(app, ctx) {
     const anyItem = (cat, prefix) => db.prepare("SELECT * FROM scope_items WHERE active=1 AND category=? AND name LIKE ? ORDER BY id LIMIT 1").get(cat, prefix + '%');
     const r2 = n => Math.round(n * 100) / 100;
     if (service === 'multifamily') {
-      const f = a.frequency, v = VPM[f]; if (!v) return { missing: ['Cleaning frequency (needed for recurring pricing)'] };
+      const f = a.frequency, v = VPM[f]; if (!v) return { missing: ['How often do you need this cleaned (the frequency)?'] };
       const areas = [].concat(a.common_areas || []), lines = [];
       const add = (name, qtyPerVisit, why) => { if (!(qtyPerVisit > 0)) { missing.push(why); return; } const it = item('multifamily', name); if (!it) { missing.push(`Set the price for "${name}" in Cleaning Scopes`); return; } lines.push({ scope_id: it.id, quantity: r2(qtyPerVisit * v) }); };
-      if (areas.includes('Hallways and corridors')) add('Hallways and corridors', Number(a.hallway_sqft), 'Total hallway/corridor square footage');
-      if (areas.includes('Stairwells')) add('Stairwells', Number(a.stairwells) * (Number(a.floors) || 0), 'Number of stairwells and floors');
-      if (areas.includes('Elevators')) add('Elevators', Number(a.elevators), 'Number of elevator cabs');
+      if (areas.includes('Hallways and corridors')) add('Hallways and corridors', Number(a.hallway_sqft), 'What is the total hallway and corridor square footage?');
+      if (areas.includes('Stairwells')) add('Stairwells', Number(a.stairwells) * (Number(a.floors) || 0), 'How many stairwells, and how many floors do they serve?');
+      if (areas.includes('Elevators')) add('Elevators', Number(a.elevators), 'How many elevator cabs are there?');
       for (const [ans, name] of [['Lobby / leasing office', 'Lobbies and leasing offices'], ['Clubhouse', 'Clubhouses'], ['Fitness center', 'Fitness centers']]) if (areas.includes(ans)) missing.push(`${ans} square footage (walkthrough) to price "${name}"`);
       for (const [ans, name] of [['Laundry rooms', 'Laundry rooms'], ['Trash rooms', 'Trash rooms']]) if (areas.includes(ans)) missing.push(`Number of ${ans.toLowerCase()} to price "${name}"`);
       if ([].concat(a.extras || []).includes('Valet trash')) { const it = item('multifamily', 'Valet trash'); if (!it) missing.push('Set the price for "Valet trash" in Cleaning Scopes'); else if (Number(a.valet_doors) > 0) lines.push({ scope_id: it.id, quantity: r2(Number(a.valet_doors) * 21.7) }); else missing.push('Number of valet trash doors'); if (it) assumptions.push('Valet trash priced at 5 nights per week (21.7 nights/month).'); }
@@ -54,8 +57,8 @@ module.exports = function mountAutobid(app, ctx) {
     }
     if (service === 'janitorial') {
       const sf = Number(a.square_footage), f = a.frequency, v = VPM[f];
-      if (!(sf > 0)) return { missing: ['Square footage'] };
-      if (!v) return { missing: ['Cleaning frequency (needed for recurring pricing)'] };
+      if (!(sf > 0)) return { missing: ['What is the square footage to be cleaned?'] };
+      if (!v) return { missing: ['How often do you need this cleaned (the frequency)?'] };
       const lines = [], base = anyItem('janitorial', 'Daily office cleaning');
       if (!base) return { missing: ['Add "Daily office cleaning" to Cleaning Scopes'] };
       if (!(base.unit_price > 0)) missing.push('Set the price per SF per visit for "Daily office cleaning" in Cleaning Scopes'); else lines.push({ scope_id: base.id, quantity: r2(sf * v) });
@@ -73,6 +76,29 @@ module.exports = function mountAutobid(app, ctx) {
       return lines.length ? { category: 'janitorial', lines, assumptions, missing, staffing, recurring: 'month' } : { missing, staffing };
     }
     return null; // windows, power washing, parking: no per-unit prices in the book yet
+  }
+
+  // Asks the contact (GC, GM or property contact) the open questions, once per question set. Never prices with a guess.
+  function askContact(l, missing) {
+    const questions = (missing || []).filter(q => /\?\s*$/.test(q));
+    if (!questions.length || !on('auto_ask_contact', true)) return false;
+    if (!l.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email)) return false;
+    if (/\btest\b/i.test(`${l.contact_name || ''} ${l.company || ''}`)) return false; // never email test submissions
+    const m = ctx.getMailer && ctx.getMailer(); if (!m) return false;
+    const sig = require('crypto').createHash('sha1').update(questions.join('|')).digest('hex');
+    const key = 'bidq:' + l.id, prev = db.prepare('SELECT value FROM ai_settings WHERE key=?').get(key);
+    if (prev && prev.value === sig) return false; // already asked these exact questions
+    const first = (l.contact_name || '').trim().split(/\s+/)[0] || 'there';
+    const text = `Hello ${first},\n\nThank you for your request for ${l.project_name || l.service || 'cleaning services'}${l.address ? ' at ' + l.address : ''}. Before we can prepare an accurate price, we need a few details:\n\n${questions.map(q => '- ' + q).join('\n')}\n\nReply to this email with the answers, or with any drawings or photos that show the areas. We will prepare the price once we have them.\n\nThank you,\nBright Cleaning Sev Inc.`;
+    const t = now();
+    Promise.resolve(m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject: `A few questions before we price your project`, text }))
+      .then(() => {
+        db.prepare('INSERT INTO ai_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, sig);
+        db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','asked contact for bid details','lead',?,?,?)").run(l.id, questions.join(' | ').slice(0, 900), t);
+        if (app.locals.setLeadWaiting) app.locals.setLeadWaiting(l.id);
+      })
+      .catch(e => console.error('bid questions not sent', l.id, e.message));
+    return true;
   }
 
   function draftFromLead(l) {
@@ -101,7 +127,7 @@ module.exports = function mountAutobid(app, ctx) {
     if (!on('auto_draft_estimates', true)) return;
     const rows = db.prepare(`SELECT * FROM leads WHERE intake IS NOT NULL AND auto_estimate_id IS NULL AND created_at>=? ORDER BY id LIMIT 10`).all(new Date(Date.now() - 14 * 864e5).toISOString());
     for (const l of rows) {
-      try { const r = draftFromLead(l); if (!r || r.skipped) db.prepare('UPDATE leads SET auto_estimate_id=0 WHERE id=?').run(l.id); }
+      try { const r = draftFromLead(l); if (!r || r.skipped) { db.prepare('UPDATE leads SET auto_estimate_id=0 WHERE id=?').run(l.id); if (r && r.skipped) askContact(l, r.missing); } }
       catch (e) { db.prepare('UPDATE leads SET auto_estimate_id=0 WHERE id=?').run(l.id); console.error('auto-bid failed', l.id, e.message); }
     }
   }

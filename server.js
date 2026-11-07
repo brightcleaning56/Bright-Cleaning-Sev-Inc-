@@ -138,7 +138,7 @@ function markUndeliverable(to,e){if(!([406,300].includes(Number(e&&e.code))||/in
 if(process.env.MONITORING_TEST_ROUTE==='1'&&process.env.NODE_ENV!=='production')app.post('/api/test/reject',(req,res)=>{const e=new Error('Postmark 422 code 406: You tried to send to recipient(s) that have been marked as inactive.');e.code=406;markUndeliverable('typo@bortuncoo.test',e);res.status(502).json({error:'Email could not be sent: '+e.message})});
 if(mailer&&!mailer.__logged){const send=mailer.sendMail.bind(mailer);const prov=mailer.provider||'smtp';const rec=(o,st,err)=>{try{db.prepare('INSERT INTO email_log(to_addr,subject,body,status,error,provider,created_at) VALUES(?,?,?,?,?,?,?)').run(String([].concat(o.to||'').join(', ')).slice(0,500),String(o.subject||'').slice(0,300),String(o.text||'').slice(0,20000),st,err?String(err).slice(0,500):null,prov,new Date().toISOString())}catch(e){console.error('email log failed',e.message)}};mailer.sendMail=async o=>{try{const r=await send(o);rec(o,'sent');return r}catch(e){rec(o,'failed',e.message);markUndeliverable(o.to,e);throw e}};mailer.__logged=true}
 require('./ai')(app,{db,auth,logAction,clean,path,uploadDir,getMailer:()=>mailer,isEmail});
-require('./autobid')(app,{db,auth,logAction});
+require('./autobid')(app,{db,auth,logAction,getMailer:()=>mailer});
 require('./crm')(app,{db,auth,logAction,clean,isEmail,adminEmail,getMailer:()=>mailer});
 require('./issues')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./bids')(app,{db,auth,logAction,clean});
