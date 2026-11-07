@@ -33,7 +33,7 @@ module.exports = function mountPortal(app, ctx) {
     const m = getMailer && getMailer();
     if (m) {
       try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: email, subject: 'Your Bright Clean client portal sign-in link', text: `Use this link to open your Bright Clean client portal. It expires in 30 minutes and works once.\n\n${base()}/portal.html#${token}\n\nIf you did not ask for this, you can ignore this email.\n\nBright Cleaning Sev Inc.` }); }
-      catch (e) { console.error('portal link not sent', e.message); }
+      catch (e) { console.error('portal link not sent', e.message); try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','sign-in link not delivered','portal',0,?,?)").run((email + ' — ' + e.message).slice(0, 300), now()); } catch { /* */ } }
     }
     done();
   });
