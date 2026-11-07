@@ -10,6 +10,9 @@ module.exports = function mountSubscriptions(app, ctx) {
     start_date TEXT NOT NULL, end_date TEXT, status TEXT NOT NULL DEFAULT 'Active', notes TEXT,
     created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT)`);
   const icols = db.prepare('PRAGMA table_info(invoices)').all().map(c => c.name);
+  const scols = db.prepare('PRAGMA table_info(subscriptions)').all().map(c => c.name);
+  for (const [c, t] of [['plan_type', 'TEXT'], ['visits_per_month', 'REAL'], ['included', 'TEXT']])
+    if (!scols.includes(c)) db.exec(`ALTER TABLE subscriptions ADD COLUMN ${c} ${t}`);
   for (const [c, t] of [['subscription_id', 'INTEGER'], ['billing_period', 'TEXT']])
     if (!icols.includes(c)) db.exec(`ALTER TABLE invoices ADD COLUMN ${c} ${t}`);
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS invoices_subscription_period ON invoices(subscription_id, billing_period) WHERE subscription_id IS NOT NULL');
@@ -19,6 +22,7 @@ module.exports = function mountSubscriptions(app, ctx) {
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
   const canBill = req => ['owner', 'manager'].includes(roleOf(req));
   const FREQ = ['Monthly', 'Biweekly', 'Weekly'];
+  const PLANS = ['Home', 'Apartment', 'Office'];
   const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));
   const isPeriod = s => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(s || ''));
   const periodOf = d => d.slice(0, 7);
@@ -42,11 +46,14 @@ module.exports = function mountSubscriptions(app, ctx) {
     if (!(amount > 0)) return res.status(400).json({ error: 'Enter the monthly price.' });
     if (!isDate(b.start_date)) return res.status(400).json({ error: 'Enter the start date.' });
     if (b.end_date && (!isDate(b.end_date) || b.end_date < b.start_date)) return res.status(400).json({ error: 'The end date must be a date after the start date.' });
+    const plan = PLANS.includes(b.plan_type) ? b.plan_type : null;
+    const visits = b.visits_per_month === undefined || b.visits_per_month === '' ? null : Number(b.visits_per_month);
+    if (visits !== null && !(visits > 0 && visits <= 31)) return res.status(400).json({ error: 'Visits per month must be a number from 1 to 31.' });
     const t = now();
-    const id = db.prepare(`INSERT INTO subscriptions(customer_id,customer_name,company,email,project_id,service,frequency,monthly_amount,start_date,end_date,status,notes,created_by,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?, 'Active', ?,?,?,?)`).run(
+    const id = db.prepare(`INSERT INTO subscriptions(customer_id,customer_name,company,email,project_id,service,frequency,monthly_amount,start_date,end_date,status,notes,created_by,created_at,updated_at,plan_type,visits_per_month,included)
+      VALUES(?,?,?,?,?,?,?,?,?,?, 'Active', ?,?,?,?,?,?,?)`).run(
       Number(b.customer_id) || null, name, clean(b.company, 200), clean(b.email, 254), Number(b.project_id) || null, clean(b.service, 120), frequency,
-      amount, b.start_date, b.end_date || null, clean(b.notes, 2000), who(req), t, t).lastInsertRowid;
+      amount, b.start_date, b.end_date || null, clean(b.notes, 2000), who(req), t, t, plan, visits, clean(b.included, 3000)).lastInsertRowid;
     logAction(req, 'created', 'subscription', id, `${name}: ${amount}/${frequency.toLowerCase()} from ${b.start_date}`);
     res.status(201).json({ id });
   });
@@ -64,6 +71,9 @@ module.exports = function mountSubscriptions(app, ctx) {
     if ('monthly_amount' in b) { const v = Number(b.monthly_amount); if (!(v > 0)) return res.status(400).json({ error: 'Enter the monthly price.' }); set.monthly_amount = v; }
     if ('end_date' in b) { if (b.end_date && (!isDate(b.end_date) || b.end_date < s.start_date)) return res.status(400).json({ error: 'The end date must be a date after the start date.' }); set.end_date = b.end_date || null; }
     if ('notes' in b) set.notes = clean(b.notes, 2000);
+    if ('plan_type' in b) { if (b.plan_type && !PLANS.includes(b.plan_type)) return res.status(400).json({ error: 'Plan must be Home, Apartment or Office.' }); set.plan_type = b.plan_type || null; }
+    if ('visits_per_month' in b) { const v = b.visits_per_month === '' || b.visits_per_month === null ? null : Number(b.visits_per_month); if (v !== null && !(v > 0 && v <= 31)) return res.status(400).json({ error: 'Visits per month must be a number from 1 to 31.' }); set.visits_per_month = v; }
+    if ('included' in b) set.included = clean(b.included, 3000);
     const keys = Object.keys(set);
     if (!keys.length) return res.json({ ok: true });
     db.prepare(`UPDATE subscriptions SET ${keys.map(k => k + '=?').join(',')}, updated_at=? WHERE id=?`).run(...keys.map(k => set[k]), now(), s.id);
@@ -85,7 +95,7 @@ module.exports = function mountSubscriptions(app, ctx) {
         if (exists) { skipped.push({ subscription_id: s.id, customer: s.customer_name, reason: `already billed for ${period} (${exists.invoice_number})` }); continue; }
         const number = nextInvoiceNumber();
         const id = db.prepare(`INSERT INTO invoices(project_id,customer_name,company,email,invoice_number,amount,due_date,status,paid_amount,subscription_id,billing_period,created_at,terms)
-          VALUES(?,?,?,?,?,?,?,'Draft',0,?,?,?,?)`).run(s.project_id, s.customer_name, s.company, s.email, number, s.monthly_amount, due, s.id, period, now(), `${s.service || 'Cleaning service'} · ${s.frequency} · ${period}`).lastInsertRowid;
+          VALUES(?,?,?,?,?,?,?,'Draft',0,?,?,?,?)`).run(s.project_id, s.customer_name, s.company, s.email, number, s.monthly_amount, due, s.id, period, now(), `${s.plan_type ? s.plan_type + ' plan' : (s.service || 'Cleaning service')} · ${s.visits_per_month ? s.visits_per_month + ' visits a month' : s.frequency} · ${period}`).lastInsertRowid;
         created.push({ subscription_id: s.id, invoice_id: id, invoice_number: number, customer: s.customer_name, amount: s.monthly_amount });
       }
     })();
