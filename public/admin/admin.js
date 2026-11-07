@@ -224,7 +224,7 @@
   };
 
   // ---------- State ----------
-  const state = { leads: [], estimates: [], contracts: [], projects: [], invoices: [], customers: [], leadKind: 'bid', view: 'overview' };
+  const state = { leads: [], estimates: [], contracts: [], projects: [], invoices: [], customers: [], leadKind: 'all', view: 'overview' };
 
   // ---------- Auth ----------
   function signOut(message) { try { if (es) { es.close(); es = null; } } catch { /* */ }
@@ -597,6 +597,7 @@
       if (k === 'bid') return `<tr class="click" data-lead="${l.id}"><td class="pick"><input type="checkbox" class="leadPick" value="${l.id}" aria-label="Select this lead"></td><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name)}</b><small>${esc(l.company)}</small></td><td>${esc(l.project_name || '—')}<small>${esc(l.address || '')}</small></td><td>${snippet(l.service, 60) || '—'}</td><td>${fmtDate(l.bid_due_date)}</td><td>${badge(l.status)}${reviewTag(l)}</td></tr>`;
       return `<tr class="click" data-lead="${l.id}"><td class="pick"><input type="checkbox" class="leadPick" value="${l.id}" aria-label="Select this lead"></td><td>${fmtDate(l.created_at)}<small>${esc(ago(l.created_at))}</small></td><td><b>${esc(l.contact_name)}</b></td><td>${esc(l.email)}<small>${esc(l.phone || '')}</small></td><td>${snippet(l.details)}</td><td>${badge(l.status)}${reviewTag(l)}</td></tr>`;
     }).join('') : `<tr><td class="emptyrow" colspan="${heads.length + 1}">${q || (st && st !== 'open') ? 'No leads match your search.' : 'Nothing here yet. New website submissions will show up automatically.'}</td></tr>`;
+    { const el = $('#leadCount'); if (el) { const all = state.leads.filter(l => inKind(l, k)).length; el.textContent = `Showing ${rows.length} of ${all} in this list. Leads received in the Command Center count every bid request and contact message in the period, including archived ones; use Everything (incl. archived) to see them all.`; } }
     wireLeadBulk();
     bindOpeners($('#leadRows'));
   }

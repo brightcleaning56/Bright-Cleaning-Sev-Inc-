@@ -441,7 +441,7 @@
       <div class="card pipe" id="leadPipe"></div>
       <div class="subtabs" id="leadKinds">
         <button data-kind="all">All leads</button>
-        <button data-kind="bid" class="active">Bid requests</button>
+        <button data-kind="bid">Bid requests</button>
         <button data-kind="inquiry">Contact messages</button>
         <button data-kind="career">Job applications</button>
       </div>
@@ -449,6 +449,7 @@
         <input type="search" id="leadSearch" placeholder="Search name, company, email, project…" aria-label="Search leads">
         <select id="leadStatusFilter" aria-label="Filter by status"></select>
       </div>
+      <p class="muted" id="leadCount" style="margin:6px 2px"></p>
       <div class="tablewrap card" style="padding:0"><table class="t isst"><thead id="leadHead"></thead><tbody id="leadRows"></tbody></table></div>
     </section>
 
