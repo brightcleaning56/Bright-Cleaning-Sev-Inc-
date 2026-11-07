@@ -52,7 +52,7 @@ module.exports = function mountPM(app, ctx) {
   function readinessOf(p) { const r = J(p.readiness, {}); const missing = READY.filter(([k]) => !(r[k] && r[k].by)).map(([, l]) => l); return { items: READY.map(([k, l]) => ({ key: k, label: l, ...(r[k] || {}) })), missing, complete: !missing.length }; }
   // Why a project may not move to an operational status yet (null when allowed).
   function guard(p, to) {
-    if (!ACTIVE.includes(to) || ACTIVE.includes(p.status)) {
+    if (!ACTIVE.includes(to) || (ACTIVE.includes(p.status) && !(to === 'In Progress' && p.status !== 'In Progress'))) {
       if (to === 'Completed') return completeBlock(p);
       return null;
     }
@@ -250,6 +250,7 @@ module.exports = function mountPM(app, ctx) {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
     const to = (req.body || {}).status, ok = ['Planning', 'Ready to mobilize', 'In Progress', 'Quality Review', 'On Hold', 'Completed', 'Archived'];
     if (!ok.includes(to)) return res.status(400).json({ error: 'Choose a valid status.' });
+    if (p.status === 'Completed' && !['Completed', 'Archived'].includes(to)) return res.status(409).json({ error: 'A completed project cannot be reopened here. Record a change order for new work.' });
     const g = guard(p, to); if (g) return res.status(409).json({ error: g });
     if (to === 'On Hold' && !clean((req.body || {}).reason, 500) && !p.hold_reason) return res.status(400).json({ error: 'Give a reason for putting the project on hold.' });
     const extra = to === 'In Progress' && !p.actual_start ? ', actual_start=?' : to === 'Completed' ? ', actual_end=?' : '';
