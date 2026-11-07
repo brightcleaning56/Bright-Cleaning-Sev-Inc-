@@ -41,12 +41,21 @@
     var d = data, html = '';
     if (page === 'overview') {
       var open = d.invoices.reduce(function (t, i) { return t + i.balance; }, 0);
+      var openCount = d.invoices.filter(function (i) { return i.balance > 0; }).length;
+      var pending = d.proposals.filter(function (p) { return p.status === 'Sent' || p.status === 'Viewed'; }).length;
       html = '<div class="grid stats">' +
-        '<article class="stat-card"><div class="stat-top">Proposals</div><div class="stat-value">' + d.proposals.length + '</div><div class="stat-note">On your account</div></article>' +
-        '<article class="stat-card"><div class="stat-top">Contracts</div><div class="stat-value">' + d.contracts.length + '</div><div class="stat-note">On your account</div></article>' +
-        '<article class="stat-card"><div class="stat-top">Balance due</div><div class="stat-value">' + money(open) + '</div><div class="stat-note">Across open invoices</div></article>' +
-        '<article class="stat-card"><div class="stat-top">Projects</div><div class="stat-value">' + d.projects.length + '</div><div class="stat-note">Active and completed</div></article></div>';
-      html += table(['Project', 'Status'], d.projects.map(function (p) { return [esc(p.name), esc(p.status) + ' · ' + esc(p.progress) + '%']; }));
+        '<article class="stat-card"><div class="stat-top">Active projects <span class="stat-icon">▦</span></div><div class="stat-value">' + d.projects.length + '</div><div class="stat-note">' + (d.projects.length ? 'On your account' : 'None yet') + '</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Contracts <span class="stat-icon">▧</span></div><div class="stat-value">' + d.contracts.length + '</div><div class="stat-note">' + (d.contracts.filter(function (k) { return k.link; }).length ? d.contracts.filter(function (k) { return k.link; }).length + ' waiting for signature' : 'Nothing to sign') + '</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Open invoices <span class="stat-icon">＄</span></div><div class="stat-value">' + openCount + '</div><div class="stat-note">' + (open ? money(open) + ' balance due' : 'Nothing due') + '</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Pending proposals <span class="stat-icon">▤</span></div><div class="stat-value">' + pending + '</div><div class="stat-note">' + (pending ? 'Review and approve' : 'Nothing to review') + '</div></article></div>';
+      html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px">' +
+        '<div class="panel"><h2>Upcoming services</h2>' + empty('No scheduled visits yet', 'Confirmed cleaning visits will appear here.') + '</div>' +
+        '<div class="panel"><h2>Recent invoices</h2>' + (d.invoices.length ? '<table class="t"><tbody>' + d.invoices.slice(0, 5).map(function (i) { return '<tr><td><b>' + esc(i.number) + '</b></td><td>' + money(i.amount) + '</td><td>' + (i.balance > 0 ? '<span class="badge amber">Open</span> <small>call to pay</small>' : '<span class="badge green">Paid</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : empty('No invoices yet', 'Invoices will appear here.')) + '</div></div>';
+      html += '<div class="panel" style="margin-top:16px"><h2>Quick actions</h2><div class="grid" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' +
+        '<a class="nav-item" href="/request-a-quote.html"><span>＋</span> Request service</a>' +
+        '<button class="nav-item" data-go="proposals"><span>▤</span> View proposals</button>' +
+        '<button class="nav-item" data-go="contracts"><span>▧</span> Sign contracts</button>' +
+        '<a class="nav-item" href="tel:+15153033024"><span>✉</span> Contact support</a></div></div>';
     } else if (page === 'proposals') {
       html = table(['Proposal', 'Total', 'Status', ''], d.proposals.map(function (p) { return [esc(p.title), money(p.total), esc(p.status), link(p.link, 'Open')]; }));
     } else if (page === 'contracts') {
@@ -110,6 +119,8 @@
     b.addEventListener('click', function () { if (data) setPage(b.dataset.page); });
   });
   $('requestBtn').addEventListener('click', function () {});
+
+  document.addEventListener('click', function (e) { var g = e.target.closest && e.target.closest('[data-go]'); if (g && data) setPage(g.getAttribute('data-go')); });
 
   // Arriving from the email link: the one-time token is in the URL hash, then removed from the address bar.
   var token = (location.hash || '').replace(/^#/, '');
