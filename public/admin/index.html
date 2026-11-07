@@ -380,6 +380,7 @@
       <button data-view="issues">Issues &amp; tasks <span class="count" id="navIssues" hidden></span></button>
       <button data-view="calls">Calls <span class="count" id="navCalls" hidden></span></button>
       <button data-view="emails">Email Center <span class="count" id="navEmails" hidden></span></button>
+      <button data-view="clientmsgs">Client messages</button>
       <div class="sep"></div>
       <button data-view="proposals">Estimates &amp; proposals</button>
       <button data-view="contracts">Contracts</button>
@@ -525,6 +526,10 @@
         <div class="filt"><input type="search" id="docSearch" placeholder="Search title, file, sheet, project…" aria-label="Search documents"><select id="docProj" aria-label="Project"><option value="">All projects</option></select><select id="docKind" aria-label="Type" hidden><option value="">All types</option></select></div>
         <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Document</th><th>Type</th><th>Revision</th><th>Project / customer</th><th>Sheets</th><th>AI reading</th><th>Uploaded</th><th>Status</th><th></th></tr></thead><tbody id="documentsRows"></tbody></table></div>
       </div><aside class="propside" id="docSide"><div class="card"><p class="muted">Select a document to see its revisions, sheet index and blueprint reading.</p></div></aside></div>
+    </section>
+    <section class="view" id="v-clientmsgs">
+      <div class="pagehead"><div><h1>Client messages</h1><p>Messages customers sent from the client portal. Your reply is saved to their conversation, shown in their portal, and emailed to them unless they turned message emails off.</p></div></div>
+      <div id="cmList"></div>
     </section>
     <section class="view" id="v-emails">
       <div class="pagehead"><div><h1>Email Center</h1><p>Every email the system sends: confirmations, proposals, reminders and notices. Reading your Outlook inbox here needs a Microsoft 365 app registration.</p></div></div>

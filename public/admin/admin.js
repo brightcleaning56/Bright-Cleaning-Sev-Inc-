@@ -267,7 +267,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['website', 'overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['website', 'overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (view === 'customer') view = 'customers';
     if (!VIEWS.includes(view)) view = 'overview';
@@ -300,6 +300,7 @@
       if (view === 'proposals') await loadEstimates();
       if (['contracts', 'projects', 'invoices'].includes(view)) await loadRegister(view);
       if (view === 'subscriptions') loadSubscriptions();
+      if (view === 'clientmsgs') loadClientMsgs();
       if (view === 'issues') await loadIssues();
       if (view === 'calls') await loadCalls();
       if (view === 'schedule') await loadSchedule();
@@ -564,6 +565,24 @@
       values: { frequency: 'Monthly' },
       submit: b => api('/api/admin/subscriptions', { method: 'POST', json: b }),
       after: () => { toast('Subscription saved'); loadSubscriptions(); } });
+  }
+  // Messages customers sent from the client portal. Staff reply here; the reply goes to the customer's portal and email.
+  async function loadClientMsgs() {
+    const box = $('#cmList'); if (!box) return;
+    let r; try { r = await api('/api/admin/portal-messages'); } catch (e) { box.innerHTML = '<p class="msg err">' + esc(e.message) + '</p>'; return; }
+    const list = r.messages || [];
+    box.innerHTML = list.length ? list.map(m => `<div class="card" style="margin-bottom:12px" data-cm="${m.id}">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(m.subject)}</b><small class="muted">${esc(m.email)} · ${esc(fmtWhen(m.created_at))}</small></div>
+        <p style="white-space:pre-wrap;margin:8px 0">${esc(m.body)}</p>
+        ${(m.replies || []).map(x => `<div style="margin:8px 0 0 14px;padding:8px;background:#f2f7fc;border-radius:8px"><small class="muted">Bright Clean · ${esc(fmtWhen(x.created_at))}</small><div style="white-space:pre-wrap">${esc(x.body)}</div></div>`).join('')}
+        <form class="inl" data-cmform="${m.id}" style="margin-top:10px"><div class="wide"><textarea name="body" rows="3" required placeholder="Write your reply to the customer"></textarea></div><div><button class="btn" type="submit">Send reply</button></div></form>
+      </div>`).join('') : '<p class="muted">No client messages yet. Messages sent from the client portal appear here.</p>';
+    box.querySelectorAll('[data-cmform]').forEach(f => f.onsubmit = async ev => {
+      ev.preventDefault();
+      const body = f.querySelector('textarea').value.trim(); if (!body) return;
+      try { const x = await api('/api/admin/portal-messages/' + f.dataset.cmform + '/reply', { method: 'POST', json: { body } }); toast(x.emailed ? 'Reply sent to the customer and their portal' : 'Reply saved. The customer chose not to get message emails.'); loadClientMsgs(); }
+      catch (e) { toast(e.message, true); }
+    });
   }
   async function loadLeads() {
     state.leads = (await api('/api/admin/leads')).leads || [];
