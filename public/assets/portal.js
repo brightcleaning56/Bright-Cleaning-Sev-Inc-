@@ -4,20 +4,21 @@
 (function () {
   var KEY = 'bc_portal_session';
   var META = {
-    overview: ['Welcome back', 'Your services, projects and account details, all in one place.'],
+    overview: ['Welcome Back', "Here's what's happening with your Bright Clean account today."],
     properties: ['My Properties', 'The locations and buildings on your account.'],
     services: ['Services & Schedule', 'Your recurring services and upcoming cleaning visits.'],
     proposals: ['Proposals', 'Estimates and proposals prepared for your organization.'],
-    contracts: ['Contracts', 'Agreements, signatures and renewal dates.'],
-    invoices: ['Invoices & Payments', 'Balances and invoice details.'],
-    projects: ['Projects', 'Project progress and closeout information.'],
-    quality: ['Quality & Inspections', 'Quality results and corrective actions.'],
-    documents: ['Documents', 'Approved proposals, contracts and project files.'],
+    contracts: ['Contracts', 'Agreements, signatures and renewal dates for your cleaning services.'],
+    invoices: ['Invoices & Payments', 'Balances and invoice details for your account.'],
+    projects: ['Projects', 'Project progress and closeout information for your account.'],
+    quality: ['Quality & Inspections', 'Quality results, inspections and corrective actions for your properties.'],
+    documents: ['Documents', 'Approved proposals, contracts, project files and other important documents for your account.'],
     request: ['Request a Service', 'Tell us what you need. We review every request and follow up with you.'],
-    messages: ['Messages & Support', 'Send a message to the Bright Clean team and see your conversation.'],
-    settings: ['Account Settings', 'Your sign-in and account details.']
+    messages: ['Messages & Support', 'Contact Bright Clean, track your requests, and get help with your services.'],
+    settings: ['Account Settings', 'Manage your profile, contact information, notifications, and security.']
   };
-  var data = null, email = '', page = 'overview', session = null;
+  var data = null, email = '', page = 'overview', session = null, requestPreset = '';
+  var REQUEST_TYPES = { proposal: 'Proposal request', contract: 'Contract request', recurring: 'Recurring service request', property: 'New property request' };
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function money(n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -58,23 +59,23 @@
       var openCount = d.invoices.filter(function (i) { return i.balance > 0; }).length;
       var pending = d.proposals.filter(function (p) { return p.status === 'Sent' || p.status === 'Viewed'; }).length;
       html = '<div class="grid stats">' +
-        '<article class="stat-card"><div class="stat-top">Active projects <span class="stat-icon">▦</span></div><div class="stat-value">' + d.projects.length + '</div><div class="stat-note">' + (d.projects.length ? 'On your account' : 'None yet') + '</div></article>' +
-        '<article class="stat-card"><div class="stat-top">Contracts <span class="stat-icon">▧</span></div><div class="stat-value">' + d.contracts.length + '</div><div class="stat-note">' + (d.contracts.filter(function (k) { return k.link; }).length ? d.contracts.filter(function (k) { return k.link; }).length + ' waiting for signature' : 'Nothing to sign') + '</div></article>' +
-        '<article class="stat-card"><div class="stat-top">Open invoices <span class="stat-icon">＄</span></div><div class="stat-value">' + openCount + '</div><div class="stat-note">' + (open ? money(open) + ' balance due' : 'Nothing due') + '</div></article>' +
-        '<article class="stat-card"><div class="stat-top">Pending proposals <span class="stat-icon">▤</span></div><div class="stat-value">' + pending + '</div><div class="stat-note">' + (pending ? 'Review and approve' : 'Nothing to review') + '</div></article></div>';
+        '<article class="stat-card"><div class="stat-top">Active Properties <span class="stat-icon">▦</span></div><div class="stat-value">' + d.projects.length + '</div><div class="stat-note">' + (d.projects.length ? 'On your account' : 'None yet') + '</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Upcoming Services <span class="stat-icon">▧</span></div><div class="stat-value">' + d.contracts.length + '</div><div class="stat-note">' + (d.contracts.filter(function (k) { return k.link; }).length ? d.contracts.filter(function (k) { return k.link; }).length + ' waiting for signature' : 'Nothing to sign') + '</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Open Invoices <span class="stat-icon">＄</span></div><div class="stat-value">' + openCount + '</div><div class="stat-note">' + (open ? money(open) + ' balance due' : 'Nothing due') + '</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Pending Proposals <span class="stat-icon">▤</span></div><div class="stat-value">' + pending + '</div><div class="stat-note">' + (pending ? 'Review and approve' : 'Nothing to review') + '</div></article></div>';
       html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px">' +
-        '<div class="panel"><h2>Upcoming services</h2>' + visitsHtml(d.visits, 5) + '</div>' +
-        '<div class="panel"><h2>Recent invoices</h2>' + (d.invoices.length ? '<table class="t"><tbody>' + d.invoices.slice(0, 5).map(function (i) { return '<tr><td><b>' + esc(i.number) + '</b></td><td>' + money(i.amount) + '</td><td>' + (i.balance > 0 ? '<span class="badge amber">Open</span> <small>call to pay</small>' : '<span class="badge green">Paid</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : empty('No invoices yet', 'Invoices will appear here.')) + '</div></div>';
-      html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px"><div class="panel"><h2>Recent activity</h2>' + activityHtml(d.activity) + '</div><div></div></div>';
-      html += '<div class="panel" style="margin-top:16px"><h2>Quick actions</h2><div class="grid" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' +
-        '<button class="nav-item" data-go="request"><span>＋</span> Request service</button>' +
-        '<button class="nav-item" data-go="proposals"><span>▤</span> View proposals</button>' +
-        '<button class="nav-item" data-go="contracts"><span>▧</span> Sign contracts</button>' +
-        '<a class="nav-item" href="tel:+15153033024"><span>✉</span> Contact support</a></div></div>';
+        '<div class="panel"><h2>Upcoming Services</h2>' + visitsHtml(d.visits, 5) + '</div>' +
+        '<div class="panel"><h2>Recent Invoices</h2>' + (d.invoices.length ? '<table class="t"><tbody>' + d.invoices.slice(0, 5).map(function (i) { return '<tr><td><b>' + esc(i.number) + '</b></td><td>' + money(i.amount) + '</td><td>' + (i.balance > 0 ? '<span class="badge amber">Open</span> <small>call to pay</small>' : '<span class="badge green">Paid</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : empty('No invoices yet', 'Invoices will appear here.')) + '</div></div>';
+      html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px"><div class="panel"><h2>Recent Activity</h2>' + activityHtml(d.activity) + '</div><div></div></div>';
+      html += '<div class="panel" style="margin-top:16px"><h2>Quick Actions</h2><div class="grid" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' +
+        '<button class="nav-item" data-go="request"><span>＋</span> Request Service</button>' +
+        '<button class="nav-item" data-go="proposals"><span>▤</span> View Proposals</button>' +
+        '<button class="nav-item" data-go="contracts"><span>▧</span> Sign Contracts</button>' +
+        '<a class="nav-item" href="tel:+15153033024"><span>✉</span> Contact Support</a></div></div>';
     } else if (page === 'proposals') {
-      html = table(['Proposal', 'Total', 'Status', ''], d.proposals.map(function (p) { return [esc(p.title), money(p.total), esc(p.status), link(p.link, 'Open')]; }));
+      html = '<p><button class="primary-button" type="button" data-request="proposal">Request a proposal</button></p>' + table(['Proposal', 'Total', 'Status', ''], d.proposals.map(function (p) { return [esc(p.title), money(p.total), esc(p.status), link(p.link, 'Open')]; }));
     } else if (page === 'contracts') {
-      html = table(['Contract', 'Value', 'Signature', ''], d.contracts.map(function (k) { return [esc(k.title), money(k.value), esc(k.signature), k.link ? link(k.link, 'Review and sign') : '<span class="muted">Signed</span>']; }));
+      html = '<p><button class="primary-button" type="button" data-request="contract">Request a contract</button></p>' + table(['Contract', 'Value', 'Signature', ''], d.contracts.map(function (k) { return [esc(k.title), money(k.value), esc(k.signature), k.link ? link(k.link, 'Review and sign') : '<span class="muted">Signed</span>']; }));
     } else if (page === 'invoices') {
       html = table(['Invoice', 'Amount', 'Paid', 'Balance', 'Due', ''], d.invoices.map(function (i) { return [esc(i.number), money(i.amount), money(i.paid), money(i.balance), esc(i.due || '—'), i.balance > 0 ? '<button class="primary-button" type="button" data-pay="' + esc(i.id) + '">Pay now</button>' : '<span class="muted">Paid</span>']; }));
       html += '<p class="muted">Pay securely by card with the Pay now button. To pay another way, call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>.</p>';
@@ -82,10 +83,10 @@
       html = table(['Project', 'Status', 'Progress', 'Site'], d.projects.map(function (p) { return [esc(p.name), esc(p.status), esc(p.progress) + '%', esc(p.site || '—')]; }));
     } else if (page === 'properties') {
       html = d.properties.length ? table(['Property', 'Address', 'Status'], d.properties.map(function (x) { return [esc(x.name), esc(x.address), esc(x.status || '—')]; })) : empty('No properties yet', 'Properties appear here once a proposal or project is set up for your account. To add one, send a service request.');
-      html += '<p style="margin-top:14px"><button class="primary-button" type="button" data-go="request">Request a service at a new property</button></p>';
+      html += '<p style="margin-top:14px"><button class="primary-button" type="button" data-request="property">Request a new property</button></p>';
     } else if (page === 'services') {
-      html = '<div class="panel"><h2>Scheduled visits</h2>' + visitsHtml(d.visits, 50) + '</div>' +
-        '<div class="panel" style="margin-top:16px"><h2>Your service requests</h2>' + (d.requests.length ? table(['Requested', 'Service', 'Status'], d.requests.map(function (r) { return [esc(String(r.at).slice(0, 10)), esc(r.service), esc(r.status)]; })) : empty('No service requests yet', 'Requests you send from this portal appear here, with their status.')) + '</div>';
+      html = '<p><button class="primary-button" type="button" data-request="recurring">Add recurring service</button></p><div class="panel"><h2>Service Schedule</h2>' + visitsHtml(d.visits, 50) + '</div>' +
+        '<div class="panel" style="margin-top:16px"><h2>Service Requests</h2>' + (d.requests.length ? table(['Requested', 'Service', 'Status'], d.requests.map(function (r) { return [esc(String(r.at).slice(0, 10)), esc(r.service), esc(r.status)]; })) : empty('No service requests yet', 'Requests you send from this portal appear here, with their status.')) + '</div>';
     } else if (page === 'quality') {
       html = empty('No inspection reports yet', 'Approved inspection reports appear here after a service is inspected. If something needs attention, report it below and our team will follow up.') + '<p style="margin-top:14px"><button class="primary-button" type="button" data-go="messages">Report a service issue</button></p>';
     } else if (page === 'documents') {
@@ -95,11 +96,12 @@
       d.invoices.forEach(function (x) { docs.push([esc('Invoice ' + x.number), 'Invoice', esc(x.status), '<span class="muted">Pay on Invoices &amp; Payments</span>']); });
       html = table(['Document', 'Type', 'Status', ''], docs);
     } else if (page === 'messages') {
-      html = '<div class="panel"><h2>Send a message</h2><form id="msgForm"><div class="field"><label>Subject</label><input name="subject" placeholder="For example: schedule change"></div><div class="field" style="margin-top:12px"><label>Message *</label><textarea name="body" rows="4" required></textarea></div><p style="margin-top:14px"><button class="primary-button" type="submit">Send message</button></p></form><p class="msg" id="msgMsg" role="status"></p><p class="muted">Urgent? Call <a href="tel:+15153033024">+1 (515) 303-3024</a>.</p></div>' +
-        '<div class="panel" style="margin-top:16px"><h2>Your conversation</h2>' + (d.messages.length ? '<ul style="list-style:none;padding:0;margin:0">' + d.messages.map(function (m) { return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + '</small><br><b>' + esc(m.subject) + '</b><br>' + esc(m.body) + (m.replies || []).map(function (r) { return '<div style="margin:8px 0 0 14px;padding:8px;background:#f2f7fc;border-radius:8px"><small>Bright Clean · ' + esc(String(r.at).slice(0, 10)) + '</small><br>' + esc(r.body) + '</div>'; }).join('') + '</li>'; }).join('') + '</ul>' : empty('No messages yet', 'Messages you send and replies from the Bright Clean team will appear here.')) + '</div>';
+      html = '<div class="panel"><h2>Contact Support</h2><form id="msgForm"><div class="field"><label>Subject</label><input name="subject" placeholder="For example: schedule change"></div><div class="field" style="margin-top:12px"><label>Message *</label><textarea name="body" rows="4" required></textarea></div><p style="margin-top:14px"><button class="primary-button" type="submit">Send message</button></p></form><p class="msg" id="msgMsg" role="status"></p><p class="muted">Urgent? Call <a href="tel:+15153033024">+1 (515) 303-3024</a>.</p></div>' +
+        '<div class="panel" style="margin-top:16px"><h2>Conversations</h2>' + (d.messages.length ? '<ul style="list-style:none;padding:0;margin:0">' + d.messages.map(function (m) { return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + '</small><br><b>' + esc(m.subject) + '</b><br>' + esc(m.body) + (m.replies || []).map(function (r) { return '<div style="margin:8px 0 0 14px;padding:8px;background:#f2f7fc;border-radius:8px"><small>Bright Clean · ' + esc(String(r.at).slice(0, 10)) + '</small><br>' + esc(r.body) + '</div>'; }).join('') + '</li>'; }).join('') + '</ul>' : empty('No messages yet', 'Messages you send and replies from the Bright Clean team will appear here.')) + '</div>';
     } else if (page === 'request') {
+      requestPreset = requestPreset || '';
       html = '<div class="panel"><form id="rsForm">' +
-        '<div class="field"><label>Service needed *</label><select name="service" required><option value="">Choose a service</option><option>Post-construction final cleaning</option><option>Rough / progress cleaning</option><option>Punch-list / touch-up cleaning</option><option>Window cleaning (interior / exterior)</option><option>Commercial janitorial</option><option>Apartment common-area cleaning</option><option>Unit turnover / move-out</option><option>Commercial restroom cleaning</option><option>Floor care</option><option>Power washing</option><option>Other</option></select></div>' +
+        '<div class="field"><label>Service needed *</label><select name="service" required><option value="">Choose a service</option><option>Proposal request</option><option>Contract request</option><option>Recurring service request</option><option>New property request</option><option>Post-construction final cleaning</option><option>Rough / progress cleaning</option><option>Punch-list / touch-up cleaning</option><option>Window cleaning (interior / exterior)</option><option>Commercial janitorial</option><option>Apartment common-area cleaning</option><option>Unit turnover / move-out</option><option>Commercial restroom cleaning</option><option>Floor care</option><option>Power washing</option><option>Other</option></select></div>' +
         '<div class="field"><label>Property address</label><input name="address"></div>' +
         '<div class="field"><label>Company</label><input name="company"></div>' +
         '<div class="field"><label>Your name</label><input name="contact_name"></div>' +
@@ -107,6 +109,7 @@
         '<div class="field"><label>What do you need? *</label><textarea name="details" rows="4" required placeholder="Example: weekly office cleaning, 3,000 sq ft, two restrooms."></textarea></div>' +
         '<p style="margin-top:14px"><button class="primary-button" type="submit">Send request</button></p>' +
         '</form><p class="msg" id="rsMsg" role="status"></p></div>';
+      requestPreset = requestPreset || '';
     } else if (page === 'settings') {
       var pf = d.profile || {}, nf = pf.notify || {};
       var box = function (k, label) { return '<label class="chk" style="display:block;margin:6px 0"><input type="checkbox" name="n_' + k + '"' + (nf[k] !== false ? ' checked' : '') + '> ' + label + '</label>'; };
@@ -162,6 +165,7 @@
         .catch(function () { $('msgMsg').textContent = 'Could not send. Please try again or call (515) 303-3024.'; });
     });
     var rf = $('rsForm');
+    if (rf && requestPreset) { rf.service.value = requestPreset; requestPreset = ''; }
     if (rf) rf.addEventListener('submit', function (e) {
       e.preventDefault();
       var f = e.target, body = {};
@@ -217,6 +221,10 @@
   $('requestBtn').addEventListener('click', function () {});
 
   document.addEventListener('click', function (e) { var g = e.target.closest && e.target.closest('[data-go]'); if (g && data) setPage(g.getAttribute('data-go')); });
+  document.addEventListener('click', function (e) {
+    var r = e.target.closest && e.target.closest('[data-request]'); if (!r || !data) return;
+    requestPreset = REQUEST_TYPES[r.getAttribute('data-request')] || ''; setPage('request');
+  });
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-pay]'); if (!b || !session) return;
     b.disabled = true; b.textContent = 'Opening secure payment…';
