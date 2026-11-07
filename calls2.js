@@ -536,7 +536,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     const remaining = Math.max(0, s.daily_limit - obSentToday());
     if (!remaining) return { skipped: 'daily limit reached' };
     const day = new Date(Date.now() - 86400000).toISOString();
-    const leads = db.prepare("SELECT id, phone FROM leads WHERE callback_requested=1 AND phone IS NOT NULL AND phone<>'' AND stage NOT IN ('done','converted') AND (last_callback_at IS NULL OR last_callback_at<?) ORDER BY id LIMIT ?").all(day, remaining);
+    const leads = db.prepare("SELECT id, phone FROM leads WHERE callback_requested=1 AND phone IS NOT NULL AND phone<>'' AND stage NOT IN ('done','converted') AND (follow_up_date IS NULL OR follow_up_date='' OR follow_up_date<=?) AND (last_callback_at IS NULL OR last_callback_at<?) ORDER BY id LIMIT ?").all(today(), day, remaining);
     const placed = [];
     const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
     for (const l of leads) {
