@@ -1,36 +1,85 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Client portal: see your proposals, contracts, invoices and project status."><link rel="canonical" href="https://brightclean.net/portal.html"><title>Client Portal | Bright Clean</title><link rel="stylesheet" href="/assets/site.css"><meta property="og:type" content="website"><meta property="og:site_name" content="Bright Cleaning Sev Inc."><meta property="og:locale" content="en_US"><meta property="og:title" content="Request a Quote | Bright Clean"><meta property="og:description" content="Monthly cleaning plans for homes, apartments and offices."><meta property="og:url" content="https://brightclean.net/portal.html"><meta property="og:image" content="https://brightclean.net/assets/projects/commercial-showroom.jpg"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Request a Quote | Bright Clean"><meta name="twitter:description" content="Monthly cleaning plans for homes, apartments and offices."><meta name="twitter:image" content="https://brightclean.net/assets/projects/commercial-showroom.jpg">
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a43">
+  <meta name="robots" content="noindex">
+  <meta name="description" content="Client portal: see your proposals, contracts, invoices and project status.">
+  <title>Client Portal | Bright Clean</title>
+  <link rel="canonical" href="https://brightclean.net/portal.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Bright Cleaning Sev Inc.">
+  <meta property="og:title" content="Client Portal | Bright Clean">
+  <meta property="og:description" content="Client portal: see your proposals, contracts, invoices and project status.">
+  <meta property="og:url" content="https://brightclean.net/portal.html">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Client Portal | Bright Clean">
+  <link rel="stylesheet" href="/assets/portal.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="/portal.html" data-page="overview">
+        <span class="brand-mark">B</span>
+        <span><strong>BRIGHT CLEAN</strong><small>CUSTOMER PORTAL</small></span>
+      </a>
+      <div class="workspace-label">CUSTOMER WORKSPACE</div>
+      <nav id="main-nav" aria-label="Customer navigation" hidden>
+        <button class="nav-item active" data-page="overview"><span>▦</span> Overview</button>
+        <button class="nav-item" data-page="properties"><span>⌂</span> My Properties</button>
+        <button class="nav-item" data-page="services"><span>▣</span> Services &amp; Schedule</button>
+        <button class="nav-item" data-page="proposals"><span>▤</span> Proposals</button>
+        <button class="nav-item" data-page="contracts"><span>▧</span> Contracts</button>
+        <button class="nav-item" data-page="invoices"><span>＄</span> Invoices &amp; Payments</button>
+        <button class="nav-item" data-page="projects"><span>▦</span> Projects</button>
+        <button class="nav-item" data-page="quality"><span>✓</span> Quality &amp; Inspections</button>
+        <button class="nav-item" data-page="documents"><span>▱</span> Documents</button>
+        <button class="nav-item" data-page="messages"><span>✉</span> Messages &amp; Support</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="nav-item" data-page="settings"><span>⚙</span> Account Settings</button>
+        <div class="help-card">
+          <div class="help-icon">?</div>
+          <strong>Need a hand?</strong>
+          <p>Our team is here to help with your cleaning services.</p>
+          <a href="tel:+15153033024">Call (515) 303-3024</a>
+        </div>
+        <div class="sidebar-foot">BRIGHT CLEAN · CUSTOMER EXPERIENCE</div>
+      </div>
+    </aside>
 
-<meta name="robots" content="noindex">
-</head><body>
-<div class="top"><div class="container"><span>COMMERCIAL CLEANING • CONSTRUCTION FINAL CLEANING • PROPERTY SERVICES</span><span>Des Moines, Iowa &nbsp; | &nbsp; <a href="tel:+15153033024">+1 (515) 303-3024</a> &nbsp; | &nbsp; <a href="mailto:info@brightclean.net">info@brightclean.net</a></span></div></div>
-<header class="header"><div class="container nav"><a class="logo" href="/"><span class="logo-mark">B</span><span>BRIGHT CLEANING SEV INC<small>COMMERCIAL & CONSTRUCTION SERVICES</small></span></a><nav class="navlinks"><a href="/">Home</a><a href="/services.html">Services</a><a href="/plans.html">Plans</a><a href="/industries.html">Industries</a><a href="/projects.html">Projects</a><a href="/about.html">About</a><a href="/contact.html">Contact</a></nav><a class="btn" href="/request-a-quote.html">Request a Bid →</a><button class="hamb" aria-label="Open navigation">☰</button></div><nav class="mobile container"><a href="/">Home</a><a href="/services.html">Services</a><a href="/plans.html">Plans</a><a href="/industries.html">Industries</a><a href="/projects.html">Projects</a><a href="/quality-safety.html">Quality & Safety</a><a href="/capabilities.html">Capabilities</a><a href="/about.html">About</a><a href="/service-process.html">Our Process</a><a href="/contact.html">Contact</a><a href="/request-a-quote.html">Request a Bid</a></nav></header>
-<main>
-<section class="section"><div class="container" style="max-width:860px">
-<div class="eyebrow">Client portal</div>
-<h1>Your Bright Clean records</h1>
-<p class="muted">See your proposals, contracts, invoices and project status. We send a one-time sign-in link to your email, so there is no password to remember.</p>
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobile-menu" aria-label="Open menu">☰</button>
+        <div class="breadcrumb"><span>Customer Portal</span><b>/</b><strong id="crumb">Sign in</strong></div>
+        <div class="top-actions">
+          <div class="profile" id="who" hidden>
+            <div class="avatar" id="avatar">BC</div>
+            <div class="profile-copy"><strong>Customer Account</strong><small id="whoEmail"></small></div>
+          </div>
+        </div>
+      </header>
 
-<div id="pSignin" class="card" style="margin-top:18px">
-<h2 style="margin-top:0">Sign in</h2>
-<form id="pForm">
-<div class="field"><label>Email address</label><input name="email" type="email" required autocomplete="email"></div>
-<div style="margin-top:14px"><button class="btn" type="submit">Email me a sign-in link</button></div>
-</form>
-<p class="msg" id="pMsg" role="status"></p>
-</div>
+      <section class="content">
+        <div class="welcome-row">
+          <div>
+            <div class="eyebrow">YOUR BRIGHT CLEAN ACCOUNT</div>
+            <h1 id="page-title">Sign in</h1>
+            <p id="page-subtitle">Your proposals, contracts, invoices and project status in one place.</p>
+          </div>
+          <a class="primary-button" id="requestBtn" href="/request-a-quote.html" hidden>＋ Request a Service</a>
+        </div>
 
-<div id="pRecords" hidden>
-<p class="muted" id="pWho" style="margin-top:18px"></p>
-<div class="card"><h2 style="margin-top:0">Proposals</h2><div id="pProposals"></div></div>
-<div class="card" style="margin-top:14px"><h2 style="margin-top:0">Contracts</h2><div id="pContracts"></div></div>
-<div class="card" style="margin-top:14px"><h2 style="margin-top:0">Invoices</h2><div id="pInvoices"></div></div>
-<div class="card" style="margin-top:14px"><h2 style="margin-top:0">Projects</h2><div id="pProjects"></div></div>
-<p style="margin-top:18px"><button class="btn ghost" id="pSignout" type="button">Sign out</button></p>
-</div>
-
-<p class="muted" style="margin-top:24px">Questions? Call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>.</p>
-</div></section>
-</main>
-<script src="/assets/portal.js"></script>
-<footer class="footer"><div class="container"><div class="footgrid"><div><a class="logo" style="color:white" href="/"><span class="logo-mark">B</span><span>BRIGHT CLEANING SEV INC<small style="color:#8cc9f3">COMMERCIAL SERVICES</small></span></a><p>Commercial cleaning, construction final cleaning, and property maintenance services with a focus on clear scopes, coordinated delivery, and professional results.</p></div><div><h4>Company</h4><a href="/about.html">About Us</a><a href="/projects.html">Projects & Experience</a><a href="/careers.html">Careers</a><a href="/vendor.html">Vendor Information</a><a href="/capabilities.html">Capabilities</a><a href="/service-process.html">Our Process</a><a href="/resources.html">Resources</a><a href="/faq.html">FAQ</a><a href="/service-areas.html">Service Areas</a></div><div><h4>Services</h4><a href="/services.html">All Services</a><a href="/quality-safety.html">Quality & Safety</a><a href="/services/post-construction-final-cleaning.html">Construction Final Cleaning</a><a href="/services/commercial-janitorial.html">Commercial Janitorial</a><a href="/services/interior-exterior-window-cleaning.html">Window Cleaning</a><a href="/services/power-washing.html">Power Washing</a></div><div><h4>Start a Project</h4><a href="/request-a-quote.html">Request a Commercial Bid</a><a href="/contact.html">Contact the Team</a><a href="tel:+15153033024">+1 (515) 303-3024</a><a href="mailto:info@brightclean.net">info@brightclean.net</a><p>Des Moines, Iowa<br>Additional service locations confirmed per project.</p></div></div><div class="copyright"><a href="/privacy.html" style="display:inline;color:#b6c6d3">Privacy</a> · <a href="/terms.html" style="display:inline;color:#b6c6d3">Terms</a> · <a href="/accessibility.html" style="display:inline;color:#b6c6d3">Accessibility</a><br>© 2026 Bright Cleaning Sev Inc. All rights reserved.</div></div></footer><script src="/assets/site.js"></script>
-</body></html>
+        <section id="page-content" aria-live="polite"></section>
+        <footer class="footer">
+          <span>© Bright Cleaning Sev Inc</span>
+          <span><a href="https://brightclean.net">Website</a><a href="mailto:info@brightclean.net">Contact</a><a href="/privacy.html">Privacy</a></span>
+        </footer>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/assets/portal.js"></script>
+</body>
+</html>

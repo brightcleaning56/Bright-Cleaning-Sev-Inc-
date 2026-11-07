@@ -1,52 +1,136 @@
-// Client portal page: request a sign-in link, exchange it for a session, and show the customer's own records.
+// Client portal (integrated with the approved customer portal design).
+// Sign-in is a one-time email link (no passwords). Pages show only this customer's own records from /api/portal/me.
+// Pages with no data yet show neutral empty states. Nothing here sends data anywhere except the portal's own API.
 (function () {
   var KEY = 'bc_portal_session';
+  var META = {
+    overview: ['Welcome back', 'Your services, projects and account details, all in one place.'],
+    properties: ['My Properties', 'The locations and buildings on your account.'],
+    services: ['Services & Schedule', 'Your recurring services and upcoming cleaning visits.'],
+    proposals: ['Proposals', 'Estimates and proposals prepared for your organization.'],
+    contracts: ['Contracts', 'Agreements, signatures and renewal dates.'],
+    invoices: ['Invoices & Payments', 'Balances and invoice details.'],
+    projects: ['Projects', 'Project progress and closeout information.'],
+    quality: ['Quality & Inspections', 'Quality results and corrective actions.'],
+    documents: ['Documents', 'Approved proposals, contracts and project files.'],
+    messages: ['Messages & Support', 'Contact Bright Clean about your requests.'],
+    settings: ['Account Settings', 'Your sign-in and account details.']
+  };
+  var data = null, email = '', page = 'overview';
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function money(n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-  function show(signedIn) { $('pSignin').hidden = signedIn; $('pRecords').hidden = !signedIn; }
-  function link(href, text) { return href ? '<a href="' + esc(href) + '">' + esc(text) + '</a>' : ''; }
-  function rows(list, render) { return list.length ? '<ul style="list-style:none;padding:0;margin:0">' + list.map(function (x) { return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4">' + render(x) + '</li>'; }).join('') + '</ul>' : '<p class="muted">Nothing here yet.</p>'; }
+  function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(function () { t.classList.remove('show'); }, 2800); }
+  function empty(title, text) { return '<div class="empty-state"><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p></div>'; }
+  function table(head, rows) {
+    if (!rows.length) return empty('Nothing here yet', 'When Bright Clean prepares records for your account, they will appear here.');
+    return '<div class="panel"><table class="t"><thead><tr>' + head.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      rows.map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
+  }
+  function setPage(p) {
+    page = p;
+    document.querySelectorAll('.nav-item').forEach(function (b) { b.classList.toggle('active', b.dataset.page === p); });
+    $('page-title').textContent = META[p][0]; $('page-subtitle').textContent = META[p][1]; $('crumb').textContent = META[p][0];
+    render();
+  }
+  function link(href, text) { return href ? '<a href="' + esc(href) + '">' + esc(text) + '</a>' : '<span class="muted">—</span>'; }
 
+  function render() {
+    var c = $('page-content');
+    if (!data) { c.innerHTML = signinHtml(); bindSignin(); return; }
+    var d = data, html = '';
+    if (page === 'overview') {
+      var open = d.invoices.reduce(function (t, i) { return t + i.balance; }, 0);
+      html = '<div class="grid stats">' +
+        '<article class="stat-card"><div class="stat-top">Proposals</div><div class="stat-value">' + d.proposals.length + '</div><div class="stat-note">On your account</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Contracts</div><div class="stat-value">' + d.contracts.length + '</div><div class="stat-note">On your account</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Balance due</div><div class="stat-value">' + money(open) + '</div><div class="stat-note">Across open invoices</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Projects</div><div class="stat-value">' + d.projects.length + '</div><div class="stat-note">Active and completed</div></article></div>';
+      html += table(['Project', 'Status'], d.projects.map(function (p) { return [esc(p.name), esc(p.status) + ' · ' + esc(p.progress) + '%']; }));
+    } else if (page === 'proposals') {
+      html = table(['Proposal', 'Total', 'Status', ''], d.proposals.map(function (p) { return [esc(p.title), money(p.total), esc(p.status), link(p.link, 'Open')]; }));
+    } else if (page === 'contracts') {
+      html = table(['Contract', 'Value', 'Signature', ''], d.contracts.map(function (k) { return [esc(k.title), money(k.value), esc(k.signature), k.link ? link(k.link, 'Review and sign') : '<span class="muted">Signed</span>']; }));
+    } else if (page === 'invoices') {
+      html = table(['Invoice', 'Amount', 'Paid', 'Balance', 'Due'], d.invoices.map(function (i) { return [esc(i.number), money(i.amount), money(i.paid), money(i.balance), esc(i.due || '—')]; }));
+      html += '<p class="muted">To pay an invoice, call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>.</p>';
+    } else if (page === 'projects') {
+      html = table(['Project', 'Status', 'Progress', 'Site'], d.projects.map(function (p) { return [esc(p.name), esc(p.status), esc(p.progress) + '%', esc(p.site || '—')]; }));
+    } else if (page === 'properties') {
+      html = d.projects.length ? table(['Site'], d.projects.map(function (p) { return [esc(p.site || p.name)]; })) : empty('No properties yet', 'Properties appear here once a project is set up for your account.');
+    } else if (page === 'services') {
+      html = empty('No scheduled visits yet', 'Your recurring services and confirmed visits will appear here.');
+    } else if (page === 'quality') {
+      html = empty('No inspections yet', 'Quality results and corrective actions will appear here after a service is inspected.');
+    } else if (page === 'documents') {
+      html = empty('No documents yet', 'Approved proposals, contracts and project files will appear here.');
+    } else if (page === 'messages') {
+      html = '<div class="panel"><p>Call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>. We reply during business hours.</p></div>';
+    } else if (page === 'settings') {
+      html = '<div class="panel"><p>Signed in as <b>' + esc(email) + '</b>.</p><p><button class="primary-button" id="signOut" type="button">Sign out</button></p></div>';
+    }
+    c.innerHTML = html;
+    var so = $('signOut'); if (so) so.addEventListener('click', signOut);
+  }
+
+  function signinHtml() {
+    return '<div class="panel"><h2>Sign in</h2><p class="muted">Enter your email. We send a one-time sign-in link. There is no password.</p>' +
+      '<form id="pForm"><div class="field"><label>Email address</label><input name="email" type="email" required autocomplete="email"></div>' +
+      '<p style="margin-top:14px"><button class="primary-button" type="submit">Email me a sign-in link</button></p></form>' +
+      '<p class="msg" id="pMsg" role="status"></p></div>';
+  }
+  function bindSignin() {
+    var f = $('pForm'); if (!f) return;
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      $('pMsg').textContent = 'Sending…';
+      fetch('/api/portal/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: e.target.email.value }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { $('pMsg').textContent = j.message || 'Check your email for the sign-in link.'; })
+        .catch(function () { $('pMsg').textContent = 'Could not send the link. Please try again.'; });
+    });
+  }
+
+  function showSignedIn() {
+    $('main-nav').hidden = false; $('who').hidden = false; $('requestBtn').hidden = false;
+    $('whoEmail').textContent = email; $('avatar').textContent = (email[0] || 'B').toUpperCase();
+  }
+  function hideSignedIn() {
+    $('main-nav').hidden = true; $('who').hidden = true; $('requestBtn').hidden = true;
+  }
   function load(token) {
     return fetch('/api/portal/me', { headers: { Authorization: 'Bearer ' + token } }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
   }
-  function paint(d) {
-    $('pWho').textContent = 'Signed in as ' + d.email;
-    $('pProposals').innerHTML = rows(d.proposals, function (p) { return '<b>' + esc(p.title) + '</b> · ' + money(p.total) + ' · ' + esc(p.status) + ' ' + link(p.link, 'Open'); });
-    $('pContracts').innerHTML = rows(d.contracts, function (k) { return '<b>' + esc(k.title) + '</b> · ' + money(k.value) + ' · ' + esc(k.signature) + ' ' + (k.link ? link(k.link, 'Review and sign') : ''); });
-    $('pInvoices').innerHTML = rows(d.invoices, function (i) { return '<b>' + esc(i.number) + '</b> · ' + money(i.amount) + ' · paid ' + money(i.paid) + ' · balance ' + money(i.balance) + (i.due ? ' · due ' + esc(i.due) : ''); });
-    $('pProjects').innerHTML = rows(d.projects, function (p) { return '<b>' + esc(p.name) + '</b> · ' + esc(p.status) + ' · ' + esc(p.progress) + '% complete' + (p.site ? ' · ' + esc(p.site) : ''); });
-    show(true);
+  function signOut() {
+    try { sessionStorage.removeItem(KEY); } catch (e) { /* private window */ }
+    data = null; email = ''; hideSignedIn(); history.replaceState(null, '', '/portal.html'); setPage('overview'); toast('Signed out');
   }
-  function signOut() { try { sessionStorage.removeItem(KEY); } catch (e) { /* private window */ } history.replaceState(null, '', '/portal.html'); show(false); }
 
-  $('pForm').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var email = e.target.email.value;
-    $('pMsg').textContent = 'Sending…';
-    fetch('/api/portal/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email }) })
-      .then(function (r) { return r.json(); })
-      .then(function (j) { $('pMsg').textContent = j.message || 'Check your email for the sign-in link.'; })
-      .catch(function () { $('pMsg').textContent = 'Could not send the link. Please try again.'; });
+  document.querySelectorAll('.nav-item').forEach(function (b) {
+    b.addEventListener('click', function () { if (data) setPage(b.dataset.page); });
   });
+  $('requestBtn').addEventListener('click', function () {});
 
-  $('pSignout').addEventListener('click', signOut);
-
-  // Arriving from the email link: the token is in the URL hash, then removed from the address bar.
+  // Arriving from the email link: the one-time token is in the URL hash, then removed from the address bar.
   var token = (location.hash || '').replace(/^#/, '');
   if (token) {
     history.replaceState(null, '', '/portal.html');
     fetch('/api/portal/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (x) {
-        if (!x.ok) { $('pMsg').textContent = x.j.error || 'This sign-in link is not valid.'; return null; }
-        try { sessionStorage.setItem(KEY, x.j.session); } catch (e) { /* private window: session stays in memory */ }
+        if (!x.ok) { toast(x.j.error || 'This sign-in link is not valid.'); render(); return null; }
+        try { sessionStorage.setItem(KEY, x.j.session); } catch (e) { /* keep in memory */ }
+        email = x.j.email;
         return load(x.j.session);
       })
-      .then(function (d) { if (d && d.ok) paint(d.j); else if (d) { $('pMsg').textContent = 'Please sign in again.'; } });
-    return;
+      .then(function (d) { if (d && d.ok) { data = d.j; email = d.j.email; showSignedIn(); setPage('overview'); } else if (d) { toast('Please sign in again.'); render(); } });
+  } else {
+    var saved = null; try { saved = sessionStorage.getItem(KEY); } catch (e) { saved = null; }
+    if (saved) {
+      load(saved).then(function (d) {
+        if (d.ok) { data = d.j; email = d.j.email; showSignedIn(); setPage('overview'); }
+        else { try { sessionStorage.removeItem(KEY); } catch (e) { /* */ } render(); }
+      });
+    } else { render(); }
   }
-  var saved = null; try { saved = sessionStorage.getItem(KEY); } catch (e) { saved = null; }
-  if (saved) load(saved).then(function (d) { if (d.ok) paint(d.j); else { try { sessionStorage.removeItem(KEY); } catch (e) { /* */ } show(false); } });
 })();
