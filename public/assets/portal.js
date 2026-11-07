@@ -14,9 +14,10 @@
     quality: ['Quality & Inspections', 'Quality results and corrective actions.'],
     documents: ['Documents', 'Approved proposals, contracts and project files.'],
     messages: ['Messages & Support', 'Contact Bright Clean about your requests.'],
+    request: ['Request a Service', 'Tell us what you need. We review every request and follow up with you.'],
     settings: ['Account Settings', 'Your sign-in and account details.']
   };
-  var data = null, email = '', page = 'overview';
+  var data = null, email = '', page = 'overview', session = null;
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function money(n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -66,7 +67,7 @@
         '<div class="panel"><h2>Recent invoices</h2>' + (d.invoices.length ? '<table class="t"><tbody>' + d.invoices.slice(0, 5).map(function (i) { return '<tr><td><b>' + esc(i.number) + '</b></td><td>' + money(i.amount) + '</td><td>' + (i.balance > 0 ? '<span class="badge amber">Open</span> <small>call to pay</small>' : '<span class="badge green">Paid</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : empty('No invoices yet', 'Invoices will appear here.')) + '</div></div>';
       html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px"><div class="panel"><h2>Recent activity</h2>' + activityHtml(d.activity) + '</div><div></div></div>';
       html += '<div class="panel" style="margin-top:16px"><h2>Quick actions</h2><div class="grid" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' +
-        '<a class="nav-item" href="/request-a-quote.html"><span>＋</span> Request service</a>' +
+        '<button class="nav-item" data-go="request"><span>＋</span> Request service</button>' +
         '<button class="nav-item" data-go="proposals"><span>▤</span> View proposals</button>' +
         '<button class="nav-item" data-go="contracts"><span>▧</span> Sign contracts</button>' +
         '<a class="nav-item" href="tel:+15153033024"><span>✉</span> Contact support</a></div></div>';
@@ -89,11 +90,32 @@
       html = empty('No documents yet', 'Approved proposals, contracts and project files will appear here.');
     } else if (page === 'messages') {
       html = '<div class="panel"><p>Call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>. We reply during business hours.</p></div>';
+    } else if (page === 'request') {
+      html = '<div class="panel"><form id="rsForm">' +
+        '<div class="field"><label>Service needed *</label><select name="service" required><option value="">Choose a service</option><option>Post-construction final cleaning</option><option>Rough / progress cleaning</option><option>Punch-list / touch-up cleaning</option><option>Window cleaning (interior / exterior)</option><option>Commercial janitorial</option><option>Apartment common-area cleaning</option><option>Unit turnover / move-out</option><option>Commercial restroom cleaning</option><option>Floor care</option><option>Power washing</option><option>Other</option></select></div>' +
+        '<div class="field"><label>Property address</label><input name="address"></div>' +
+        '<div class="field"><label>Company</label><input name="company"></div>' +
+        '<div class="field"><label>Your name</label><input name="contact_name"></div>' +
+        '<div class="field"><label>Phone</label><input name="phone" type="tel"></div>' +
+        '<div class="field"><label>What do you need? *</label><textarea name="details" rows="4" required placeholder="Example: weekly office cleaning, 3,000 sq ft, two restrooms."></textarea></div>' +
+        '<p style="margin-top:14px"><button class="primary-button" type="submit">Send request</button></p>' +
+        '</form><p class="msg" id="rsMsg" role="status"></p></div>';
     } else if (page === 'settings') {
       html = '<div class="panel"><p>Signed in as <b>' + esc(email) + '</b>.</p><p><button class="primary-button" id="signOut" type="button">Sign out</button></p></div>';
     }
     c.innerHTML = html;
     var so = $('signOut'); if (so) so.addEventListener('click', signOut);
+    var rf = $('rsForm');
+    if (rf) rf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var f = e.target, body = {};
+      ['service', 'address', 'company', 'contact_name', 'phone', 'details'].forEach(function (k) { body[k] = f[k].value; });
+      $('rsMsg').textContent = 'Sending…';
+      fetch('/api/portal/request-service', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) { $('rsMsg').textContent = x.ok ? x.j.message : (x.j.error || 'Could not send the request.'); if (x.ok) f.reset(); })
+        .catch(function () { $('rsMsg').textContent = 'Could not send the request. Please try again or call (515) 303-3024.'; });
+    });
   }
 
   function signinHtml() {
@@ -144,7 +166,7 @@
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (x) {
         if (!x.ok) { toast(x.j.error || 'This sign-in link is not valid.'); render(); return null; }
-        try { sessionStorage.setItem(KEY, x.j.session); } catch (e) { /* keep in memory */ }
+        session = x.j.session; try { sessionStorage.setItem(KEY, x.j.session); } catch (e) { /* keep in memory */ }
         email = x.j.email;
         return load(x.j.session);
       })
@@ -153,7 +175,7 @@
     var saved = null; try { saved = sessionStorage.getItem(KEY); } catch (e) { saved = null; }
     if (saved) {
       load(saved).then(function (d) {
-        if (d.ok) { data = d.j; email = d.j.email; showSignedIn(); setPage('overview'); }
+        if (d.ok) { session = saved; data = d.j; email = d.j.email; showSignedIn(); setPage('overview'); }
         else { try { sessionStorage.removeItem(KEY); } catch (e) { /* */ } render(); }
       });
     } else { render(); }

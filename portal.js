@@ -81,4 +81,31 @@ module.exports = function mountPortal(app, ctx) {
     activity.sort((x, y) => String(y.at).localeCompare(String(x.at)));
     res.json({ email: e, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10) });
   });
+
+  // A signed-in customer requests service from inside the portal. It becomes a bid lead on their own email.
+  const reqHits = new Map();
+  app.post('/api/portal/request-service', async (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    const t = Date.now(), recent = (reqHits.get(sess.email) || []).filter(x => t - x < 300000);
+    if (recent.length >= 3) return res.status(429).json({ error: 'You have sent several requests just now. Please wait a few minutes or call (515) 303-3024.' });
+    recent.push(t); reqHits.set(sess.email, recent);
+    const b = req.body || {};
+    const clip = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+    const service = clip(b.service, 200), details = clip(b.details, 4000), address = clip(b.address, 300);
+    const company = clip(b.company, 200), phone = clip(b.phone, 60), name = clip(b.contact_name, 150);
+    if (!service) return res.status(400).json({ error: 'Choose the service you need.' });
+    if (details.length < 10) return res.status(400).json({ error: 'Describe what you need in a few words.' });
+    const at = now();
+    const id = db.prepare("INSERT INTO leads(kind,status,contact_name,company,email,phone,address,service,project_name,details,created_at,updated_at) VALUES('bid','New',?,?,?,?,?,?,?,?,?,?)")
+      .run(name || company || sess.email, company, sess.email, phone, address, service, service, 'Source: client portal\n' + details, at, at).lastInsertRowid;
+    try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, 'requested service in client portal', 'lead', id, service, at); } catch { /* */ }
+    const m = getMailer && getMailer();
+    if (m) {
+      const from = process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net';
+      try { await m.sendMail({ from, to: process.env.NOTIFY_EMAIL || 'info@brightclean.net', subject: 'New service request from the client portal', text: 'From: ' + sess.email + '\nService: ' + service + '\nAddress: ' + address + '\n\n' + details }); } catch (e) { console.error('portal request notice not sent', e.message); }
+      try { await m.sendMail({ from, to: sess.email, subject: 'We received your Bright Clean request', text: 'Thank you for reaching out to Bright Cleaning Sev Inc. We received your request for ' + service + '. Our team will review the details and follow up with you.\n\nYou can also call +1 (515) 303-3024.\n\nBright Cleaning Sev Inc.' }); } catch (e) { console.error('portal request ack not sent', e.message); }
+    }
+    res.status(201).json({ ok: true, id, message: 'Thank you. We received your request and will follow up with you soon.' });
+  });
 };
