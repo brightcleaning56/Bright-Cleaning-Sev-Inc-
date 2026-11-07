@@ -26,7 +26,7 @@ module.exports = function mountPortal(app, ctx) {
     if (!isEmail(email)) return done();
     const recent = db.prepare("SELECT created_at FROM portal_logins WHERE email=? ORDER BY id DESC LIMIT 1").get(email);
     if (recent && Date.now() - Date.parse(recent.created_at) < 60000) return done(); // one link a minute
-    const onFile = db.prepare(`SELECT 1 FROM estimates WHERE lower(email)=? UNION SELECT 1 FROM contracts WHERE lower(email)=? UNION SELECT 1 FROM invoices WHERE lower(email)=? UNION SELECT 1 FROM customers WHERE lower(email)=? LIMIT 1`).get(email, email, email, email);
+    const onFile = db.prepare(`SELECT 1 FROM estimates WHERE lower(email)=? UNION SELECT 1 FROM contracts WHERE lower(email)=? UNION SELECT 1 FROM invoices WHERE lower(email)=? UNION SELECT 1 FROM customers WHERE lower(email)=? UNION SELECT 1 FROM leads WHERE lower(email)=? LIMIT 1`).get(email, email, email, email, email);
     if (!onFile) return done();
     const token = crypto.randomBytes(24).toString('base64url');
     db.prepare('INSERT INTO portal_logins(email,token_hash,expires_at,created_at) VALUES(?,?,?,?)').run(email, sha(token), new Date(Date.now() + 30 * 60000).toISOString(), now());
