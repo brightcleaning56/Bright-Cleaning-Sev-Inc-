@@ -152,6 +152,7 @@ require('./calls2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer
 require('./complaints')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
+require('./subscriptions')(app,{db,auth,logAction,clean,adminEmail});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public'),{setHeaders:(res,fp)=>{if(/\.(html|js|css|json)$/i.test(fp))res.setHeader('Cache-Control','no-cache')}}));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));

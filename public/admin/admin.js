@@ -299,6 +299,7 @@
       if (view === 'customers') await loadCustomers();
       if (view === 'proposals') await loadEstimates();
       if (['contracts', 'projects', 'invoices'].includes(view)) await loadRegister(view);
+      if (view === 'invoices') loadSubscriptions();
       if (view === 'issues') await loadIssues();
       if (view === 'calls') await loadCalls();
       if (view === 'schedule') await loadSchedule();
@@ -531,6 +532,36 @@
   $('#leadSearch').addEventListener('input', () => renderLeads());
   leadStatusSel.addEventListener('change', () => renderLeads());
 
+  // Monthly subscriptions: a monthly price per customer. Billing creates ONE draft invoice per subscription per month.
+  async function loadSubscriptions() {
+    const box = $('#subsCard'); if (!box) return;
+    let r; try { r = await api('/api/admin/subscriptions'); } catch { box.hidden = true; return; }
+    box.hidden = false;
+    const subs = r.subscriptions || [];
+    const active = subs.filter(x => x.status === 'Active');
+    const mo = new Date().toISOString().slice(0, 7);
+    box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><h2 style="margin:0">Monthly subscriptions</h2><small class="muted">${active.length} active · ${money(active.reduce((t, x) => t + Number(x.monthly_amount || 0), 0))} a month. Billing creates one draft invoice per subscription per month. Drafts are reviewed and sent from the list below.</small></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="month" id="subsPeriod" value="${mo}" aria-label="Billing month"><button class="btn ghost" id="subsRun" type="button">Create draft invoices</button><button class="btn" id="subsNew" type="button">New subscription</button></div></div>
+      <table class="t" style="margin-top:10px"><thead><tr><th>Customer</th><th>Service</th><th>Frequency</th><th>Per month</th><th>Start</th><th>Status</th><th></th></tr></thead><tbody>${subs.map(x => `<tr><td><b>${esc(x.customer_name)}</b><small>${esc(x.company || '')}</small></td><td>${esc(x.service || '—')}</td><td>${esc(x.frequency)}</td><td>${money(x.monthly_amount)}</td><td>${esc(x.start_date)}</td><td>${badge(x.status)}</td><td>${x.status === 'Active' ? `<button class="btn small ghost" data-subs="${x.id}" data-to="Paused" type="button">Pause</button> <button class="btn small ghost" data-subs="${x.id}" data-to="Cancelled" type="button">Cancel</button>` : x.status === 'Paused' ? `<button class="btn small ghost" data-subs="${x.id}" data-to="Active" type="button">Resume</button>` : ''}</td></tr>`).join('') || '<tr><td class="emptyrow" colspan="7">No subscriptions yet.</td></tr>'}</tbody></table>`;
+    box.querySelectorAll('[data-subs]').forEach(b => b.onclick = async () => {
+      const to = b.dataset.to; if (!confirm(`${to} this subscription?`)) return;
+      try { await api('/api/admin/subscriptions/' + b.dataset.subs, { method: 'PATCH', json: { status: to } }); toast('Updated'); loadSubscriptions(); } catch (e) { toast(e.message, true); }
+    });
+    $('#subsRun').onclick = async () => {
+      const period = $('#subsPeriod').value; if (!period) return toast('Choose the month.', true);
+      if (!confirm(`Create draft invoices for ${period} for the ${active.length} active subscription(s)? Drafts are not sent to customers.`)) return;
+      try { const x = await api('/api/admin/subscriptions/bill-run', { method: 'POST', json: { period } }); toast(`${x.created.length} draft invoice(s) created, ${x.skipped.length} already billed`); loadRegister('invoices'); loadSubscriptions(); }
+      catch (e) { toast(e.message, true); }
+    };
+    $('#subsNew').onclick = () => openForm({ title: 'New subscription', defs: [
+        { name: 'customer_name', label: 'Customer name' }, { name: 'company', label: 'Company' }, { name: 'email', label: 'Billing email' },
+        { name: 'service', label: 'Service (for example Residential monthly, 2 visits a month)' },
+        { name: 'frequency', label: 'Frequency', type: 'select', options: ['Monthly', 'Biweekly', 'Weekly'] },
+        { name: 'monthly_amount', label: 'Price per month' }, { name: 'start_date', label: 'Start date', type: 'date' },
+        { name: 'end_date', label: 'End date (optional)', type: 'date' }, { name: 'notes', label: 'Notes', type: 'textarea' }],
+      values: { frequency: 'Monthly' },
+      submit: b => api('/api/admin/subscriptions', { method: 'POST', json: b }),
+      after: () => { toast('Subscription saved'); loadSubscriptions(); } });
+  }
   async function loadLeads() {
     state.leads = (await api('/api/admin/leads')).leads || [];
     renderLeads();
