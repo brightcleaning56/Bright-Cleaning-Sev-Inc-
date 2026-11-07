@@ -3,7 +3,7 @@
 // Nothing reveals whether an email is on file: the sign-in request always answers the same way.
 const crypto = require('crypto');
 module.exports = function mountPortal(app, ctx) {
-  const { db, getMailer } = ctx;
+  const { db, getMailer, auth } = ctx;
   db.exec(`CREATE TABLE IF NOT EXISTS portal_logins(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, token_hash TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL)`);
   const SECRET = () => (process.env.JWT_SECRET || 'dev-portal') + ':client-portal';
   const now = () => new Date().toISOString();
@@ -92,7 +92,7 @@ module.exports = function mountPortal(app, ctx) {
     const requests = db.prepare(`SELECT id, service, status, created_at FROM leads WHERE lower(email)=? AND details LIKE 'Source: client portal%' ORDER BY id DESC LIMIT 20`).all(e)
       .map(r => ({ id: r.id, service: r.service || 'Service request', status: r.status, at: r.created_at }));
     const messages = db.prepare('SELECT id, subject, body, created_at FROM portal_messages WHERE lower(email)=? ORDER BY id DESC LIMIT 20').all(e)
-      .map(m => ({ id: m.id, subject: m.subject, body: m.body, at: m.created_at }));
+      .map(m => ({ id: m.id, subject: m.subject, body: m.body, at: m.created_at, replies: db.prepare('SELECT body, created_at FROM portal_message_replies WHERE message_id=? ORDER BY id').all(m.id).map(r => ({ body: r.body, at: r.created_at })) }));
     const pr = db.prepare('SELECT name, company, phone, notify FROM portal_profiles WHERE email=?').get(e) || {};
     const profile = { email: e, name: pr.name || '', company: pr.company || '', phone: pr.phone || '', notify: pr.notify ? JSON.parse(pr.notify) : { schedule: true, proposals: true, invoices: true, projects: true, messages: true } };
     res.json({ email: e, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages, profile });
@@ -100,6 +100,35 @@ module.exports = function mountPortal(app, ctx) {
 
   // A signed-in customer requests service from inside the portal. It becomes a bid lead on their own email.
   db.exec(`CREATE TABLE IF NOT EXISTS portal_messages(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS portal_message_replies(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER NOT NULL, body TEXT NOT NULL, by_user TEXT, created_at TEXT NOT NULL)`);
+  // Whether this customer wants emails of a kind (defaults to yes).
+  function wantsEmail(email, kind) {
+    const r = db.prepare('SELECT notify FROM portal_profiles WHERE email=?').get(String(email || '').toLowerCase());
+    if (!r || !r.notify) return true;
+    try { return JSON.parse(r.notify)[kind] !== false; } catch { return true; }
+  }
+  app.locals.portalWantsEmail = wantsEmail;
+  // Staff: the messages customers sent from the portal, with replies.
+  app.get('/api/admin/portal-messages', auth, (req, res) => {
+    const rows = db.prepare('SELECT id, email, subject, body, created_at FROM portal_messages ORDER BY id DESC LIMIT 100').all();
+    res.json({ messages: rows.map(m => ({ ...m, replies: db.prepare('SELECT id, body, by_user, created_at FROM portal_message_replies WHERE message_id=? ORDER BY id').all(m.id) })) });
+  });
+  // Staff reply: saved to the conversation and emailed to the customer unless they turned message emails off.
+  app.post('/api/admin/portal-messages/:id/reply', auth, async (req, res) => {
+    const m = db.prepare('SELECT * FROM portal_messages WHERE id=?').get(Number(req.params.id));
+    if (!m) return res.status(404).json({ error: 'Message not found.' });
+    const body = String((req.body || {}).body || '').trim().slice(0, 4000);
+    if (body.length < 2) return res.status(400).json({ error: 'Write the reply first.' });
+    const by = (req.user && req.user.email) || 'staff';
+    const id = db.prepare('INSERT INTO portal_message_replies(message_id,body,by_user,created_at) VALUES(?,?,?,?)').run(m.id, body, by, new Date().toISOString()).lastInsertRowid;
+    const mailer2 = getMailer && getMailer();
+    let emailed = false;
+    if (mailer2 && wantsEmail(m.email, 'messages')) {
+      try { await mailer2.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: m.email, subject: 'Re: ' + m.subject, text: body + '\n\nYou can see this conversation in your Bright Clean client portal.\n\nBright Cleaning Sev Inc. · +1 (515) 303-3024' }); emailed = true; }
+      catch (e) { console.error('portal reply not sent', e.message); }
+    }
+    res.status(201).json({ ok: true, id, emailed });
+  });
   const msgHits = new Map();
   // Customer message from the portal. Saved to the account and sent to the office.
   app.post('/api/portal/messages', async (req, res) => {

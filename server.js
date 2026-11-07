@@ -153,7 +153,7 @@ require('./complaints')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>ma
 require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./subscriptions')(app,{db,auth,logAction,clean,adminEmail});
-require('./portal')(app,{db,getMailer:()=>mailer});
+require('./portal')(app,{db,getMailer:()=>mailer,auth});
 require('./payments')(app,{db,logAction});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public'),{setHeaders:(res,fp)=>{if(/\.(html|js|css|json)$/i.test(fp))res.setHeader('Cache-Control','no-cache')}}));
