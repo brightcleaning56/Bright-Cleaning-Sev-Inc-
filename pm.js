@@ -126,6 +126,7 @@ module.exports = function mountPM(app, ctx) {
     if ('budget' in b) { const v = Number(b.budget); if (!(v >= 0)) return res.status(400).json({ error: 'Budget must be a number.' }); set.budget = v; }
     if ('site_info' in b) set.site_info = JSON.stringify(Object.fromEntries(Object.entries(b.site_info || {}).map(([k, v]) => [clean(k, 40), clean(v, 2000)])));
     if ('contract_waiver' in set && set.contract_waiver && roleOf(req) !== 'owner') return res.status(403).json({ error: 'Only an owner can start work without an executed contract.' });
+    if ('signoff_waiver' in set && set.signoff_waiver && !['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can waive customer sign-off.' });
     const keys = Object.keys(set); if (!keys.length) return res.json({ ok: true });
     db.prepare(`UPDATE projects SET ${keys.map(k => k + '=?').join(',')}, updated_at=? WHERE id=?`).run(...keys.map(k => set[k]), now(), p.id);
     logAction(req, 'updated', 'project', p.id, `${number(p)}: ${keys.join(', ')}`);

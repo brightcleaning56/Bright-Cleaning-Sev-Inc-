@@ -59,6 +59,13 @@ module.exports = function mountAdminExt(app, ctx) {
     const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(id(req));
     if (!e) return res.status(404).json({ error: 'Not found' });
     if (['Approved'].includes(e.status)) return res.status(409).json({ error: 'This proposal was approved by the customer. Duplicate it to make changes.' });
+    if (['Sent', 'Viewed', 'Declined'].includes(e.status)) {
+      const locked = ['proposal_total', 'scope', 'terms', 'tax_pct', 'area_sqft', 'production_rate', 'labor_hours', 'labor_rate', 'use_line_items', 'customer_name', 'email', 'company', 'site_address', 'project_name'];
+      const norm = v => v === true ? '1' : v === false ? '0' : (v === null || v === undefined) ? '' : String(v).trim();
+      const same = (a, z) => (a !== '' && z !== '' && isFinite(Number(a)) && isFinite(Number(z))) ? Number(a) === Number(z) : norm(a) === norm(z);
+      const changed = locked.filter(f => f in b && !same(b[f], e[f]));
+      if (changed.length) return res.status(409).json({ error: `This proposal was already sent to the client, so ${changed.join(', ')} cannot change on it. Duplicate the proposal to revise it.` });
+    }
     if (!required(b.customer_name) || !required(b.scope)) return res.status(400).json({ error: 'Customer and scope are required.' });
     if (b.email && !require('./ops').isEmail(b.email)) return res.status(400).json({ error: 'Enter a valid customer email address.' });
     const scopeErr = require('./scopes').resolveLines(db, b);

@@ -89,7 +89,7 @@ module.exports = function mountContracts(app, ctx) {
     if (k.signature_status !== 'Customer signed') return res.status(409).json({ error: 'The customer has not signed yet.' });
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Type your full name to countersign.' });
     db.prepare("UPDATE contracts SET signature_status='Signed', status='Active', countersigned_by=?, countersigned_at=?, updated_at=? WHERE id=?").run(`${name} (${who(req)})`, now(), now(), k.id);
-    if (k.parent_id) { db.prepare("UPDATE contracts SET status='Superseded', superseded_by=? WHERE (id=? OR parent_id=?) AND id<>? AND status<>'Closed'").run(k.id, k.parent_id, k.parent_id, k.id); }
+    if (k.parent_id) { db.prepare("UPDATE contracts SET status='Superseded', superseded_by=? WHERE (id=? OR parent_id=?) AND id<>? AND status<>'Closed'").run(k.id, k.parent_id, k.parent_id, k.id); db.prepare('UPDATE projects SET contract_id=? WHERE contract_id IN (SELECT id FROM contracts WHERE (id=? OR parent_id=?) AND id<>?)').run(k.id, k.parent_id, k.parent_id, k.id); }
     logAction(req, 'countersigned', 'contract', k.id, `${k.number} by ${name} — executed`);
     res.json({ contract: get(k.id) });
   });
@@ -97,7 +97,7 @@ module.exports = function mountContracts(app, ctx) {
     const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
     if (!executed(k)) return res.status(409).json({ error: 'Only an executed contract can be amended. Edit the draft instead.' });
     const reason = clean((req.body || {}).reason, 500); if (!reason) return res.status(400).json({ error: 'Describe what the amendment changes.' });
-    const root = k.parent_id || k.id, v = (db.prepare('SELECT MAX(version) v FROM contracts WHERE id=? OR parent_id=?').get(root, root).v || 1) + 1;
+    const root = k.parent_id || k.id; const lastV = db.prepare('SELECT id, version FROM contracts WHERE id=? OR parent_id=? ORDER BY version DESC, id DESC LIMIT 1').get(root, root); if (lastV && lastV.id !== k.id) return res.status(409).json({ error: `Version ${lastV.version} of this contract is newer. Amend that version (or finish its open draft) instead.` }); const v = (db.prepare('SELECT MAX(version) v FROM contracts WHERE id=? OR parent_id=?').get(root, root).v || 1) + 1;
     const id = db.prepare(`INSERT INTO contracts(estimate_id,customer_id,project_id,customer_name,company,email,title,scope,terms,payment_terms,billing,start_date,end_date,value,auto_renew,notice_days,status,signature_status,kind,version,parent_id,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Draft','Not sent','Amendment',?,?,?,?)`).run(k.estimate_id, k.customer_id, k.project_id, k.customer_name, k.company, k.email, k.title, `${k.scope || ''}\n\nAmendment ${v - 1}: ${reason}`, k.terms, k.payment_terms, k.billing, k.start_date, k.end_date, k.value, k.auto_renew, k.notice_days, v, root, now(), now()).lastInsertRowid;
     logAction(req, 'drafted amendment', 'contract', id, `${number(get(id))} amends ${k.number}: ${reason}`);
