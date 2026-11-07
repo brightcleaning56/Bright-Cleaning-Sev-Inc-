@@ -5,7 +5,7 @@ const helmet=require('helmet'),rateLimit=require('express-rate-limit'),multer=re
 const app=express();const estimating=require('./estimating');const {isEmail}=require('./ops');let ops=null;const APP_VERSION='5.0.0';const PORT=process.env.PORT||3000;const ROOT=__dirname;const uploadDir=process.env.UPLOAD_DIR||path.join(ROOT,'uploads');const dataDir=process.env.DATA_DIR||path.join(ROOT,'data');fs.mkdirSync(uploadDir,{recursive:true});fs.mkdirSync(dataDir,{recursive:true});
 if(!process.env.JWT_SECRET||process.env.JWT_SECRET.length<32){if(process.env.NODE_ENV==='production'){console.error('FATAL: JWT_SECRET must be set to at least 32 characters in production.');process.exit(1)}console.warn('WARNING: Set a strong JWT_SECRET (32+ characters) in .env before production.')}
 if(process.env.TRUST_PROXY)app.set('trust proxy',Number(process.env.TRUST_PROXY)||1);
-app.use(helmet({contentSecurityPolicy:false}));const SCRIPT_CSP="script-src 'self' https://cdn.jsdelivr.net";app.use((req,res,next)=>{const base="object-src 'none'; base-uri 'self'; frame-ancestors 'self'";if(process.env.CSP_ENFORCE_SCRIPTS==='1')res.setHeader('Content-Security-Policy',base+'; '+SCRIPT_CSP+'; report-uri /api/csp-report');else{res.setHeader('Content-Security-Policy',base);res.setHeader('Content-Security-Policy-Report-Only',SCRIPT_CSP+'; report-uri /api/csp-report')}next()});app.use(express.json({limit:'1mb'}));app.use(express.urlencoded({extended:true}));
+app.use(helmet({contentSecurityPolicy:false}));const SCRIPT_CSP="script-src 'self' https://cdn.jsdelivr.net";app.use((req,res,next)=>{const base="object-src 'none'; base-uri 'self'; frame-ancestors 'self'";if(process.env.CSP_ENFORCE_SCRIPTS==='1')res.setHeader('Content-Security-Policy',base+'; '+SCRIPT_CSP+'; report-uri /api/csp-report');else{res.setHeader('Content-Security-Policy',base);res.setHeader('Content-Security-Policy-Report-Only',SCRIPT_CSP+'; report-uri /api/csp-report')}next()});app.use(express.json({limit:'1mb',verify:(req,res,buf)=>{req.rawBody=buf}}));app.use(express.urlencoded({extended:true}));
 // Public endpoints: 600 requests / 15 min per IP. Signed-in admin traffic (Bearer token) gets a higher ceiling so busy office use is never throttled.
 app.use('/api/',rateLimit({windowMs:15*60*1000,max:req=>/^Bearer\s+\S+/.test(req.headers.authorization||'')&&req.path.startsWith('/admin/')?5000:(Number(process.env.RATE_LIMIT_PUBLIC)||600),standardHeaders:true,legacyHeaders:false}));
 const db=new Database(path.join(dataDir,'brightclean.db'));db.pragma('journal_mode = WAL');
@@ -154,6 +154,7 @@ require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./subscriptions')(app,{db,auth,logAction,clean,adminEmail});
 require('./portal')(app,{db,getMailer:()=>mailer});
+require('./payments')(app,{db,logAction});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public'),{setHeaders:(res,fp)=>{if(/\.(html|js|css|json)$/i.test(fp))res.setHeader('Cache-Control','no-cache')}}));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));

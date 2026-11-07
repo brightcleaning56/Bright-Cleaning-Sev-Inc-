@@ -76,8 +76,8 @@
     } else if (page === 'contracts') {
       html = table(['Contract', 'Value', 'Signature', ''], d.contracts.map(function (k) { return [esc(k.title), money(k.value), esc(k.signature), k.link ? link(k.link, 'Review and sign') : '<span class="muted">Signed</span>']; }));
     } else if (page === 'invoices') {
-      html = table(['Invoice', 'Amount', 'Paid', 'Balance', 'Due'], d.invoices.map(function (i) { return [esc(i.number), money(i.amount), money(i.paid), money(i.balance), esc(i.due || '—')]; }));
-      html += '<p class="muted">To pay an invoice, call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>.</p>';
+      html = table(['Invoice', 'Amount', 'Paid', 'Balance', 'Due', ''], d.invoices.map(function (i) { return [esc(i.number), money(i.amount), money(i.paid), money(i.balance), esc(i.due || '—'), i.balance > 0 ? '<button class="primary-button" type="button" data-pay="' + esc(i.id) + '">Pay now</button>' : '<span class="muted">Paid</span>']; }));
+      html += '<p class="muted">Pay securely by card with the Pay now button. To pay another way, call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>.</p>';
     } else if (page === 'projects') {
       html = table(['Project', 'Status', 'Progress', 'Site'], d.projects.map(function (p) { return [esc(p.name), esc(p.status), esc(p.progress) + '%', esc(p.site || '—')]; }));
     } else if (page === 'properties') {
@@ -157,6 +157,17 @@
   $('requestBtn').addEventListener('click', function () {});
 
   document.addEventListener('click', function (e) { var g = e.target.closest && e.target.closest('[data-go]'); if (g && data) setPage(g.getAttribute('data-go')); });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-pay]'); if (!b || !session) return;
+    b.disabled = true; b.textContent = 'Opening secure payment…';
+    fetch('/api/portal/invoices/' + encodeURIComponent(b.getAttribute('data-pay')) + '/pay', { method: 'POST', headers: { Authorization: 'Bearer ' + session } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) { if (x.ok && x.j.url) { location.href = x.j.url; } else { toast(x.j.error || 'Payment could not be started.'); b.disabled = false; b.textContent = 'Pay now'; } })
+      .catch(function () { toast('Payment could not be started. Please try again.'); b.disabled = false; b.textContent = 'Pay now'; });
+  });
+  var qp = new URLSearchParams(location.search);
+  if (qp.get('paid')) { setTimeout(function () { toast('Thank you. Your payment for ' + qp.get('paid') + ' is being confirmed. It may take a moment to show.'); }, 600); }
+  if (qp.get('cancelled')) { setTimeout(function () { toast('Payment was cancelled. Your invoice has not changed.'); }, 600); }
 
   // Arriving from the email link: the one-time token is in the URL hash, then removed from the address bar.
   var token = (location.hash || '').replace(/^#/, '');
