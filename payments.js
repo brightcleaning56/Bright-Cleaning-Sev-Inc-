@@ -5,13 +5,19 @@ const crypto = require('crypto');
 module.exports = function mountPayments(app, ctx) {
   const { db, logAction } = ctx;
   db.exec(`CREATE TABLE IF NOT EXISTS online_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, stripe_session_id TEXT UNIQUE NOT NULL, amount REAL NOT NULL, email TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, paid_at TEXT)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS portal_profiles(email TEXT PRIMARY KEY, name TEXT, company TEXT, phone TEXT, notify TEXT, valid_after TEXT, updated_at TEXT)`);
   const now = () => new Date().toISOString();
   const SECRET = () => process.env.JWT_SECRET ? process.env.JWT_SECRET + ':client-portal' : 'dev-portal:client-portal';
   const unsign = tok => {
     const [body, sig] = String(tok || '').split('.'); if (!body || !sig) return null;
     const good = crypto.createHmac('sha256', SECRET()).update(body).digest('base64url');
     if (sig.length !== good.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good))) return null;
-    try { const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); return p.exp > Date.now() ? p : null; } catch { return null; }
+    try {
+      const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+      const r = db.prepare('SELECT valid_after FROM portal_profiles WHERE email=?').get(p.email);
+      if (r && r.valid_after && (!p.iat || p.iat < Date.parse(r.valid_after))) return null;
+      return p.exp > Date.now() ? p : null;
+    } catch { return null; }
   };
   const base = () => (process.env.PUBLIC_BASE_URL || 'https://brightclean.net').replace(/\/$/, '');
   const money2 = n => Math.round(Number(n || 0) * 100) / 100;

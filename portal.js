@@ -10,12 +10,15 @@ module.exports = function mountPortal(app, ctx) {
   const norm = e => String(e || '').trim().toLowerCase().slice(0, 254);
   const isEmail = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
   const sha = s => crypto.createHash('sha256').update(s).digest('hex');
+  db.exec(`CREATE TABLE IF NOT EXISTS portal_profiles(email TEXT PRIMARY KEY, name TEXT, company TEXT, phone TEXT, notify TEXT, valid_after TEXT, updated_at TEXT)`);
+  // A session is valid only if it was issued after the customer last signed out everywhere.
+  const sessionOk = p => { const r = db.prepare('SELECT valid_after FROM portal_profiles WHERE email=?').get(p.email); return !(r && r.valid_after && (!p.iat || p.iat < Date.parse(r.valid_after))); };
   const sign = payload => { const body = Buffer.from(JSON.stringify(payload)).toString('base64url'); return body + '.' + crypto.createHmac('sha256', SECRET()).update(body).digest('base64url'); };
   const unsign = tok => {
     const [body, sig] = String(tok || '').split('.'); if (!body || !sig) return null;
     const good = crypto.createHmac('sha256', SECRET()).update(body).digest('base64url');
     if (sig.length !== good.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good))) return null;
-    try { const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); return p.exp > Date.now() ? p : null; } catch { return null; }
+    try { const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); return p.exp > Date.now() && sessionOk(p) ? p : null; } catch { return null; }
   };
   const base = () => (process.env.PUBLIC_BASE_URL || 'https://brightclean.net').replace(/\/$/, '');
 
@@ -49,7 +52,7 @@ module.exports = function mountPortal(app, ctx) {
     const row = db.prepare('SELECT * FROM portal_logins WHERE token_hash=? AND used_at IS NULL').get(sha(token));
     if (!row || Date.parse(row.expires_at) < Date.now()) return res.status(401).json({ error: 'This sign-in link has expired or was already used. Request a new one.' });
     db.prepare('UPDATE portal_logins SET used_at=? WHERE id=?').run(now(), row.id);
-    res.json({ session: sign({ email: row.email, exp: Date.now() + 8 * 3600000 }), email: row.email });
+    res.json({ session: sign({ email: row.email, iat: Date.now(), exp: Date.now() + 8 * 3600000 }), email: row.email });
   });
 
   // Step 3: the customer's own records only (non-draft), read-only.
@@ -90,7 +93,9 @@ module.exports = function mountPortal(app, ctx) {
       .map(r => ({ id: r.id, service: r.service || 'Service request', status: r.status, at: r.created_at }));
     const messages = db.prepare('SELECT id, subject, body, created_at FROM portal_messages WHERE lower(email)=? ORDER BY id DESC LIMIT 20').all(e)
       .map(m => ({ id: m.id, subject: m.subject, body: m.body, at: m.created_at }));
-    res.json({ email: e, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages });
+    const pr = db.prepare('SELECT name, company, phone, notify FROM portal_profiles WHERE email=?').get(e) || {};
+    const profile = { email: e, name: pr.name || '', company: pr.company || '', phone: pr.phone || '', notify: pr.notify ? JSON.parse(pr.notify) : { schedule: true, proposals: true, invoices: true, projects: true, messages: true } };
+    res.json({ email: e, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages, profile });
   });
 
   // A signed-in customer requests service from inside the portal. It becomes a bid lead on their own email.
@@ -115,6 +120,31 @@ module.exports = function mountPortal(app, ctx) {
       try { await m.sendMail({ from, to: sess.email, subject: 'We received your message', text: 'Thank you. We received your message and will reply soon.\n\nBright Cleaning Sev Inc. · +1 (515) 303-3024' }); } catch (e) { console.error('portal message ack not sent', e.message); }
     }
     res.status(201).json({ ok: true, id, message: 'Thank you. Your message was sent to the Bright Clean team.' });
+  });
+  // Account: name, company, phone and which updates the customer wants. Email changes are handled by the team.
+  const NOTIFY = ['schedule', 'proposals', 'invoices', 'projects', 'messages'];
+  app.put('/api/portal/profile', (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    const b = req.body || {};
+    const cur = db.prepare('SELECT * FROM portal_profiles WHERE email=?').get(sess.email) || {};
+    const notify = {};
+    NOTIFY.forEach(k => { notify[k] = b.notify && typeof b.notify === 'object' ? !!b.notify[k] : (cur.notify ? !!JSON.parse(cur.notify)[k] : true); });
+    const name = String(b.name == null ? cur.name || '' : b.name).trim().slice(0, 150);
+    const company = String(b.company == null ? cur.company || '' : b.company).trim().slice(0, 200);
+    const phone = String(b.phone == null ? cur.phone || '' : b.phone).trim().slice(0, 60);
+    db.prepare(`INSERT INTO portal_profiles(email,name,company,phone,notify,valid_after,updated_at) VALUES(?,?,?,?,?,?,?)
+      ON CONFLICT(email) DO UPDATE SET name=excluded.name, company=excluded.company, phone=excluded.phone, notify=excluded.notify, updated_at=excluded.updated_at`)
+      .run(sess.email, name, company, phone, JSON.stringify(notify), cur.valid_after || null, new Date().toISOString());
+    res.json({ ok: true, message: 'Saved.' });
+  });
+  // Sign out everywhere: every session issued before now stops working.
+  app.post('/api/portal/sign-out-everywhere', (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    const t = new Date(Date.now() + 1000).toISOString();
+    db.prepare(`INSERT INTO portal_profiles(email,valid_after,updated_at) VALUES(?,?,?) ON CONFLICT(email) DO UPDATE SET valid_after=excluded.valid_after, updated_at=excluded.updated_at`).run(sess.email, t, t);
+    res.json({ ok: true, message: 'You were signed out everywhere. Sign in again with a new link.' });
   });
   const reqHits = new Map();
   app.post('/api/portal/request-service', async (req, res) => {

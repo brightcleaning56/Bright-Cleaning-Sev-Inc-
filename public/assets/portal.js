@@ -108,10 +108,50 @@
         '<p style="margin-top:14px"><button class="primary-button" type="submit">Send request</button></p>' +
         '</form><p class="msg" id="rsMsg" role="status"></p></div>';
     } else if (page === 'settings') {
-      html = '<div class="panel"><p>Signed in as <b>' + esc(email) + '</b>.</p><p><button class="primary-button" id="signOut" type="button">Sign out</button></p></div>';
+      var pf = d.profile || {}, nf = pf.notify || {};
+      var box = function (k, label) { return '<label class="chk" style="display:block;margin:6px 0"><input type="checkbox" name="n_' + k + '"' + (nf[k] !== false ? ' checked' : '') + '> ' + label + '</label>'; };
+      html = '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">' +
+        '<div class="panel"><h2>Profile</h2><form id="profForm">' +
+        '<div class="field"><label>Full name</label><input name="name" value="' + esc(pf.name || '') + '"></div>' +
+        '<div class="field" style="margin-top:12px"><label>Company</label><input name="company" value="' + esc(pf.company || '') + '"></div>' +
+        '<div class="field" style="margin-top:12px"><label>Phone</label><input name="phone" type="tel" value="' + esc(pf.phone || '') + '"></div>' +
+        '<div class="field" style="margin-top:12px"><label>Sign-in email</label><input value="' + esc(email) + '" disabled></div>' +
+        '<p class="muted" style="margin-top:8px">To change your sign-in email, message the team. We verify the new address before we change it.</p>' +
+        '<p style="margin-top:14px"><button class="primary-button" type="submit">Save changes</button></p></form><p class="msg" id="profMsg" role="status"></p></div>' +
+        '<div class="panel"><h2>Notifications</h2><p class="muted">Choose the updates we email you about.</p><form id="notifyForm">' +
+        box('schedule', 'Schedule changes and visit confirmations') + box('proposals', 'New proposals and contract updates') +
+        box('invoices', 'Invoices and payment receipts') + box('projects', 'Project progress and closeout notices') + box('messages', 'Replies to your messages') +
+        '<p style="margin-top:14px"><button class="primary-button" type="submit">Save notifications</button></p></form><p class="msg" id="notifyMsg" role="status"></p></div></div>' +
+        '<div class="panel" style="margin-top:16px"><h2>Sessions</h2><p><button class="nav-item" id="signOut" type="button">Sign out on this device</button> ' +
+        '<button class="nav-item" id="signOutAll" type="button">Sign out everywhere</button></p><p class="muted">Signing out everywhere ends every session on every device. Sign in again with a new link.</p></div>';
     }
     c.innerHTML = html;
     var so = $('signOut'); if (so) so.addEventListener('click', signOut);
+    var pfm = $('profForm');
+    if (pfm) pfm.addEventListener('submit', function (e) {
+      e.preventDefault(); $('profMsg').textContent = 'Saving…';
+      var f = e.target;
+      fetch('/api/portal/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session }, body: JSON.stringify({ name: f.name.value, company: f.company.value, phone: f.phone.value }) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) { $('profMsg').textContent = x.ok ? 'Saved.' : (x.j.error || 'Could not save.'); if (x.ok) refreshData(); })
+        .catch(function () { $('profMsg').textContent = 'Could not save. Please try again.'; });
+    });
+    var nfm = $('notifyForm');
+    if (nfm) nfm.addEventListener('submit', function (e) {
+      e.preventDefault(); $('notifyMsg').textContent = 'Saving…';
+      var n = {}; ['schedule', 'proposals', 'invoices', 'projects', 'messages'].forEach(function (k) { n[k] = !!e.target['n_' + k].checked; });
+      fetch('/api/portal/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session }, body: JSON.stringify({ notify: n }) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) { $('notifyMsg').textContent = x.ok ? 'Saved.' : (x.j.error || 'Could not save.'); if (x.ok) refreshData(); })
+        .catch(function () { $('notifyMsg').textContent = 'Could not save. Please try again.'; });
+    });
+    var soa = $('signOutAll');
+    if (soa) soa.addEventListener('click', function () {
+      if (!confirm('Sign out on every device? You will need a new sign-in link.')) return;
+      fetch('/api/portal/sign-out-everywhere', { method: 'POST', headers: { Authorization: 'Bearer ' + session } })
+        .then(function () { signOut(); toast('Signed out everywhere'); })
+        .catch(function () { toast('Could not sign out everywhere. Try again.'); });
+    });
     var mf = $('msgForm');
     if (mf) mf.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -168,7 +208,7 @@
   }
   function signOut() {
     try { sessionStorage.removeItem(KEY); } catch (e) { /* private window */ }
-    data = null; email = ''; hideSignedIn(); history.replaceState(null, '', '/portal.html'); setPage('overview'); toast('Signed out');
+    data = null; email = ''; session = null; hideSignedIn(); history.replaceState(null, '', '/portal.html'); setPage('overview'); toast('Signed out');
   }
 
   document.querySelectorAll('.nav-item').forEach(function (b) {
