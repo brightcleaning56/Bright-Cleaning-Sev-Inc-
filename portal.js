@@ -112,7 +112,15 @@ module.exports = function mountPortal(app, ctx) {
       .map(m => ({ id: m.id, subject: m.subject, body: m.body, at: m.created_at, replies: db.prepare('SELECT body, created_at FROM portal_message_replies WHERE message_id=? ORDER BY id').all(m.id).map(r => ({ body: r.body, at: r.created_at })) }));
     const pr = db.prepare('SELECT name, company, phone, notify FROM portal_profiles WHERE email=?').get(e) || {};
     const profile = { email: e, name: pr.name || '', company: pr.company || '', phone: pr.phone || '', notify: pr.notify ? JSON.parse(pr.notify) : { schedule: true, proposals: true, invoices: true, projects: true, messages: true } };
-    res.json({ email: e, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages, profile });
+    // Inspection reports: signed inspections for this customer's properties and projects only.
+    let inspections = [];
+    try {
+      inspections = db.prepare(`SELECT i.id, i.date, i.area, i.score, i.passed, i.status, i.itype, i.signed_name, i.signed_at, p.name AS project
+        FROM inspections i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN projects p ON p.id=i.project_id LEFT JOIN contracts k ON k.id=p.contract_id
+        WHERE i.signed_at IS NOT NULL AND i.status <> 'Cancelled' AND (lower(c.email)=? OR lower(k.email)=?) ORDER BY i.date DESC, i.id DESC LIMIT 20`).all(e, e)
+        .map(i => ({ id: i.id, date: i.date || String(i.signed_at || '').slice(0, 10), area: i.area || '', score: i.score == null ? null : Math.round(i.score), passed: !!i.passed, status: i.status || '', project: i.project || '', signed_by: i.signed_name || '' }));
+    } catch { inspections = []; }
+    res.json({ email: e, inspections, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages, profile });
   });
 
   // A signed-in customer requests service from inside the portal. It becomes a bid lead on their own email.

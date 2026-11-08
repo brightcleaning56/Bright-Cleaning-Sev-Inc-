@@ -89,7 +89,13 @@
       html = '<p><button class="primary-button" type="button" data-request="recurring">Add recurring service</button></p><div class="panel"><h2>Service Schedule</h2>' + visitsHtml(d.visits, 50) + '</div>' +
         '<div class="panel" style="margin-top:16px"><h2>Service Requests</h2>' + (d.requests.length ? table(['Requested', 'Service', 'Status'], d.requests.map(function (r) { return [esc(String(r.at).slice(0, 10)), esc(r.service), esc(r.status)]; })) : empty('No service requests yet', 'Requests you send from this portal appear here, with their status.')) + '</div>';
     } else if (page === 'quality') {
-      html = empty('No inspection reports yet', 'Approved inspection reports appear here after a service is inspected. If something needs attention, report it below and our team will follow up.') + '<p style="margin-top:14px"><button class="primary-button" type="button" data-go="messages">Report a service issue</button></p>';
+      var insp = d.inspections || [];
+      html = (insp.length
+        ? '<div class="panel"><h2>Inspection reports</h2>' + table(['Date', 'Property', 'Score', 'Result', 'Status', 'Signed by'], insp.map(function (i) {
+            return [esc(i.date || '—'), esc(i.project || i.area || '—'), i.score == null ? '—' : esc(i.score) + '%', i.passed ? '<span class="badge green">Passed</span>' : '<span class="badge amber">Needs attention</span>', esc(i.status || '—'), esc(i.signed_by || '—')];
+          })) + '</div>'
+        : empty('No inspection reports yet', 'Signed inspection reports for your properties appear here after a service is inspected.')) +
+        '<p style="margin-top:14px">If something needs attention, <button class="nav-item sm" type="button" data-go="messages">report a service issue</button> and our team will follow up.</p>';
     } else if (page === 'documents') {
       var docs = [];
       d.proposals.forEach(function (x) { docs.push([esc('Proposal: ' + x.title), 'Proposal', esc(x.status), link(x.link, 'View')]); });

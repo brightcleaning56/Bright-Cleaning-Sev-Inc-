@@ -28,6 +28,10 @@ db.prepare("INSERT INTO visits(title,type,date,start_time,end_time,address,statu
 db.prepare("INSERT INTO visits(title,type,date,start_time,end_time,address,status,project_id) VALUES(?,?,?,?,?,?,?,?)").run('Tentative visit', 'Cleaning phase', todayIso, '13:00', '14:00', '1 Main St', 'Tentative', 1);
 db.prepare("INSERT INTO visits(title,type,date,start_time,end_time,address,status,project_id) VALUES(?,?,?,?,?,?,?,?)").run('Finished clean', 'Cleaning phase', todayIso, '07:00', '08:00', '1 Main St', 'Done', 1);
 
+db.exec(`CREATE TABLE inspections(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, project_id INTEGER, date TEXT, area TEXT, score REAL, passed INTEGER, status TEXT, itype TEXT, signed_name TEXT, signed_at TEXT);`);
+db.prepare("INSERT INTO customers(email) VALUES(?)").run(EMAIL);
+db.prepare("INSERT INTO inspections(customer_id,project_id,date,area,score,passed,status,itype,signed_name,signed_at) VALUES(1,1,?,?,?,?,?,?,?,?)").run('2026-11-05', 'Lobby', 92, 1, 'Completed', 'Final', 'Eric Moore', '2026-11-05T12:00:00Z');
+db.prepare("INSERT INTO inspections(customer_id,project_id,date,area,score,passed,status,itype,signed_name,signed_at) VALUES(2,NULL,?,?,?,?,?,?,?,?)").run('2026-11-06', 'Other', 50, 0, 'Completed', 'Final', 'Someone', '2026-11-06T12:00:00Z');
 const crypto2 = require('crypto');
 const SECRET2 = process.env.JWT_SECRET + ':client-portal';
 function sign(p) { const body = Buffer.from(JSON.stringify(p)).toString('base64url'); return body + '.' + crypto2.createHmac('sha256', SECRET2).update(body).digest('base64url'); }
@@ -152,6 +156,8 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
   const rp2 = await call('POST /api/admin/portal-messages/:id/reply', { body: 'A second reply, not emailed.' }, {}, { id: String(msgId) });
   check('staff reply: not emailed when the customer turned message emails off', rp2.code === 201 && rp2.body.emailed === false && sent.length === sentQ, { body: rp2.body, n: sent.length - sentQ });
 
+  const insp = await call('GET /api/portal/me', {}, { authorization: 'Bearer ' + session });
+  check('quality: only this customer signed inspections are shown', insp.body.inspections && insp.body.inspections.length === 1 && insp.body.inspections[0].score === 92 && insp.body.inspections[0].passed === true, insp.body.inspections);
   // 10b. Proposals: the customer sees their own proposals with detail, and can approve, decline or ask for changes
   const pm = await call('GET /api/portal/me', {}, { authorization: 'Bearer ' + session });
   const p1 = (pm.body.proposals || []).find(p => p.id === 1);
