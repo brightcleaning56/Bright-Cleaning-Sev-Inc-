@@ -2,8 +2,9 @@
 // proposals, contracts, invoices and project status. Read-only. Signing and payment use the existing secure links.
 // Nothing reveals whether an email is on file: the sign-in request always answers the same way.
 const crypto = require('crypto');
+const fs = require('fs'), path = require('path');
 module.exports = function mountPortal(app, ctx) {
-  const { db, getMailer, auth, syncLead, ops, afterDecision } = ctx;
+  const { db, getMailer, auth, syncLead, ops, afterDecision, upload, uploadDir } = ctx;
   // One proposal as the customer sees it in the portal. Only this customer's own proposal, never internal notes.
   const todayStr = () => new Date().toISOString().slice(0, 10);
   const numberOf = p => 'P-' + (String(p.created_at || '').slice(0, 4) || '2026') + '-' + String(1000 + p.id);
@@ -120,7 +121,10 @@ module.exports = function mountPortal(app, ctx) {
         WHERE i.signed_at IS NOT NULL AND i.status <> 'Cancelled' AND (lower(c.email)=? OR lower(k.email)=?) ORDER BY i.date DESC, i.id DESC LIMIT 20`).all(e, e)
         .map(i => ({ id: i.id, date: i.date || String(i.signed_at || '').slice(0, 10), area: i.area || '', score: i.score == null ? null : Math.round(i.score), passed: !!i.passed, status: i.status || '', project: i.project || '', signed_by: i.signed_name || '' }));
     } catch { inspections = []; }
-    res.json({ email: e, inspections, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages, profile });
+    // Files the customer uploaded from the portal (kept with their records).
+    const uploads = db.prepare(`SELECT d.id, d.title, d.file_name, d.file_url, d.size, d.created_at, d.estimate_id FROM documents d WHERE lower(d.uploaded_by)=? AND d.kind='Customer upload' AND COALESCE(d.status,'Current')<>'Archived' ORDER BY d.id DESC LIMIT 50`).all(e)
+      .map(d => ({ id: d.id, title: d.title || d.file_name || 'Document', file_name: d.file_name || '', file: path.basename(String(d.file_url || '')), size: d.size || 0, at: d.created_at, proposal_id: d.estimate_id || null }));
+    res.json({ email: e, uploads, inspections, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages, profile });
   });
 
   // A signed-in customer requests service from inside the portal. It becomes a bid lead on their own email.
@@ -248,6 +252,46 @@ module.exports = function mountPortal(app, ctx) {
     const m = getMailer && getMailer();
     if (m) { try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: process.env.NOTIFY_EMAIL || 'info@brightclean.net', subject: 'Change request on ' + number, text: 'From: ' + sess.email + '\n\n' + body + '\n\nReply to this email to answer the customer.', replyTo: sess.email }); } catch (err) { console.error('change request notice not sent', err.message); } }
     res.status(201).json({ ok: true, id, message: 'Thank you. Your change request was sent to the Bright Clean team. We will send an updated proposal.' });
+  });
+  // Customer uploads a document (PDF, Word, Excel, image or zip), optionally for one of their proposals.
+  app.post('/api/portal/documents', (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    if (!upload) return res.status(503).json({ error: 'Uploads are not available right now. Please email the file to the Bright Clean team.' });
+    const [mwUp, verifyUp] = upload.single('file');
+    mwUp(req, res, err => verifyUp(req, res, () => portalDocHandler(req, res, err, sess)));
+  });
+  function portalDocHandler(req, res, err, sess) {
+    {
+      const f = req.file;
+      const drop = () => { if (f) try { fs.unlinkSync(f.path); } catch { /* */ } };
+      if (err) { drop(); return res.status(400).json({ error: err.message === 'Unsupported file type' ? 'That file type is not accepted. Use PDF, Word, Excel, an image or a zip file.' : 'The file could not be uploaded. Please try a smaller file.' }); }
+      if (!f) return res.status(400).json({ error: 'Choose a file to upload.' });
+      const body = req.body || {};
+      const title = String(body.title || '').trim().slice(0, 200) || f.originalname;
+      let eid = null;
+      if (body.proposal_id) {
+        const own = db.prepare('SELECT id FROM estimates WHERE id=? AND lower(email)=?').get(Number(body.proposal_id), sess.email);
+        if (!own) { drop(); return res.status(400).json({ error: 'Choose one of your own proposals, or leave it blank.' }); }
+        eid = own.id;
+      }
+      const at = now();
+      const id = db.prepare("INSERT INTO documents(estimate_id,title,kind,file_name,file_url,size,uploaded_by,created_at,status,version) VALUES(?,?,?,?,?,?,?,?,'Current',1)")
+        .run(eid, title, 'Customer upload', f.originalname, '/api/portal/files/' + path.basename(f.filename), f.size, sess.email, at).lastInsertRowid;
+      try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, 'uploaded a document in client portal', 'document', id, f.originalname, at); } catch { /* */ }
+      res.status(201).json({ ok: true, id, message: 'Thank you. Your document was uploaded to the Bright Clean team.' });
+    }
+  }
+  // Download one of the customer's own uploads (checked against the signed-in customer).
+  app.get('/api/portal/files/:name', (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    const name = path.basename(req.params.name);
+    const row = db.prepare("SELECT d.file_name FROM documents d LEFT JOIN estimates e ON e.id=d.estimate_id WHERE d.file_url=? AND (lower(d.uploaded_by)=? OR lower(e.email)=?)").get('/api/portal/files/' + name, sess.email, sess.email);
+    if (!row || !uploadDir) return res.status(404).json({ error: 'File not found.' });
+    const p = path.join(uploadDir, name);
+    if (!fs.existsSync(p)) return res.status(404).json({ error: 'File not found.' });
+    res.download(p, row.file_name || name);
   });
   app.post('/api/portal/request-service', async (req, res) => {
     const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));

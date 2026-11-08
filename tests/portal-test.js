@@ -32,6 +32,8 @@ db.exec(`CREATE TABLE inspections(id INTEGER PRIMARY KEY AUTOINCREMENT, customer
 db.prepare("INSERT INTO customers(email) VALUES(?)").run(EMAIL);
 db.prepare("INSERT INTO inspections(customer_id,project_id,date,area,score,passed,status,itype,signed_name,signed_at) VALUES(1,1,?,?,?,?,?,?,?,?)").run('2026-11-05', 'Lobby', 92, 1, 'Completed', 'Final', 'Eric Moore', '2026-11-05T12:00:00Z');
 db.prepare("INSERT INTO inspections(customer_id,project_id,date,area,score,passed,status,itype,signed_name,signed_at) VALUES(2,NULL,?,?,?,?,?,?,?,?)").run('2026-11-06', 'Other', 50, 0, 'Completed', 'Final', 'Someone', '2026-11-06T12:00:00Z');
+db.exec(`CREATE TABLE documents(id INTEGER PRIMARY KEY AUTOINCREMENT, estimate_id INTEGER, title TEXT, kind TEXT, file_name TEXT, file_url TEXT, size INTEGER, uploaded_by TEXT, created_at TEXT, status TEXT, version INTEGER);`);
+db.prepare("INSERT INTO documents(estimate_id,title,kind,file_name,file_url,size,uploaded_by,created_at,status,version) VALUES(1,?,?,?,?,?,?,?,'Current',1)").run('Site plan', 'Customer upload', 'plan.pdf', '/api/portal/files/abc123.pdf', 12, EMAIL, '2026-11-08T12:00:00Z');
 const crypto2 = require('crypto');
 const SECRET2 = process.env.JWT_SECRET + ':client-portal';
 function sign(p) { const body = Buffer.from(JSON.stringify(p)).toString('base64url'); return body + '.' + crypto2.createHmac('sha256', SECRET2).update(body).digest('base64url'); }
@@ -40,10 +42,13 @@ const app = { locals: {}, get: (p, ...f) => { routes['GET ' + p] = f[f.length - 
 const staffAuth = (req, res, next) => next();
 const sent = [];
 const mailer = { sendMail: async m => { sent.push(m); return { messageId: 'x' }; } };
-require(path.join(root, 'portal.js'))(app, { db, getMailer: () => mailer, auth: staffAuth });
+const UPD = require('path').join(require('os').tmpdir(), 'bc-portal-uploads-' + process.pid);
+require('fs').mkdirSync(UPD, { recursive: true });
+require('fs').writeFileSync(require('path').join(UPD, 'abc123.pdf'), '%PDF-1.4 test');
+require(path.join(root, 'portal.js'))(app, { db, getMailer: () => mailer, auth: staffAuth, uploadDir: UPD });
 
 function call(key, body = {}, headers = {}, ip = '10.0.0.1') {
-  const res = { code: 200, body: null, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } };
+  const res = { code: 200, body: null, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; }, download(f, n) { this.code = 200; this.body = { file: f, name: n }; return this; } };
   const req = { body, headers, ip: typeof ip === 'string' ? ip : '10.0.0.1', query: {}, params: typeof ip === 'object' && ip ? ip : {} };
   const out = routes[key](req, res);
   return Promise.resolve(out).then(() => ({ code: res.code, body: res.body }));
@@ -158,6 +163,16 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
 
   const insp = await call('GET /api/portal/me', {}, { authorization: 'Bearer ' + session });
   check('quality: only this customer signed inspections are shown', insp.body.inspections && insp.body.inspections.length === 1 && insp.body.inspections[0].score === 92 && insp.body.inspections[0].passed === true, insp.body.inspections);
+  // 10a. Documents: customer uploads are listed with their account and downloadable only by the customer who uploaded them
+  const sessionOther = sign({ email: 'someone.else@example.com', iat: Date.now(), exp: Date.now() + 3600000 });
+  const docMe = await call('GET /api/portal/me', {}, { authorization: 'Bearer ' + session });
+  check('documents: the customer sees their own uploads', docMe.body.uploads && docMe.body.uploads.length === 1 && docMe.body.uploads[0].title === 'Site plan' && docMe.body.uploads[0].file === 'abc123.pdf', docMe.body.uploads);
+  const dl = await call('GET /api/portal/files/:name', {}, { authorization: 'Bearer ' + session }, { name: 'abc123.pdf' });
+  check('documents: the uploader can open their file', dl.code === 200, dl.code);
+  const dlNo = await call('GET /api/portal/files/:name', {}, { authorization: 'Bearer ' + sessionOther }, { name: 'abc123.pdf' });
+  check('documents: another customer cannot open it', dlNo.code === 404, dlNo.code);
+  const upNo = await call('POST /api/portal/documents', {}, { authorization: 'Bearer ' + session });
+  check('documents: upload refused when the upload service is not configured', upNo.code === 503, upNo.code);
   // 10b. Proposals: the customer sees their own proposals with detail, and can approve, decline or ask for changes
   const pm = await call('GET /api/portal/me', {}, { authorization: 'Bearer ' + session });
   const p1 = (pm.body.proposals || []).find(p => p.id === 1);

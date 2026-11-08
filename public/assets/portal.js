@@ -104,7 +104,18 @@
       d.proposals.forEach(function (x) { docs.push([esc('Proposal: ' + x.title), 'Proposal', esc(x.status), link(x.link, 'View')]); });
       d.contracts.forEach(function (x) { docs.push([esc('Contract: ' + x.title), 'Contract', esc(x.signature), link(x.link, x.link ? 'Review' : (x.signature === 'Signed' ? 'Signed' : 'Not available yet'))]); });
       d.invoices.forEach(function (x) { docs.push([esc('Invoice ' + x.number), 'Invoice', esc(x.status), '<span class="muted">Pay on Invoices &amp; Payments</span>']); });
-      html = table(['Document', 'Type', 'Status', ''], docs);
+      var upOpts = '<option value="">Not linked to a proposal</option>' + (d.proposals || []).map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.number + ' · ' + p.title) + '</option>'; }).join('');
+      var ups = d.uploads || [];
+      html = '<div class="panel"><h2>Upload a document</h2><p class="muted">Send us drawings, site plans, insurance certificates or other files. PDF, Word, Excel, images or zip, up to 30 MB.</p>' +
+        '<form id="upForm"><div class="field"><label>Document title</label><input name="title" placeholder="For example: floor plan"></div>' +
+        '<div class="field" style="margin-top:12px"><label>For proposal</label><select name="proposal_id">' + upOpts + '</select></div>' +
+        '<div class="field" style="margin-top:12px"><label>File *</label><input name="file" type="file" required accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip"></div>' +
+        '<p style="margin-top:14px"><button class="primary-button" type="submit">Upload document</button></p></form><p class="msg" id="upMsg" role="status"></p></div>' +
+        '<div class="panel" style="margin-top:16px"><h2>Your uploads</h2>' +
+        (ups.length ? '<div class="tbl-wrap"><table class="t"><thead><tr><th>Document</th><th>File</th><th>Uploaded</th><th></th></tr></thead><tbody>' +
+          ups.map(function (u) { return '<tr><td>' + esc(u.title) + '</td><td>' + esc(u.file_name) + '</td><td>' + esc(String(u.at || '').slice(0, 10)) + '</td><td><button class="btn ghost" type="button" data-dl="' + esc(u.file) + '" data-fname="' + esc(u.file_name) + '">Download</button></td></tr>'; }).join('') +
+          '</tbody></table></div>' : empty('No uploads yet', 'Documents you upload appear here.')) + '</div>' +
+        '<div class="panel" style="margin-top:16px"><h2>Documents from Bright Clean</h2>' + table(['Document', 'Type', 'Status', ''], docs) + '</div>';
     } else if (page === 'messages') {
       html = '<div class="panel"><h2>Contact Support</h2><form id="msgForm"><div class="field"><label>Subject</label><input name="subject" placeholder="For example: schedule change"></div><div class="field" style="margin-top:12px"><label>Message *</label><textarea name="body" rows="4" required></textarea></div><p style="margin-top:14px"><button class="primary-button" type="submit">Send message</button></p></form><p class="msg" id="msgMsg" role="status"></p><p class="muted">Urgent? Call <a href="tel:+15153033024">+1 (515) 303-3024</a>.</p></div>' +
         '<div class="panel" style="margin-top:16px"><h2>Conversations</h2>' + (d.messages.length ? '<ul style="list-style:none;padding:0;margin:0">' + d.messages.map(function (m) { return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + '</small><br><b>' + esc(m.subject) + '</b><br>' + esc(m.body) + (m.replies || []).map(function (r) { return '<div style="margin:8px 0 0 14px;padding:8px;background:#f2f7fc;border-radius:8px"><small>Bright Clean · ' + esc(String(r.at).slice(0, 10)) + '</small><br>' + esc(r.body) + '</div>'; }).join('') + '</li>'; }).join('') + '</ul>' : empty('No messages yet', 'Messages you send and replies from the Bright Clean team will appear here.')) + '</div>';
@@ -138,6 +149,27 @@
         '<button class="nav-item" id="signOutAll" type="button">Sign out everywhere</button></p><p class="muted">Signing out everywhere ends every session on every device. Sign in again with a new link.</p></div>';
     }
     c.innerHTML = html;
+    var upf = $('upForm');
+    if (upf) upf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var f = e.target, msg = $('upMsg'), file = f.file.files[0];
+      if (!file) { msg.textContent = 'Choose a file to upload.'; return; }
+      if (file.size > 30 * 1024 * 1024) { msg.textContent = 'That file is larger than 30 MB. Please send a smaller file or call us.'; return; }
+      var fd = new FormData(); fd.append('file', file); fd.append('title', f.title.value); fd.append('proposal_id', f.proposal_id.value);
+      msg.textContent = 'Uploading…';
+      fetch('/api/portal/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + session }, body: fd })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) { if (x.ok) { toast(x.j.message); f.reset(); refreshData(); } else { msg.textContent = x.j.error || 'Could not upload. Please try again.'; } })
+        .catch(function () { msg.textContent = 'Could not upload. Please try again or call (515) 303-3024.'; });
+    });
+    c.querySelectorAll('[data-dl]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        fetch('/api/portal/files/' + encodeURIComponent(b.getAttribute('data-dl')), { headers: { Authorization: 'Bearer ' + session } })
+          .then(function (r) { if (!r.ok) throw new Error('not found'); return r.blob(); })
+          .then(function (blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = b.getAttribute('data-fname') || 'document'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000); })
+          .catch(function () { toast('That file could not be opened. Please try again.'); });
+      });
+    });
     var so = $('signOut'); if (so) so.addEventListener('click', signOut);
     var pfm = $('profForm');
     if (pfm) pfm.addEventListener('submit', function (e) {

@@ -166,7 +166,7 @@ const afterDecision=(e,decision)=>{
   }
   notify(`Proposal ${decision==='approve'?'approved':'declined'} — Bright Clean`,`${e.customer_name} (${e.company}) responded ${decision} to proposal #${e.id}. Project: ${e.project_name}.`,process.env.NOTIFY_EMAIL);
 };
-require('./portal')(app,{db,getMailer:()=>mailer,auth,syncLead,ops,afterDecision});
+require('./portal')(app,{db,getMailer:()=>mailer,auth,syncLead,ops,afterDecision,upload,uploadDir});
 require('./payments')(app,{db,logAction});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public'),{setHeaders:(res,fp)=>{if(/\.(html|js|css|json)$/i.test(fp))res.setHeader('Cache-Control','no-cache')}}));
