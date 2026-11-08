@@ -75,7 +75,7 @@
     } else if (page === 'proposals') {
       html = '<p><button class="primary-button" type="button" data-request="proposal">Request a proposal</button></p>' + table(['Proposal', 'Total', 'Status', ''], d.proposals.map(function (p) { return [esc(p.title), money(p.total), esc(p.status), link(p.link, 'Open')]; }));
     } else if (page === 'contracts') {
-      html = '<p><button class="primary-button" type="button" data-request="contract">Request a contract</button></p>' + table(['Contract', 'Value', 'Signature', ''], d.contracts.map(function (k) { return [esc(k.title), money(k.value), esc(k.signature), k.link ? link(k.link, 'Review and sign') : '<span class="muted">Signed</span>']; }));
+      html = '<p><button class="primary-button" type="button" data-request="contract">Request a contract</button></p>' + table(['Contract', 'Value', 'Signature', ''], d.contracts.map(function (k) { return [esc(k.title), money(k.value), esc(k.signature), k.link ? link(k.link, 'Review and sign') : (k.signature === 'Signed' ? '<span class="muted">Signed</span>' : '<span class="muted">Not available yet</span>')]; }));
     } else if (page === 'invoices') {
       html = table(['Invoice', 'Amount', 'Paid', 'Balance', 'Due', ''], d.invoices.map(function (i) { return [esc(i.number), money(i.amount), money(i.paid), money(i.balance), esc(i.due || '—'), i.balance > 0 ? '<button class="primary-button" type="button" data-pay="' + esc(i.id) + '">Pay now</button>' : '<span class="muted">Paid</span>']; }));
       html += '<p class="muted">Pay securely by card with the Pay now button. To pay another way, call <a href="tel:+15153033024">+1 (515) 303-3024</a> or email <a href="mailto:info@brightclean.net">info@brightclean.net</a>.</p>';
@@ -92,7 +92,7 @@
     } else if (page === 'documents') {
       var docs = [];
       d.proposals.forEach(function (x) { docs.push([esc('Proposal: ' + x.title), 'Proposal', esc(x.status), link(x.link, 'View')]); });
-      d.contracts.forEach(function (x) { docs.push([esc('Contract: ' + x.title), 'Contract', esc(x.signature), link(x.link, x.link ? 'Review' : 'Signed')]); });
+      d.contracts.forEach(function (x) { docs.push([esc('Contract: ' + x.title), 'Contract', esc(x.signature), link(x.link, x.link ? 'Review' : (x.signature === 'Signed' ? 'Signed' : 'Not available yet'))]); });
       d.invoices.forEach(function (x) { docs.push([esc('Invoice ' + x.number), 'Invoice', esc(x.status), '<span class="muted">Pay on Invoices &amp; Payments</span>']); });
       html = table(['Document', 'Type', 'Status', ''], docs);
     } else if (page === 'messages') {
