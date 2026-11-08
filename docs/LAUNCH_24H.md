@@ -74,11 +74,11 @@ value waiting on them. Adding a contact automatically puts those projects back i
 1. Postmark account → add sender domain → add the DKIM and Return-Path DNS records it gives you.
 2. Add DMARC: TXT `_dmarc` → `v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com`
 3. When Postmark shows the domain verified: set POSTMARK_TOKEN, POSTMARK_WEBHOOK_SECRET,
-   EMAIL_DOMAIN_VERIFIED=true, EMAIL_MODE=live. Add webhook BASE_URL/webhooks/postmark?token=…
+   EMAIL_DOMAIN_VERIFIED=true, EMAIL_MODE=live. Add webhook BASE_URL/webhooks/postmark with HTTP Basic auth (password = POSTMARK_WEBHOOK_SECRET)
    for Delivery, Bounce, Spam Complaint, Subscription Change.
 4. PATCH /api/org {"settings":{"liveSending":true}}. Approved bids now send on the next cycle.
 5. Replies: in Postmark, create an inbound stream, set INBOUND_REPLY_ADDRESS to its address and the
-   inbound webhook to BASE_URL/webhooks/postmark-inbound?token=…  GC replies attach to the right bid,
+   inbound webhook to BASE_URL/webhooks/postmark-inbound (same Basic auth)  GC replies attach to the right bid,
    show on the Bids tab, and stop the follow-up. "Remove me" replies suppress the sender.
 6. Follow-up: one polite follow-up goes out 5 days after a bid with no reply (settings.followUpDays).
 

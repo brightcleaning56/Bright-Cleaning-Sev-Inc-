@@ -37,14 +37,16 @@ test('behind a trusted proxy, X-Forwarded-For identifies the real client', async
   assert.equal((await attempt('203.0.113.9')).status, 401, 'a different client has its own bucket');
 });
 
-test('Postmark webhooks refuse a missing or wrong secret and accept the right one', async t => {
+test('Postmark webhooks accept only HTTP Basic credentials; the secret is not accepted in the URL', async t => {
   const saved = config.postmarkWebhookSecret;
   config.postmarkWebhookSecret = 'webhook-secret-0123456789abcdef';
   t.after(() => { config.postmarkWebhookSecret = saved; });
   const { srv, base } = await start(new Store(null));
   t.after(() => srv.close());
-  const post = q => fetch(base + '/webhooks/postmark' + q, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ RecordType: 'Delivery', MessageID: 'x' }) });
-  assert.equal((await post('')).status, 401);
-  assert.equal((await post('?token=wrong')).status, 401);
-  assert.equal((await post('?token=webhook-secret-0123456789abcdef')).status, 200);
+  const basic = pass => 'Basic ' + Buffer.from('postmark:' + pass).toString('base64');
+  const post = (path, auth) => fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(auth ? { authorization: auth } : {}) }, body: JSON.stringify({ RecordType: 'Delivery', MessageID: 'x' }) });
+  assert.equal((await post('/webhooks/postmark')).status, 401, 'no credentials');
+  assert.equal((await post('/webhooks/postmark', basic('wrong-secret'))).status, 401, 'wrong password');
+  assert.equal((await post('/webhooks/postmark?token=webhook-secret-0123456789abcdef')).status, 401, 'secret in the URL is refused');
+  assert.equal((await post('/webhooks/postmark', basic('webhook-secret-0123456789abcdef'))).status, 200, 'correct Basic password');
 });

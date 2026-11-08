@@ -91,10 +91,17 @@ export async function backupAndVerify(store, { fetchImpl } = {}) {
 }
 
 // ---------------- HTTP plumbing ----------------
+// Postmark sends the webhook password as HTTP Basic auth. The secret never goes in the URL, so it stays out of logs.
+const webhookAuthorized = (config, req) => {
+  const h = String(req.headers.authorization || '');
+  if (!h.startsWith('Basic ') || !config.postmarkWebhookSecret) return false;
+  const pass = Buffer.from(h.slice(6), 'base64').toString().split(':').slice(1).join(':');
+  return constantTimeEqual(pass, config.postmarkWebhookSecret);
+};
 const constantTimeEqual = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 const SEC_HEADERS = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: https://*.tile.openstreetmap.org",
+  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; worker-src 'self' blob:; img-src 'self' data: https://*.tile.openstreetmap.org",
   ...(isProduction() ? { 'Strict-Transport-Security': 'max-age=63072000; includeSubDomains' } : {}),
 };
 const send = (res, code, body, type = 'application/json') => {
@@ -146,13 +153,13 @@ export function createServer(store, deps = {}) {
     store.save();
     return { ok: true, id: r.id, message: 'Request received. We respond within 45 days.' };
   });
-  route('POST', '/webhooks/postmark', null, ({ body, query }) => {
-    need(config.postmarkWebhookSecret && constantTimeEqual(query.get('token') || '', config.postmarkWebhookSecret), 401, 'bad token');
+  route('POST', '/webhooks/postmark', null, ({ body, req }) => {
+    need(webhookAuthorized(config, req), 401, 'bad credentials');
     const r = handleEmailEvent(store, body); store.save(); return r;
   });
 
-  route('POST', '/webhooks/postmark-inbound', null, ({ body, query }) => {
-    need(config.postmarkWebhookSecret && constantTimeEqual(query.get('token') || '', config.postmarkWebhookSecret), 401, 'bad token');
+  route('POST', '/webhooks/postmark-inbound', null, ({ body, req }) => {
+    need(webhookAuthorized(config, req), 401, 'bad credentials');
     const r = handleInbound(store, body); store.save(); return r;
   });
   const sendVerification = async (org, user, email, what) => {
@@ -784,6 +791,7 @@ export function createServer(store, deps = {}) {
       // Super Admin portal: its own page and script (the API enforces every permission; the page holds no data).
       if (req.method === 'GET' && (url.pathname === '/admin' || url.pathname === '/admin/'))
         return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/admin.html'), 'utf8'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/main.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/main.js')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/admin.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/admin.js')).pipe(res); }
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html'))
         return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8'), 'text/html; charset=utf-8');
@@ -815,12 +823,25 @@ export function createServer(store, deps = {}) {
         res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${r.name.replace(/"/g, '')}"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' });
         return fs.createReadStream(r.file).pipe(res);
       }
-      if (req.method === 'GET' && url.pathname.startsWith('/verify/')) {
-        const p = unsign(url.pathname.slice(8));
+      if ((req.method === 'GET' || req.method === 'POST') && url.pathname.startsWith('/verify/')) {
+        // GET shows a confirmation page and changes nothing. Only the POST activates the account, so a link
+        // prefetched by a mail scanner cannot confirm anyone.
+        const token = url.pathname.slice(8);
+        const p = unsign(token);
         const org = p?.o && store.get('orgs', p.o);
-        const ok = org && ['buyer', 'subscriber'].includes(org.kind) && Date.now() - p.t < 7 * 864e5;
-        if (ok && org.status === 'pending_verification') { org.status = 'active'; org.verifiedAt = now(); org.verifiedBy = 'email'; store.put('orgs', org); store.audit({ actor: 'email', orgId: org.id, action: 'buyer.verify' }); store.save(); }
-        return send(res, ok ? 200 : 400, `<!doctype html><meta name=viewport content="width=device-width"><body style="font-family:sans-serif;max-width:520px;margin:60px auto;padding:0 16px">${ok ? `<h1>Email confirmed</h1><p>${org.kind === 'buyer' ? 'You can sign in and post bid requests now.' : 'Your 14-day trial has started. Sign in to search projects.'}</p><p><a href="/">Sign in</a></p>` : '<h1>Link expired or invalid</h1><p>Sign up again or contact support.</p>'}</body>`, 'text/html; charset=utf-8');
+        const valid = org && ['buyer', 'subscriber'].includes(org.kind) && Date.now() - p.t < 7 * 864e5;
+        const page = (code, inner) => send(res, code, `<!doctype html><meta name=viewport content="width=device-width"><body style="font-family:sans-serif;max-width:520px;margin:60px auto;padding:0 16px">${inner}</body>`, 'text/html');
+        const signIn = '<p><a href="/">Sign in</a></p>';
+        if (!valid) return page(400, '<h1>This link is invalid or has expired</h1><p>Sign up again or ask BUILDINTEL support for a new link.</p>');
+        if (req.method === 'GET') {
+          if (org.status !== 'pending_verification') return page(200, `<h1>Email already confirmed</h1>${signIn}`);
+          return page(200, `<h1>Confirm your email</h1><p>Press the button to confirm this address and start using BUILDINTEL.</p><form method="POST" action="/verify/${token}"><button type="submit">Confirm email</button></form>`);
+        }
+        if (org.status === 'pending_verification') {
+          org.status = 'active'; org.verifiedAt = now(); org.verifiedBy = 'email'; store.put('orgs', org);
+          store.audit({ actor: 'email', orgId: org.id, action: 'buyer.verify' }); store.save();
+        }
+        return page(200, `<h1>Email confirmed</h1><p>${org.kind === 'buyer' ? 'You can sign in and post bid requests now.' : 'Your 14-day trial has started. Sign in to search projects.'}</p>${signIn}`);
       }
       if (req.method === 'POST' && url.pathname === '/webhooks/stripe') {
         const raw = await readBody(req);

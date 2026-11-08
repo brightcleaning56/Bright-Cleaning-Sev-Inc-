@@ -141,7 +141,10 @@ test('HTTP: buyer signup → email verification link → post request; buyers bl
   const req = { title: 'Final clean, new clinic', address: '1200 SE Delaware Ave', city: 'Ankeny', state: 'IA', squareFeet: 15000, projectType: 'medical', services: ['post_construction'], dueDate: future() };
   assert.equal((await call('POST', '/api/requests', req, tok)).status, 400); // not verified yet
   const link = w.store.list('messages', m => m.kind === 'verification')[0].link;
-  assert.equal((await fetch(link.replace(config.baseUrl, base))).status, 200);
+  const verifyUrl = link.replace(config.baseUrl, base);
+  assert.equal((await fetch(verifyUrl)).status, 200, 'the link opens a confirmation page');
+  assert.equal(w.store.list('orgs', o => o.name === 'Ryan Companies')[0].status, 'pending_verification', 'opening the link changes nothing');
+  assert.equal((await fetch(verifyUrl, { method: 'POST' })).status, 200, 'the confirmation button activates the account');
   // A confirmed email is not authority to publish construction projects: BUILDINTEL staff verify the company first.
   const blocked = await call('POST', '/api/requests', req, tok);
   assert.equal(blocked.status, 409); assert.match(blocked.body.error, /Company verified as a publisher/);

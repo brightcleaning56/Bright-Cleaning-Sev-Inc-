@@ -138,7 +138,7 @@ test('HTTP: subscriber signup → verify → search; buyers and unverified accou
   const tok = (await call('POST', '/api/login', { email: 'jo@prairie.test', password: 'long enough password' })).body.token;
   assert.equal((await call('GET', '/api/projects', undefined, tok)).status, 403); // must confirm email first
   const link = store.list('messages', m => m.kind === 'verification').pop().link;
-  await fetch(link.replace(config.baseUrl, base));
+  await fetch(link.replace(config.baseUrl, base), { method: 'POST' }); // the confirmation button posts
   const res = await call('GET', '/api/projects?city=ankeny', undefined, tok);
   assert.equal(res.status, 200); assert.equal(res.body.total, 2);
   const detail = await call('GET', '/api/projects/' + res.body.results.find(r => r.permitId === 'A-1').id, undefined, tok);
