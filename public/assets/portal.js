@@ -55,6 +55,9 @@
     var c = $('page-content');
     if (!data) { c.innerHTML = signinHtml(); bindSignin(); return; }
     var d = data, html = '';
+    // Bell: how many proposals are waiting for a decision.
+    var waiting = (d.proposals || []).filter(function (p) { return p.actionable; }).length, bn = $('bellN');
+    if (bn) { bn.textContent = waiting; bn.hidden = !waiting; }
     if (page === 'overview') {
       var open = d.invoices.reduce(function (t, i) { return t + i.balance; }, 0);
       var openCount = d.invoices.filter(function (i) { return i.balance > 0; }).length;
@@ -329,11 +332,11 @@
   }
 
   function showSignedIn() {
-    $('main-nav').hidden = false; $('who').hidden = false; $('requestBtn').hidden = false;
+    $('main-nav').hidden = false; $('who').hidden = false; $('requestBtn').hidden = false; $('bellBtn').hidden = false;
     $('whoEmail').textContent = email; $('avatar').textContent = (email[0] || 'B').toUpperCase();
   }
   function hideSignedIn() {
-    $('main-nav').hidden = true; $('who').hidden = true; $('requestBtn').hidden = true;
+    $('main-nav').hidden = true; $('who').hidden = true; $('requestBtn').hidden = true; $('bellBtn').hidden = true;
   }
   function load(token) {
     return fetch('/api/portal/me', { headers: { Authorization: 'Bearer ' + token } }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
@@ -353,6 +356,7 @@
   $('requestBtn').addEventListener('click', function () {});
 
   document.addEventListener('click', function (e) { var g = e.target.closest && e.target.closest('[data-go]'); if (g && data) setPage(g.getAttribute('data-go')); });
+  document.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('[data-bell]') && data) setPage('proposals'); });
   document.addEventListener('click', function (e) {
     var r = e.target.closest && e.target.closest('[data-request]'); if (!r || !data) return;
     requestPreset = REQUEST_TYPES[r.getAttribute('data-request')] || ''; setPage('request');
