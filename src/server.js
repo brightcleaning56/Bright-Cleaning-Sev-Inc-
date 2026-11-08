@@ -43,6 +43,7 @@ import { sendEmail } from './outbound.js';
 import { searchProjects, projectDetail, trackProject, saveSearch, exportCsv, collectAlerts, contractors, contractorDetail, planningSignals, commandCenter, mapPoints, marketActivity } from './leads.js';
 import { LEAD_PLANS, ALL_STATES, leadAccess } from './billing.js';
 import { notificationPrefs } from './digest.js';
+import { planComparison } from './entitlements.js';
 import { hashPassword, verifyPassword, createSession, sessionUser, revokeSession, sign, unsign, rateLimit, verifyStripeSignature } from './security.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -772,6 +773,7 @@ export function createServer(store, deps = {}) {
 
   // billing
   route('GET', '/api/plans', null, () => PLANS);
+  route('GET', '/api/plan-comparison', null, () => planComparison());
   route('POST', '/api/billing/checkout', 'owner', async ({ body, user }) => {
     need((PLANS[body.plan] || LEAD_PLANS[body.plan]) && !['internal', 'trial'].includes(body.plan), 400, 'unknown plan');
     const r = await createCheckout(store.get('orgs', user.orgId), body.plan, deps); need(r.ok, 400, r.error); return r;

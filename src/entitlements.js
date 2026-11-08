@@ -64,3 +64,22 @@ export function usage(store, org) {
     exportRowsThisMonth: org.exportUsage?.[month] || 0,
     activePublications: store.list('publications', p => p.publisherOrgId === org.id && ['published', 'in_review'].includes(p.status)).length };
 }
+
+/** Plain-language summary of one subscriber plan, generated from the same fields the limits use. */
+export function planSummary(key) {
+  const p = CATALOG[key];
+  if (!p || p.line !== 'subscriber' || key === 'free' || key === 'internal') return null;
+  const lines = [
+    p.markets === 1 ? 'Projects in 1 state' : p.markets >= 51 ? 'Projects in every state' : `Projects in up to ${p.markets} states`,
+    p.seats === 1 ? '1 user' : `Up to ${p.seats} users`,
+    p.savedSearches ? `${p.savedSearches} saved searches with daily email alerts` : 'No saved searches',
+    p.contactDetails ? 'Verified contact details for general contractors' : 'No contact details',
+    p.exportsPerMonth ? `Export up to ${p.exportsPerMonth.toLocaleString('en-US')} rows a month` : 'No exports',
+    p.takeoff === 'advanced' ? 'Advanced takeoff and estimating' : 'Basic takeoff',
+  ];
+  const price = key === 'trial' ? 'Free for 14 days, no card' : p.monthly === 0 ? 'Free' : p.monthly == null ? 'Custom price, talk to us' : `$${p.monthly}/month`;
+  return { key, name: p.name, price, priceNote: p.monthly ? PRICE_STATUS : null, lines };
+}
+export function planComparison() {
+  return ['trial', 'local', 'professional', 'growth', 'enterprise'].map(planSummary).filter(Boolean);
+}

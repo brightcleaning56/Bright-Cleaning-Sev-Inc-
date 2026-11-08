@@ -743,8 +743,24 @@ async function projectView(id, body) {
   if (!CC.p || CC.p.id !== id) { body.innerHTML = `<div class="empty">Project not found or outside your territory. <a href="#" id="bk2">Back to projects</a></div>`; $('#bk2').onclick = ev => { ev.preventDefault(); history.replaceState(null, '', location.pathname); render(); }; }
 }
 
+// Plain-language plan comparison on the sign-up screen. Prices come from the server and are labelled as proposed.
+async function renderPlanComparison(sel) {
+  const el = document.querySelector(sel); if (!el) return;
+  const plans = await fetch('/api/plan-comparison').then(r => r.json()).catch(() => []);
+  if (!plans.length) return;
+  el.innerHTML = '<h2 style="text-align:center;margin-bottom:4px">Choose a plan</h2>'
+    + '<p style="text-align:center;color:var(--muted);margin-top:0">What each plan includes, in plain terms. Start with the free 14-day trial.</p>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">'
+    + plans.map(p => '<div style="border:1px solid var(--line,#ddd);border-radius:10px;padding:14px;background:var(--card,#fff)">'
+      + '<h3 style="margin:0">' + esc(p.name) + '</h3>'
+      + '<div style="font-size:22px;margin:6px 0">' + esc(p.price) + '</div>'
+      + (p.priceNote ? '<small style="color:var(--muted)">' + esc(p.priceNote) + '</small>' : '')
+      + '<ul style="padding-left:18px;margin:10px 0 0">' + p.lines.map(l => '<li>' + esc(l) + '</li>').join('') + '</ul></div>').join('')
+    + '</div>';
+}
 function subscriberSignupView() {
-  $('#app').innerHTML = `<form class="login" id="sf"><h1>Find construction leads</h1><p>New commercial projects from city permit records, with timelines and who to contact. 14 days free, no card needed.</p>
+  setTimeout(() => renderPlanComparison('#plancmp'), 0); // after the form is drawn, so the handlers below bind to it
+  $('#app').innerHTML = `<div id="plancmp" style="max-width:920px;margin:0 auto 18px"></div><form class="login" id="sf"><h1>Find construction leads</h1><p>New commercial projects from city permit records, with timelines and who to contact. 14 days free, no card needed.</p>
   <label for="c">Company</label><input id="c" required>
   <label for="t">Your trade</label><input id="t" placeholder="e.g. Commercial cleaning, Electrical, Roofing" required>
   <label for="st">State you want leads in</label><input id="st" maxlength="2" placeholder="IA" required>
