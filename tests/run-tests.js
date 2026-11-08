@@ -2391,10 +2391,18 @@ async function startServer(env, dataDir) {
   await check('Command Center', 'Every live metric loads without error and its drill-down lists exactly the records behind the number (count and total agree) for 7/30/365-day periods; unknown metric 404; signed-out 401', async () => {
     const bad = [];
     for (const d of [7, 30, 365]) {
+      // Card and drill-down are two requests. Background work (webhooks, sweeps) can add a record between them,
+      // so a mismatch is re-read once; it only fails if the two still disagree on a stable read.
+      const readBoth = async (key, days) => {
+        const mm = (await req('GET', '/api/admin/command-center/metrics?days=' + days, { token: T })).data.metrics.find(z => z.key === key);
+        const dd = (await req('GET', `/api/admin/command-center/drill/${key}?days=${days}`, { token: T })).data;
+        return { mm, dd };
+      };
       const m = (await req('GET', '/api/admin/command-center/metrics?days=' + d, { token: T })).data;
-      for (const x of m.metrics) {
-        if (x.error) { bad.push(`${x.key}@${d}: ${x.error}`); continue; }
-        const dr = (await req('GET', `/api/admin/command-center/drill/${x.key}?days=${d}`, { token: T })).data;
+      for (const x0 of m.metrics) {
+        if (x0.error) { bad.push(`${x0.key}@${d}: ${x0.error}`); continue; }
+        let x = x0, dr = (await req('GET', `/api/admin/command-center/drill/${x0.key}?days=${d}`, { token: T })).data;
+        if (dr.count !== x.count || (x.count <= 200 && dr.rows.length !== x.count)) { const again = await readBoth(x0.key, d); if (again.mm) x = again.mm; dr = again.dd; }
         const sum = dr.rows.reduce((s2, r) => s2 + (Number(r.amount) || 0), 0);
         if (dr.count !== x.count || (x.count <= 200 && dr.rows.length !== x.count)) bad.push(`${x.key}@${d}: card ${x.count} vs list ${dr.rows.length}`);
         if (x.amount != null && x.count <= 200 && Math.abs(sum - x.amount) > 0.01) bad.push(`${x.key}@${d}: total ${x.amount} vs ${sum}`);
