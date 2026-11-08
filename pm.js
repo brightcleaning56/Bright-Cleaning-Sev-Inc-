@@ -175,7 +175,9 @@ module.exports = function mountPM(app, ctx) {
     const step = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, once: 0 }[freq];
     if (step == null) return res.status(400).json({ error: 'Choose a frequency: once, daily, weekly, biweekly or monthly.' });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return res.status(400).json({ error: 'Start date must be a date.' });
-    const n = step ? count : 1, ids = [], status = p.dispatch_approved_by ? 'Scheduled' : 'Tentative', title = `${(SERVICES[p.service] || {}).label || 'Service'} – ${p.name || number(p)}`;
+    // Once the job is contracted (office sign-off) the visits are scheduled: staff see them and the customer sees them in the portal.
+    const contracted = ['Contracted', 'Ready to mobilize', 'Mobilization', 'In Progress', 'Quality Review', 'Completed'].includes(p.status);
+    const n = step ? count : 1, ids = [], status = (p.dispatch_approved_by || contracted) ? 'Scheduled' : 'Tentative', title = `${(SERVICES[p.service] || {}).label || 'Service'} – ${p.name || number(p)}`;
     for (let i = 0; i < n; i++) {
       const d = new Date(start + 'T12:00:00Z'); if (freq === 'monthly') d.setUTCMonth(d.getUTCMonth() + i); else d.setUTCDate(d.getUTCDate() + i * step);
       const ds = d.toISOString().slice(0, 10);
@@ -248,7 +250,7 @@ module.exports = function mountPM(app, ctx) {
   // Status changes go through the same guard as the register route.
   app.post('/api/admin/pm/projects/:id/status', auth, (req, res) => {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
-    const to = (req.body || {}).status, ok = ['Planning', 'Ready to mobilize', 'In Progress', 'Quality Review', 'On Hold', 'Completed', 'Archived'];
+    const to = (req.body || {}).status, ok = ['Planning', 'Contracted', 'Ready to mobilize', 'In Progress', 'Quality Review', 'On Hold', 'Completed', 'Archived'];
     if (!ok.includes(to)) return res.status(400).json({ error: 'Choose a valid status.' });
     if (p.status === 'Completed' && !['Completed', 'Archived'].includes(to)) return res.status(409).json({ error: 'A completed project cannot be reopened here. Record a change order for new work.' });
     const g = guard(p, to); if (g) return res.status(409).json({ error: g });

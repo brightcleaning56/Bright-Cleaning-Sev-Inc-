@@ -558,6 +558,43 @@ async function startServer(env, dataDir) {
     assert(reminded === 0 && manual.status === 200 && mailsTo('optout@test.test', m0).length === 1, JSON.stringify({ reminded, manual: manual.status }));
     return 'opted-out customer: 0 automatic reminders; manual send still emailed (1 message)';
   });
+
+  await check('Flow', 'Approved job: office sign-off makes the project Contracted; its visits are Scheduled; an unsigned job stays Planning with Tentative visits', async () => {
+    const Database2 = require('../node_modules/better-sqlite3');
+    const db2e = id => { const d = new Database2(require('path').join(globalThis.__dataDir, 'brightclean.db'), { readonly: true }); const r = d.prepare('SELECT email FROM contracts WHERE id=?').get(id); d.close(); return r && r.email; };
+    const mk = async (name, email) => {
+      const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: name, company: name + ' Co', email, project_name: name + ' job', site_address: '9 Flow St', scope: 'Weekly office cleaning', labor_hours: 20, labor_rate: 30, margin_pct: 30 } });
+      const id = r.data.estimate.id;
+      await req('POST', '/api/admin/estimates/' + id + '/send', { token: T });
+      const d = new Database2(require('path').join(globalThis.__dataDir, 'brightclean.db'), { readonly: true });
+      const tok = d.prepare('SELECT public_token FROM estimates WHERE id=?').get(id).public_token; d.close();
+      const ap = await req('POST', '/api/proposal/' + tok + '/respond', { json: { decision: 'approve', signer_name: name + ' Signer', signer_title: 'Owner', agree: true } });
+      return { id, approved: ap.status === 200 };
+    };
+    const A = await mk('Flowa', 'flowa@test.test');
+    const B = await mk('Flowb', 'flowb@test.test');
+    const db = new Database2(require('path').join(globalThis.__dataDir, 'brightclean.db'));
+    const kA = db.prepare('SELECT id FROM contracts WHERE estimate_id=?').get(A.id), kB = db.prepare('SELECT id FROM contracts WHERE estimate_id=?').get(B.id);
+    const pA = kA && db.prepare('SELECT id, status FROM projects WHERE contract_id=?').get(kA.id);
+    const pB = kB && db.prepare('SELECT id, status FROM projects WHERE contract_id=?').get(kB.id);
+    db.close();
+    assert(A.approved && B.approved && kA && kB && pA && pB, JSON.stringify({ A, B, kA, kB, pA, pB }));
+    assert(db2e(kA.id) === 'flowa@test.test', 'contract has no customer email, so the portal would not show the job');
+    assert(pA.status === 'Planning', 'project should start in Planning: ' + pA.status);
+    const sign = await req('POST', '/api/admin/contracts2/' + kA.id + '/countersign', { token: T, json: { name: 'Owner Manager' } });
+    assert(sign.status === 200, 'office sign-off failed: ' + JSON.stringify(sign.data));
+    const wA = await req('POST', '/api/admin/pm/projects/' + pA.id + '/work-orders', { token: T, json: { frequency: 'weekly', count: 2, start: '2026-12-07' } });
+    const wB = await req('POST', '/api/admin/pm/projects/' + pB.id + '/work-orders', { token: T, json: { frequency: 'weekly', count: 2, start: '2026-12-07' } });
+    const d2 = new Database2(require('path').join(globalThis.__dataDir, 'brightclean.db'), { readonly: true });
+    const stA = d2.prepare('SELECT status FROM projects WHERE id=?').get(pA.id).status;
+    const visA = d2.prepare("SELECT status FROM visits WHERE project_id=? AND type='Work order'").all(pA.id).map(v => v.status);
+    const visB = d2.prepare("SELECT status FROM visits WHERE project_id=? AND type='Work order'").all(pB.id).map(v => v.status);
+    d2.close();
+    assert(stA === 'Contracted', 'project after sign-off: ' + stA);
+    assert(wA.status === 201 && wA.data.status === 'Scheduled' && visA.length === 2 && visA.every(s => s === 'Scheduled'), JSON.stringify({ wA: wA.data, visA }));
+    assert(wB.status === 201 && wB.data.status === 'Tentative' && visB.every(s => s === 'Tentative'), JSON.stringify({ wB: wB.data, visB }));
+    return 'sign-off: project Planning -> Contracted; 2 weekly visits Scheduled (staff + portal see them); unsigned job: 2 visits Tentative';
+  });
   await check('Automation', 'Invoice reminders: 3 days before due, 1 day overdue, 7 days overdue, once each; paid invoices skipped', async () => {
     await req('PUT', '/api/admin/settings', { token: T, json: { auto_invoice_reminders: true } });
     const due = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);

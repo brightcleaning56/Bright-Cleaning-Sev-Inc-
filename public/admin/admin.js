@@ -200,7 +200,7 @@
     estimates: ['Draft', 'Ready', 'Sent', 'Viewed', 'Approved', 'Declined', 'Expired'],
     contracts: ['Draft', 'Review', 'Active', 'Renewal Due', 'Closed'],
     signature: ['Not sent', 'Sent', 'Viewed', 'Customer signed', 'Signed', 'Declined'],
-    projects: ['Planning', 'Mobilization', 'In Progress', 'Quality Review', 'Completed', 'On Hold'],
+    projects: ['Planning', 'Contracted', 'Mobilization', 'In Progress', 'Quality Review', 'Completed', 'On Hold'],
     invoices: ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue', 'Void']
   };
   const TONE = {
@@ -208,7 +208,7 @@
     Draft: '', Ready: 'blue', Sent: 'blue', Viewed: 'amber', Approved: 'green', Declined: 'red', Expired: 'red',
     Review: 'amber', Active: 'green', 'Renewal Due': 'amber', Closed: '',
     'Not sent': '', Signed: 'green',
-    Planning: 'blue', Mobilization: 'amber', 'In Progress': 'blue', 'Quality Review': 'amber', Completed: 'green', 'On Hold': 'red',
+    Planning: 'blue', Contracted: 'purple', Mobilization: 'amber', 'In Progress': 'blue', 'Quality Review': 'amber', Completed: 'green', 'On Hold': 'red',
     'Partially Paid': 'amber', Paid: 'green', Overdue: 'red', Void: ''
   };
   const badge = s => `<span class="badge ${TONE[s] || ''}">${esc(s || '—')}</span>`;
@@ -1458,13 +1458,13 @@
           <div class="wide"><label>Scope of work</label><textarea name="scope" rows="5">${esc(k.scope || '')}</textarea></div><div class="wide"><label>Terms and conditions</label><textarea name="terms" rows="8">${esc(k.terms || d.default_terms)}</textarea></div></form>
         ${d.versions.length > 1 ? `<h3 class="secth">Versions</h3>${d.versions.map(v => `<p style="margin:3px 0"><button class="linklike" data-kv="${v.id}">v${v.version || 1}</button> ${badge(v.status)} ${esc(v.signature_status || '')} · ${money(v.value)}</p>`).join('')}` : ''}
         <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity yet.</p>'}</div>`,
-      footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="kPdf">PDF</button>${!signed ? '<button class="btn ghost" id="kSave">Save</button>' : ''}${!signed && k.status !== 'Superseded' ? `<button class="btn" id="kSend">${k.link ? 'Re-send link' : 'Send for signature'}</button>` : ''}${k.signature_status === 'Customer signed' ? '<button class="btn" id="kCs">Countersign</button>' : ''}${exec ? '<button class="btn ghost" id="kAmend">Amend</button><button class="btn ghost" id="kRenew">Renew</button>' : ''}` });
+      footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="kPdf">PDF</button>${!signed ? '<button class="btn ghost" id="kSave">Save</button>' : ''}${!signed && k.status !== 'Superseded' ? `<button class="btn" id="kSend">${k.link ? 'Re-send link' : 'Send for signature'}</button>` : ''}${(k.signature_status === 'Customer signed' || k.proposal_status === 'Approved') && !k.countersigned_at ? '<button class="btn" id="kCs">Countersign</button>' : ''}${exec ? '<button class="btn ghost" id="kAmend">Amend</button><button class="btn ghost" id="kRenew">Renew</button>' : ''}` });
     if (signed) $$('#kForm input, #kForm textarea, #kForm select').forEach(x => x.disabled = true);
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     const save = () => { const f = formObj($('#kForm')); return api('/api/admin/contracts2/' + id, { method: 'PATCH', json: { ...f, auto_renew: !!f.auto_renew } }); };
     act('#kSave', async () => { try { await save(); toast('Saved'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
     act('#kSend', async () => { try { await save(); const r = await api(`/api/admin/contracts2/${id}/send`, { method: 'POST' }); try { await navigator.clipboard.writeText(r.link); } catch { /* */ } toast(r.emailed ? 'Sent to the customer for signature (link copied)' : 'Signing link created and copied — email could not be sent, share the link'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
-    act('#kCs', async () => { const name = prompt('Type your full name to countersign and execute this contract:'); if (!name) return; try { await api(`/api/admin/contracts2/${id}/countersign`, { method: 'POST', json: { name } }); toast('Countersigned — contract executed'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
+    act('#kCs', async () => { const name = prompt('Office sign-off: type your full name to sign off this contract. The project becomes Contracted.'); if (!name) return; try { await api(`/api/admin/contracts2/${id}/countersign`, { method: 'POST', json: { name } }); toast('Signed off — contract executed, project is Contracted'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
     act('#kPdf', () => downloadFile({ name: k.number + '.pdf', url: `/api/admin/contracts2/${id}/pdf` }));
     act('#kAmend', async () => { const reason = prompt('What does the amendment change?'); if (!reason) return; try { const r = await api(`/api/admin/contracts2/${id}/amend`, { method: 'POST', json: { reason } }); toast('Amendment drafted'); loadRegister('contracts'); openContract(r.id); } catch (e) { toast(e.message, true); } });
     act('#kRenew', async () => { const pct = prompt('Price change for the renewal term (%), e.g. 3 or 0:', '0'); if (pct === null) return; try { const r = await api(`/api/admin/contracts2/${id}/renew`, { method: 'POST', json: { increase_pct: Number(pct) || 0 } }); toast(`Renewal drafted: ${r.start_date} to ${r.end_date}`); loadRegister('contracts'); openContract(r.id); } catch (e) { toast(e.message, true); } });
@@ -2797,7 +2797,7 @@
 
   // ---------- Project Management Center (mockup layout + workspace) ----------
   const pj = { tab: 'all', page: 1, list: [], kpis: {}, services: {}, sel: null, wtab: 'overview', d: null };
-  const PJ_TABS = [['all', 'All projects'], ['Planning', 'Planning'], ['awaiting', 'Awaiting approval'], ['Ready to mobilize', 'Ready to mobilize'], ['In Progress', 'Active'], ['On Hold', 'On hold'], ['Completed', 'Completed'], ['Archived', 'Archived']];
+  const PJ_TABS = [['all', 'All projects'], ['Planning', 'Planning'], ['Contracted', 'Contracted'], ['awaiting', 'Awaiting approval'], ['Ready to mobilize', 'Ready to mobilize'], ['In Progress', 'Active'], ['On Hold', 'On hold'], ['Completed', 'Completed'], ['Archived', 'Archived']];
   const pjMatch = (p, t) => t === 'all' ? p.status !== 'Archived' : t === 'awaiting' ? p.awaiting_approval : t === 'In Progress' ? ['In Progress', 'Quality Review', 'Mobilization'].includes(p.status) : p.status === t;
   ['#pjSearch', '#pjSvc', '#pjMgr'].forEach(x => $(x).addEventListener(x === '#pjSearch' ? 'input' : 'change', () => { pj.page = 1; renderProjects(); }));
   async function loadProjects() {

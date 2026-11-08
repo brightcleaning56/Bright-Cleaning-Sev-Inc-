@@ -24,7 +24,7 @@ module.exports = function mountContracts(app, ctx) {
   const who = req => (req.user && req.user.email) || null;
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
   const number = k => `C-${String(k.created_at || '').slice(0, 4) || '2026'}-${1000 + k.id}${k.version > 1 ? '-v' + k.version : ''}`;
-  const get = id => { const k = db.prepare('SELECT * FROM contracts WHERE id=?').get(Number(id)); return k && { ...k, number: number(k) }; };
+  const get = id => { const k = db.prepare('SELECT * FROM contracts WHERE id=?').get(Number(id)); if (!k) return k; const src = k.estimate_id ? db.prepare('SELECT status FROM estimates WHERE id=?').get(k.estimate_id) : null; return { ...k, number: number(k), proposal_status: src ? src.status : null }; };
   const base = () => process.env.PUBLIC_BASE_URL || process.env.PUBLIC_URL || 'https://brightclean.net';
   const locked = k => ['Customer signed', 'Signed'].includes(k.signature_status);
   const executed = k => ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status);
@@ -86,10 +86,13 @@ module.exports = function mountContracts(app, ctx) {
   app.post('/api/admin/contracts2/:id/countersign', auth, (req, res) => {
     const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can countersign contracts.' });
-    if (k.signature_status !== 'Customer signed') return res.status(409).json({ error: 'The customer has not signed yet.' });
+    const approvedOnline = k.proposal_status === 'Approved';
+    if (k.signature_status !== 'Customer signed' && !approvedOnline) return res.status(409).json({ error: 'The customer has not approved or signed this contract yet.' });
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Type your full name to countersign.' });
     db.prepare("UPDATE contracts SET signature_status='Signed', status='Active', countersigned_by=?, countersigned_at=?, updated_at=? WHERE id=?").run(`${name} (${who(req)})`, now(), now(), k.id);
     if (k.parent_id) { db.prepare("UPDATE contracts SET status='Superseded', superseded_by=? WHERE (id=? OR parent_id=?) AND id<>? AND status<>'Closed'").run(k.id, k.parent_id, k.parent_id, k.id); db.prepare('UPDATE projects SET contract_id=? WHERE contract_id IN (SELECT id FROM contracts WHERE (id=? OR parent_id=?) AND id<>?)').run(k.id, k.parent_id, k.parent_id, k.id); }
+    // Office sign-off moves the project to Contracted (it can now be scheduled).
+    db.prepare("UPDATE projects SET status=CASE WHEN status='Planning' THEN 'Contracted' ELSE status END, updated_at=? WHERE contract_id=?").run(now(), k.id);
     logAction(req, 'countersigned', 'contract', k.id, `${k.number} by ${name} — executed`);
     res.json({ contract: get(k.id) });
   });
