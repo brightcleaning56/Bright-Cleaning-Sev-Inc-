@@ -172,7 +172,7 @@ async function check(area, name, fn) {
     d.querySelector('#pjWork [data-wt="tasks"]').click(); await sleep(80);
     const plan = !!$('#planForm') || d.querySelectorAll('#pjBody .tk').length > 0;
     $('#pjBack').click(); await sleep(800);
-    assert(kpis === 7 && tabs === 8 && flow === 8 && /Project progress/.test(side) && /Open project workspace/.test(side) && wt.length === 14 && ok.length === 14 && rdy === 6 && plan && !$('#pjList').hidden, JSON.stringify({ kpis, tabs, flow, wt: wt.length, ok: ok.length, rdy }));
+    assert(kpis === 7 && tabs === 9 && flow === 8 && /Project progress/.test(side) && /Open project workspace/.test(side) && wt.length === 14 && ok.length === 14 && rdy === 6 && plan && !$('#pjList').hidden, JSON.stringify({ kpis, tabs, flow, wt: wt.length, ok: ok.length, rdy }));
     return `7 KPI tiles, 8 status tabs, 8-step workflow; details panel; workspace: ${ok.length}/14 tabs render; 6 readiness checks; work plan available`;
   });
   await check('Schedule UI', 'Dispatch center: 8 KPI cards, 4 tabs, side panel; add employee from the screen; job panel ranks crew and assigns; time sheets tab renders', async () => {
