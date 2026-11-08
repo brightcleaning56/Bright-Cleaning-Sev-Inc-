@@ -153,7 +153,20 @@ require('./complaints')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>ma
 require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./subscriptions')(app,{db,auth,logAction,clean,adminEmail});
-require('./portal')(app,{db,getMailer:()=>mailer,auth,syncLead,ops});
+// Same follow-up the emailed proposal link gets: approval creates a draft contract and planning project, and the office is told.
+const afterDecision=(e,decision)=>{
+  if(decision==='approve'&&ops&&ops.isOn('auto_handoff')&&!db.prepare("SELECT id FROM contracts WHERE estimate_id=? AND status<>'Closed'").get(e.id)){
+    const now=new Date().toISOString(),title=e.project_name||'Commercial cleaning services';
+    db.transaction(()=>{
+      const c=db.prepare("INSERT INTO contracts(estimate_id,customer_name,company,title,scope,value,status,signature_status,created_at) VALUES(?,?,?,?,?,?,'Draft','Not sent',?)").run(e.id,e.customer_name,e.company,title,e.scope,e.proposal_total,now);
+      db.prepare("INSERT INTO projects(contract_id,estimate_id,customer_id,customer_name,company,name,site_address,status,progress,created_at) VALUES(?,?,?,?,?,?,?,'Planning',0,?)").run(c.lastInsertRowid,e.id,custIdFor(e),e.customer_name,e.company,title,e.site_address,now);
+      db.prepare('UPDATE contracts SET customer_id=COALESCE(customer_id,?) WHERE id=?').run(custIdFor(e),c.lastInsertRowid);
+      db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('customer','approved','estimate',?,?,?)").run(e.id,'Contract #'+c.lastInsertRowid+' and project created',now);
+    })();
+  }
+  notify(`Proposal ${decision==='approve'?'approved':'declined'} — Bright Clean`,`${e.customer_name} (${e.company}) responded ${decision} to proposal #${e.id}. Project: ${e.project_name}.`,process.env.NOTIFY_EMAIL);
+};
+require('./portal')(app,{db,getMailer:()=>mailer,auth,syncLead,ops,afterDecision});
 require('./payments')(app,{db,logAction});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 app.use(express.static(path.join(ROOT,'public'),{setHeaders:(res,fp)=>{if(/\.(html|js|css|json)$/i.test(fp))res.setHeader('Cache-Control','no-cache')}}));

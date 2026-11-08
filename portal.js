@@ -3,7 +3,7 @@
 // Nothing reveals whether an email is on file: the sign-in request always answers the same way.
 const crypto = require('crypto');
 module.exports = function mountPortal(app, ctx) {
-  const { db, getMailer, auth, syncLead, ops } = ctx;
+  const { db, getMailer, auth, syncLead, ops, afterDecision } = ctx;
   // One proposal as the customer sees it in the portal. Only this customer's own proposal, never internal notes.
   const todayStr = () => new Date().toISOString().slice(0, 10);
   const numberOf = p => 'P-' + (String(p.created_at || '').slice(0, 4) || '2026') + '-' + String(1000 + p.id);
@@ -227,6 +227,7 @@ module.exports = function mountPortal(app, ctx) {
     db.prepare('UPDATE estimates SET status=?, updated_at=?, decided_at=?, decision_ip=?, decision_agent=? WHERE id=?')
       .run(status, dt, dt, clip(req.ip, 100), clip((req.headers && req.headers['user-agent']) || '', 300), e.id);
     if (typeof syncLead === 'function') syncLead(e.lead_id, decision === 'approve' ? 'approved' : 'declined', e.id);
+    if (typeof afterDecision === 'function') { try { afterDecision(e, decision); } catch (err) { console.error('portal decision follow-up failed', err.message); } }
     db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, decision === 'approve' ? 'approved proposal in client portal' : 'declined proposal in client portal', 'estimate', e.id, 'from the client portal', dt);
     if (decision === 'approve' && ops && ops.upsertCustomer) { try { ops.upsertCustomer({ name: e.customer_name, company: e.company, email: e.email, address: e.site_address }, 'approved proposal'); } catch { /* */ } }
     res.json({ ok: true, status, message: decision === 'approve' ? 'Thank you. Your approval was recorded and our team will confirm next steps.' : 'Thank you. Your decision was recorded.' });
