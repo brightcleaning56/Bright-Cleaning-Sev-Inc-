@@ -29,6 +29,7 @@
     return '<div class="panel"><table class="t"><thead><tr>' + head.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
       rows.map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
   }
+  function activeProps(d) { return (d.properties || []).filter(function (x) { return String(x.status || '').toLowerCase() !== 'archived'; }); }
   function visitsHtml(list, max) {
     if (!list.length) return empty('No scheduled visits yet', 'Confirmed cleaning visits will appear here.');
     return '<ul style="list-style:none;padding:0;margin:0">' + list.slice(0, max).map(function (v) {
@@ -59,8 +60,8 @@
       var openCount = d.invoices.filter(function (i) { return i.balance > 0; }).length;
       var pending = d.proposals.filter(function (p) { return p.status === 'Sent' || p.status === 'Viewed'; }).length;
       html = '<div class="grid stats">' +
-        '<article class="stat-card"><div class="stat-top">Active Properties <span class="stat-icon">▦</span></div><div class="stat-value">' + d.projects.length + '</div><div class="stat-note">' + (d.projects.length ? 'On your account' : 'None yet') + '</div></article>' +
-        '<article class="stat-card"><div class="stat-top">Upcoming Services <span class="stat-icon">▧</span></div><div class="stat-value">' + d.contracts.length + '</div><div class="stat-note">' + (d.contracts.filter(function (k) { return k.link; }).length ? d.contracts.filter(function (k) { return k.link; }).length + ' waiting for signature' : 'Nothing to sign') + '</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Active Properties <span class="stat-icon">▦</span></div><div class="stat-value">' + activeProps(d).length + '</div><div class="stat-note">' + (activeProps(d).length ? 'On your account' : 'None yet') + '</div></article>' +
+        '<article class="stat-card"><div class="stat-top">Upcoming Services <span class="stat-icon">▧</span></div><div class="stat-value">' + d.visits.filter(function (v) { return v.status !== 'Done'; }).length + '</div><div class="stat-note">' + (d.visits.filter(function (v) { return v.status !== 'Done'; }).length ? 'Confirmed visits' : 'None scheduled') + '</div></article>' +
         '<article class="stat-card"><div class="stat-top">Open Invoices <span class="stat-icon">＄</span></div><div class="stat-value">' + openCount + '</div><div class="stat-note">' + (open ? money(open) + ' balance due' : 'Nothing due') + '</div></article>' +
         '<article class="stat-card"><div class="stat-top">Pending Proposals <span class="stat-icon">▤</span></div><div class="stat-value">' + pending + '</div><div class="stat-note">' + (pending ? 'Review and approve' : 'Nothing to review') + '</div></article></div>';
       html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px">' +
