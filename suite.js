@@ -62,10 +62,11 @@ module.exports = function mountSuite(app, ctx) {
     if (!b.email && !clean(b.phone, 60)) errs.push('Enter an email or a phone number.');
     if (errs.length) return res.status(400).json({ error: errs.join(' ') });
     const source = clean(b.source, 60) || 'Manual entry';
-    const info = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,project_name,service,address,square_footage,bid_due_date,details,created_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(kind, clean(b.contact_name, 150), clean(b.company, 200), clean(b.email, 254), clean(b.phone, 60),
+    const origin = ['website', 'inbound_call', 'portal', 'api', 'manual', 'import'].includes(b.origin) ? b.origin : 'manual';
+    const info = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,project_name,service,address,square_footage,bid_due_date,details,created_at,origin)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(kind, clean(b.contact_name, 150), clean(b.company, 200), clean(b.email, 254), clean(b.phone, 60),
       clean(b.project_name, 200), clean(b.service, 120), clean(b.address, 500), clean(b.square_footage, 40), isDate(b.bid_due_date) ? b.bid_due_date : '',
-      `Source: ${source}\n${clean(b.details, 4000)}`.trim(), now());
+      `Source: ${source}\n${clean(b.details, 4000)}`.trim(), now(), origin);
     logAction(req, 'created', 'lead', info.lastInsertRowid, `${source}: ${clean(b.company || b.contact_name, 200)}`);
     const ops = getOps(); if (ops && (b.email || b.company)) ops.upsertCustomer({ name: b.contact_name, company: b.company, email: b.email, phone: b.phone, address: b.address }, source.toLowerCase());
     res.status(201).json({ id: info.lastInsertRowid });

@@ -683,7 +683,7 @@
         <div class="formsection">Follow-up</div>
         <div class="grid">
           <div class="f"><label for="ls">Status</label><select id="ls">${options(STATUS.leads, l.status)}</select></div>
-          <div class="f"><label for="lOrigin">Came from</label><select id="lOrigin">${[['website', 'Filled in our website form'], ['inbound_call', 'Called us'], ['portal', 'Client portal request'], ['outbound', 'Added by us to reach out'], ['api', 'Partner or API']].map(([v, t]) => `<option value="${v}"${(l.origin || 'website') === v ? ' selected' : ''}>${t}</option>`).join('')}</select><span class="hint">Decides how the AI writes to them: a thank-you for people who reached out, an introduction for people we added.</span></div>
+          <div class="f"><label for="lOrigin">Came from</label><select id="lOrigin">${[['website', 'Filled in our website form'], ['inbound_call', 'Called us'], ['portal', 'Client portal request'], ['manual', 'Added by our team (we are reaching out)'], ['import', 'Bulk list for staff to call'], ['api', 'Partner or API']].map(([v, t]) => `<option value="${v}"${(l.origin || 'website') === v ? ' selected' : ''}>${t}</option>`).join('')}</select><span class="hint">Decides how the AI writes to them: a thank-you for people who reached out, an introduction for people we added.</span></div>
           <div class="f wide"><label for="ln">Internal notes</label><textarea id="ln" placeholder="Calls, site walk notes, next steps. Only visible here.">${esc(l.notes || '')}</textarea></div>
           <div class="f wide"><label class="chk"><input type="checkbox" id="lCb" ${l.callback_requested ? 'checked' : ''}> Call back requested (automatic calls only go to leads marked this way)</label></div>
           <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
@@ -1947,6 +1947,7 @@
   // ---------- Manual lead ----------
   function newLead() {
     openForm({ title: 'New lead', sub: 'For calls, walk-ins and referrals', defs: [
+      { name: 'origin', label: 'How did this lead come in?', type: 'select', options: [['manual', 'Added by our team (we are reaching out)'], ['import', 'Bulk list for staff to call'], ['inbound_call', 'They called us'], ['website', 'Website form'], ['portal', 'Client portal'], ['api', 'Partner or API']] },
       { name: 'kind', label: 'Type', type: 'select', options: [['bid', 'Bid request'], ['inquiry', 'General inquiry']] },
       { name: 'source', label: 'Source', type: 'select', options: ['Phone call', 'Referral', 'Walk-in', 'Email', 'Bid invitation', 'Other'] },
       { name: 'contact_name', label: 'Contact name' }, { name: 'company', label: 'Company' },
