@@ -1695,16 +1695,15 @@
     watchForm($('#apprCard'), $('#apMsg')); watchForm($('#callbackForm'), $('#cbMsg'));
   }
   function updateSettingsChips(st, ph) {
-    const chip = (id, label, on, detail) => { const el = document.getElementById(id); if (!el) return; el.className = 'schip ' + (on === true ? 'ok' : on === false ? 'off' : 'warn'); el.textContent = label + (detail ? ': ' + detail : ''); };
-    chip('chipPhone', 'Phone', ph ? !!ph.connected : null, ph ? (ph.connected ? 'connected' : 'disconnected') : 'unknown');
+    const chip = (id, label, on, detail) => { const el = document.getElementById(id); if (!el) return; el.className = 'stile ' + (on === true ? 'ok' : on === false ? 'off' : 'warn'); const small = el.querySelector('small'); if (small) small.textContent = detail || ''; };
+    chip('chipPhone', 'Phone', ph ? !!ph.connected : null, ph ? (ph.connected ? 'Connected' : 'Disconnected') : 'Unknown');
     const mode = ph && ph.ai_receptionist ? ph.ai_receptionist.mode : null;
     chip('chipAi', 'AI assistant', mode ? mode !== 'off' : null, mode ? (mode === 'off' ? 'off' : 'on') : 'unknown');
     const s = (st && st.settings) || {};
     const autos = ['auto_proposal_reminders', 'auto_invoice_reminders', 'auto_handoff', 'auto_backup'];
     const onCount = autos.filter(k => s[k]).length;
-    chip('chipAuto', 'Automations', st ? onCount > 0 : null, st ? onCount + ' of ' + autos.length + ' on' : 'unknown');
-    chip('chipBackup', 'Backups', st ? !!s.auto_backup : null, st ? (s.auto_backup ? 'daily' : 'off') : 'unknown');
-    const note = document.getElementById('sBannerNote');
+    chip('chipAuto', 'Automations', st ? onCount > 0 : null, st ? onCount + ' of ' + autos.length + ' on' : 'Unknown');
+        const note = document.getElementById('sBannerNote');
     if (note) note.textContent = !st || !ph ? 'Some settings could not be loaded. Refresh to try again.' : ph.connected ? 'All systems operational' : 'Phone is not connected';
   }
   async function loadSettingsOverview() {
@@ -1764,12 +1763,13 @@
     b.onclick = async () => { if (!confirm('Sign out every other device and browser using your account? This device stays signed in.')) return;
       try { const r = await api('/api/admin/account/sign-out-everywhere', { method: 'POST', json: {} }); if (r.token) { token = r.token; localStorage.setItem(TOKEN_KEY, token); } pm.className = 'msg ok'; pm.textContent = r.message; } catch (e) { pm.className = 'msg err'; pm.textContent = e.message; } };
   }
+  const PHONE_ICON = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>';
   async function loadPhoneSettings() {
     let card = document.getElementById('phoneCard');
     if (!card) { card = document.createElement('div'); card.className = 'card'; card.id = 'phoneCard'; card.style.marginBottom = '16px'; document.getElementById('spPhone').appendChild(card); }
     let r; try { r = await api('/api/admin/phone/settings'); } catch (e) { card.innerHTML = `<h2>Phone</h2><p class="muted">${esc(e.message)}</p>`; return; }
     const warn = !r.ring_phones.length && r.render_forward_digits ? `<p class="msg err" style="margin:8px 0">The ring phone in Render (TWILIO_FORWARD_TO) has ${r.render_forward_digits} digits and isn't a valid US number, so incoming calls go straight to voicemail. Enter the phone(s) below instead.</p>` : '';
-    card.innerHTML = `<h2>Phone</h2>
+    card.innerHTML = `<h2><span class="cico">${PHONE_ICON}</span>Phone &amp; Call Settings</h2>
       <p class="muted">Calls to <b>${esc(r.number || 'your Twilio number')}</b> ring the phones below${r.softphone ? ' and this admin (browser phone on)' : ''}. Unanswered calls go to voicemail with a same-day follow-up.</p>
       <dl class="facts"><dt>Phone service</dt><dd>${r.connected ? '<span class="badge green">Connected</span>' : '<span class="badge amber">Not connected</span>'}</dd>
       <dt>Click-to-call</dt><dd>${r.can_dial && r.ring_phones.length ? '<span class="badge green">Ready</span>' : '<span class="badge amber">Needs a ring phone</span>'}</dd>
