@@ -145,7 +145,12 @@
         '<div class="panel"><h2>Notifications</h2><p class="muted">Turn off automatic reminders. Other emails from Bright Clean, such as invoices you are sent, still come through.</p><form id="notifyForm">' +
         box('proposals', 'Proposal follow-up reminders') + box('invoices', 'Invoice payment reminders') + box('messages', 'Replies to your messages') +
         '<p style="margin-top:14px"><button class="primary-button" type="submit">Save notifications</button></p></form><p class="msg" id="notifyMsg" role="status"></p></div></div>' +
-        '<div class="panel" style="margin-top:16px"><h2>Sessions</h2><p><button class="nav-item" id="signOut" type="button">Sign out on this device</button> ' +
+        '<div class="panel" style="margin-top:16px"><h2>Password</h2><p class="muted">' + (pf.has_password ? 'Change your password. Other devices will be signed out.' : 'Set a password so you can sign in without an email link.') + '</p><form id="pwSetForm">' +
+        (pf.has_password ? '<div class="field"><label>Current password</label><input name="current" type="password" autocomplete="current-password" required></div>' : '') +
+        '<div class="field" style="margin-top:12px"><label>New password (at least 10 characters)</label><input name="password" type="password" minlength="10" autocomplete="new-password" required></div>' +
+        '<div class="field" style="margin-top:12px"><label>Type it again</label><input name="confirm" type="password" minlength="10" autocomplete="new-password" required></div>' +
+        '<p style="margin-top:14px"><button class="primary-button" type="submit">Save password</button></p></form><p class="msg" id="pwSetMsg" role="status"></p></div>' +
+      '<div class="panel" style="margin-top:16px"><h2>Sessions</h2><p><button class="nav-item" id="signOut" type="button">Sign out on this device</button> ' +
         '<button class="nav-item" id="signOutAll" type="button">Sign out everywhere</button></p><p class="muted">Signing out everywhere ends every session on every device. Sign in again with a new link.</p></div>';
     }
     c.innerHTML = html;
@@ -171,6 +176,22 @@
       });
     });
     var so = $('signOut'); if (so) so.addEventListener('click', signOut);
+    var pwf = $('pwSetForm');
+    if (pwf) pwf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var fm = e.target, m = $('pwSetMsg');
+      if (fm.password.value !== fm.confirm.value) { m.textContent = 'The two passwords do not match.'; return; }
+      m.textContent = 'Saving…';
+      var body = { password: fm.password.value };
+      if (fm.current) body.current = fm.current.value;
+      fetch('/api/portal/password', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) {
+          if (x.ok) { session = x.j.session; try { sessionStorage.setItem(KEY, session); } catch (err) { /* */ } fm.reset(); toast(x.j.message); refreshData(); }
+          else { m.textContent = x.j.error || 'Could not save the password.'; }
+        })
+        .catch(function () { m.textContent = 'Could not save the password. Please try again.'; });
+    });
     var pfm = $('profForm');
     if (pfm) pfm.addEventListener('submit', function (e) {
       e.preventDefault(); $('profMsg').textContent = 'Saving…';
@@ -346,12 +367,37 @@
   });
 
   function signinHtml() {
-    return '<div class="panel"><h2>Sign in</h2><p class="muted">Enter your email. We send a one-time sign-in link. There is no password.</p>' +
+    return '<div class="panel"><h2>Sign in</h2><p class="muted">Enter your email and password.</p>' +
+      '<form id="pwLogin"><div class="field"><label>Email address</label><input name="email" type="email" required autocomplete="email"></div>' +
+      '<div class="field" style="margin-top:12px"><label>Password</label><input name="password" type="password" required autocomplete="current-password"></div>' +
+      '<p style="margin-top:14px"><button class="primary-button" type="submit">Sign in</button></p></form>' +
+      '<p class="msg" id="pwLoginMsg" role="status"></p></div>' +
+      '<div class="panel" style="margin-top:16px"><h2>No password yet?</h2><p class="muted">Enter your email and we will send a one-time sign-in link. After you sign in, you can set a password under Account Settings.</p>' +
       '<form id="pForm"><div class="field"><label>Email address</label><input name="email" type="email" required autocomplete="email"></div>' +
-      '<p style="margin-top:14px"><button class="primary-button" type="submit">Email me a sign-in link</button></p></form>' +
+      '<p style="margin-top:14px"><button class="nav-item sm" type="submit">Email me a sign-in link</button></p></form>' +
       '<p class="msg" id="pMsg" role="status"></p></div>';
   }
+  function startSession(token, email) {
+    session = token; email = email || '';
+    try { sessionStorage.setItem(KEY, token); } catch (e) { /* keep in memory */ }
+    return load(token).then(function (d) {
+      if (d.ok) { data = d.j; window.__email = d.j.email; showSignedIn(); setPage('overview'); }
+      else { toast('Please sign in again.'); render(); }
+    });
+  }
   function bindSignin() {
+    var lf = $('pwLogin');
+    if (lf) lf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      $('pwLoginMsg').textContent = 'Signing in…';
+      fetch('/api/portal/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: e.target.email.value, password: e.target.password.value }) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) {
+          if (!x.ok) { $('pwLoginMsg').textContent = x.j.error || 'Could not sign in. Please try again.'; return; }
+          email = x.j.email; return startSession(x.j.session, x.j.email);
+        })
+        .catch(function () { $('pwLoginMsg').textContent = 'Could not sign in. Please try again.'; });
+    });
     var f = $('pForm'); if (!f) return;
     f.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -362,7 +408,6 @@
         .catch(function () { $('pMsg').textContent = 'Could not send the link. Please try again.'; });
     });
   }
-
   function showSignedIn() {
     $('main-nav').hidden = false; $('who').hidden = false; $('requestBtn').hidden = false; $('bellBtn').hidden = false;
     $('whoEmail').textContent = email; $('avatar').textContent = (email[0] || 'B').toUpperCase();

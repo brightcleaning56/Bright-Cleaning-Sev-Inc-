@@ -111,8 +111,8 @@ module.exports = function mountPortal(app, ctx) {
       .map(r => ({ id: r.id, service: r.service || 'Service request', status: r.status, at: r.created_at }));
     const messages = db.prepare('SELECT id, subject, body, created_at FROM portal_messages WHERE lower(email)=? ORDER BY id DESC LIMIT 20').all(e)
       .map(m => ({ id: m.id, subject: m.subject, body: m.body, at: m.created_at, replies: db.prepare('SELECT body, created_at FROM portal_message_replies WHERE message_id=? ORDER BY id').all(m.id).map(r => ({ body: r.body, at: r.created_at })) }));
-    const pr = db.prepare('SELECT name, company, phone, notify FROM portal_profiles WHERE email=?').get(e) || {};
-    const profile = { email: e, name: pr.name || '', company: pr.company || '', phone: pr.phone || '', notify: pr.notify ? JSON.parse(pr.notify) : { schedule: true, proposals: true, invoices: true, projects: true, messages: true } };
+    const pr = db.prepare('SELECT name, company, phone, notify, password_hash FROM portal_profiles WHERE email=?').get(e) || {};
+    const profile = { email: e, has_password: !!pr.password_hash, name: pr.name || '', company: pr.company || '', phone: pr.phone || '', notify: pr.notify ? JSON.parse(pr.notify) : { schedule: true, proposals: true, invoices: true, projects: true, messages: true } };
     // Inspection reports: signed inspections for this customer's properties and projects only.
     let inspections = [];
     try {
@@ -292,6 +292,51 @@ module.exports = function mountPortal(app, ctx) {
     const p = path.join(uploadDir, name);
     if (!fs.existsSync(p)) return res.status(404).json({ error: 'File not found.' });
     res.download(p, row.file_name || name);
+  });
+  // ---- Password sign-in. A customer sets a password while signed in (the emailed link still works). ----
+  const bcryptP = require('bcryptjs');
+  try {
+    const pc = db.prepare('PRAGMA table_info(portal_profiles)').all().map(c => c.name);
+    if (!pc.includes('password_hash')) db.exec('ALTER TABLE portal_profiles ADD COLUMN password_hash TEXT');
+    if (!pc.includes('password_set_at')) db.exec('ALTER TABLE portal_profiles ADD COLUMN password_set_at TEXT');
+  } catch (err) { console.error('portal password columns', err.message); }
+  const pwHits = new Map();
+  // True when this key has used up its attempts in the last 15 minutes.
+  const pwLimited = (key, max) => {
+    const t = Date.now(), a = (pwHits.get(key) || []).filter(x => t - x < 900000);
+    const limited = a.length >= max; a.push(t); pwHits.set(key, a); return limited;
+  };
+  const DUMMY_HASH = bcryptP.hashSync('not-a-real-password-' + crypto.randomBytes(8).toString('hex'), 10);
+  // Sign in with email and password. Same answer for an unknown email and a wrong password.
+  app.post('/api/portal/login', (req, res) => {
+    const b = req.body || {};
+    const email = norm(b.email), pass = String(b.password || '').slice(0, 200);
+    const bad = () => res.status(401).json({ error: 'That email and password do not match. Try again, or email yourself a sign-in link.' });
+    if (pwLimited('ip:' + (req.ip || 'x'), 30) || (email && pwLimited('em:' + email, 8)))
+      return res.status(429).json({ error: 'Too many attempts. Please wait 15 minutes, or use the emailed sign-in link.' });
+    const r = email ? db.prepare('SELECT password_hash FROM portal_profiles WHERE email=?').get(email) : null;
+    const ok = bcryptP.compareSync(pass, r && r.password_hash ? r.password_hash : DUMMY_HASH);
+    if (!r || !r.password_hash || !ok) return bad();
+    res.json({ ok: true, email, session: sign({ email, iat: Date.now(), exp: Date.now() + 8 * 3600000 }) });
+  });
+  // Set a password (signed in). Changing one needs the current password and signs out the other devices.
+  app.post('/api/portal/password', (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    const b = req.body || {}, pw = String(b.password || '').slice(0, 200), cur = String(b.current || '').slice(0, 200);
+    if (pw.length < 10) return res.status(400).json({ error: 'Use at least 10 characters.' });
+    if (pw.toLowerCase() === sess.email) return res.status(400).json({ error: 'Your password cannot be your email address.' });
+    const row = db.prepare('SELECT password_hash FROM portal_profiles WHERE email=?').get(sess.email);
+    if (row && row.password_hash) {
+      if (pwLimited('cur:' + sess.email, 8)) return res.status(429).json({ error: 'Too many attempts. Please wait 15 minutes.' });
+      if (!bcryptP.compareSync(cur, row.password_hash)) return res.status(401).json({ error: 'Your current password is not right.' });
+    }
+    const hash = bcryptP.hashSync(pw, 12), t = now(), validAfter = new Date().toISOString();
+    db.prepare(`INSERT INTO portal_profiles(email,password_hash,password_set_at,valid_after,updated_at) VALUES(?,?,?,?,?)
+      ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash, password_set_at=excluded.password_set_at, valid_after=excluded.valid_after, updated_at=excluded.updated_at`)
+      .run(sess.email, hash, t, validAfter, t);
+    // This device gets a fresh session; every other session stops working.
+    res.json({ ok: true, message: 'Password saved. Other devices were signed out.', session: sign({ email: sess.email, iat: Date.parse(validAfter), exp: Date.now() + 8 * 3600000 }) });
   });
   app.post('/api/portal/request-service', async (req, res) => {
     const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));

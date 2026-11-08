@@ -221,6 +221,39 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
   const newLink = await call('POST /api/portal/request', { email: EMAIL }, {}, '10.7.7.7');
   check('sign out everywhere: a new sign-in link still works', newLink.code === 200, newLink);
 
+  // 10c. Password sign-in: set while signed in, sign in with it, wrong and unknown emails get the same answer, changing ends other sessions
+  const authH = t => ({ authorization: 'Bearer ' + t });
+  const sessP = sign({ email: EMAIL, iat: Date.now(), exp: Date.now() + 3600000 });
+  const pwNoAuth = await call('POST /api/portal/password', { password: 'long-enough-1234' });
+  check('password: setting one needs a signed-in customer', pwNoAuth.code === 401, pwNoAuth.code);
+  const pwShort = await call('POST /api/portal/password', { password: 'short' }, authH(sessP));
+  check('password: at least 10 characters', pwShort.code === 400, pwShort);
+  const pwSet = await call('POST /api/portal/password', { password: 'correct-horse-1234' }, authH(sessP));
+  check('password: set while signed in; this device gets a fresh session', pwSet.code === 200 && pwSet.body.session, pwSet);
+  const meHas = await call('GET /api/portal/me', {}, authH(pwSet.body.session));
+  check('password: account shows a password is set', meHas.body.profile && meHas.body.profile.has_password === true, meHas.body.profile);
+  const wrongPw = await call('POST /api/portal/login', { email: EMAIL, password: 'not-the-password' });
+  const unknownPw = await call('POST /api/portal/login', { email: 'nobody-here@example.com', password: 'correct-horse-1234' }, {}, '10.9.9.9');
+  check('login: wrong password refused', wrongPw.code === 401, wrongPw);
+  check('login: unknown email gets the same answer as a wrong password', unknownPw.code === 401 && unknownPw.body.error === wrongPw.body.error, { wrongPw: wrongPw.body, unknownPw: unknownPw.body });
+  const okLogin = await call('POST /api/portal/login', { email: EMAIL, password: 'correct-horse-1234' }, {}, '10.9.9.8');
+  check('login: correct password gives a session', okLogin.code === 200 && okLogin.body.session && okLogin.body.email === EMAIL, okLogin);
+  const meLogin = await call('GET /api/portal/me', {}, authH(okLogin.body.session));
+  check('login: the session opens the account', meLogin.code === 200 && meLogin.body.email === EMAIL, meLogin.code);
+  const chNoCur = await call('POST /api/portal/password', { password: 'new-horse-5678' }, authH(okLogin.body.session));
+  check('change: current password required once a password is set', chNoCur.code === 401, chNoCur);
+  const chWrong = await call('POST /api/portal/password', { password: 'new-horse-5678', current: 'guess-guess-1' }, authH(okLogin.body.session));
+  check('change: wrong current password refused', chWrong.code === 401, chWrong);
+  const chOk = await call('POST /api/portal/password', { password: 'new-horse-5678', current: 'correct-horse-1234' }, authH(okLogin.body.session));
+  check('change: correct current password saves', chOk.code === 200, chOk);
+  const oldGone = await call('GET /api/portal/me', {}, authH(okLogin.body.session));
+  check('change: other sessions are signed out', oldGone.code === 401, oldGone.code);
+  const newWorks = await call('POST /api/portal/login', { email: EMAIL, password: 'new-horse-5678' }, {}, '10.9.9.7');
+  check('change: the new password signs in', newWorks.code === 200, newWorks);
+  for (let i = 0; i < 6; i++) await call('POST /api/portal/login', { email: EMAIL, password: 'wrong-' + i + '-guess' }, {}, '10.8.8.' + i);
+  const pwLimited429 = await call("POST /api/portal/login", { email: EMAIL, password: "new-horse-5678" }, {}, "10.8.8.99");
+  check("login: repeated wrong guesses are slowed down", pwLimited429.code === 429, pwLimited429.code);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
