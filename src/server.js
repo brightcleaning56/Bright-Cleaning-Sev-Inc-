@@ -28,6 +28,7 @@ import * as adminMk from './admin/marketplace.js';
 import * as adminOps from './admin/operations.js';
 import * as adminPhase2b from './admin/phase2b.js';
 import * as adminSupport from './admin/support.js';
+import * as adminPhase5 from './admin/phase5.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
 import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher } from './publishing.js';
@@ -520,6 +521,16 @@ export function createServer(store, deps = {}) {
   route('POST', '/api/admin/support/:id/notes', A('admin.support.manage'), ({ params, body, user, requestId }) => R2(adminSupport.addNote(store, { user, requestId }, params.id, body)).case);
   route('POST', '/api/admin/support/:id/status', A('admin.support.manage'), ({ params, body, user, requestId }) => R2(adminSupport.setStatus(store, { user, requestId }, params.id, body)).case);
   route('POST', '/api/admin/support/:id/assign', A('admin.support.manage'), ({ params, body, user, requestId }) => R2(adminSupport.assign(store, { user, requestId }, params.id, body)).case);
+  route('GET', '/api/admin/incidents', A('admin.support.manage'), () => adminPhase5.listIncidents(store));
+  route('POST', '/api/admin/incidents', A('admin.support.manage'), ({ body, user, requestId }) => R2(adminPhase5.createIncident(store, { user, requestId }, body)).incident);
+  route('POST', '/api/admin/incidents/:id/updates', A('admin.support.manage'), ({ params, body, user, requestId }) => R2(adminPhase5.updateIncident(store, { user, requestId }, params.id, body)).incident);
+  route('GET', '/api/admin/jobs-overview', A('admin.dashboard.read'), () => adminPhase5.jobsOverview(store));
+  route('GET', '/api/admin/health', A('admin.dashboard.read'), () => adminPhase5.healthCenter(store, config, { storageKind: store.kind || 'memory', storageError: store.lastFlushError || null }));
+  route('POST', '/api/admin/exports', A('admin.dashboard.read'), ({ body, user, requestId }) => {
+    const r = adminPhase5.createExport(store, { user, requestId }, body); need(r.ok, r.code || 400, r.error); return { export: r.export, token: r.token, note: 'The download token is shown once. Save it now.' }; });
+  route('GET', '/api/admin/exports', A('admin.dashboard.read'), ({ user }) => adminPhase5.listExports(store, { user }));
+  route('GET', '/api/admin/exports/:id/download', 'user', ({ params, query, user, requestId }) => {
+    const r = adminPhase5.downloadExport(store, { user, requestId }, params.id, query.get ? query.get('token') : query.token); need(r.ok, r.code || 400, r.error); return { __csv: r.csv, filename: r.filename }; });
   route('GET', '/api/my/support/:id', 'user', ({ params, user }) => R2(adminSupport.customerView(store, params.id, user.orgId)).case);
   route('GET', '/api/admin/audit', A('admin.audit.read'), async ({ query }) => admin.auditSearch(store, query));
   // Phase 3: projects, duplicates, corrections, bid/award oversight (read-only), documents

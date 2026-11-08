@@ -52,10 +52,10 @@ const NAV = [
   ['C. Construction Intelligence', [['projects', 'Projects', 'admin.project.read'], ['duplicates', 'Duplicate review', 'admin.project.read'], ['markets', 'Trades & markets', 'admin.dashboard.read'], ['ext:#open:coverage', 'Coverage & core health (main app)', 'admin.project.read']]],
   ['D. Marketplace Operations', [['packages', 'Bid packages & bids', 'admin.bid.read'], ['documents', 'Plan-room documents', 'admin.bid.read']]],
   ['E. Financial Operations', [['subscriptions', 'Subscriptions', 'admin.billing.read'], [null, 'Invoices, refunds & reconciliation', 'Blocked — needs Stripe']]],
-  ['F. Data & AI Operations', [['sources', 'Data sources', 'admin.source.manage'], ['ai', 'AI usage & limits', 'admin.ai.manage']]],
+  ['F. Data & AI Operations', [['sources', 'Data sources', 'admin.source.manage'], ['ai', 'AI usage & limits', 'admin.ai.manage'], ['exports', 'Scoped exports', 'admin.dashboard.read']]],
   ['G. Customer Operations', [['support', 'Support cases & disputes', 'admin.support.manage']]],
-  ['H. Security & Compliance', [['security', 'My security (MFA)', 'admin.dashboard.read'], ['audit', 'Audit log', 'admin.audit.read'], [null, 'Security events & incidents', 'Phase 5'], [null, 'Privacy requests', 'Phase 5']]],
-  ['I. System Administration', [['ext:#open:readiness', 'Launch gates & release (main app)', 'admin.system.manage'], [null, 'Jobs, integrations, backups', 'Phase 5']]],
+  ['H. Security & Compliance', [['security', 'My security (MFA)', 'admin.dashboard.read'], ['audit', 'Audit log', 'admin.audit.read'], ['incidents', 'Security events & incidents', 'admin.support.manage'], ['privacy', 'Privacy requests', 'admin.company.read']]],
+  ['I. System Administration', [['ext:#open:readiness', 'Launch gates & release (main app)', 'admin.system.manage'], ['jobs', 'Jobs, integrations, backups', 'admin.dashboard.read']]],
 ];
 const can = p => ME?.permissions.includes(p);
 const route = () => { const h = location.hash.replace(/^#\/?/, '') || 'dashboard'; const [path, qs] = h.split('?'); return { parts: path.split('/'), q: new URLSearchParams(qs || '') }; };
@@ -79,7 +79,7 @@ async function render() {
   let tmr; $('#gs').oninput = () => { clearTimeout(tmr); tmr = setTimeout(globalSearch, 250); };
   const views = { dashboard: viewDashboard, companies: viewCompanies, company: viewCompany, users: viewUsers, user: viewUser, verification: viewVerification, authority: viewAuthority, audit: viewAudit,
     projects: viewProjects, project: viewProject, duplicates: viewDuplicates, markets: viewMarkets, packages: viewPackages, package: viewPackage, documents: viewDocuments, document: viewDocument,
-    subscriptions: viewSubscriptions, sources: viewSources, source: viewSource, ai: viewAi, security: viewSecurity, analytics: viewAnalytics, queue: viewQueue, support: viewSupport };
+    subscriptions: viewSubscriptions, sources: viewSources, source: viewSource, ai: viewAi, security: viewSecurity, analytics: viewAnalytics, queue: viewQueue, support: viewSupport, incidents: viewIncidentsRouter, privacy: viewPrivacy, jobs: viewJobs, exports: viewExports };
   const v = views[parts[0]] || viewDashboard;
   try { await v(parts, q); labelTables(); } catch (e) { $('#main').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
 }
@@ -274,6 +274,73 @@ async function viewSupportCase(id) {
   $('#addnote').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); post('/notes', Object.fromEntries(f), 'Note added'); };
   $('#setstatus').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); post('/status', Object.fromEntries(f), 'Status changed'); };
   $('#assign').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); post('/assign', Object.fromEntries(f), 'Case assigned'); };
+  bindGo($('#main'));
+}
+// ---------- Phase 5: incidents, privacy requests, jobs and health, scoped exports ----------
+async function viewIncidents(parts) {
+  crumbs([['Security events & incidents']]);
+  const r = await api('GET', '/api/admin/incidents');
+  const sev = ['low', 'medium', 'high', 'critical'];
+  $('#main').innerHTML = `<p class="muted">Record security events and their handling. The timeline is append-only.</p>
+    <div class="card"><h3>Open an incident</h3><form id="newinc" class="grid2">
+      <label>Title <input name="title" minlength="5" required></label>
+      <label>Severity <select name="severity">${sev.map(s => `<option>${s}</option>`).join('')}</select></label>
+      <label>Summary <textarea name="summary"></textarea></label><div><button class="primary" type="submit">Open incident</button></div></form></div>
+    <div class="card scroll"><table><tr><th>Incident</th><th>Severity</th><th>Status</th><th>Opened by</th><th>Opened</th><th>Last update</th></tr>
+    ${r.items.map(i => `<tr><td><a href="#/incidents/${esc(i.id)}">${esc(i.title)}</a></td><td>${esc(i.severity)}</td><td>${esc(i.status)}</td><td>${esc(i.openedBy)}</td><td>${fmt(i.createdAt)}</td><td>${fmt(i.updatedAt)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No incidents recorded.</td></tr>'}</table></div>`;
+  $('#newinc').onsubmit = async e => { e.preventDefault(); try { const x = await api('POST', '/api/admin/incidents', Object.fromEntries(new FormData(e.target))); location.hash = '#/incidents/' + x.id; } catch (err) { toast(err.message); } };
+  bindGo($('#main'));
+}
+function viewIncidentsRouter(parts, q) { return parts[1] ? viewIncidentDetail(parts[1]) : viewIncidents(parts, q); }
+async function viewIncidentDetail(id) {
+  crumbs([['Security events & incidents', 'incidents'], ['Incident']]);
+  const all = await api('GET', '/api/admin/incidents');
+  const i = all.items.find(x => x.id === id);
+  if (!i) { $('#main').innerHTML = '<p class="muted">Incident not found.</p>'; return; }
+  $('#main').innerHTML = `<div class="card"><h2>${esc(i.title)}</h2><p class="muted">${esc(i.severity)} · ${esc(i.status)} · opened by ${esc(i.openedBy)}</p>
+    <form id="upd" class="grid2"><label>New status <select name="status"><option>open</option><option>monitoring</option><option>resolved</option></select></label>
+    <label>Update (required) <textarea name="message" minlength="5" required></textarea></label><div><button class="primary" type="submit">Add update</button></div></form></div>
+    <div class="card"><h3>Timeline</h3><p class="muted">Use the update form to add to the timeline. Full history is kept in the audit log.</p></div>`;
+  $('#upd').onsubmit = async e => { e.preventDefault(); try { await api('POST', '/api/admin/incidents/' + encodeURIComponent(id) + '/updates', Object.fromEntries(new FormData(e.target))); toast('Update recorded'); viewIncidentDetail(id); } catch (err) { toast(err.message); } };
+  bindGo($('#main'));
+}
+async function viewPrivacy() {
+  crumbs([['Privacy requests']]);
+  const rows = await api('GET', '/api/privacy/requests');
+  $('#main').innerHTML = `<p class="muted">Access, correction, deletion and opt-out requests. Resolving a deletion removes the matching contacts and suppresses the address everywhere.</p>
+    <div class="card scroll"><table><tr><th>Type</th><th>Email</th><th>Status</th><th>Due</th><th>Overdue</th><th></th></tr>
+    ${rows.map(r => { const overdue = r.status !== 'resolved' && r.dueBy && Date.now() > Date.parse(r.dueBy); return `<tr><td>${esc(r.type)}</td><td>${esc(r.email)}</td><td>${esc(r.status)}</td><td>${fmt(r.dueBy)}</td><td>${overdue ? '<span class="warn">overdue</span>' : '—'}</td><td>${r.status !== 'resolved' ? `<button data-res="${esc(r.id)}" class="primary">Resolve</button>` : `resolved ${fmt(r.resolvedAt)}`}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">No requests.</td></tr>'}</table></div>`;
+  document.querySelectorAll('[data-res]').forEach(b => b.onclick = async () => { try { await api('POST', '/api/privacy/requests/' + encodeURIComponent(b.dataset.res) + '/resolve', {}); toast('Request resolved'); viewPrivacy(); } catch (err) { toast(err.message); } });
+  bindGo($('#main'));
+}
+async function viewJobs() {
+  crumbs([['Jobs, integrations, backups']]);
+  const [j, h] = await Promise.all([api('GET', '/api/admin/jobs-overview'), api('GET', '/api/admin/health')]);
+  $('#main').innerHTML = `<h3>Health center</h3><p class="muted">Each check is measured or labelled. "Not connected" and "unmeasured" are stated, never shown as healthy.</p>
+    <div class="card scroll"><table><tr><th>Check</th><th>State</th><th>Detail</th></tr>${h.checks.map(c => `<tr><td>${esc(c.label)}</td><td>${esc(c.state.replace('_', ' '))}</td><td class="muted">${esc(c.detail)}</td></tr>`).join('')}</table></div>
+    <h3>Data source runs</h3><div class="card scroll"><table><tr><th>Source</th><th>Enabled</th><th>Last success</th><th>Last error</th></tr>
+    ${j.integrations.map(s => `<tr><td>${esc(s.name)}</td><td>${s.enabled ? 'yes' : 'no'}</td><td>${fmt(s.lastSuccessAt)}</td><td class="muted">${esc(s.lastError || '—')}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No sources.</td></tr>'}</table></div>
+    <h3>Recent jobs</h3><div class="card scroll"><table><tr><th>When</th><th>Type</th><th>Status</th><th>Detail</th></tr>
+    ${j.recent.map(x => `<tr><td>${fmt(x.createdAt)}</td><td>${esc(x.type || '—')}</td><td>${esc(x.status || '—')}</td><td class="muted">${esc(x.error || x.summary ? JSON.stringify(x.summary || x.error) : '')}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No jobs recorded.</td></tr>'}</table></div>
+    <p class="muted">${esc(j.lastBackupNote || ('Last backup: ' + fmt(j.lastBackup?.at)))}</p>`;
+  bindGo($('#main'));
+}
+async function viewExports() {
+  crumbs([['Scoped exports']]);
+  const r = await api('GET', '/api/admin/exports');
+  $('#main').innerHTML = `<p class="muted">Exports are limited to the data you are allowed to see, need a reason, expire after 24 hours, and can only be downloaded by the person who made them.</p>
+    <div class="card"><form id="mkexp" class="grid2">
+      <label>Dataset <select name="dataset"><option value="companies">Companies (no contact details, no notes)</option><option value="support_cases">Support cases (metadata only)</option><option value="audit_recent">Audit log (latest 1,000)</option></select></label>
+      <label>Reason (required) <input name="reason" minlength="5" required></label><div><button class="primary" type="submit">Create export</button></div></form>
+      <div id="tok"></div></div>
+    <div class="card scroll"><table><tr><th>Dataset</th><th>Rows</th><th>Created</th><th>Expires</th><th></th></tr>
+    ${r.items.map(e => `<tr><td>${esc(e.label)}</td><td>${e.rowCount}</td><td>${fmt(e.createdAt)}</td><td>${e.expired ? '<span class="warn">expired</span>' : fmt(e.expiresAt)}</td><td class="muted">${e.expired ? '' : 'download needs its token'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No exports yet.</td></tr>'}</table></div>`;
+  $('#mkexp').onsubmit = async e => { e.preventDefault();
+    try { const x = await api('POST', '/api/admin/exports', Object.fromEntries(new FormData(e.target)));
+      $('#tok').innerHTML = `<p><strong>Export ready: ${x.export.rowCount} rows.</strong> Download token (shown once):</p><div class="keybox">${esc(x.token)}</div>
+        <p><button id="dl" class="primary">Download CSV</button></p>`;
+      $('#dl').onclick = async () => { try { const res = await fetch('/api/admin/exports/' + encodeURIComponent(x.export.id) + '/download?token=' + encodeURIComponent(x.token), { headers: { authorization: 'Bearer ' + TOKEN } }); if (!res.ok) throw new Error((await res.json()).error); const blob = await res.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${x.export.dataset}.csv`; a.click(); toast('Download started'); } catch (err) { toast(err.message); } };
+    } catch (err) { toast(err.message); } };
   bindGo($('#main'));
 }
 async function viewAudit(_, q) {
