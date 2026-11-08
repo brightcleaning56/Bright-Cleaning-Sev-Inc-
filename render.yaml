@@ -10,7 +10,7 @@ services:
     runtime: node
     plan: starter              # ONE instance: the app is a single writer to the database
     numInstances: 1
-    buildCommand: npm ci && npm test
+    buildCommand: npm ci                  # tests run in CI and before release, not on the deploy machine
     startCommand: node src/server.js
     healthCheckPath: /health
     disk:                      # encrypted app-level backups (in addition to Render's DB backups)
@@ -20,6 +20,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "22"
       - key: DATABASE_URL
         fromDatabase: { name: buildintel-db, property: connectionString }
       - key: BACKUP_DIR
