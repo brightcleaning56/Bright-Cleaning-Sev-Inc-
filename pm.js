@@ -278,7 +278,7 @@ module.exports = function mountPM(app, ctx) {
     const y = new Date().getFullYear(), mx = db.prepare('SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?').all(`BC-${y}-%`).reduce((m, r) => Math.max(m, Number(String(r.invoice_number).split('-')[2]) || 0), 0);
     const cust = p.customer_id ? db.prepare('SELECT * FROM customers WHERE id=?').get(p.customer_id) : null;
     const id = db.prepare("INSERT INTO invoices(invoice_number,project_id,customer_name,company,email,amount,paid_amount,due_date,status,created_at) VALUES(?,?,?,?,?,?,0,?,'Draft',?)")
-      .run(`BC-${y}-${String(mx + 1).padStart(4, '0')}`, p.id, p.customer_name || (cust && cust.name) || '', p.company || (cust && cust.company) || '', (cust && cust.email) || '', due, new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), now()).lastInsertRowid;
+      .run(`BC-${y}-${String(mx + 1).padStart(4, '0')}`, p.id, p.customer_name || (cust && cust.name) || (k && k.customer_name) || '', p.company || (cust && cust.company) || (k && k.company) || '', (cust && cust.email) || (k && k.email) || '', due, new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), now()).lastInsertRowid;
     db.prepare('UPDATE projects SET billing_invoice_id=? WHERE id=?').run(id, p.id);
     logAction(req, 'handed off to billing', 'project', p.id, `${number(p)}: draft invoice #${id} for $${due.toFixed(2)} (not sent)`);
     res.status(201).json({ invoice_id: id, amount: due });
