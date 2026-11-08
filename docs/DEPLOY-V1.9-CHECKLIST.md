@@ -2,6 +2,12 @@
 
 Branch: `claude/buildintel-launch-requirements-i9bmnu` (commit `3e480b1` or later). Blueprint file: `render.yaml`.
 
+## Repo check (read first)
+- The `buildintel` service must build from **brightcleaning56/Bright-Cleaning-Sev-Inc-**, branch `claude/buildintel-launch-requirements-i9bmnu`.
+- On 2026-11-08 the service was found building from **brightcleaning56/buildintel** (commits 14ffa0b, db96dc1), which does not contain the fixes. Those deploys failed.
+- Fix: service → Settings → repository = brightcleaning56/Bright-Cleaning-Sev-Inc-, branch as above → Manual Deploy → Clear build cache & deploy.
+- If Render will not change the repo on a blueprint-managed service, change it in the blueprint settings, or delete and recreate the service from the blueprint.
+
 ## Before you click
 - **Do not sync the existing `buildintel` blueprint.** Its service `buildintel-api` runs the old build, and syncing it
   would apply this file and may remove that service. Create a **new** blueprint instead, so the old service stays up
