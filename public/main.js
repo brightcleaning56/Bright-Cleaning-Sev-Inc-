@@ -628,6 +628,7 @@ async function leadTab(t, body) {
     body.innerHTML = inv.length ? (await Promise.all(inv.map(async i => { const r = i.request; const open = r.status === 'open';
       return `<div class="gate" style="grid-template-columns:1fr"><div><strong>${esc(r.title)}</strong> <small>${esc(r.buyerName)}${r.buyerKind ? ' (' + esc(String(r.buyerKind).replace('_', ' ')) + ')' : ''} · ${esc(r.address)}, ${esc(r.city)}, ${esc(r.state)} · bids due <strong>${esc(String(r.dueDate).slice(0, 10))}</strong> · ${esc(r.status)}</small>
         <small>${esc((r.trades || []).map(label).join(' · '))}${r.squareFeet ? ' · ' + r.squareFeet.toLocaleString() + ' SF' : ''}${r.documentsUrl ? ` · <a href="${safeUrl(r.documentsUrl)}" target="_blank" rel="noopener">plans & specs</a>` : ''}</small>
+        ${i.why ? `<small class="muted">Why you were invited: ${esc(i.why)}</small>` : ''}
         ${r.description ? `<small>${esc(r.description)}</small>` : ''}
         <div data-inv="${i.id}">${r.documentCount ? await planRoomHtml(r.id) : ''}<div id="est-${i.id}"></div>${open ? `<button data-est-manual="${i.id}" style="margin-top:6px">Build estimate manually</button>` : ''}</div>
         ${r.addendumCount > i.acknowledgedThrough ? `<div style="border:1.5px solid var(--stake);padding:6px 10px;margin-top:6px"><small><strong>Addendum ${r.addendumCount} posted.</strong> ${esc(r.addenda.at(-1)?.note || '')} Review the plan room, then acknowledge before bidding.</small> <button data-ack="${i.id}">Acknowledge addenda 1–${r.addendumCount}</button></div>` : (r.addendumCount ? `<small>Addenda 1–${r.addendumCount} acknowledged.</small>` : '')}
@@ -712,10 +713,19 @@ async function leadTab(t, body) {
       <span>Licenses</span><span>${[...pq.stateLicenses.map(l => esc(l.state + ' ' + l.number + ' (' + (l.active ? 'active' : l.status) + ')')), ...pq.licenses.map(l => esc(l.issuer + ' ' + l.number))].join(', ') || 'none on file'}</span>
       <span>Track record</span><span>${pq.history.bidsSubmitted} bid(s) submitted · ${pq.history.awards} award(s) on BUILDINTEL</span></div>
       ${pq.flags.length ? `<p style="color:var(--fail);margin:8px 0 0">${esc(pq.flags.join(' · '))}. <a href="#" id="goins">Add insurance & licenses</a></p>` : '<p class="green" style="margin:8px 0 0">No gaps.</p>'}</div>` : '';
-    body.innerHTML = pqHtml + profHtml + `<h3>Your territory</h3><p>${esc((a.territories||[]).join(', ') || 'none')} · ${esc(a.trade || '')}</p>
+    const np = await api('GET', '/api/me/notifications').catch(() => null);
+    const notifHtml = np ? `<h3>Invitation emails</h3><p style="color:var(--muted)">Invitations always appear in your list at once. This only controls the emails. Choose a daily digest to get at most one invitation email a day.</p>
+      <form id="nf" style="display:grid;gap:8px;max-width:760px;margin-bottom:22px">
+        <label>How to send invitation emails <select name="mode"><option value="immediate" ${np.mode === 'immediate' ? 'selected' : ''}>As they arrive</option><option value="daily_digest" ${np.mode === 'daily_digest' ? 'selected' : ''}>One digest a day</option></select></label>
+        <label>Most invitation emails per day (1 to 20) <input name="maxPerDay" type="number" min="1" max="20" value="${Number(np.maxPerDay) || 3}"></label>
+        <div><button type="submit">Save email settings</button> <span id="nfm" style="color:var(--muted)"></span></div></form>` : '';
+    body.innerHTML = pqHtml + profHtml + notifHtml + `<h3>Your territory</h3><p>${esc((a.territories||[]).join(', ') || 'none')} · ${esc(a.trade || '')}</p>
       <form id="tf" class="row" style="margin-bottom:18px"><input id="ts" placeholder="States, e.g. IA, NE, MO" value="${esc((a.territories||[]).join(', '))}" style="max-width:300px"><button>Update territory</button><span id="tm" style="align-self:center;color:var(--muted)"></span></form>
       <h3>Plans</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">${Object.entries(pl.plans).filter(([k]) => k !== 'trial').map(([k, p]) => `<div style="background:var(--panel);padding:16px"><div style="font:800 26px 'Barlow Condensed'">${esc(p.name)} · $${p.monthly}/mo</div><p style="color:var(--muted)">${p.states >= 51 ? 'All states' : p.states + ' state' + (p.states > 1 ? 's' : '')} · ${p.savedSearches} saved searches · ${p.exportsPerMonth.toLocaleString()} export rows/month · ${p.seats} users</p><button class="primary" data-plan="${k}">Choose ${esc(p.name)}</button></div>`).join('')}</div><p id="pm" style="color:var(--muted)"></p>`;
     $('#goins')?.addEventListener('click', ev => { ev.preventDefault(); tab = 'insurance'; navKey = 'insurance'; render(); });
+    $('#nf')?.addEventListener('submit', async ev => { ev.preventDefault(); const f = ev.target;
+      try { await api('PUT', '/api/me/notifications', { mode: f.mode.value, maxPerDay: Number(f.maxPerDay.value) }); $('#nfm').textContent = 'Saved.'; }
+      catch (e) { $('#nfm').textContent = e.message; } });
     $('#pff').onsubmit = async ev => { ev.preventDefault(); const f = ev.target;
       try { await api('PATCH', '/api/profile', { trades: [...f.querySelectorAll('input[name=ptr]:checked')].map(x => x.value), legalName: f.legalName.value, postalAddress: f.postalAddress.value, phone: f.phone.value, website: f.website.value }); $('#pfm').textContent = 'Saved. Matching bid invitations will appear in Bid invitations.'; }
       catch (e) { $('#pfm').textContent = e.message; } };

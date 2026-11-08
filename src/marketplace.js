@@ -73,8 +73,14 @@ export function openPackageInvites(store, r) { return inviteCompanies(store, r, 
 export function inviteCompanies(store, r, orgIds) {
   let n = 0; const already = new Set(store.list('invitations', i => i.requestId === r.id).map(i => i.sellerOrgId));
   for (const id of orgIds) { const o = store.get('orgs', id); if (!o || o.kind === 'buyer' || o.id === r.buyerOrgId || already.has(id)) continue;
-    store.put('invitations', { requestId: r.id, buyerOrgId: r.buyerOrgId, sellerOrgId: id, intent: 'undecided', invitedAt: now(), notifiedAt: null, viewedAt: null, via: 'publisher list' }); already.add(id); n++; }
+    store.put('invitations', { requestId: r.id, buyerOrgId: r.buyerOrgId, sellerOrgId: id, intent: 'undecided', invitedAt: now(), notifiedAt: null, viewedAt: null, via: 'publisher list', reason: "You were added by name to this company's invitee list." }); already.add(id); n++; }
   return n;
+}
+/** Plain-language reason for a match, so a subscriber can see why a project reached them. */
+export function whyInvited(org, r) {
+  const shared = (org.trades || []).filter(t => (r.trades || []).includes(t));
+  const territory = org.subscription?.plan === 'internal' || org.subscription?.plan === 'national' ? 'nationwide coverage' : `your service area (${r.state})`;
+  return `Matches your trades (${shared.join(', ') || 'none listed'}) and ${territory}.`;
 }
 export function inviteMatches(store, r) {
   if (r.status !== 'open' || r.distribution === 'invite_only') return 0;   // invite-only packages never auto-match
@@ -85,7 +91,7 @@ export function inviteMatches(store, r) {
     if (!org.trades.some(t => r.trades.includes(t))) continue;
     const states = org.subscription?.plan === 'internal' || org.subscription?.plan === 'national' ? null : (org.territories || []);
     if (states && !states.includes(r.state)) continue;
-    store.put('invitations', { requestId: r.id, buyerOrgId: r.buyerOrgId, sellerOrgId: org.id, intent: 'undecided', invitedAt: now(), notifiedAt: null, viewedAt: null });
+    store.put('invitations', { requestId: r.id, buyerOrgId: r.buyerOrgId, sellerOrgId: org.id, intent: 'undecided', invitedAt: now(), notifiedAt: null, viewedAt: null, reason: whyInvited(org, r) });
     n++;
   }
   return n;

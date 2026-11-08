@@ -62,3 +62,12 @@ test('over HTTP: only a company owner can read or change the setting, and bad va
   assert.equal(got.maxPerDay, 5);
   assert.ok(store.data.audit.some(e => e.action === 'notifications.updated'), 'the change is audited');
 });
+
+test('every match states the trades it shares and the territory, in plain language', async () => {
+  const { whyInvited } = await import('../src/marketplace.js');
+  const why = whyInvited({ trades: ['electrical', 'plumbing'], subscription: { plan: 'local' } }, { trades: ['electrical', 'hvac'], state: 'IA' });
+  assert.match(why, /Matches your trades \(electrical\)/);
+  assert.match(why, /service area \(IA\)/);
+  const national = whyInvited({ trades: ['cleaning'], subscription: { plan: 'national' } }, { trades: ['cleaning'], state: 'TX' });
+  assert.match(national, /nationwide coverage/);
+});
