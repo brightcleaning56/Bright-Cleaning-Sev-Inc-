@@ -91,6 +91,7 @@ export async function backupAndVerify(store, { fetchImpl } = {}) {
 }
 
 // ---------------- HTTP plumbing ----------------
+const constantTimeEqual = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 const SEC_HEADERS = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
   'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: https://*.tile.openstreetmap.org",
@@ -146,12 +147,12 @@ export function createServer(store, deps = {}) {
     return { ok: true, id: r.id, message: 'Request received. We respond within 45 days.' };
   });
   route('POST', '/webhooks/postmark', null, ({ body, query }) => {
-    need(config.postmarkWebhookSecret && query.get('token') === config.postmarkWebhookSecret, 401, 'bad token');
+    need(config.postmarkWebhookSecret && constantTimeEqual(query.get('token') || '', config.postmarkWebhookSecret), 401, 'bad token');
     const r = handleEmailEvent(store, body); store.save(); return r;
   });
 
   route('POST', '/webhooks/postmark-inbound', null, ({ body, query }) => {
-    need(config.postmarkWebhookSecret && query.get('token') === config.postmarkWebhookSecret, 401, 'bad token');
+    need(config.postmarkWebhookSecret && constantTimeEqual(query.get('token') || '', config.postmarkWebhookSecret), 401, 'bad token');
     const r = handleInbound(store, body); store.save(); return r;
   });
   const sendVerification = async (org, user, email, what) => {
@@ -771,7 +772,7 @@ export function createServer(store, deps = {}) {
 
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
-    const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
+    const ip = (config.trustProxy && req.headers['x-forwarded-for']?.split(',')[0].trim()) || req.socket.remoteAddress;
     try {
       // static + special pages
       // Self-hosted viewer library (pdf.js, Apache-2.0): exact allowlist, cached.

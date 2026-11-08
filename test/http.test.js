@@ -136,8 +136,8 @@ test('test email: explains exactly what is missing, sends when live', async (t) 
 
 test('sign-in brute-force limit: 10 attempts per 15 minutes by default', async (t) => {
   const { srv } = await boot();
-  const prev = config.loginRateLimit; config.loginRateLimit = 10; // the production default
-  t.after(() => { srv.close(); config.loginRateLimit = prev; });
+  const prev = config.loginRateLimit, prevTrust = config.trustProxy; config.loginRateLimit = 10; config.trustProxy = true; // the production default; behind the proxy, X-Forwarded-For is the client
+  t.after(() => { srv.close(); config.loginRateLimit = prev; config.trustProxy = prevTrust; });
   // Its own client address, so it only uses up its own allowance (other tests keep signing in normally).
   const base = `http://127.0.0.1:${srv.address().port}`;
   const attempt = () => fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' }, body: JSON.stringify({ email: 'nobody@x.test', password: 'wrong password 123' }) });

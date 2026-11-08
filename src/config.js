@@ -47,6 +47,9 @@ export const config = {
   sqlReads: (env.SQL_READS || 'off').toLowerCase() === 'on' ? 'on' : 'off',
   coreReads: (env.CORE_READS || 'off').toLowerCase() === 'on' ? 'on' : 'off',
   loginRateLimit: Number(env.LOGIN_RATE_LIMIT || 10),
+  // Set to 1 only behind a proxy you control (Render). Otherwise any client can send a fake X-Forwarded-For
+  // and get a fresh rate-limit bucket on every attempt.
+  trustProxy: env.TRUST_PROXY === '1',
   anthropicKey: env.ANTHROPIC_API_KEY || '',
   anthropicModel: env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
   aiDailyLimit: Number(env.AI_DAILY_LIMIT || 25),
