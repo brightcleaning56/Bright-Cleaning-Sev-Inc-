@@ -633,7 +633,7 @@ async function leadTab(t, body) {
         <div data-inv="${i.id}">${r.documentCount ? await planRoomHtml(r.id) : ''}<div id="est-${i.id}"></div>${open ? `<button data-est-manual="${i.id}" style="margin-top:6px">Build estimate manually</button>` : ''}</div>
         ${r.addendumCount > i.acknowledgedThrough ? `<div style="border:1.5px solid var(--stake);padding:6px 10px;margin-top:6px"><small><strong>Addendum ${r.addendumCount} posted.</strong> ${esc(r.addenda.at(-1)?.note || '')} Review the plan room, then acknowledge before bidding.</small> <button data-ack="${i.id}">Acknowledge addenda 1–${r.addendumCount}</button></div>` : (r.addendumCount ? `<small>Addenda 1–${r.addendumCount} acknowledged.</small>` : '')}
         <div class="row" style="margin-top:6px">${['will_bid', 'wont_bid', 'undecided'].map(x => `<button data-intent="${x}" data-id="${i.id}" ${i.intent === x ? 'class="primary"' : ''} ${open ? '' : 'disabled'}>${{ will_bid: 'Will bid', wont_bid: "Won't bid", undecided: 'Undecided' }[x]}</button>`).join('')}
-          ${open ? `<button data-bidform="${i.id}">${i.myBid ? 'Revise bid' : 'Submit bid'}</button>` : ''}</div>
+          ${open ? `<button data-bidform="${i.id}" data-due="${esc(r.dueDate)}">${i.myBid ? 'Revise bid' : 'Submit bid'}</button>` : ''}</div>
         ${i.myBid ? `<small>Your bid: <strong>${money(i.myBid.total)}${i.myBid.recurring ? '/mo' : ''}</strong> · ${esc(i.myBid.status.replace('_', ' '))} · revision ${i.myBid.revision} · ${ago(i.myBid.submittedAt)}${i.myBid.receiptId ? ` · receipt <b>${esc(i.myBid.receiptId)}</b> <span title="SHA-256 fingerprint of the exact bid document">(${esc(i.myBid.sha256.slice(0, 12))}…)</span>` : ''}</small>` : ''}
         <div id="bf-${i.id}"></div></div></div>`; }))).join('')
       : '<div class="empty">No invitations yet. Set your trades in Plan & profile, and you\'ll be invited automatically when a GC or property manager in your territory posts work you do.</div>';
@@ -643,16 +643,48 @@ async function leadTab(t, body) {
     body.querySelectorAll('[data-ack]').forEach(b => b.onclick = async () => { await api('POST', `/api/invitations/${b.dataset.ack}/acknowledge`); render(); });
     body.querySelectorAll('[data-intent]').forEach(b => b.onclick = async () => { await api('POST', `/api/invitations/${b.dataset.id}/intent`, { intent: b.dataset.intent }); render(); });
     body.querySelectorAll('[data-bidform]').forEach(b => b.onclick = () => {
-      const id = b.dataset.bidform;
-      $('#bf-' + id).innerHTML = `<form style="display:grid;gap:8px;max-width:620px;margin-top:8px"><input name="amount" placeholder="Bid amount ($)" required>
-        <label style="display:flex;gap:6px;font-size:14px"><input type="checkbox" name="recurring" style="width:auto">Monthly recurring price</label>
-        <textarea name="scope" rows="4" placeholder="Scope: what's included" required style="font:15px Barlow,sans-serif;padding:8px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink)"></textarea>
-        <textarea name="exclusions" rows="2" placeholder="Exclusions & assumptions (optional)" style="font:15px Barlow,sans-serif;padding:8px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink)"></textarea>
-        <input name="documentUrl" placeholder="Link to your proposal PDF or documents (optional)"><input name="validDays" type="number" min="1" placeholder="Valid for (days), default 30">
-        <div class="row"><button class="primary">Send bid</button><span class="err"></span></div></form>`;
-      $('#bf-' + id).querySelector('form').onsubmit = async ev => { ev.preventDefault(); const f = ev.target;
-        try { await api('POST', `/api/invitations/${id}/bid`, { amount: f.amount.value, recurring: f.recurring.checked, scope: f.scope.value, exclusions: f.exclusions.value, documentUrl: f.documentUrl.value || undefined, validDays: Number(f.validDays.value) || undefined }); render(); }
-        catch (e) { f.querySelector('.err').textContent = e.message; } };
+      const id = b.dataset.bidform, due = b.dataset.due ? new Date(b.dataset.due) : null;
+      const box = $('#bf-' + id);
+      // The server accepts bids until one day after the due date; show the same rule before the subscriber types.
+      if (due && Date.now() > due.getTime() + 864e5) { box.innerHTML = '<p class="err" role="alert">The bid due date has passed, so bids can no longer be sent for this project.</p>'; return; }
+      const daysLeft = due ? Math.max(0, Math.ceil((due.getTime() - Date.now()) / 864e5)) : null;
+      const dueText = due ? 'Bids due ' + esc(due.toLocaleDateString()) + (daysLeft === 0 ? ' (today)' : ' (' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' left)') : '';
+      const field = 'display:grid;gap:4px;font-size:14px';
+      box.innerHTML = '<form novalidate style="display:grid;gap:12px;max-width:620px;margin-top:10px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel)">'
+        + '<div><strong>Your bid</strong><br><small style="color:var(--muted)">' + dueText + '</small></div>'
+        + '<label style="' + field + '">Total price (USD)<input name="amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 12,500"></label>'
+        + '<label style="display:flex;gap:6px;font-size:14px"><input type="checkbox" name="recurring" style="width:auto">This is a monthly price, not a one-time total</label>'
+        + '<label style="' + field + '">What is included<textarea name="scope" rows="4" placeholder="Describe the work, at least 10 characters" style="font:15px Barlow,sans-serif;padding:8px;border:1.5px solid var(--line);background:var(--card);color:var(--ink)"></textarea><small class="count" style="color:var(--muted)">0 of 10 characters</small></label>'
+        + '<label style="' + field + '">Exclusions and assumptions (optional)<textarea name="exclusions" rows="2" style="font:15px Barlow,sans-serif;padding:8px;border:1.5px solid var(--line);background:var(--card);color:var(--ink)"></textarea></label>'
+        + '<label style="' + field + '">Link to your proposal or documents (optional)<input name="documentUrl" inputmode="url" placeholder="https://…"></label>'
+        + '<label style="' + field + '">Valid for (days)<input name="validDays" type="number" min="1" max="365" placeholder="30"></label>'
+        + '<div class="err" role="alert" style="display:none"></div>'
+        + '<div class="row"><button type="submit" class="primary">Send bid</button><span class="muted" style="font-size:13px">You can revise the bid until the due date.</span></div></form>';
+      const f = box.querySelector('form'), errBox = f.querySelector('[role=alert]'), btn = f.querySelector('button');
+      const showErrors = list => { errBox.innerHTML = list.map(x => '<div>' + esc(x) + '</div>').join(''); errBox.style.display = list.length ? '' : 'none'; };
+      f.scope.addEventListener('input', () => { const n = f.scope.value.trim().length; f.querySelector('.count').textContent = n + ' of 10 characters' + (n >= 10 ? '' : ' (at least 10 needed)'); });
+      f.onsubmit = async ev => {
+        ev.preventDefault();
+        // The same rules the server enforces, checked first so nothing is lost to a rejected submit.
+        const errs = [], amount = Number(String(f.amount.value).replace(/[$,\s]/g, ''));
+        if (!(amount > 0)) errs.push('Enter the total price as a number greater than zero.');
+        if (f.scope.value.trim().length < 10) errs.push('Describe what is included (at least 10 characters).');
+        const url = f.documentUrl.value.trim();
+        if (url && !/^https?:\/\//i.test(url)) errs.push('The document link must start with https://');
+        const days = f.validDays.value;
+        if (days && (!Number.isInteger(Number(days)) || Number(days) < 1 || Number(days) > 365)) errs.push('Valid for must be a whole number of days from 1 to 365.');
+        if (errs.length) { showErrors(errs); (amount > 0 ? f.scope : f.amount).focus(); return; }
+        showErrors([]);
+        btn.disabled = true; btn.textContent = 'Sending…';   // a double click must not send the bid twice
+        try {
+          await api('POST', '/api/invitations/' + id + '/bid', { amount: f.amount.value, recurring: f.recurring.checked, scope: f.scope.value, exclusions: f.exclusions.value, documentUrl: url || undefined, validDays: Number(days) || undefined });
+          box.innerHTML = '<p role="status" style="color:var(--ok,#1b7f3b)">Bid sent. It is now in your bids with a receipt.</p>';
+          setTimeout(() => render(), 1200);
+        } catch (e) {
+          showErrors([e.message]);
+          btn.disabled = false; btn.textContent = 'Send bid';   // the typed values stay in the form
+        }
+      };
     });
     return;
   }
