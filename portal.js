@@ -3,7 +3,24 @@
 // Nothing reveals whether an email is on file: the sign-in request always answers the same way.
 const crypto = require('crypto');
 module.exports = function mountPortal(app, ctx) {
-  const { db, getMailer, auth } = ctx;
+  const { db, getMailer, auth, syncLead, ops } = ctx;
+  // One proposal as the customer sees it in the portal. Only this customer's own proposal, never internal notes.
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const numberOf = p => 'P-' + (String(p.created_at || '').slice(0, 4) || '2026') + '-' + String(1000 + p.id);
+  function portalProposal(p) {
+    let items = []; try { items = JSON.parse(p.line_items || '[]'); } catch { items = []; }
+    items = (Array.isArray(items) ? items : []).map(i => ({ description: String(i.description || ''), amount: Number(i.amount) || 0, frequency: String(i.frequency || '') }));
+    const decided = ['Approved', 'Declined'].includes(p.status);
+    const expired = !decided && !!p.expires_on && p.expires_on < todayStr();
+    const actionable = ['Sent', 'Viewed'].includes(p.status) && !expired;
+    return {
+      id: p.id, number: numberOf(p), title: p.project_name || 'Proposal', site: p.site_address || '', company: p.company || '', customer: p.customer_name || '',
+      total: p.proposal_total || 0, tax_pct: p.tax_pct || 0, scope: p.scope || '', area_sqft: p.area_sqft || 0, items, terms: p.terms || '',
+      status: expired ? 'Expired' : p.status, raw_status: p.status, issued: String(p.created_at || '').slice(0, 10), expires: p.expires_on || '',
+      decided_at: p.decided_at ? String(p.decided_at).slice(0, 10) : '', decline_reason: p.decline_reason || '', signer_name: p.signer_name || '',
+      actionable, pdf: '/api/proposal/' + p.public_token + '/pdf', link: '/proposal/' + p.public_token
+    };
+  }
   db.exec(`CREATE TABLE IF NOT EXISTS portal_logins(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, token_hash TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL)`);
   const SECRET = () => (process.env.JWT_SECRET || 'dev-portal') + ':client-portal';
   const now = () => new Date().toISOString();
@@ -60,8 +77,8 @@ module.exports = function mountPortal(app, ctx) {
     const s = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
     if (!s) return res.status(401).json({ error: 'Please sign in again.' });
     const e = s.email;
-    const proposals = db.prepare(`SELECT id, project_name, proposal_total, status, public_token, created_at FROM estimates WHERE lower(email)=? AND status NOT IN ('Draft','Ready','Superseded','Withdrawn') ORDER BY created_at DESC`).all(e)
-      .map(p => ({ id: p.id, title: p.project_name || 'Proposal', total: p.proposal_total, status: p.status, link: `/proposal/${p.public_token}` }));
+    const proposals = db.prepare(`SELECT id, project_name, customer_name, company, site_address, scope, area_sqft, line_items, terms, tax_pct, proposal_total, status, public_token, expires_on, decided_at, decline_reason, signer_name, lead_id, created_at FROM estimates WHERE lower(email)=? AND status NOT IN ('Draft','Ready','Superseded','Withdrawn') ORDER BY created_at DESC`).all(e)
+      .map(portalProposal);
     const contracts = db.prepare(`SELECT id, title, value, status, signature_status, public_token FROM contracts WHERE lower(email)=? AND status NOT IN ('Draft','Superseded') ORDER BY id DESC`).all(e)
       .map(k => ({ id: k.id, title: k.title || 'Contract', value: k.value, status: k.status, signature: k.signature_status, link: k.public_token && k.signature_status !== 'Signed' ? `/contract/${k.public_token}` : null }));
     const invoices = db.prepare(`SELECT id, invoice_number, amount, paid_amount, due_date, status FROM invoices WHERE lower(email)=? AND status NOT IN ('Draft','Void') ORDER BY id DESC`).all(e)
@@ -176,6 +193,53 @@ module.exports = function mountPortal(app, ctx) {
     res.json({ ok: true, message: 'You were signed out everywhere. Sign in again with a new link.' });
   });
   const reqHits = new Map();
+  const ownProposal = (sess, id) => db.prepare('SELECT * FROM estimates WHERE id=? AND lower(email)=?').get(Number(id), sess.email);
+  // Approve or decline from the portal. Same rules as the emailed proposal link: a typed name to approve, one decision only.
+  app.post('/api/portal/proposals/:id/respond', (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    const e = ownProposal(sess, req.params.id);
+    if (!e) return res.status(404).json({ error: 'Proposal not found.' });
+    const b = req.body || {};
+    const decision = String(b.decision || '');
+    if (!['approve', 'decline'].includes(decision)) return res.status(400).json({ error: 'Choose approve or decline.' });
+    if (['Draft', 'Ready', 'Superseded', 'Withdrawn'].includes(e.status)) return res.status(409).json({ error: 'This proposal is not open for a decision. Message Bright Clean for help.' });
+    if (['Approved', 'Declined'].includes(e.status)) return res.status(409).json({ error: 'This proposal was already ' + e.status.toLowerCase() + '.' });
+    if (e.expires_on && e.expires_on < todayStr()) return res.status(410).json({ error: 'This proposal has expired. Message Bright Clean for an updated proposal.' });
+    const clip = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+    const dt = now();
+    if (decision === 'approve') {
+      const signer = clip(b.signer_name, 120);
+      if (signer.length < 2 || !b.agree) return res.status(400).json({ error: 'To approve, type your full name and confirm you are authorized to approve this proposal.' });
+      db.prepare('UPDATE estimates SET signer_name=?, signer_title=?, signed_at=? WHERE id=?').run(signer, clip(b.signer_title, 120), dt, e.id);
+    } else if (clip(b.reason, 1000)) {
+      db.prepare('UPDATE estimates SET decline_reason=? WHERE id=?').run(clip(b.reason, 1000), e.id);
+    }
+    const status = decision === 'approve' ? 'Approved' : 'Declined';
+    db.prepare('UPDATE estimates SET status=?, updated_at=?, decided_at=?, decision_ip=?, decision_agent=? WHERE id=?')
+      .run(status, dt, dt, clip(req.ip, 100), clip((req.headers && req.headers['user-agent']) || '', 300), e.id);
+    if (typeof syncLead === 'function') syncLead(e.lead_id, decision === 'approve' ? 'approved' : 'declined', e.id);
+    db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, decision === 'approve' ? 'approved proposal in client portal' : 'declined proposal in client portal', 'estimate', e.id, 'from the client portal', dt);
+    if (decision === 'approve' && ops && ops.upsertCustomer) { try { ops.upsertCustomer({ name: e.customer_name, company: e.company, email: e.email, address: e.site_address }, 'approved proposal'); } catch { /* */ } }
+    res.json({ ok: true, status, message: decision === 'approve' ? 'Thank you. Your approval was recorded and our team will confirm next steps.' : 'Thank you. Your decision was recorded.' });
+  });
+  // Ask for changes: sent to the office as a message on the customer's account, linked to the proposal number.
+  app.post('/api/portal/proposals/:id/changes', async (req, res) => {
+    const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    const e = ownProposal(sess, req.params.id);
+    if (!e) return res.status(404).json({ error: 'Proposal not found.' });
+    if (['Approved', 'Declined', 'Withdrawn', 'Superseded'].includes(e.status)) return res.status(409).json({ error: 'This proposal is already closed. Message Bright Clean for changes.' });
+    const body = String((req.body || {}).body || '').trim().slice(0, 4000);
+    if (body.length < 5) return res.status(400).json({ error: 'Describe the changes you need.' });
+    const number = numberOf(e);
+    const subject = 'Change request: ' + number + ' ' + (e.project_name || 'proposal');
+    const at = now();
+    const id = db.prepare('INSERT INTO portal_messages(email,subject,body,created_at) VALUES(?,?,?,?)').run(sess.email, subject.slice(0, 200), body, at).lastInsertRowid;
+    const m = getMailer && getMailer();
+    if (m) { try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: process.env.NOTIFY_EMAIL || 'info@brightclean.net', subject: 'Change request on ' + number, text: 'From: ' + sess.email + '\n\n' + body + '\n\nReply to this email to answer the customer.', replyTo: sess.email }); } catch (err) { console.error('change request notice not sent', err.message); } }
+    res.status(201).json({ ok: true, id, message: 'Thank you. Your change request was sent to the Bright Clean team. We will send an updated proposal.' });
+  });
   app.post('/api/portal/request-service', async (req, res) => {
     const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
     if (!sess) return res.status(401).json({ error: 'Please sign in again.' });

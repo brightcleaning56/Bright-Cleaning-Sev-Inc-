@@ -42,6 +42,15 @@ module.exports = function mountOps(app, ctx) {
 
   const getSetting = k => { const r = db.prepare('SELECT value FROM settings WHERE key=?').get(k); return r ? r.value : DEFAULT_SETTINGS[k]; };
   const isOn = k => getSetting(k) === '1';
+  // A customer who turned off a kind of update in the client portal gets no automatic reminders of that kind.
+  // Manual emails that staff send are not affected.
+  const portalAllows = (email, kind) => {
+    try {
+      const r = db.prepare('SELECT notify FROM portal_profiles WHERE email=?').get(String(email || '').toLowerCase());
+      if (!r || !r.notify) return true;
+      return JSON.parse(r.notify)[kind] !== false;
+    } catch { return true; }
+  };
 
   // Invoices: billing email must be valid when given (used for payment reminders).
   app.use('/api/admin/invoices', (req, res, next) => {
@@ -240,6 +249,7 @@ module.exports = function mountOps(app, ctx) {
         for (const e of rows) {
           if (e.expires_on && e.expires_on < today) continue;
           if (!isEmail(e.email)) continue;
+          if (!portalAllows(e.email, 'proposals')) continue;
           const last = new Date(e.last_viewed_at || e.viewed_at || e.sent_at || e.updated_at);
           const age = days(t - last);
           const stage = age >= 7 ? 'day7' : age >= 3 ? 'day3' : null;
@@ -255,6 +265,7 @@ module.exports = function mountOps(app, ctx) {
         const rows = db.prepare("SELECT * FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND amount>paid_amount AND due_date IS NOT NULL AND due_date<>'' AND email IS NOT NULL AND email<>''").all();
         for (const i of rows) {
           if (!isEmail(i.email)) continue;
+          if (!portalAllows(i.email, 'invoices')) continue;
           const diff = days(new Date(i.due_date + 'T12:00:00Z') - new Date(today + 'T12:00:00Z'));
           const stage = diff <= -7 ? 'overdue7' : diff <= -1 ? 'overdue1' : (diff >= 0 && diff <= 3) ? 'due3' : null;
           if (!stage || sentAlready('invoice_reminder', i.id, stage)) continue;

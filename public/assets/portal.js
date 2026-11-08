@@ -7,7 +7,7 @@
     overview: ['Welcome Back', "Here's what's happening with your Bright Clean account today."],
     properties: ['My Properties', 'The locations and buildings on your account.'],
     services: ['Services & Schedule', 'Your recurring services and upcoming cleaning visits.'],
-    proposals: ['Proposals', 'Estimates and proposals prepared for your organization.'],
+    proposals: ['Proposals', 'Review, approve, or request changes to your cleaning proposals.'],
     contracts: ['Contracts', 'Agreements, signatures and renewal dates for your cleaning services.'],
     invoices: ['Invoices & Payments', 'Balances and invoice details for your account.'],
     projects: ['Projects', 'Project progress and closeout information for your account.'],
@@ -74,7 +74,7 @@
         '<button class="nav-item" data-go="contracts"><span>▧</span> View Contracts</button>' +
         '<a class="nav-item" href="tel:+15153033024"><span>✉</span> Contact Support</a></div></div>';
     } else if (page === 'proposals') {
-      html = '<p><button class="primary-button" type="button" data-request="proposal">Request a proposal</button></p>' + table(['Proposal', 'Total', 'Status', ''], d.proposals.map(function (p) { return [esc(p.title), money(p.total), esc(p.status), link(p.link, 'Open')]; }));
+      html = proposalsHtml();
     } else if (page === 'contracts') {
       html = '<p><button class="primary-button" type="button" data-request="contract">Request a contract</button></p>' + table(['Contract', 'Value', 'Signature', ''], d.contracts.map(function (k) { return [esc(k.title), money(k.value), esc(k.signature), k.link ? link(k.link, 'Review and sign') : (k.signature === 'Signed' ? '<span class="muted">Signed</span>' : '<span class="muted">Not available yet</span>')]; }));
     } else if (page === 'invoices') {
@@ -122,9 +122,8 @@
         '<div class="field" style="margin-top:12px"><label>Sign-in email</label><input value="' + esc(email) + '" disabled></div>' +
         '<p class="muted" style="margin-top:8px">To change your sign-in email, message the team. We verify the new address before we change it.</p>' +
         '<p style="margin-top:14px"><button class="primary-button" type="submit">Save changes</button></p></form><p class="msg" id="profMsg" role="status"></p></div>' +
-        '<div class="panel"><h2>Notifications</h2><p class="muted">Choose the updates we email you about.</p><form id="notifyForm">' +
-        box('schedule', 'Schedule changes and visit confirmations') + box('proposals', 'New proposals and contract updates') +
-        box('invoices', 'Invoices and payment receipts') + box('projects', 'Project progress and closeout notices') + box('messages', 'Replies to your messages') +
+        '<div class="panel"><h2>Notifications</h2><p class="muted">Turn off automatic reminders. Other emails from Bright Clean, such as invoices you are sent, still come through.</p><form id="notifyForm">' +
+        box('proposals', 'Proposal follow-up reminders') + box('invoices', 'Invoice payment reminders') + box('messages', 'Replies to your messages') +
         '<p style="margin-top:14px"><button class="primary-button" type="submit">Save notifications</button></p></form><p class="msg" id="notifyMsg" role="status"></p></div></div>' +
         '<div class="panel" style="margin-top:16px"><h2>Sessions</h2><p><button class="nav-item" id="signOut" type="button">Sign out on this device</button> ' +
         '<button class="nav-item" id="signOutAll" type="button">Sign out everywhere</button></p><p class="muted">Signing out everywhere ends every session on every device. Sign in again with a new link.</p></div>';
@@ -143,7 +142,7 @@
     var nfm = $('notifyForm');
     if (nfm) nfm.addEventListener('submit', function (e) {
       e.preventDefault(); $('notifyMsg').textContent = 'Saving…';
-      var n = {}; ['schedule', 'proposals', 'invoices', 'projects', 'messages'].forEach(function (k) { n[k] = !!e.target['n_' + k].checked; });
+      var n = {}; ['proposals', 'invoices', 'messages'].forEach(function (k) { n[k] = !!e.target['n_' + k].checked; });
       fetch('/api/portal/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session }, body: JSON.stringify({ notify: n }) })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (x) { $('notifyMsg').textContent = x.ok ? 'Saved.' : (x.j.error || 'Could not save.'); if (x.ok) refreshData(); })
@@ -178,6 +177,132 @@
         .catch(function () { $('rsMsg').textContent = 'Could not send the request. Please try again or call (515) 303-3024.'; });
     });
   }
+
+  // ---- Proposals: list with tabs and search, a detail panel, and confirm steps before any decision ----
+  var propTab = 'all', propQuery = '', propSel = null, propDetail = 'overview';
+  function propTabOf(p) { return p.actionable ? 'awaiting' : p.status === 'Approved' ? 'approved' : p.status === 'Declined' ? 'declined' : p.status === 'Expired' ? 'expired' : 'other'; }
+  function propLabel(p) { return p.actionable ? 'Awaiting Review' : p.status; }
+  function propBadge(p) {
+    var l = propLabel(p), cls = { 'Awaiting Review': 'amber', 'Approved': 'green', 'Declined': 'red', 'Expired': 'purple' }[l] || 'blue';
+    return '<span class="badge ' + cls + '">' + esc(l) + '</span>';
+  }
+  function proposalsHtml() {
+    var all = data.proposals || [];
+    var count = function (k) { return k === 'all' ? all.length : all.filter(function (p) { return propTabOf(p) === k; }).length; };
+    var tabs = [['all', 'All Proposals'], ['awaiting', 'Awaiting Review'], ['approved', 'Approved'], ['declined', 'Declined'], ['expired', 'Expired']];
+    var list = all.filter(function (p) {
+      return (propTab === 'all' || propTabOf(p) === propTab) &&
+        (!propQuery || [p.number, p.title, p.site, p.customer, p.status].join(' ').toLowerCase().indexOf(propQuery) >= 0);
+    });
+    if (!all.some(function (p) { return p.id === propSel; })) propSel = list.length ? list[0].id : null;
+    var sel = all.filter(function (p) { return p.id === propSel; })[0];
+    var stat = function (label, n, cls, icon) { return '<article class="stat-card ' + cls + '"><div class="stat-top">' + label + ' <span class="stat-icon">' + icon + '</span></div><div class="stat-value">' + n + '</div></article>'; };
+    var html = '<div class="prop-actions"><button class="primary-button" type="button" data-request="proposal">＋ Request a Proposal</button><button class="btn ghost" type="button" data-go="messages">Message Bright Clean</button></div>';
+    html += '<div class="grid stats prop-stats">' + stat('Total Proposals', all.length, 'st-blue', '▤') + stat('Awaiting Review', count('awaiting'), 'st-amber', '◷') +
+      stat('Approved', count('approved'), 'st-green', '✓') + stat('Declined', count('declined'), 'st-red', '✕') + stat('Expired', count('expired'), 'st-purple', '▦') + '</div>';
+    html += '<div class="prop-layout"><div class="panel prop-list"><div class="prop-tabs">' +
+      tabs.map(function (t) { return '<button type="button" class="prop-tab' + (propTab === t[0] ? ' on' : '') + '" data-ptab="' + t[0] + '">' + t[1] + ' (' + count(t[0]) + ')</button>'; }).join('') + '</div>' +
+      '<div class="prop-search"><input type="search" id="propQ" placeholder="Search proposal number, title or property…" value="' + esc(propQuery) + '"></div>' +
+      (list.length ? '<div class="tbl-wrap"><table class="t"><thead><tr><th>Proposal #</th><th>Title</th><th>Property</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>' +
+        list.map(function (p) {
+          return '<tr class="' + (p.id === propSel ? 'row-on' : '') + '"><td><a href="#" data-pview="' + p.id + '">' + esc(p.number) + '</a></td><td>' + esc(p.title) + '</td><td>' + esc(p.site || '—') + '</td><td>' + money(p.total) + '</td><td>' + propBadge(p) + '</td><td><button class="btn ghost" type="button" data-pview="' + p.id + '">View</button></td></tr>';
+        }).join('') + '</tbody></table></div>' : empty('No proposals match', 'Try another search, or choose All Proposals.')) + '</div>' +
+      (sel ? proposalDetailHtml(sel) : '<aside class="panel prop-detail">' + empty('No proposal selected', 'Proposals from Bright Clean will appear here.') + '</aside>') + '</div>';
+    return html;
+  }
+  function proposalDetailHtml(p) {
+    var decidedOn = p.decided_at ? ' on ' + esc(p.decided_at) : '';
+    var acts = p.actionable
+      ? '<div class="prop-acts"><button class="primary-button" type="button" data-pact="approve">✓ Approve Proposal</button><button class="btn danger" type="button" data-pact="decline">✕ Decline</button><button class="btn ghost" type="button" data-pact="changes">✎ Request Changes</button></div>'
+      : '<p class="prop-note">' + (p.status === 'Approved' ? 'You approved this proposal' + decidedOn + '.' : p.status === 'Declined' ? 'You declined this proposal' + decidedOn + '.' : p.status === 'Expired' ? 'This proposal has expired. Message Bright Clean for an updated one.' : 'This proposal is not open for a decision.') + '</p>';
+    var tabs = [['overview', 'Overview'], ['scope', 'Scope of Work'], ['pricing', 'Pricing'], ['terms', 'Terms'], ['documents', 'Documents']];
+    var body = '';
+    if (propDetail === 'overview') {
+      body = '<div class="prop-kv"><div><span>Property</span><b>' + esc(p.site || p.title) + '</b></div><div><span>Total investment</span><b>' + money(p.total) + '</b></div>' +
+        '<div><span>Issued</span><b>' + esc(p.issued || '—') + '</b></div><div><span>Expires</span><b>' + esc(p.expires || '—') + '</b></div>' +
+        '<div><span>Account contact</span><b>' + esc(p.customer || '—') + (p.company ? '<br><small class="muted">' + esc(p.company) + '</small>' : '') + '</b></div></div>';
+    } else if (propDetail === 'scope') {
+      body = '<p class="prop-scope">' + esc(p.scope || 'The scope of work is described in the proposal document.') + '</p>' + (p.area_sqft ? '<p class="muted">Area: ' + esc(Number(p.area_sqft).toLocaleString('en-US')) + ' sq ft</p>' : '');
+    } else if (propDetail === 'pricing') {
+      body = p.items.length
+        ? '<table class="t prop-pricing"><thead><tr><th>Service</th><th>Frequency</th><th>Amount</th></tr></thead><tbody>' + p.items.map(function (i) { return '<tr><td>' + esc(i.description) + '</td><td>' + esc(i.frequency || '—') + '</td><td>' + money(i.amount) + '</td></tr>'; }).join('') + '<tr><td><b>Total investment</b></td><td></td><td><b>' + money(p.total) + '</b></td></tr></tbody></table>'
+        : '<p>Total investment: <b>' + money(p.total) + '</b></p><p class="muted">The itemized pricing is in the proposal document.</p>';
+      if (p.tax_pct) body += '<p class="muted">Tax rate applied: ' + esc(p.tax_pct) + '%.</p>';
+    } else if (propDetail === 'terms') {
+      body = '<p class="prop-scope">' + esc(p.terms || 'No additional terms on this proposal.') + '</p>';
+    } else {
+      body = '<div class="prop-doc"><div><b>Proposal PDF</b><br><small class="muted">' + esc(p.number) + '.pdf</small></div><a class="primary-button" href="' + esc(p.pdf) + '" target="_blank" rel="noopener">View / Download</a></div>' +
+        '<p class="muted"><a href="' + esc(p.link) + '" target="_blank" rel="noopener">Open the online proposal</a></p>';
+    }
+    return '<aside class="panel prop-detail">' +
+      '<div class="prop-head"><div><b class="prop-num">' + esc(p.number) + '</b><h3>' + esc(p.title) + '</h3></div><div>' + propBadge(p) + '</div></div>' +
+      acts +
+      (p.status === 'Declined' && p.decline_reason ? '<p class="muted">Your reason: ' + esc(p.decline_reason) + '</p>' : '') +
+      '<div class="prop-tabs prop-dtabs">' + tabs.map(function (t) { return '<button type="button" class="prop-tab' + (propDetail === t[0] ? ' on' : '') + '" data-dtab="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+      body + '</aside>';
+  }
+  function proposalSel() { return (data.proposals || []).filter(function (p) { return p.id === propSel; })[0]; }
+  function openProposalModal(kind) {
+    var p = proposalSel(); if (!p) return;
+    var title, text, fields, btn;
+    if (kind === 'approve') {
+      title = 'Approve ' + p.number + '?';
+      text = 'You are approving ' + p.title + ' for ' + money(p.total) + '. Type your full name to sign. Our team will then confirm next steps.';
+      fields = '<div class="field"><label>Full name *</label><input name="signer_name" required autocomplete="name"></div>' +
+        '<div class="field" style="margin-top:12px"><label>Title (optional)</label><input name="signer_title"></div>' +
+        '<label class="chk" style="margin-top:14px"><input type="checkbox" name="agree" required> I am authorized to approve this proposal for my organization.</label>';
+      btn = 'Approve proposal';
+    } else if (kind === 'decline') {
+      title = 'Decline ' + p.number + '?';
+      text = 'You can tell us why, if you like. This helps us improve future proposals.';
+      fields = '<div class="field"><label>Reason (optional)</label><textarea name="reason" rows="3"></textarea></div>';
+      btn = 'Decline proposal';
+    } else {
+      title = 'Request changes to ' + p.number;
+      text = 'Describe what you would like changed. We will send an updated proposal.';
+      fields = '<div class="field"><label>What should change? *</label><textarea name="body" rows="4" required></textarea></div>';
+      btn = 'Send request';
+    }
+    var back = document.createElement('div'); back.className = 'modal-back';
+    back.innerHTML = '<form class="modal" role="dialog" aria-modal="true" aria-label="' + esc(title) + '"><h2>' + esc(title) + '</h2><p class="muted">' + esc(text) + '</p>' + fields +
+      '<p class="msg" role="status"></p><div class="modal-acts"><button type="button" class="btn ghost" data-mcancel>Cancel</button><button class="primary-button" type="submit">' + esc(btn) + '</button></div></form>';
+    document.body.appendChild(back);
+    back.querySelector('[data-mcancel]').addEventListener('click', function () { back.remove(); });
+    back.addEventListener('click', function (e) { if (e.target === back) back.remove(); });
+    back.querySelector('form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var f = e.target, msg = f.querySelector('.msg'), sb = f.querySelector('button[type=submit]');
+      sb.disabled = true; msg.textContent = 'Sending…';
+      var url, payload;
+      if (kind === 'changes') { url = '/api/portal/proposals/' + p.id + '/changes'; payload = { body: f.body.value }; }
+      else {
+        url = '/api/portal/proposals/' + p.id + '/respond';
+        payload = kind === 'approve' ? { decision: 'approve', signer_name: f.signer_name.value, signer_title: f.signer_title.value, agree: f.agree.checked } : { decision: 'decline', reason: f.reason.value };
+      }
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session }, body: JSON.stringify(payload) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) {
+          if (x.ok) { back.remove(); toast(x.j.message || 'Saved.'); refreshData(); }
+          else { msg.textContent = x.j.error || 'Could not send. Please try again.'; sb.disabled = false; }
+        })
+        .catch(function () { msg.textContent = 'Could not send. Please try again or call (515) 303-3024.'; sb.disabled = false; });
+    });
+    var first = back.querySelector('input,textarea'); if (first) first.focus();
+  }
+  document.addEventListener('click', function (e) {
+    if (page !== 'proposals' || !data) return;
+    var t = e.target.closest && e.target.closest('[data-ptab],[data-pview],[data-dtab],[data-pact]'); if (!t) return;
+    if (t.hasAttribute('data-ptab')) { propTab = t.getAttribute('data-ptab'); propSel = null; render(); }
+    else if (t.hasAttribute('data-pview')) { e.preventDefault(); propSel = Number(t.getAttribute('data-pview')); propDetail = 'overview'; render(); }
+    else if (t.hasAttribute('data-dtab')) { propDetail = t.getAttribute('data-dtab'); render(); }
+    else if (t.hasAttribute('data-pact')) { openProposalModal(t.getAttribute('data-pact')); }
+  });
+  document.addEventListener('input', function (e) {
+    if (page !== 'proposals' || !e.target || e.target.id !== 'propQ') return;
+    propQuery = e.target.value.trim().toLowerCase();
+    var pos = e.target.selectionStart; render();
+    var q = $('propQ'); if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (err) { /* */ } }
+  });
 
   function signinHtml() {
     return '<div class="panel"><h2>Sign in</h2><p class="muted">Enter your email. We send a one-time sign-in link. There is no password.</p>' +
