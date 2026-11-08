@@ -61,8 +61,10 @@ module.exports = function mountSuite(app, ctx) {
     if (b.email && !isEmail(b.email)) errs.push('Enter a valid email address.');
     if (!b.email && !clean(b.phone, 60)) errs.push('Enter an email or a phone number.');
     if (errs.length) return res.status(400).json({ error: errs.join(' ') });
-    const source = clean(b.source, 60) || 'Manual entry';
     const origin = ['website', 'inbound_call', 'portal', 'api', 'manual', 'import'].includes(b.origin) ? b.origin : 'manual';
+    // The label follows how the lead came in, so a lead we added is never labelled as a phone call.
+    const sourceLabel = { website: 'Website form', inbound_call: 'Phone call', portal: 'Client portal' }[origin];
+    const source = sourceLabel || clean(b.source, 60) || 'Added by our team';
     const info = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,project_name,service,address,square_footage,bid_due_date,details,created_at,origin)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(kind, clean(b.contact_name, 150), clean(b.company, 200), clean(b.email, 254), clean(b.phone, 60),
       clean(b.project_name, 200), clean(b.service, 120), clean(b.address, 500), clean(b.square_footage, 40), isDate(b.bid_due_date) ? b.bid_due_date : '',

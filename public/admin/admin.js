@@ -1949,7 +1949,7 @@
     openForm({ title: 'New lead', sub: 'For calls, walk-ins and referrals', defs: [
       { name: 'origin', label: 'How did this lead come in?', type: 'select', options: [['manual', 'Added by our team (we are reaching out)'], ['import', 'Bulk list for staff to call'], ['inbound_call', 'They called us'], ['website', 'Website form'], ['portal', 'Client portal'], ['api', 'Partner or API']] },
       { name: 'kind', label: 'Type', type: 'select', options: [['bid', 'Bid request'], ['inquiry', 'General inquiry']] },
-      { name: 'source', label: 'Source', type: 'select', options: ['Phone call', 'Referral', 'Walk-in', 'Email', 'Bid invitation', 'Other'] },
+      { name: 'source', label: 'Source (when added by our team)', type: 'select', options: ['Other', 'Referral', 'Walk-in', 'Email', 'Bid invitation'] },
       { name: 'contact_name', label: 'Contact name' }, { name: 'company', label: 'Company' },
       { name: 'email', label: 'Email', type: 'email' }, { name: 'phone', label: 'Phone', type: 'tel' },
       { name: 'project_name', label: 'Project / property' }, { name: 'service', label: 'Service needed' },
