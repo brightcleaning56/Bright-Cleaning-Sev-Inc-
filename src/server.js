@@ -26,6 +26,7 @@ import { hasPerm, permissionsOf, platformRolesOf, isPlatformStaff, PLATFORM_ROLE
 import * as admin from './admin/service.js';
 import * as adminMk from './admin/marketplace.js';
 import * as adminOps from './admin/operations.js';
+import * as adminPhase2b from './admin/phase2b.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
 import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher } from './publishing.js';
@@ -510,6 +511,8 @@ export function createServer(store, deps = {}) {
   route('POST', '/api/admin/users/:id/platform-roles', A('admin.roles.manage', true), ({ params, body, user, requestId }) => R2(admin.setPlatformRole(store, { user, requestId }, params.id, body)));
   route('GET', '/api/admin/authority', A('admin.publisher.review'), ({ query }) => R2(admin.authorityQueue(store, query)));
   route('POST', '/api/admin/authority/:id/decision', A('admin.publisher.review'), ({ params, body, user, requestId }) => R2(admin.authorityDecision(store, { user, requestId }, params.id, body)));
+  route('GET', '/api/admin/analytics', A('admin.dashboard.read'), () => adminPhase2b.platformAnalytics(store));
+  route('GET', '/api/admin/action-queue', A('admin.dashboard.read'), () => adminPhase2b.actionQueue(store));
   route('GET', '/api/admin/audit', A('admin.audit.read'), async ({ query }) => admin.auditSearch(store, query));
   // Phase 3: projects, duplicates, corrections, bid/award oversight (read-only), documents
   const C = ({ user, requestId }) => ({ user, requestId });

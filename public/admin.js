@@ -47,7 +47,7 @@ function toast(msg) { const t = document.createElement('div'); t.setAttribute('r
 
 // ---------- navigation (all spec sections; unbuilt ones disabled with their phase) ----------
 const NAV = [
-  ['A. Command Center', [['dashboard', 'Dashboard', 'admin.dashboard.read'], [null, 'Platform analytics', 'Phase 2b'], [null, 'Admin action queue', 'Phase 2b']]],
+  ['A. Command Center', [['dashboard', 'Dashboard', 'admin.dashboard.read'], ['analytics', 'Platform analytics', 'admin.dashboard.read'], ['queue', 'Admin action queue', 'admin.dashboard.read']]],
   ['B. Organizations', [['companies', 'Companies', 'admin.company.read'], ['users', 'Users', 'admin.user.read'], ['verification', 'Publisher verification', 'admin.company.verify'], ['authority', 'Project authority', 'admin.publisher.review']]],
   ['C. Construction Intelligence', [['projects', 'Projects', 'admin.project.read'], ['duplicates', 'Duplicate review', 'admin.project.read'], ['markets', 'Trades & markets', 'admin.dashboard.read'], ['ext:#open:coverage', 'Coverage & core health (main app)', 'admin.project.read']]],
   ['D. Marketplace Operations', [['packages', 'Bid packages & bids', 'admin.bid.read'], ['documents', 'Plan-room documents', 'admin.bid.read']]],
@@ -79,7 +79,7 @@ async function render() {
   let tmr; $('#gs').oninput = () => { clearTimeout(tmr); tmr = setTimeout(globalSearch, 250); };
   const views = { dashboard: viewDashboard, companies: viewCompanies, company: viewCompany, users: viewUsers, user: viewUser, verification: viewVerification, authority: viewAuthority, audit: viewAudit,
     projects: viewProjects, project: viewProject, duplicates: viewDuplicates, markets: viewMarkets, packages: viewPackages, package: viewPackage, documents: viewDocuments, document: viewDocument,
-    subscriptions: viewSubscriptions, sources: viewSources, source: viewSource, ai: viewAi, security: viewSecurity };
+    subscriptions: viewSubscriptions, sources: viewSources, source: viewSource, ai: viewAi, security: viewSecurity, analytics: viewAnalytics, queue: viewQueue };
   const v = views[parts[0]] || viewDashboard;
   try { await v(parts, q); labelTables(); } catch (e) { $('#main').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
 }
@@ -209,6 +209,27 @@ async function viewAuthority(_, q) {
       <td>${x.review === 'pending' ? `<button data-auth="${x.id}" data-d="approved" class="primary">Approve</button> <button data-auth="${x.id}" data-d="rejected" class="danger">Reject</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Nothing to review.</td></tr>'}</table>${pager(r, 'authority', q)}</div>`;
   bindGo($('#main'));
   document.querySelectorAll('[data-auth]').forEach(b => b.onclick = async () => { if (await act(b.dataset.d === 'approved' ? 'Approve authority' : 'Reject authority', 'Record how you confirmed the owner authorized this publisher.', `/api/admin/authority/${b.dataset.auth}/decision`, { decision: b.dataset.d }, { danger: b.dataset.d === 'rejected' })) viewAuthority(_, q); });
+}
+// ---------- Phase 2b: platform analytics and admin action queue ----------
+async function viewAnalytics() {
+  crumbs([['Platform analytics']]);
+  const r = await api('GET', '/api/admin/analytics');
+  const months = r.series[0].values.map(v => v.month);
+  $('#main').innerHTML = `<p class="muted">Computed from stored records, UTC, last 12 months (${esc(r.window.from)} to ${esc(r.window.to)}). A zero means nothing was recorded in that month. Nothing here is estimated.</p>
+    <div class="card scroll"><table><tr><th>Measure</th><th>Total</th><th>In window</th>${months.map(m => '<th>' + esc(m) + '</th>').join('')}</tr>
+    ${r.series.map(s => '<tr><td title="' + esc(s.formula) + '">' + esc(s.label) + '</td><td>' + s.total + '</td><td>' + s.inWindow + '</td>' + s.values.map(v => '<td>' + v.count + '</td>').join('') + '</tr>').join('')}</table></div>
+    <h3>Data sources</h3>
+    <div class="card scroll"><table><tr><th>Source</th><th>Enabled</th><th>Last successful run</th><th>Last error</th></tr>
+    ${r.sources.map(s => '<tr><td>' + esc(s.name) + '</td><td>' + (s.enabled ? 'yes' : 'no') + '</td><td>' + (s.lastSuccessAt ? fmt(s.lastSuccessAt) : '—') + '</td><td class="muted">' + esc(s.lastError || '—') + '</td></tr>').join('') || '<tr><td colspan="4" class="muted">No sources configured.</td></tr>'}</table></div>`;
+  bindGo($('#main'));
+}
+async function viewQueue() {
+  crumbs([['Admin action queue']]);
+  const r = await api('GET', '/api/admin/action-queue');
+  $('#main').innerHTML = `<p class="muted">Everything that needs an administrator decision, oldest first. ${r.count} open.</p>
+    <div class="card scroll"><table><tr><th>Type</th><th>Item</th><th>Detail</th><th>Since</th><th></th></tr>
+    ${r.items.map(x => '<tr><td>' + esc(x.label) + '</td><td>' + esc(x.title) + '</td><td class="muted">' + esc(x.detail) + '</td><td>' + (x.since ? fmt(x.since) : '—') + '</td><td>' + (x.link ? '<a href="' + esc(x.link) + '">Open</a>' : '—') + '</td></tr>').join('') || '<tr><td colspan="5" class="muted">Nothing waiting. Every item is handled.</td></tr>'}</table></div>`;
+  bindGo($('#main'));
 }
 async function viewAudit(_, q) {
   crumbs([['Audit log']]);
