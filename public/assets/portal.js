@@ -66,12 +66,12 @@
         '<article class="stat-card"><div class="stat-top">Pending Proposals <span class="stat-icon">▤</span></div><div class="stat-value">' + pending + '</div><div class="stat-note">' + (pending ? 'Review and approve' : 'Nothing to review') + '</div></article></div>';
       html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px">' +
         '<div class="panel"><h2>Upcoming Services</h2>' + visitsHtml(d.visits, 5) + '</div>' +
-        '<div class="panel"><h2>Recent Invoices</h2>' + (d.invoices.length ? '<table class="t"><tbody>' + d.invoices.slice(0, 5).map(function (i) { return '<tr><td><b>' + esc(i.number) + '</b></td><td>' + money(i.amount) + '</td><td>' + (i.balance > 0 ? '<span class="badge amber">Open</span> <small>call to pay</small>' : '<span class="badge green">Paid</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : empty('No invoices yet', 'Invoices will appear here.')) + '</div></div>';
+        '<div class="panel"><h2>Recent Invoices</h2>' + (d.invoices.length ? '<table class="t"><tbody>' + d.invoices.slice(0, 5).map(function (i) { return '<tr><td><b>' + esc(i.number) + '</b></td><td>' + money(i.amount) + '</td><td>' + (i.balance > 0 ? '<span class="badge amber">Open</span> <small>pay on Invoices &amp; Payments</small>' : '<span class="badge green">Paid</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : empty('No invoices yet', 'Invoices will appear here.')) + '</div></div>';
       html += '<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px"><div class="panel"><h2>Recent Activity</h2>' + activityHtml(d.activity) + '</div><div></div></div>';
       html += '<div class="panel" style="margin-top:16px"><h2>Quick Actions</h2><div class="grid" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' +
         '<button class="nav-item" data-go="request"><span>＋</span> Request Service</button>' +
         '<button class="nav-item" data-go="proposals"><span>▤</span> View Proposals</button>' +
-        '<button class="nav-item" data-go="contracts"><span>▧</span> Sign Contracts</button>' +
+        '<button class="nav-item" data-go="contracts"><span>▧</span> View Contracts</button>' +
         '<a class="nav-item" href="tel:+15153033024"><span>✉</span> Contact Support</a></div></div>';
     } else if (page === 'proposals') {
       html = '<p><button class="primary-button" type="button" data-request="proposal">Request a proposal</button></p>' + table(['Proposal', 'Total', 'Status', ''], d.proposals.map(function (p) { return [esc(p.title), money(p.total), esc(p.status), link(p.link, 'Open')]; }));
