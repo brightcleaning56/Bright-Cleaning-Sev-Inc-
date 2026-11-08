@@ -42,6 +42,7 @@ import { handleInbound, analytics, importDirectory, directoryGaps, requeueNeedsC
 import { sendEmail } from './outbound.js';
 import { searchProjects, projectDetail, trackProject, saveSearch, exportCsv, collectAlerts, contractors, contractorDetail, planningSignals, commandCenter, mapPoints, marketActivity } from './leads.js';
 import { LEAD_PLANS, ALL_STATES, leadAccess } from './billing.js';
+import { notificationPrefs } from './digest.js';
 import { hashPassword, verifyPassword, createSession, sessionUser, revokeSession, sign, unsign, rateLimit, verifyStripeSignature } from './security.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -416,6 +417,19 @@ export function createServer(store, deps = {}) {
     const c = store.get('contracts', params.id); need(canSeeContract(c, user), 404, 'not found'); return { __html: contractDocument(c) };
   });
 
+  route('GET', '/api/me/notifications', 'owner', ({ user }) => {
+    const org = store.get('orgs', user.orgId); need(org, 404, 'company not found');
+    return { ...notificationPrefs(org), explanation: 'Invitations always appear in the app at once. Emails: "immediate" sends each batch as it arrives, "daily_digest" sends at most one per day. maxPerDay caps invitation emails per day.' };
+  });
+  route('PUT', '/api/me/notifications', 'owner', ({ body, user }) => {
+    const org = store.get('orgs', user.orgId); need(org, 404, 'company not found');
+    need(['immediate', 'daily_digest'].includes(body.mode), 400, 'mode must be immediate or daily_digest');
+    const maxPerDay = Number(body.maxPerDay ?? 3);
+    need(Number.isInteger(maxPerDay) && maxPerDay >= 1 && maxPerDay <= 20, 400, 'maxPerDay must be a whole number from 1 to 20');
+    org.settings = { ...(org.settings || {}), notifications: { mode: body.mode, maxPerDay } };
+    store.put('orgs', org); store.audit({ actor: user.email, orgId: org.id, action: 'notifications.updated', detail: { mode: body.mode, maxPerDay } });
+    return notificationPrefs(org);
+  });
   route('GET', '/api/digest/preview', 'owner', async ({ user }) => {
     const { buildDigest } = await import('./digest.js');
     return buildDigest(store, store.get('orgs', user.orgId), { includePlatform: user.role === 'platform_owner' });

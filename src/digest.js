@@ -126,6 +126,28 @@ export async function sendLeadAlerts(store, { fetchImpl, force = false } = {}) {
 }
 
 /** Tell each invited company about new invitations to bid (one email per company per batch). */
+
+// Notification control for invitation emails (subscriber companies). Competitors' users complain about
+// invitation email overload; this lets a company choose a daily digest and caps emails per day.
+// Invitations always appear in the app at once. Only the email is batched.
+export function notificationPrefs(org) {
+  const n = org?.settings?.notifications || {};
+  return { mode: n.mode === 'daily_digest' ? 'daily_digest' : 'immediate', maxPerDay: Math.min(20, Math.max(1, Number(n.maxPerDay) || 3)) };
+}
+export function batchingGate(org, prefs, at = new Date()) {
+  const log = org?.settings?.notificationLog || {};
+  if (prefs.mode === 'daily_digest' && log.lastAt && at - Date.parse(log.lastAt) < 24 * 3600e3) return { send: false, reason: 'daily digest: the next batch goes out 24 hours after the last one' };
+  const today = at.toISOString().slice(0, 10);
+  const count = log.day === today ? log.count || 0 : 0;
+  if (count >= prefs.maxPerDay) return { send: false, reason: 'daily email limit reached for today' };
+  return { send: true };
+}
+export function recordNotificationSent(org, at = new Date()) {
+  const log = org.settings?.notificationLog || {};
+  const today = at.toISOString().slice(0, 10);
+  org.settings = { ...(org.settings || {}), notificationLog: { lastAt: at.toISOString(), day: today, count: (log.day === today ? log.count || 0 : 0) + 1 } };
+}
+
 export async function sendInvitationNotices(store, { fetchImpl } = {}) {
   // Addenda: every invited bidder is told when a new addendum is posted.
   for (const i of store.list('invitations', i => i.notifiedAt)) {
@@ -147,6 +169,8 @@ export async function sendInvitationNotices(store, { fetchImpl } = {}) {
   const out = [];
   for (const [orgId, items] of byOrg) {
     const org = store.get('orgs', orgId); if (!org) continue;
+    const gate = batchingGate(org, notificationPrefs(org));
+    if (!gate.send) { out.push({ org: org.slug, invitations: items.length, deferred: gate.reason }); continue; }
     const owners = store.list('users', u => u.orgId === orgId && ['owner', 'platform_owner', 'member'].includes(u.role) && !u.disabled);
     const lines = [`You've been invited to bid on ${items.length} project(s):`, ''];
     for (const { r } of items) lines.push(`• ${r.title} — ${r.address}, ${r.city}, ${r.state}`, `  From ${r.buyerName} · bids due ${String(r.dueDate).slice(0, 10)}`, `  ${config.baseUrl}/#invitations`);
@@ -156,6 +180,7 @@ export async function sendInvitationNotices(store, { fetchImpl } = {}) {
         : { ok: false, error: 'no PLATFORM_FROM configured' };
       store.put('messages', { orgId, kind: 'invitation_notice', to: u.email, dryRun: !!r.dryRun, messageId: r.messageId || null, error: r.ok ? null : r.error, preview: r.dryRun ? lines.join('\n') : undefined });
     }
+    recordNotificationSent(org); store.put('orgs', org);
     for (const { i } of items) { i.notifiedAt = now(); store.put('invitations', i); }
     out.push({ org: org.slug, invitations: items.length });
   }
