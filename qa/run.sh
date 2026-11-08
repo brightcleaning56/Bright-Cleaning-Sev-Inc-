@@ -19,6 +19,7 @@ QA_PORT=4403 check "super admin phase 3 (projects, packages, plan access, docume
 reset_main; QA_PORT=4401 check "plan room + addenda flow"      "PROBLEMS: \[\]" python3 qa/planroom_flow.py
 reset_main; QA_PORT=4401 check "bid leveling + prequalification" "PROBLEMS: \[\]" python3 qa/bid_leveling_flow.py
 reset_main; QA_PORT=4401 check "super admin portal (dashboard, companies, suspend/reactivate, users, roles, audit, mobile)" "PROBLEMS: \[\]" python3 qa/admin_flow.py
+reset_main; QA_PORT=4401 check "super admin phase 5 (analytics, queue, support, incidents, privacy, jobs & health, exports)" "PROBLEMS: \[\]" python3 qa/admin_phase5_flow.py
 reset_main; QA_PORT=4401 check "super admin phase 4 + MFA (subscriptions, sources, AI limits, authenticator sign-in, phone cards)" "PROBLEMS: \[\]" python3 qa/admin_phase4_flow.py
 reset_main; QA_PORT=4401 check "project publishing (draft → checklist → publish → invited)" "PROBLEMS: \[\]" python3 qa/publishing_flow.py
 QA_PORT=4402 check "drawing takeoff (6,400 SF / 80 LF)" "PROBLEMS: \[\]" python3 qa/takeoff_flow.py
