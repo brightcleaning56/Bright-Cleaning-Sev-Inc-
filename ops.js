@@ -286,13 +286,31 @@ module.exports = function mountOps(app, ctx) {
     return result;
   }
 
+  // Company profile: plain text values stored under biz_* keys (kept out of the on/off settings).
+  const BIZ = { company_name: ['biz_company_name', 200], primary_email: ['biz_primary_email', 254], main_phone: ['biz_main_phone', 60], business_hours: ['biz_business_hours', 120] };
+  const bizProfile = () => { const rows = Object.fromEntries(db.prepare("SELECT key,value FROM settings WHERE key LIKE 'biz_%'").all().map(r => [r.key, r.value])); return Object.fromEntries(Object.entries(BIZ).map(([k, [dbk]]) => [k, rows[dbk] || ''])); };
   app.get('/api/admin/settings', auth, (req, res) => {
-    const s = Object.fromEntries(db.prepare('SELECT key,value FROM settings').all().map(r => [r.key, r.value === '1']));
+    const s = Object.fromEntries(db.prepare("SELECT key,value FROM settings WHERE key NOT LIKE 'biz_%'").all().map(r => [r.key, r.value === '1']));
     res.json({
-      settings: s, email_configured: !!getMailer(), public_base_url: baseUrl(), last_run: lastRun,
+      business: bizProfile(), settings: s, email_configured: !!getMailer(), public_base_url: baseUrl(), last_run: lastRun,
       schedule: 'Every hour while the server is running',
       log: db.prepare('SELECT * FROM automation_log ORDER BY id DESC LIMIT 50').all()
     });
+  });
+  app.put('/api/admin/business-profile', auth, (req, res) => {
+    const b = req.body || {}, errs = [], vals = {};
+    for (const [k, [dbk, max]] of Object.entries(BIZ)) if (k in b) {
+      const v = String(b[k] == null ? '' : b[k]).trim();
+      if (v.length > max) errs.push(k.replace(/_/g, ' ') + ' is too long.');
+      if (k === 'primary_email' && v && !isEmail(v)) errs.push('Enter a valid primary email.');
+      if (k === 'main_phone' && v && !/^[0-9+()\-.\s]{7,}$/.test(v)) errs.push('Enter a valid main phone number.');
+      vals[dbk] = v;
+    }
+    if (errs.length) return res.status(400).json({ error: errs.join(' ') });
+    const ins = db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+    for (const [dbk, v] of Object.entries(vals)) ins.run(dbk, v);
+    logAction(req, 'updated', 'business profile', null, Object.keys(vals).join(', '));
+    res.json({ ok: true, business: bizProfile(), message: 'Company profile saved.' });
   });
   app.put('/api/admin/settings', auth, (req, res) => {
     const b = req.body || {};

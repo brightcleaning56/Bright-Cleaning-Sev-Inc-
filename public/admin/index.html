@@ -354,6 +354,34 @@
     .toolbar input[type=search] { min-width: 0; max-width: none; }
     .activity p { flex-direction: column; gap: 2px; }
   }
+
+  /* Settings page: tabs, status banner, card grid (desktop 3 columns, tablet 2, phone 1). */
+  .sbanner { background: linear-gradient(90deg, #0b2545, #1b4f8a); color: #fff; border-radius: 12px; padding: 18px 22px; display: flex; justify-content: space-between; align-items: center; gap: 14px 20px; flex-wrap: wrap; margin: 6px 0 16px; }
+  .sbanner-title { flex: 1 1 220px; min-width: 0; }
+  .sbanner-title b { display: block; font-size: 17px; }
+  .sbanner-title span { font-size: 13px; opacity: .85; }
+  .sbanner-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 280px; min-width: 0; }
+  .schip { display: inline-flex; align-items: center; gap: 7px; background: rgba(255,255,255,.14); color: #fff; padding: 6px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .schip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #ffd166; }
+  .schip.ok::before { background: #3ddc84; }
+  .schip.off::before { background: #ffb4a9; }
+  .stabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line2); margin: 0 0 18px; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+  .stab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 11px 10px; font: inherit; font-weight: 700; font-size: 14px; color: #5b6b7d; cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
+  .stab:hover { color: #1565d8; }
+  .stab[aria-selected="true"] { color: #1565d8; border-bottom-color: #1565d8; }
+  .sgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; }
+  .sgrid > .sp { min-width: 0; }
+  .sgrid .card { height: 100%; }
+  .sgrid .card h2 { font-size: 17px; margin: 0 0 6px; }
+  .slist { list-style: none; margin: 10px 0 0; padding: 0; }
+  .slist li { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 0; border-bottom: 1px solid var(--line2); }
+  .slist li:last-child { border-bottom: 0; }
+  .slist small { font-size: 12px; }
+  .msg.warn { color: #9a6700; }
+  .msg.ok { color: #1d7a3e; }
+  .msg.err { color: var(--red); }
+  @media (max-width: 1100px) { .sgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .sgrid { grid-template-columns: 1fr; } .sbanner { padding: 16px; } .stab { padding: 10px 10px; font-size: 13px; } }
 </style>
 </head>
 <body class="adminbody">
@@ -716,83 +744,151 @@
     </section>
 
     <section class="view" id="v-settings">
-      <div class="pagehead"><div><h1>Settings</h1><p>Your password, team members and roles, email, AI, backups and company preferences.</p></div></div>
-      <div class="two">
-        <form class="card" id="pwForm">
-          <h2>Change your password</h2>
-          <div class="f"><label for="s1">Current password</label><input id="s1" name="current" type="password" autocomplete="current-password" required></div>
-          <div class="f" style="margin-top:12px"><label for="s2">New password</label><input id="s2" name="next" type="password" autocomplete="new-password" minlength="14" required><span class="hint">At least 14 characters.</span></div>
-          <div class="f" style="margin-top:12px"><label for="s3">Type it again</label><input id="s3" name="confirm" type="password" autocomplete="new-password" required></div>
-          <div class="formbar"><button class="btn">Change password</button><span class="msg" id="pwMsg" role="status"></span></div>
-        </form>
-        <div class="card">
-          <h2>People with access</h2>
-          <div id="userList"></div>
-          <form id="userForm" style="margin-top:18px">
-            <div class="f"><label for="u1">Name</label><input id="u1" name="name"></div>
-            <div class="f" style="margin-top:10px"><label for="u2">Email</label><input id="u2" name="email" type="email" required></div>
-            <div class="f" style="margin-top:10px"><label for="u4">Role</label><select id="u4" name="role"><option value="staff">Office staff — day-to-day office work, no approvals or finance settings</option><option value="supervisor">Supervisor — schedule, dispatch, quality and complaints; no pricing or finance</option><option value="inspector">Inspector — quality and inspections only</option><option value="sales">Sales — leads, customers, estimates and proposals, contracts and calls; no invoices, finance or settings</option><option value="manager">Manager — all operations, approvals and finance</option></select><span class="hint">Cleaners don't need an account: they use their private crew page (Schedule → crew → send link). Customers use their proposal, contract and invoice links.</span></div>
-            <div class="f" style="margin-top:10px"><label for="u3">Temporary password</label><input id="u3" name="password" type="text" minlength="14" required autocomplete="off"><span class="hint">At least 14 characters. Share it privately. They can change it under Settings after signing in.</span></div>
-            <div class="formbar"><button class="btn">Give access</button><span class="msg" id="userMsg" role="status"></span></div>
+      <div class="pagehead"><div><h1>Settings</h1><p>Control how Bright Clean connects, communicates, and operates.</p></div></div>
+      <div class="sbanner" id="sBanner">
+        <div class="sbanner-title"><b>System settings</b><span id="sBannerNote">Checking every connection…</span></div>
+        <div class="sbanner-chips">
+          <span class="schip" id="chipPhone">Phone</span>
+          <span class="schip" id="chipAi">AI assistant</span>
+          <span class="schip" id="chipAuto">Automations</span>
+          <span class="schip" id="chipBackup">Backups</span>
+        </div>
+      </div>
+      <nav class="stabs" role="tablist" aria-label="Settings sections" id="sTabs">
+        <button class="stab" role="tab" type="button" data-stab="general" aria-selected="true">General</button>
+        <button class="stab" role="tab" type="button" data-stab="phone">Phone &amp; Communication</button>
+        <button class="stab" role="tab" type="button" data-stab="ai">AI Receptionist</button>
+        <button class="stab" role="tab" type="button" data-stab="users">Users &amp; Access</button>
+        <button class="stab" role="tab" type="button" data-stab="automation">Automation</button>
+        <button class="stab" role="tab" type="button" data-stab="approvals">Approval Rules</button>
+        <button class="stab" role="tab" type="button" data-stab="integrations">Integrations (API)</button>
+        <button class="stab" role="tab" type="button" data-stab="backups">Backups &amp; Data</button>
+        <button class="stab" role="tab" type="button" data-stab="security">Security</button>
+      </nav>
+      <div class="sgrid">
+        <div class="sp" data-panels="general" id="spBusiness">
+          <form class="card" id="bizForm" novalidate>
+            <h2>Business profile</h2>
+            <p class="hint">Shown on proposals, invoices and emails to customers.</p>
+            <div class="f" style="margin-top:12px"><label for="bizName">Company name</label><input id="bizName" name="company_name" maxlength="200"></div>
+            <div class="f" style="margin-top:12px"><label for="bizEmail">Primary email</label><input id="bizEmail" name="primary_email" type="email" maxlength="254"></div>
+            <div class="f" style="margin-top:12px"><label for="bizPhone">Main phone</label><input id="bizPhone" name="main_phone" maxlength="60" inputmode="tel"></div>
+            <div class="f" style="margin-top:12px"><label for="bizHours">Business hours</label><input id="bizHours" name="business_hours" maxlength="120" placeholder="Mon – Fri, 8:00 AM – 5:00 PM"></div>
+            <div class="formbar"><button class="btn" type="submit">Save profile</button><span class="msg" id="bizMsg" role="status"></span></div>
           </form>
         </div>
-      </div>
-      <div class="card" id="aiCard"><h2>AI assistant</h2><p id="aiState" class="muted"></p>
-        <label class="chk"><input type="checkbox" id="aiAuto"> Analyze every new lead automatically (summary, missing information, reply draft)</label><br>
-        <label class="chk"><input type="checkbox" id="aiInfo"> When information is missing, email the customer the AI's questions automatically (questions only, never prices)</label><br>
-        <label class="chk"><input type="checkbox" id="aiDraft"> Draft a priced estimate automatically from each quote request and AI takeoff (drafts are never sent without approval)</label>
-        <p class="hint">The AI drafts and extracts only. It never sends email, never states prices and never approves or commits to work. Drawing takeoffs are drafts for your review. Every AI run is recorded.</p></div>
-      <form class="card" id="apprCard" novalidate>
-        <h2>Approval rules</h2>
-        <p class="muted">A proposal that meets any of these rules can't be emailed, marked Sent or opened by the customer until the owner approves it. Any later change to its price, scope or terms cancels the approval.</p>
-        <div class="grid">
-          <div class="f"><label for="ap1">Minimum gross margin (%)</label><input id="ap1" name="min_margin_pct" inputmode="decimal"></div>
-          <div class="f"><label for="ap2">Approve totals above ($, 0 = off)</label><input id="ap2" name="max_total" inputmode="decimal"></div>
-          <div class="f wide"><label class="chk"><input type="checkbox" name="flag_pre_pricing" id="ap3"> Approve when the quote request still had "needed before pricing" notes</label></div>
-          <div class="f wide"><label class="chk"><input type="checkbox" name="approve_all" id="ap4"> Approve every proposal before it goes out</label></div>
+        <div class="sp" data-panels="general phone" id="spPhone"><!-- Phone & Call Settings card is inserted here --></div>
+        <div class="sp" data-panels="general ai" id="spAi">
+          <form class="card" id="aiModeForm" novalidate>
+            <h2>AI Receptionist</h2>
+            <p class="hint">Answers calls, captures leads, creates requests and routes them to your team.</p>
+            <div class="f" style="margin-top:12px"><label for="aiMode">When should the AI answer?</label>
+              <select id="aiMode"><option value="off">Never — calls go to voicemail</option><option value="no_answer">When no one picks up (instead of voicemail)</option><option value="after_hours">Outside business hours only</option><option value="always">Always</option></select></div>
+            <div class="formbar"><button class="btn" type="submit">Save receptionist</button><span class="msg" id="aiModeMsg" role="status"></span></div>
+          </form>
         </div>
-        <div style="margin-top:12px"><button class="btn" id="apSave" type="submit">Save rules</button> <span class="msg" id="apMsg" role="status"></span></div>
-      </form>
-      <div class="card" id="autoCard">
-        <h2>Automation</h2>
-        <p class="msg" id="autoEmail"></p>
-        <div id="autoToggles"></div>
-        <div class="formbar"><button class="btn ghost" id="autoRun">Run automations now</button><span class="msg" id="autoMsg" role="status"></span></div>
-        <div class="formsection">Recent automation activity</div>
-        <div class="activity" id="autoLog"></div>
-      </div>
-      <div class="card" id="backupCard">
-        <h2>Database backups</h2>
-        <p class="msg">A backup is made automatically each day and the 14 newest are kept on the server. Download one regularly and store it somewhere safe off the server.</p>
-        <div class="formbar" style="margin-top:0"><button class="btn" id="backupNow">Back up now</button><span class="msg" id="backupMsg" role="status"></span></div>
-        <div id="backupList" style="margin-top:12px"></div>
-      </div>
-      <div class="card" id="callbackCard" style="margin-top:14px">
-        <h2>Automatic callbacks (off until the legal review is done)</h2>
-        <p class="hint">When turned on, the system calls leads marked “Call back requested”. The caller hears that it is an automated assistant, that the call may be recorded, and can press 1 to reach the team. Calls stay inside business hours and under the daily limit.</p>
-        <form id="callbackForm" class="two" style="margin-top:10px">
-          <label class="chk"><input type="checkbox" id="cbLegal"> Legal review is done and the script is approved</label>
-          <label class="chk"><input type="checkbox" id="cbOn"> Automatic callbacks are on</label>
-          <div class="f"><label for="cbLimit">Daily limit (0 to 50)</label><input id="cbLimit" type="number" min="0" max="50" value="10"></div>
-          <div class="f"><label for="cbStart">Start hour (0 to 23)</label><input id="cbStart" type="number" min="0" max="23" value="9"></div>
-          <div class="f"><label for="cbEnd">End hour (1 to 24)</label><input id="cbEnd" type="number" min="1" max="24" value="17"></div>
-          <div><button class="btn" type="submit">Save automatic callbacks</button> <span class="msg" id="cbMsg" role="status"></span></div>
-        </form>
-        <p class="hint" id="cbSent"></p>
-      </div>
-      <div class="card" id="apiKeysCard" style="margin-top:14px">
-        <h2>Connect other sources (API keys)</h2>
-        <p class="hint">Partner sites, ad landing pages, Zapier or a CRM can send leads straight into Leads. Create a key for each source. A key is shown once: copy it when it appears. Revoke a key any time to stop it.</p>
-        <div class="headact" style="margin:10px 0"><button class="btn" id="apiKeyNew">New API key</button></div>
-        <p class="msg" id="apiKeyNote" role="status"></p>
-        <div class="tablewrap" style="overflow-x:auto"><table class="isst"><thead><tr><th>Name</th><th>Key starts with</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody id="apiKeyRows"></tbody></table></div>
-        <details style="margin-top:12px"><summary>How to send a lead</summary>
-          <p class="hint">POST to <code>https://brightclean.net/api/integrations/leads</code> with the key in the <code>X-API-Key</code> header and JSON fields: <code>name</code>, <code>email</code>, <code>phone</code>, <code>company</code>, <code>project_name</code>, <code>service</code>, <code>details</code>, and optional <code>source</code> (for example "spring-campaign"). Send at least a name, email or phone.</p>
-          <pre style="white-space:pre-wrap;font-size:12px;background:#f3f6fa;padding:10px;border-radius:8px">curl -X POST https://brightclean.net/api/integrations/leads \
+        <div class="sp" data-panels="general ai" id="spAiSettings">
+          <div class="card" id="aiCard"><h2>AI assistant</h2><p id="aiState" class="muted"></p>
+            <label class="chk"><input type="checkbox" id="aiAuto"> Analyze every new lead automatically (summary, missing information, reply draft)</label><br>
+            <label class="chk"><input type="checkbox" id="aiInfo"> When information is missing, email the customer the AI's questions automatically (questions only, never prices)</label><br>
+            <label class="chk"><input type="checkbox" id="aiDraft"> Draft a priced estimate automatically from each quote request and AI takeoff (drafts are never sent without approval)</label>
+            <p class="hint">The AI drafts and extracts only. It never sends email, never states prices and never approves or commits to work. Drawing takeoffs are drafts for your review. Every AI run is recorded.</p></div>
+        </div>
+        <div class="sp" data-panels="general security" id="spSecurity">
+          <div class="card" id="secSummary">
+            <h2>Security &amp; account</h2>
+            <ul class="slist">
+              <li><button class="linklike" type="button" data-goto-tab="security">Change password</button><small class="muted">Use at least 14 characters</small></li>
+              <li><button class="linklike" type="button" id="secSignOutAll">Sign out of all other devices</button><small class="muted">Ends every other session</small></li>
+              <li><span>Two-factor authentication</span><small class="badge amber">Not available yet</small></li>
+              <li><span>Login activity</span><small class="badge amber">Not available yet</small></li>
+            </ul>
+          </div>
+        </div>
+        <div class="sp" data-panels="security" id="spPassword">
+          <form class="card" id="pwForm">
+            <h2>Change your password</h2>
+            <div class="f"><label for="s1">Current password</label><input id="s1" name="current" type="password" autocomplete="current-password" required></div>
+            <div class="f" style="margin-top:12px"><label for="s2">New password</label><input id="s2" name="next" type="password" autocomplete="new-password" minlength="14" required><span class="hint">At least 14 characters.</span></div>
+            <div class="f" style="margin-top:12px"><label for="s3">Type it again</label><input id="s3" name="confirm" type="password" autocomplete="new-password" required></div>
+            <div class="formbar"><button class="btn">Change password</button><span class="msg" id="pwMsg" role="status"></span></div>
+          </form>
+        </div>
+        <div class="sp" data-panels="general users" id="spUsers">
+          <div class="card">
+            <h2>People with access</h2>
+            <div id="userList"></div>
+            <form id="userForm" style="margin-top:18px">
+              <div class="f"><label for="u1">Name</label><input id="u1" name="name"></div>
+              <div class="f" style="margin-top:10px"><label for="u2">Email</label><input id="u2" name="email" type="email" required></div>
+              <div class="f" style="margin-top:10px"><label for="u4">Role</label><select id="u4" name="role"><option value="staff">Office staff — day-to-day office work, no approvals or finance settings</option><option value="supervisor">Supervisor — schedule, dispatch, quality and complaints; no pricing or finance</option><option value="inspector">Inspector — quality and inspections only</option><option value="sales">Sales — leads, customers, estimates and proposals, contracts and calls; no invoices, finance or settings</option><option value="manager">Manager — all operations, approvals and finance</option></select><span class="hint">Cleaners don't need an account: they use their private crew page (Schedule → crew → send link). Customers use their proposal, contract and invoice links.</span></div>
+              <div class="f" style="margin-top:10px"><label for="u3">Temporary password</label><input id="u3" name="password" type="text" minlength="14" required autocomplete="off"><span class="hint">At least 14 characters</span></div>
+              <div class="formbar"><button class="btn">Give access</button><span class="msg" id="userMsg" role="status"></span></div>
+            </form>
+          </div>
+        </div>
+        <div class="sp" data-panels="general automation" id="spAuto">
+          <div class="card" id="autoCard">
+            <h2>Automation</h2>
+            <p class="msg" id="autoEmail"></p>
+            <div id="autoToggles"></div>
+            <div class="formbar"><button class="btn ghost" id="autoRun">Run automations now</button><span class="msg" id="autoMsg" role="status"></span></div>
+            <div class="formsection">Recent automation activity</div>
+            <div class="activity" id="autoLog"></div>
+          </div>
+        </div>
+        <div class="sp" data-panels="general approvals" id="spApprovals">
+          <form class="card" id="apprCard" novalidate>
+            <h2>Approval rules</h2>
+            <p class="muted">A proposal that meets any of these rules can't be emailed, marked Sent or opened by the customer until the owner approves it. Any later change to its price, scope or terms cancels the approval.</p>
+            <div class="grid">
+              <div class="f"><label for="ap1">Minimum gross margin (%)</label><input id="ap1" name="min_margin_pct" inputmode="decimal"></div>
+              <div class="f"><label for="ap2">Approve totals above ($, 0 = off)</label><input id="ap2" name="max_total" inputmode="decimal"></div>
+              <div class="f wide"><label class="chk"><input type="checkbox" name="flag_pre_pricing" id="ap3"> Approve when the quote request still had "needed before pricing" notes</label></div>
+              <div class="f wide"><label class="chk"><input type="checkbox" name="approve_all" id="ap4"> Approve every proposal before it goes out</label></div>
+            </div>
+            <div class="formbar"><button class="btn" id="apSave" type="submit">Save rules</button><span class="msg" id="apMsg" role="status"></span></div>
+          </form>
+        </div>
+        <div class="sp" data-panels="general backups" id="spBackups">
+          <div class="card" id="backupCard">
+            <h2>Database backups</h2>
+            <p class="msg">A backup is made automatically each day and the 14 newest are kept on the server. Download one regularly and store it somewhere safe off the server.</p>
+            <div class="formbar" style="margin-top:0"><button class="btn" id="backupNow">Back up now</button><span class="msg" id="backupMsg" role="status"></span></div>
+            <div id="backupList" style="margin-top:12px"></div>
+          </div>
+        </div>
+        <div class="sp" data-panels="general integrations" id="spApiKeys">
+          <div class="card" id="apiKeysCard">
+            <h2>Integrations (API keys)</h2>
+            <p class="hint">Partner sites, ad landing pages, Zapier or a CRM can send leads straight into Leads. Create a key for each source. A key is shown once: copy it when it appears. Revoke a key any time to stop it.</p>
+            <div class="headact" style="margin:10px 0"><button class="btn" id="apiKeyNew">New API key</button></div>
+            <p class="msg" id="apiKeyNote" role="status"></p>
+            <div class="tablewrap" style="overflow-x:auto"><table class="isst"><thead><tr><th>Name</th><th>Key starts with</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody id="apiKeyRows"></tbody></table></div>
+            <details style="margin-top:12px"><summary>How to send a lead</summary>
+              <p class="hint">POST to <code>https://brightclean.net/api/integrations/leads</code> with the key in the <code>X-API-Key</code> header and JSON fields: <code>name</code>, <code>email</code>, <code>phone</code>, <code>company</code>, <code>details</code> and <code>source</code>.</p>
+              <pre style="white-space:pre-wrap;font-size:12px;background:#f3f6fa;padding:10px;border-radius:8px">curl -X POST https://brightclean.net/api/integrations/leads \
   -H "Content-Type: application/json" \
   -H "X-API-Key: YOUR_KEY" \
   -d '{"name":"Jane Doe","email":"jane@example.com","company":"Example Co","details":"Needs weekly janitorial","source":"partner-site"}'</pre>
-        </details>
+            </details>
+          </div>
+        </div>
+        <div class="sp" data-panels="phone" id="spCallback">
+          <div class="card" id="callbackCard">
+            <h2>Automatic callbacks (off until the legal review is done)</h2>
+            <p class="hint">When turned on, the system calls leads marked “Call back requested”. The caller hears that it is an automated assistant, that the call may be recorded, and can press 1 to reach the team.</p>
+            <form id="callbackForm" class="two" style="margin-top:10px">
+              <label class="chk"><input type="checkbox" id="cbLegal"> Legal review is done and the script is approved</label>
+              <label class="chk"><input type="checkbox" id="cbOn"> Automatic callbacks are on</label>
+              <div class="f"><label for="cbLimit">Daily limit (0 to 50)</label><input id="cbLimit" type="number" min="0" max="50" value="10"></div>
+              <div class="f"><label for="cbStart">Start hour (0 to 23)</label><input id="cbStart" type="number" min="0" max="23" value="9"></div>
+              <div class="f"><label for="cbEnd">End hour (1 to 24)</label><input id="cbEnd" type="number" min="1" max="24" value="17"></div>
+              <div class="formbar"><button class="btn" type="submit">Save automatic callbacks</button><span class="msg" id="cbMsg" role="status"></span></div>
+            </form>
+            <p class="hint" id="cbSent"></p>
+          </div>
+        </div>
       </div>
     </section>
   </main>

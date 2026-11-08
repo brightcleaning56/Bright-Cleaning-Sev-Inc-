@@ -1638,12 +1638,90 @@
     catch (err) { m.className = 'msg err'; m.textContent = err.message; }
   });
 
+  // ---- Settings layout: tabs, status banner, business profile, receptionist mode, security shortcuts ----
+  const SETTINGS_TABS = ['general', 'phone', 'ai', 'users', 'automation', 'approvals', 'integrations', 'backups', 'security'];
+  function setSettingsTab(name) {
+    if (!SETTINGS_TABS.includes(name)) name = 'general';
+    document.querySelectorAll('#sTabs .stab').forEach(b => { const on = b.dataset.stab === name; b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; });
+    document.querySelectorAll('#v-settings .sp').forEach(p => { p.hidden = !(p.dataset.panels || '').split(/\s+/).includes(name); });
+    try { sessionStorage.setItem('bcSettingsTab', name); } catch (e) { /* private window */ }
+  }
+  function initSettingsTabs() {
+    const bar = document.getElementById('sTabs'); if (!bar || bar.dataset.ready) return; bar.dataset.ready = '1';
+    bar.querySelectorAll('.stab').forEach(b => b.addEventListener('click', () => setSettingsTab(b.dataset.stab)));
+    document.querySelectorAll('#v-settings [data-goto-tab]').forEach(b => b.addEventListener('click', () => setSettingsTab(b.dataset.gotoTab)));
+    let start = 'general'; try { start = sessionStorage.getItem('bcSettingsTab') || 'general'; } catch (e) { /* */ }
+    setSettingsTab(start);
+  }
+  // Unsaved / saved / error states next to each form's Save button.
+  function watchForm(form, msgEl) {
+    if (!form || form.dataset.watch) return; form.dataset.watch = '1';
+    form.addEventListener('input', () => { if (msgEl) { msgEl.className = 'msg warn'; msgEl.textContent = 'Unsaved changes'; } });
+  }
+  function savedNote(msgEl, text) { if (msgEl) { msgEl.className = 'msg ok'; msgEl.textContent = text || 'Saved.'; } }
+  function failNote(msgEl, text) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = text || 'Could not save. Please try again.'; } }
+  function loadBusinessForm(st) {
+    const b = (st && st.business) || {};
+    if (!$('#bizForm')) return;
+    $('#bizName').value = b.company_name || ''; $('#bizEmail').value = b.primary_email || ''; $('#bizPhone').value = b.main_phone || ''; $('#bizHours').value = b.business_hours || '';
+  }
+  function bindSettingsForms() {
+    const biz = $('#bizForm');
+    if (biz) {
+      watchForm(biz, $('#bizMsg'));
+      biz.onsubmit = async ev => {
+        ev.preventDefault(); $('#bizMsg').textContent = 'Saving…';
+        try {
+          const r = await api('/api/admin/business-profile', { method: 'PUT', json: { company_name: $('#bizName').value, primary_email: $('#bizEmail').value, main_phone: $('#bizPhone').value, business_hours: $('#bizHours').value } });
+          loadBusinessForm({ business: r.business }); savedNote($('#bizMsg'), 'Company profile saved.');
+        } catch (e) { failNote($('#bizMsg'), e.message); }
+      };
+    }
+    const ai = $('#aiModeForm');
+    if (ai) {
+      watchForm(ai, $('#aiModeMsg'));
+      ai.onsubmit = async ev => {
+        ev.preventDefault(); $('#aiModeMsg').textContent = 'Saving…';
+        try { await api('/api/admin/phone/settings', { method: 'PUT', json: { ai_mode: $('#aiMode').value } }); savedNote($('#aiModeMsg'), 'Receptionist saved.'); loadSettingsOverview(); }
+        catch (e) { failNote($('#aiModeMsg'), e.message); }
+      };
+    }
+    const so = $('#secSignOutAll');
+    if (so) so.onclick = async () => {
+      if (!confirm('Sign out every other device and browser using your account? This device stays signed in.')) return;
+      try { const r = await api('/api/admin/account/sign-out-everywhere', { method: 'POST', json: {} }); if (r.token) { token = r.token; localStorage.setItem(TOKEN_KEY, token); } toast(r.message || 'Other devices were signed out.'); }
+      catch (e) { toast(e.message, true); }
+    };
+    watchForm($('#apprCard'), $('#apMsg')); watchForm($('#callbackForm'), $('#cbMsg'));
+  }
+  function updateSettingsChips(st, ph) {
+    const chip = (id, label, on, detail) => { const el = document.getElementById(id); if (!el) return; el.className = 'schip ' + (on === true ? 'ok' : on === false ? 'off' : 'warn'); el.textContent = label + (detail ? ': ' + detail : ''); };
+    chip('chipPhone', 'Phone', ph ? !!ph.connected : null, ph ? (ph.connected ? 'connected' : 'disconnected') : 'unknown');
+    const mode = ph && ph.ai_receptionist ? ph.ai_receptionist.mode : null;
+    chip('chipAi', 'AI assistant', mode ? mode !== 'off' : null, mode ? (mode === 'off' ? 'off' : 'on') : 'unknown');
+    const s = (st && st.settings) || {};
+    const autos = ['auto_proposal_reminders', 'auto_invoice_reminders', 'auto_handoff', 'auto_backup'];
+    const onCount = autos.filter(k => s[k]).length;
+    chip('chipAuto', 'Automations', st ? onCount > 0 : null, st ? onCount + ' of ' + autos.length + ' on' : 'unknown');
+    chip('chipBackup', 'Backups', st ? !!s.auto_backup : null, st ? (s.auto_backup ? 'daily' : 'off') : 'unknown');
+    const note = document.getElementById('sBannerNote');
+    if (note) note.textContent = !st || !ph ? 'Some settings could not be loaded. Refresh to try again.' : ph.connected ? 'All systems operational' : 'Phone is not connected';
+  }
+  async function loadSettingsOverview() {
+    let st = null, ph = null;
+    try { st = await api('/api/admin/settings'); } catch (e) { st = null; }
+    try { ph = await api('/api/admin/phone/settings'); } catch (e) { ph = null; }
+    loadBusinessForm(st);
+    if (ph && ph.ai_receptionist && $('#aiMode')) $('#aiMode').value = ph.ai_receptionist.mode || 'off';
+    updateSettingsChips(st, ph);
+  }
   async function loadSettings() {
     addSignOutEverywhere();
+    initSettingsTabs(); bindSettingsForms();
     // Only owners and managers manage company settings. Everyone else sees just their own password and name.
     const own = state.me && !['owner', 'manager'].includes(state.me.role);
-    if (own) { $$('#v-settings .card').forEach(c => { if (c.id !== 'pwForm') c.hidden = true; }); return; }
-    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings(), loadApiKeys(), loadCallbackSettings()]);
+    if (own) { $$('#v-settings .card').forEach(c => { if (c.id !== 'pwForm') c.hidden = true; }); document.querySelectorAll('#sTabs .stab').forEach(b => { b.hidden = b.dataset.stab !== 'security'; }); setSettingsTab('security'); return; }
+    await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings(), loadApiKeys(), loadCallbackSettings(), loadSettingsOverview()]);
   }
   async function loadCallbackSettings() {
     if (!$('#callbackForm')) return;
@@ -1653,6 +1731,7 @@
     $('#cbSent').textContent = `Sent today: ${r.sent_today} of ${st.daily_limit}.`;
     $('#callbackForm').onsubmit = async ev => {
       ev.preventDefault();
+      if ($('#cbOn').checked && !st.enabled && !confirm('Turn on automatic callbacks? The system will start calling leads marked “Call back requested” within the hours and daily limit you set.')) return;
       try { await api('/api/admin/outbound-callbacks', { method: 'PUT', json: { legal_review_confirmed: $('#cbLegal').checked, enabled: $('#cbOn').checked, daily_limit: Number($('#cbLimit').value), start_hour: Number($('#cbStart').value), end_hour: Number($('#cbEnd').value) } }); $('#cbMsg').textContent = 'Saved.'; loadCallbackSettings(); }
       catch (e) { $('#cbMsg').textContent = e.message; }
     };
@@ -1687,7 +1766,7 @@
   }
   async function loadPhoneSettings() {
     let card = document.getElementById('phoneCard');
-    if (!card) { card = document.createElement('div'); card.className = 'card'; card.id = 'phoneCard'; card.style.marginBottom = '16px'; const head = document.querySelector('#v-settings .pagehead'); head.parentNode.insertBefore(card, head.nextSibling); }
+    if (!card) { card = document.createElement('div'); card.className = 'card'; card.id = 'phoneCard'; card.style.marginBottom = '16px'; document.getElementById('spPhone').appendChild(card); }
     let r; try { r = await api('/api/admin/phone/settings'); } catch (e) { card.innerHTML = `<h2>Phone</h2><p class="muted">${esc(e.message)}</p>`; return; }
     const warn = !r.ring_phones.length && r.render_forward_digits ? `<p class="msg err" style="margin:8px 0">The ring phone in Render (TWILIO_FORWARD_TO) has ${r.render_forward_digits} digits and isn't a valid US number, so incoming calls go straight to voicemail. Enter the phone(s) below instead.</p>` : '';
     card.innerHTML = `<h2>Phone</h2>

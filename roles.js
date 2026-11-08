@@ -23,7 +23,7 @@ const SUPERVISOR_DENY = [
   /^\/api\/admin\/settings(\/|$)/, // company settings and the reminder log (customer contact details); own password and name stay available
   /^\/api\/admin\/(dashboard|command-center|command-center\/divisions)$/,
   /^\/api\/admin\/pm\/.*cost/, /^\/api\/admin\/customers\/\d+\/(invoices|billing|statement)/,
-  [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(settings|phone\/settings|phone\/callback-owner|issues\/config|quality\/settings)(\/|$)/]
+  [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(settings|business-profile|phone\/settings|phone\/callback-owner|issues\/config|quality\/settings)(\/|$)/]
 ];
 // Sales: sales work (leads, estimates, proposals, contracts, calls, email). Refused: money, finance, settings and people admin.
 const SALES_DENY = [
@@ -31,6 +31,11 @@ const SALES_DENY = [
   /^\/api\/admin\/pm\/.*cost/, /^\/api\/admin\/customers\/\d+\/(invoices|billing|statement)/,
   /^\/api\/admin\/settings(\/|$)/, /^\/api\/admin\/(ai\/settings|automation\/ai-settings)(\/|$)/,
   [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(phone\/settings|phone\/callback-owner|issues\/config|quality\/settings)(\/|$)/]
+];
+// Office staff: settings, people, backups, approval rules and automation stay with managers. Their own password and name stay available.
+const STAFF_DENY = [
+  /^\/api\/admin\/(settings|backups|audit-log|system-health)(\/|$)/,
+  [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(business-profile|phone\/settings|phone\/callback-owner|issues\/config|quality\/settings|outbound-callbacks|api-keys|users|approval-rules|ai\/settings|automation\/ai-settings|automation|ai-receptionist)(\/|$)/]
 ];
 // Inspector: an explicit allow-list; anything not listed is refused.
 const INSPECTOR_ALLOW = [
@@ -47,6 +52,10 @@ function check(role, method, path) {
   }
   if (role === 'sales') {
     for (const r of SALES_DENY) { const [m, p] = Array.isArray(r) ? r : [null, r]; if ((!m || m.test(method)) && p.test(path)) return 'Sales does not have access to this (invoices, finance, settings and user administration stay with managers).'; }
+    return null;
+  }
+  if (role === 'staff') {
+    for (const r of STAFF_DENY) { const [m, p] = Array.isArray(r) ? r : [null, r]; if ((!m || m.test(method)) && p.test(path)) return 'Office staff do not have access to this (settings, users, backups and approval rules stay with managers).'; }
     return null;
   }
   if (role === 'inspector') return INSPECTOR_ALLOW.some(([m, p]) => m.test(method) && p.test(path)) ? null : 'Inspectors only have access to quality and inspections.';

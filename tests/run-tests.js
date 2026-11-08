@@ -559,6 +559,22 @@ async function startServer(env, dataDir) {
     return 'opted-out customer: 0 automatic reminders; manual send still emailed (1 message)';
   });
 
+  await check('Settings', 'Company profile: owner saves and reads it back; bad email and phone refused; staff refused; the on/off settings list is unchanged', async () => {
+    const ok = await req('PUT', '/api/admin/business-profile', { token: T, json: { company_name: 'Bright Cleaning Sev Inc', primary_email: 'info@brightclean.net', main_phone: '(515) 303-3024', business_hours: 'Mon - Fri, 8:00 AM - 5:00 PM' } });
+    const get = await req('GET', '/api/admin/settings', { token: T });
+    const badMail = await req('PUT', '/api/admin/business-profile', { token: T, json: { primary_email: 'not-an-email' } });
+    const badPhone = await req('PUT', '/api/admin/business-profile', { token: T, json: { main_phone: 'call me' } });
+    assert(ok.status === 200 && ok.data.business.company_name === 'Bright Cleaning Sev Inc', 'save failed: ' + JSON.stringify(ok.data));
+    assert(get.data.business && get.data.business.primary_email === 'info@brightclean.net' && get.data.business.main_phone === '(515) 303-3024', 'not read back: ' + JSON.stringify(get.data.business));
+    assert(badMail.status === 400 && /primary email/.test(badMail.data.error), 'bad email not refused: ' + JSON.stringify(badMail.data));
+    assert(badPhone.status === 400 && /phone/.test(badPhone.data.error), 'bad phone not refused: ' + JSON.stringify(badPhone.data));
+    assert(get.data.settings && typeof get.data.settings.auto_backup === 'boolean' && !('biz_company_name' in get.data.settings), 'on/off settings changed shape');
+    const mk = await req('POST', '/api/admin/users', { token: T, json: { name: 'Biz Staff', email: 'biz.staff@test.test', role: 'staff', password: 'staff-password-1234' } });
+    const sTok = require('../node_modules/jsonwebtoken').sign({ role: 'admin', email: 'biz.staff@test.test', tv: 0 }, env.JWT_SECRET);
+    const sput = await req('PUT', '/api/admin/business-profile', { token: sTok, json: { company_name: 'Hacked' } });
+    assert(mk.status === 201 && sput.status === 403, 'staff could change the profile: ' + sput.status + ' create ' + mk.status);
+    return 'owner saves and reads the profile; bad email and phone refused with a message; on/off settings unchanged';
+  });
   await check('Flow', 'Approved job: office sign-off makes the project Contracted; its visits are Scheduled; an unsigned job stays Planning with Tentative visits', async () => {
     const Database2 = require('../node_modules/better-sqlite3');
     const db2e = id => { const d = new Database2(require('path').join(globalThis.__dataDir, 'brightclean.db'), { readonly: true }); const r = d.prepare('SELECT email FROM contracts WHERE id=?').get(id); d.close(); return r && r.email; };
