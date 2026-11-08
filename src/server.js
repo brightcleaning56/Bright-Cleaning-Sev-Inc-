@@ -27,6 +27,7 @@ import * as admin from './admin/service.js';
 import * as adminMk from './admin/marketplace.js';
 import * as adminOps from './admin/operations.js';
 import * as adminPhase2b from './admin/phase2b.js';
+import * as adminSupport from './admin/support.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
 import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher } from './publishing.js';
@@ -513,6 +514,13 @@ export function createServer(store, deps = {}) {
   route('POST', '/api/admin/authority/:id/decision', A('admin.publisher.review'), ({ params, body, user, requestId }) => R2(admin.authorityDecision(store, { user, requestId }, params.id, body)));
   route('GET', '/api/admin/analytics', A('admin.dashboard.read'), () => adminPhase2b.platformAnalytics(store));
   route('GET', '/api/admin/action-queue', A('admin.dashboard.read'), () => adminPhase2b.actionQueue(store));
+  route('GET', '/api/admin/support', A('admin.support.manage'), ({ query }) => R2(adminSupport.listCases(store, query)));
+  route('POST', '/api/admin/support', A('admin.support.manage'), ({ body, user, requestId }) => R2(adminSupport.createCase(store, { user, requestId }, body)).case);
+  route('GET', '/api/admin/support/:id', A('admin.support.manage'), ({ params }) => R2(adminSupport.caseDetail(store, params.id)).case);
+  route('POST', '/api/admin/support/:id/notes', A('admin.support.manage'), ({ params, body, user, requestId }) => R2(adminSupport.addNote(store, { user, requestId }, params.id, body)).case);
+  route('POST', '/api/admin/support/:id/status', A('admin.support.manage'), ({ params, body, user, requestId }) => R2(adminSupport.setStatus(store, { user, requestId }, params.id, body)).case);
+  route('POST', '/api/admin/support/:id/assign', A('admin.support.manage'), ({ params, body, user, requestId }) => R2(adminSupport.assign(store, { user, requestId }, params.id, body)).case);
+  route('GET', '/api/my/support/:id', 'user', ({ params, user }) => R2(adminSupport.customerView(store, params.id, user.orgId)).case);
   route('GET', '/api/admin/audit', A('admin.audit.read'), async ({ query }) => admin.auditSearch(store, query));
   // Phase 3: projects, duplicates, corrections, bid/award oversight (read-only), documents
   const C = ({ user, requestId }) => ({ user, requestId });

@@ -53,7 +53,7 @@ const NAV = [
   ['D. Marketplace Operations', [['packages', 'Bid packages & bids', 'admin.bid.read'], ['documents', 'Plan-room documents', 'admin.bid.read']]],
   ['E. Financial Operations', [['subscriptions', 'Subscriptions', 'admin.billing.read'], [null, 'Invoices, refunds & reconciliation', 'Blocked — needs Stripe']]],
   ['F. Data & AI Operations', [['sources', 'Data sources', 'admin.source.manage'], ['ai', 'AI usage & limits', 'admin.ai.manage']]],
-  ['G. Customer Operations', [[null, 'Support cases & disputes', 'Phase 5']]],
+  ['G. Customer Operations', [['support', 'Support cases & disputes', 'admin.support.manage']]],
   ['H. Security & Compliance', [['security', 'My security (MFA)', 'admin.dashboard.read'], ['audit', 'Audit log', 'admin.audit.read'], [null, 'Security events & incidents', 'Phase 5'], [null, 'Privacy requests', 'Phase 5']]],
   ['I. System Administration', [['ext:#open:readiness', 'Launch gates & release (main app)', 'admin.system.manage'], [null, 'Jobs, integrations, backups', 'Phase 5']]],
 ];
@@ -79,7 +79,7 @@ async function render() {
   let tmr; $('#gs').oninput = () => { clearTimeout(tmr); tmr = setTimeout(globalSearch, 250); };
   const views = { dashboard: viewDashboard, companies: viewCompanies, company: viewCompany, users: viewUsers, user: viewUser, verification: viewVerification, authority: viewAuthority, audit: viewAudit,
     projects: viewProjects, project: viewProject, duplicates: viewDuplicates, markets: viewMarkets, packages: viewPackages, package: viewPackage, documents: viewDocuments, document: viewDocument,
-    subscriptions: viewSubscriptions, sources: viewSources, source: viewSource, ai: viewAi, security: viewSecurity, analytics: viewAnalytics, queue: viewQueue };
+    subscriptions: viewSubscriptions, sources: viewSources, source: viewSource, ai: viewAi, security: viewSecurity, analytics: viewAnalytics, queue: viewQueue, support: viewSupport };
   const v = views[parts[0]] || viewDashboard;
   try { await v(parts, q); labelTables(); } catch (e) { $('#main').innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
 }
@@ -229,6 +229,51 @@ async function viewQueue() {
   $('#main').innerHTML = `<p class="muted">Everything that needs an administrator decision, oldest first. ${r.count} open.</p>
     <div class="card scroll"><table><tr><th>Type</th><th>Item</th><th>Detail</th><th>Since</th><th></th></tr>
     ${r.items.map(x => '<tr><td>' + esc(x.label) + '</td><td>' + esc(x.title) + '</td><td class="muted">' + esc(x.detail) + '</td><td>' + (x.since ? fmt(x.since) : '—') + '</td><td>' + (x.link ? '<a href="' + esc(x.link) + '">Open</a>' : '—') + '</td></tr>').join('') || '<tr><td colspan="5" class="muted">Nothing waiting. Every item is handled.</td></tr>'}</table></div>`;
+  bindGo($('#main'));
+}
+// ---------- Phase 5: support cases (internal and customer-visible notes) ----------
+const PRIORITY = ['low', 'normal', 'high'];
+const CASE_STATUS = ['open', 'waiting_customer', 'resolved', 'closed'];
+async function viewSupport(parts, q) {
+  if (parts[1]) return viewSupportCase(parts[1]);
+  crumbs([['Support cases']]);
+  const r = await api('GET', '/api/admin/support?' + q);
+  const companies = (await api('GET', '/api/admin/companies?limit=100')).items || [];
+  $('#main').innerHTML = `<p class="muted">Internal notes are for staff only. Customer-visible notes are the only notes a company sees.</p>
+    <div class="card"><h3>New case</h3>
+      <form id="newcase" class="grid2">
+        <label>Company <select name="companyId">${companies.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select></label>
+        <label>Priority <select name="priority">${PRIORITY.map(p => `<option>${p}</option>`).join('')}</select></label>
+        <label>Subject <input name="subject" required minlength="5"></label>
+        <label>Opening message (visible to the company) <textarea name="body"></textarea></label>
+        <div><button class="primary" type="submit">Open case</button></div>
+      </form></div>
+    <div class="card scroll"><table><tr><th>Subject</th><th>Company</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Updated</th></tr>
+    ${r.items.map(c => `<tr><td><a href="#/support/${esc(c.id)}">${esc(c.subject)}</a></td><td>${esc(c.company)}</td><td>${esc(c.status)}</td><td>${esc(c.priority)}</td><td>${esc(c.assignee || '—')}</td><td>${fmt(c.updatedAt)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No support cases.</td></tr>'}</table></div>`;
+  $('#newcase').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target);
+    try { const c = await api('POST', '/api/admin/support', Object.fromEntries(f)); location.hash = '#/support/' + c.id; } catch (err) { toast(err.message); } };
+  bindGo($('#main'));
+}
+async function viewSupportCase(id) {
+  const c = await api('GET', '/api/admin/support/' + encodeURIComponent(id));
+  crumbs([['Support cases', 'support'], [c.subject]]);
+  $('#main').innerHTML = `<div class="card"><h2>${esc(c.subject)}</h2>
+    <p class="muted">${esc(c.company || '—')} · priority ${esc(c.priority)} · assignee ${esc(c.assignee || 'none')} · opened by ${esc(c.createdBy)}</p>
+    <p>Status: <strong>${esc(c.status)}</strong></p>
+    <h3>Notes</h3>
+    ${(c.notes || []).map(n => `<div class="note"><small>${fmt(n.at)} · ${esc(n.by)} · <span class="${n.visibility === 'internal' ? 'warn' : ''}">${esc(n.visibility === 'internal' ? 'INTERNAL (staff only)' : 'visible to company')}</span></small><p>${esc(n.body)}</p></div>`).join('') || '<p class="muted">No notes yet.</p>'}
+    <form id="addnote" class="grid2"><label>Visibility <select name="visibility"><option value="customer">Visible to company</option><option value="internal">Internal (staff only)</option></select></label>
+      <label>Note <textarea name="body" required></textarea></label><div><button type="submit">Add note</button></div></form></div>
+    <div class="card"><h3>Status</h3><form id="setstatus" class="grid2">
+      <label>New status <select name="status">${CASE_STATUS.map(s => `<option value="${s}" ${s === c.status ? 'selected' : ''}>${s.replace('_', ' ')}</option>`).join('')}</select></label>
+      <label>Reason (required) <input name="reason" minlength="5" required></label><div><button type="submit">Change status</button></div></form>
+      <form id="assign" class="grid2"><label>Assign to (name or email) <input name="assignee" required></label><div><button type="submit">Assign</button></div></form></div>
+    <div class="card"><h3>History</h3><table><tr><th>When</th><th>By</th><th>Action</th><th>Reason</th></tr>
+    ${(c.history || []).map(h => `<tr><td>${fmt(h.at)}</td><td>${esc(h.by)}</td><td>${esc(h.action)}</td><td class="muted">${esc(h.reason || '')}</td></tr>`).join('')}</table></div>`;
+  const post = async (path, body, msg) => { try { await api('POST', '/api/admin/support/' + encodeURIComponent(id) + path, body); toast(msg); viewSupportCase(id); } catch (err) { toast(err.message); } };
+  $('#addnote').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); post('/notes', Object.fromEntries(f), 'Note added'); };
+  $('#setstatus').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); post('/status', Object.fromEntries(f), 'Status changed'); };
+  $('#assign').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); post('/assign', Object.fromEntries(f), 'Case assigned'); };
   bindGo($('#main'));
 }
 async function viewAudit(_, q) {
