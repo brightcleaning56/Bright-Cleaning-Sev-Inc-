@@ -10,9 +10,26 @@ const FOLLOW_ROLES = ['owner', 'manager', 'staff', 'sales'];
 
 module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
   const cols = db.prepare('PRAGMA table_info(leads)').all().map(c => c.name);
-  for (const [c, t] of [['stage', "TEXT NOT NULL DEFAULT 'new'"], ['follow_up_date', 'TEXT'], ['follow_up_note', 'TEXT'], ['follow_up_issue_id', 'INTEGER'], ['customer_id', 'INTEGER']]) {
+  for (const [c, t] of [['stage', "TEXT NOT NULL DEFAULT 'new'"], ['follow_up_date', 'TEXT'], ['follow_up_note', 'TEXT'], ['follow_up_issue_id', 'INTEGER'], ['customer_id', 'INTEGER'], ['intake', 'TEXT']]) {
     if (!cols.includes(c)) db.exec(`ALTER TABLE leads ADD COLUMN ${c} ${t}`);
   }
+  // Where each lead came from. 'website' = they filled in a form; 'inbound_call' = they called us; 'portal' = a customer
+  // sent it from the client portal; 'outbound' = staff added this contact to reach out to. The AI uses this to write the right email.
+  if (!db.prepare('PRAGMA table_info(leads)').all().some(c => c.name === 'origin')) db.exec('ALTER TABLE leads ADD COLUMN origin TEXT');
+  db.exec(`CREATE TRIGGER IF NOT EXISTS leads_origin_set AFTER INSERT ON leads WHEN NEW.origin IS NULL BEGIN
+    UPDATE leads SET origin = CASE
+      WHEN NEW.details LIKE 'Source: Phone call%' THEN 'inbound_call'
+      WHEN NEW.details LIKE 'Source: client portal%' THEN 'portal'
+      WHEN NEW.intake IS NOT NULL THEN 'website'
+      ELSE 'outbound' END WHERE id = NEW.id;
+  END`);
+  // Leads from before this change: same rules.
+  db.exec(`UPDATE leads SET origin = CASE
+      WHEN details LIKE 'Source: Phone call%' THEN 'inbound_call'
+      WHEN details LIKE 'Source: client portal%' THEN 'portal'
+      WHEN intake IS NOT NULL THEN 'website'
+      ELSE 'outbound' END WHERE origin IS NULL`);
+
   // One-time backfill for leads that existed before stages: anything touched is "worked", closed ones are "done".
   if (!cols.includes('stage')) {
     db.exec(`UPDATE leads SET stage = CASE

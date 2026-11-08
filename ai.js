@@ -43,10 +43,16 @@ Never invent prices, rates, availability, insurance, licenses, certifications or
     if (!l) throw new Error('Lead not found.');
     const facts = ['kind', 'contact_name', 'company', 'email', 'phone', 'project_name', 'project_type', 'service', 'address', 'square_footage', 'bid_due_date', 'start_date', 'frequency', 'details']
       .filter(k => l[k]).map(k => `${k}: ${String(l[k]).slice(0, 3000)}`).join('\n');
-    const text = await call([{ role: 'user', content: `New website/phone lead:\n${facts}\n\nReturn ONLY JSON with keys:
+    const how = {
+      website: 'They filled in the Bright Clean request form on our website. Thank them for their request.',
+      inbound_call: 'They called Bright Clean. Thank them for calling.',
+      portal: 'They sent this request from their Bright Clean client portal. Thank them for their request.',
+      outbound: 'BRIGHT CLEAN ADDED THIS CONTACT to reach out to them. They did NOT contact us. Do NOT say they reached out, called, filled in a form, or ask us to thank them for anything. Introduce Bright Clean in one or two sentences: commercial janitorial, construction final, rough and touch-up cleaning, multifamily common areas and unit turnovers, window cleaning, power washing and floor care. Say we would like to learn about their projects and what they need cleaned, ask the questions needed to price, and offer a call or site walkthrough.'
+    }[l.origin || 'website'] || 'Thank them for their request.';
+    const text = await call([{ role: 'user', content: `Lead source: ${l.origin || 'website'}. ${how}\n\nLead details:\n${facts}\n\nReturn ONLY JSON with keys:
 "summary" (2 sentences), "category" (one of construction, multifamily, janitorial, windows, power_washing, parking, unit_turnover, other),
 "priority" (High/Normal/Low with bid deadlines or large projects High), "missing" (array of short items still needed before pricing, e.g. drawings, square footage, site visit),
-"next_step" (one sentence for the Bright Clean team), "reply_subject", "reply_body" (a short, friendly reply to the customer from Bright Clean that thanks them, confirms what we understood, asks only for the missing items, and promises follow-up. No prices.)` }], COMPANY, 1200);
+"next_step" (one sentence for the Bright Clean team), "reply_subject", "reply_body" (a short, friendly email from Bright Clean that follows the lead source above, asks only for the missing items, and promises follow-up. No prices.)` }], COMPANY, 1200);
     const ai = parseJSON(text);
     const out = { summary: clean(ai.summary, 600), category: clean(ai.category, 40), priority: clean(ai.priority, 10), missing: (Array.isArray(ai.missing) ? ai.missing : []).slice(0, 10).map(x => clean(x, 160)),
       next_step: clean(ai.next_step, 300), reply_subject: clean(ai.reply_subject, 160), reply_body: clean(ai.reply_body, 4000), model: model(), at: now() };
