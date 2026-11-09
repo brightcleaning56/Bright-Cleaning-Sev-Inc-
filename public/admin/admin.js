@@ -2531,7 +2531,7 @@
     emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
     sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
     calls: [['new', 'New calls'], ['missed', 'Missed calls'], ['today', 'Callbacks today'], ['overdue', 'Overdue'], ['waiting', 'Waiting'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All calls']],
-    leads: [['new', 'New, no next step'], ['today', 'Follow-ups today'], ['overdue', 'Overdue'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['closed', 'Lost or converted'], ['all', 'All leads']],
+    leads: [['contact_today', 'Contact today'], ['overdue', 'Overdue'], ['today', 'Follow-ups today'], ['new', 'Needs next step'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['qualified', 'Qualified'], ['converted', 'Converted'], ['closed', 'Lost / closed'], ['all', 'All leads']],
     tasks: [['new', 'No due date'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All tasks']]
   };
   const wq = { dept: 'emails', bucket: 'new', owner: '', counts: null, users: null };
@@ -2556,14 +2556,14 @@
   function wqKpis(counts) {
     $('#wqKpis').innerHTML = WQ_DEPTS.map(([k, l]) => {
       const c = counts[k] || {};
-      return `<div class="st"><span>${l}: needs attention</span><b>${(c.new || 0) + (c.missed || 0)}</b><small>${c.today || 0} due today · ${c.overdue || 0} overdue · ${c.waiting || 0} waiting · ${c.scheduled || 0} scheduled</small></div>`;
+      return `<div class="st"><span>${l}: needs attention</span><b>${(c.new || 0) + (c.missed || 0) + (c.contact_today || 0)}</b><small>${c.today || 0} due today · ${c.overdue || 0} overdue · ${c.waiting || 0} waiting · ${c.scheduled || 0} scheduled</small></div>`;
     }).join('');
   }
 
   function wqRow(it) {
     const id = it.id, d = it.dept;
     const dueText = it.due ? `<small>${wqIsDue(it.bucket) || it.bucket === 'scheduled' ? 'Due' : 'Date'} ${esc(it.due)}</small>` : '';
-    const when = `<td>${esc(fmtWhen(it.when))}${dueText ? '<br>' + dueText : ''}<br><small class="muted">${esc(WQ_LABEL_TEXT[it.bucket] || it.bucket)}</small></td>`;
+    const when = `<td>${esc(fmtWhen(it.when))}${dueText ? '<br>' + dueText : ''}<br><small class="muted">${esc(WQ_LABEL_TEXT[it.bucket] || it.bucket)}</small>${it.escalated ? '<br><b style="color:#b42318">Escalated: not returned in time</b>' : ''}</td>`;
     const owner = `<td><div class="wqrow-act"><input list="wqOwners" data-owner-for="${id}" data-dept="${d}" value="${esc(it.assigned_to || '')}" placeholder="Unassigned" aria-label="Owner"><button class="btn ghost" type="button" data-wq-act="assign" data-wq-dept="${d}" data-id="${id}">Save</button></div></td>`;
     const who = `<td>${esc(it.who || '')}</td><td>${esc(it.title || '')}${it.note ? `<br><small class="muted">${esc(String(it.note).slice(0, 160))}</small>` : ''}</td>`;
     const dateIn = `<input type="date" data-date-for="${id}" aria-label="Date">`;
@@ -2583,7 +2583,7 @@
     }
     return `<tr>${when}${who}${d === 'sent' ? '<td>—</td>' : owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
   }
-  const WQ_LABEL_TEXT = { new: 'Needs attention', missed: 'Missed', today: 'Today', overdue: 'Overdue', waiting: 'Waiting', scheduled: 'Scheduled', completed: 'Completed', closed: 'Closed' };
+  const WQ_LABEL_TEXT = { new: 'Needs attention', missed: 'Missed', contact_today: 'Contact today', today: 'Today', overdue: 'Overdue', waiting: 'Waiting', scheduled: 'Scheduled', qualified: 'Qualified', converted: 'Converted', completed: 'Completed', closed: 'Closed' };
 
   async function wqRender() {
     wqTabs();

@@ -53,12 +53,29 @@ function callBucket(row, today) {
   return 'new';
 }
 
-function leadBucket(row, today) {
-  if (row.customer_id && row.stage === 'converted') return 'closed';
-  if (row.stage === 'converted' || row.stage === 'done' || ['Won', 'Lost', 'Archived'].includes(row.status)) return 'closed';
+// Leads. "contact_today" = never contacted and received today; an untouched lead from an earlier day is "overdue".
+// Qualified = a site walkthrough or proposal is in progress. Converted = now a customer (or won). Lost/archived = closed.
+function leadBucket(row, today, bizDayOf) {
+  if (row.stage === 'converted' || row.customer_id || row.status === 'Won') return 'converted';
+  if (row.status === 'Lost' || row.status === 'Archived' || row.stage === 'done') return 'closed';
   if (row.stage === 'followup' && validDate(row.follow_up_date)) return dateBucket(row.follow_up_date, today);
   if (row.stage === 'waiting') return 'waiting';
+  if (['Site Walkthrough', 'Proposal in Progress', 'Proposal Sent'].includes(row.status)) return 'qualified';
+  if (row.stage === 'new') return bizDayOf(row.created_at) === today ? 'contact_today' : 'overdue';
   return 'new';
+}
+
+// Business-day date (YYYY-MM-DD) of an ISO timestamp.
+const bizDayOf = iso => {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+};
+
+// A missed call is escalated once nobody has returned it within the threshold (minutes; default 60, set MISSED_CALL_ESCALATE_MINUTES).
+const ESCALATE_MIN = Number(process.env.MISSED_CALL_ESCALATE_MINUTES) || 60;
+function isEscalated(row, nowMs = Date.now(), minutes = ESCALATE_MIN) {
+  return MISSED.includes(row.outcome) && !row.handled_at && row.follow_up_done !== 1 && !validDate(row.follow_up_date)
+    && row.handling !== 'Waiting' && Date.parse(row.created_at) < nowMs - minutes * 60000;
 }
 
 function taskBucket(row, today) {
@@ -86,8 +103,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
         WHERE m.from_addr NOT LIKE '%@brightclean.net' ORDER BY m.received_at DESC LIMIT 1000`).all().map(r => ({
           dept, id: r.id, title: r.subject || '(no subject)', who: r.from_name || r.from_addr, when: r.received_at,
           assigned_to: r.assigned_to, lead_id: r.lead_id, customer_id: r.customer_id, due: r.follow_up_date || (r.snooze_until ? r.snooze_until.slice(0, 10) : null),
-          bucket: emailBucket(r, r.state ? { status: r.state, follow_up_date: r.follow_up_date, snooze_until: r.snooze_until } : null, t, now), note: r.note,
-          link: `/api/admin/inbox?lead_id=${r.lead_id || ''}`
+          bucket: emailBucket(r, r.state ? { status: r.state, follow_up_date: r.follow_up_date, snooze_until: r.snooze_until } : null, t, now), note: r.note
         }));
     }
     if (dept === 'sent') {
@@ -106,7 +122,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
           assigned_to, handled_at, created_at FROM calls ORDER BY created_at DESC LIMIT 1000`).all().map(r => ({
           dept, id: r.id, title: `${r.direction || 'Call'} · ${r.outcome || ''}`.trim(), who: r.contact_name || r.company || r.phone || 'Unknown caller',
           when: r.created_at, assigned_to: r.assigned_to, lead_id: r.lead_id, customer_id: r.customer_id, due: r.follow_up_date || null,
-          bucket: callBucket(r, t), note: r.summary || ''
+          bucket: callBucket(r, t), note: r.summary || '', escalated: isEscalated(r, Date.now())
         }));
     }
     if (dept === 'leads') {
@@ -114,7 +130,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
           FROM leads WHERE status <> 'Archived' ORDER BY COALESCE(follow_up_date,'9999'), id DESC LIMIT 1000`).all().map(r => ({
           dept, id: r.id, title: r.company || r.contact_name || `Lead #${r.id}`, who: r.contact_name || r.email || r.phone || '', when: r.created_at,
           assigned_to: r.assigned_to, lead_id: r.id, customer_id: r.customer_id, due: r.follow_up_date || null,
-          bucket: leadBucket(r, t), note: r.follow_up_note || '', needs_next_action: r.stage === 'worked' && !r.follow_up_date
+          bucket: leadBucket(r, t, bizDayOf), note: r.follow_up_note || '', needs_next_action: r.stage === 'worked' && !r.follow_up_date && !['converted', 'done'].includes(r.stage)
         }));
     }
     if (dept === 'tasks') {
@@ -132,8 +148,9 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   }
 
   // Sort: overdue first, then today, new, waiting, scheduled, then history.
-  const ORDER = { overdue: 0, today: 1, missed: 2, new: 3, waiting: 4, scheduled: 5, completed: 6, closed: 7 };
-  const sortItems = list => list.sort((a, b) => (ORDER[a.bucket] ?? 9) - (ORDER[b.bucket] ?? 9) || String(a.due || '9999').localeCompare(String(b.due || '9999')));
+  const ORDER = { overdue: 0, contact_today: 1, today: 1, missed: 2, new: 3, waiting: 4, qualified: 5, scheduled: 6, converted: 7, completed: 8, closed: 9 };
+  // Escalated missed calls first, then by bucket, then by due date.
+  const sortItems = list => list.sort((a, b) => (b.escalated ? 1 : 0) - (a.escalated ? 1 : 0) || (ORDER[a.bucket] ?? 99) - (ORDER[b.bucket] ?? 99) || String(a.due || '9999').localeCompare(String(b.due || '9999')));
 
   app.get('/api/admin/work-queue', auth, (req, res) => {
     const dept = String(req.query.dept || 'tasks');
@@ -283,11 +300,13 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       overdue_now: (s.emails.overdue || 0) + (s.calls.overdue || 0) + (s.leads.overdue || 0) + (s.tasks.overdue || 0),
       awaiting_customer: (s.emails.waiting || 0) + (s.calls.waiting || 0) + (s.leads.waiting || 0),
       unassigned_open: (s.emails.unassigned || 0) + (s.calls.unassigned || 0) + (s.leads.unassigned || 0) + (s.tasks.unassigned || 0),
-      needs_attention_now: (s.emails.new || 0) + (s.calls.new || 0) + (s.calls.missed || 0) + (s.leads.new || 0),
+      missed_calls_escalated: items('calls').filter(x => x.escalated).length,
+      needs_attention_now: (s.emails.new || 0) + (s.calls.new || 0) + (s.calls.missed || 0) + (s.leads.contact_today || 0) + (s.leads.new || 0),
       exceptions: []
     };
     if (report.overdue_now) report.exceptions.push(report.overdue_now + ' item(s) overdue');
     if (report.unassigned_open) report.exceptions.push(report.unassigned_open + ' open item(s) with no owner');
+    if (report.missed_calls_escalated) report.exceptions.push(report.missed_calls_escalated + ' missed call(s) not returned within ' + ESCALATE_MIN + ' minutes');
     if (d === t && report.calls_handled === 0) report.exceptions.push('No calls handled yet today');
     if (d < t) report.note = 'Past day: overdue and needs-attention counts show the current state, not the state on that day.';
     res.json(report);
@@ -300,4 +319,6 @@ module.exports.dateBucket = dateBucket;
 module.exports.emailBucket = emailBucket;
 module.exports.callBucket = callBucket;
 module.exports.leadBucket = leadBucket;
+module.exports.isEscalated = isEscalated;
+module.exports.bizDayOf = bizDayOf;
 module.exports.taskBucket = taskBucket;

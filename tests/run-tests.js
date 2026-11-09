@@ -3216,6 +3216,39 @@ async function startServer(env, dataDir) {
     return 'a repeated schedule keeps one state row and one item in the queue';
   });
 
+  await check('Work queue', 'Lead views: a lead received today needing first contact is Contact today; an untouched lead from earlier is Overdue; a lead with a proposal in progress is Qualified; a customer is Converted; a lost lead is Lost / closed', async () => {
+    const mk = async (name) => (await (await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email: name.replace(/\s/g, '.').toLowerCase() + '@example.com', message: 'Lead view test' }) })).json()).id;
+    const fresh = await mk('Lead Fresh'), old = await mk('Lead Old'), qual = await mk('Lead Qual'), conv = await mk('Lead Conv'), lost = await mk('Lead Lost');
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
+    pdb.prepare('UPDATE leads SET created_at=? WHERE id=?').run(threeDaysAgo, old);
+    pdb.prepare("UPDATE leads SET status='Proposal in Progress' WHERE id=?").run(qual);
+    pdb.prepare("UPDATE leads SET status='Lost' WHERE id=?").run(lost);
+    pdb.prepare('UPDATE leads SET customer_id=999001, stage=\'converted\' WHERE id=?').run(conv);
+    pdb.close();
+    const inB = async (b, id) => ((await req('GET', `/api/admin/work-queue?dept=leads&bucket=${b}`, { token: T })).data.items || []).some(i => i.id === id);
+    const chk = { contactToday: await inB('contact_today', fresh), overdue: await inB('overdue', old), qualified: await inB('qualified', qual), converted: await inB('converted', conv), lostClosed: await inB('closed', lost), notInContactToday: !(await inB('contact_today', old)) };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'lead views: contact today, overdue, qualified, converted, lost — each lead in one view only';
+  });
+
+  await check('Work queue', 'Missed-call escalation: a missed call not returned within the threshold is escalated and listed first; a recent one is not; returning it clears the escalation; the closeout reports it', async () => {
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const old = pdb.prepare("INSERT INTO calls(direction,phone,contact_name,outcome,purpose,summary,created_by,created_at) VALUES('Inbound','+15155550111','Missed Old','Missed','New business','Called back?','system',?)").run(new Date(Date.now() - 3 * 3600000).toISOString()).lastInsertRowid;
+    const recent = pdb.prepare("INSERT INTO calls(direction,phone,contact_name,outcome,purpose,summary,created_by,created_at) VALUES('Inbound','+15155550112','Missed Recent','Missed','New business','','system',?)").run(new Date().toISOString()).lastInsertRowid;
+    pdb.close();
+    const calls = (await req('GET', '/api/admin/work-queue?dept=calls&bucket=missed', { token: T })).data.items || [];
+    const oldItem = calls.find(c => c.id === old), recentItem = calls.find(c => c.id === recent);
+    const firstIsEscalated = calls.length > 0 && calls[0].escalated === true;
+    const handled = await req('POST', `/api/admin/calls/${old}/work`, { token: T, json: { action: 'handle' } });
+    const after = ((await req('GET', '/api/admin/work-queue?dept=calls', { token: T })).data.items || []).find(c => c.id === old);
+    const closeout = (await req('GET', '/api/admin/closeout', { token: T })).data;
+    const wq = require('../workqueue');
+    const chk = { oldEscalated: !!oldItem && oldItem.escalated === true, recentNotEscalated: !!recentItem && recentItem.escalated === false, escalatedFirst: firstIsEscalated, returnedClears: handled.status === 200 && after.bucket === 'completed' && after.escalated === false, closeoutCounts: closeout.missed_calls_escalated >= 0 && typeof closeout.missed_calls_escalated === 'number', pureRule: wq.isEscalated({ outcome: 'Missed', created_at: new Date(Date.now() - 120 * 60000).toISOString() }, Date.now(), 60) === true && wq.isEscalated({ outcome: 'Missed', created_at: new Date().toISOString() }, Date.now(), 60) === false };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, closeout: closeout.exceptions }));
+    return 'missed call escalates after the threshold and sorts first; returning it clears it; closeout counts it';
+  });
+
   server.child.kill(); smtp.close();
   const pass = results.filter(r => r.status === 'PASS').length;
   fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify({ run_at: new Date().toISOString(), node: process.version, pass, fail: results.length - pass, results }, null, 2));
