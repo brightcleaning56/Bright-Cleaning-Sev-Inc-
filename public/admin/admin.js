@@ -1517,12 +1517,34 @@
   // Called after the register loads: shows the register, or the workspace when the URL names a contract.
   var cwPage = 1, CW_PAGE = 8;
   // Left column of the Contracts view: status tiles, filter pills, search and the contract cards, with paging.
+  // Filtered and sorted contracts, shared by the cards and the CSV export.
+  function contractRows() {
+    const q = ($('[data-search="contracts"]').value || '').trim().toLowerCase();
+    const st = $('[data-filter="contracts"]').value, by = ($('[data-sort="contracts"]') || {}).value || 'newest';
+    const rows = (state.contracts || []).filter(r => !st || r.status === st)
+      .filter(r => !q || [r.number, r.title, r.company, r.customer_name, r.email].join(' ').toLowerCase().includes(q));
+    const who = r => String(r.company || r.customer_name || '').toLowerCase();
+    const cmp = {
+      newest: (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')) || b.id - a.id,
+      oldest: (a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')) || a.id - b.id,
+      value: (a, b) => (Number(b.value) || 0) - (Number(a.value) || 0),
+      customer: (a, b) => who(a).localeCompare(who(b)),
+      ending: (a, b) => String(a.end_date || '9999').localeCompare(String(b.end_date || '9999'))
+    }[by] || (() => 0);
+    return rows.slice().sort(cmp);
+  }
+  function exportContracts() {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = [['Number', 'Title', 'Customer', 'Status', 'Signature', 'Value', 'Payment terms', 'Start', 'End', 'Created']]
+      .concat(contractRows().map(r => [r.number, r.title, r.company || r.customer_name, r.status, r.signature_status, r.value, r.payment_terms, r.start_date, r.end_date, r.created_at]));
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
+    a.download = `contracts-${todayISO()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  $('[data-sort="contracts"]').addEventListener('change', () => { cwPage = 1; renderContractCards(); });
+  $('#cwExport').addEventListener('click', exportContracts);
   function renderContractCards() {
     const list = $('#rows-contracts'); if (!list) return;
-    const q = ($('[data-search="contracts"]').value || '').trim().toLowerCase();
-    const st = $('[data-filter="contracts"]').value;
-    const all = (state.contracts || []).filter(r => !st || r.status === st)
-      .filter(r => !q || [r.number, r.title, r.company, r.customer_name, r.email].join(' ').toLowerCase().includes(q));
+    const all = contractRows();
     const pages = Math.max(1, Math.ceil(all.length / CW_PAGE));
     if (cwPage > pages) cwPage = pages;
     const first = (cwPage - 1) * CW_PAGE, rows = all.slice(first, first + CW_PAGE), sel = contractRouteId();

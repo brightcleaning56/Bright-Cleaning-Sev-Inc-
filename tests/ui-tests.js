@@ -512,6 +512,24 @@ async function check(area, name, fn) {
     assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, tabs }));
     return 'route #contracts/' + kid + '; ' + tabs.length + ' section tabs; tab switch keeps the form; Back returns to the register';
   });
+  await check('Contracts UI', 'Contract list: search narrows the cards, sort by value puts the highest first, Export CSV builds the filtered list', async () => {
+    await api('POST', '/api/admin/contracts', { company: 'SortLo Co', customer_name: 'Lo Sort', title: 'Sort low', value: 111, status: 'Draft' }, T);
+    await api('POST', '/api/admin/contracts', { company: 'SortHi Co', customer_name: 'Hi Sort', title: 'Sort high', value: 999999, status: 'Draft' }, T);
+    await nav('contracts'); await sleep(900);
+    const search = d.querySelector('[data-search="contracts"]'); search.value = 'Sort'; search.dispatchEvent(new w.Event('input')); await sleep(100);
+    const sel = d.querySelector('[data-sort="contracts"]'); sel.value = 'value'; sel.dispatchEvent(new w.Event('change')); await sleep(100);
+    const titles = [...d.querySelectorAll('#rows-contracts .cwCard b')].map(b => b.textContent);
+    let captured = null; const realCreate = w.URL.createObjectURL; w.URL.createObjectURL = b => { captured = b; return 'blob:test'; };
+    if (!w.URL.revokeObjectURL) w.URL.revokeObjectURL = () => {}; // jsdom has no revokeObjectURL; browsers do
+    const stopDownload = e => { if (e.target.download) e.preventDefault(); }; // a download link must not navigate the test page
+    d.addEventListener('click', stopDownload, true);
+    try { d.getElementById('cwExport').click(); await sleep(100); } finally { w.URL.createObjectURL = realCreate; d.removeEventListener('click', stopDownload, true); }
+    const sorted = titles[0] === 'Sort high' && titles[1] === 'Sort low';
+    const csvOk = !!captured && captured.type === 'text/csv' && captured.size > 40;
+    assert(sorted && csvOk, JSON.stringify({ titles, csv: captured && captured.type }));
+    search.value = ''; search.dispatchEvent(new w.Event('input')); sel.value = 'newest'; sel.dispatchEvent(new w.Event('change')); await sleep(100);
+    return 'cards sorted by value (' + titles.join(', ') + '); Export CSV built a text/csv file';
+  });
   await check('Calls UI', 'Calls page: phone-capture status strip; call panel shows transcript box and Analyze button; Scopes and Activity show KPI cards; activity search filters', async () => {
     await api('POST', '/api/admin/calls', { contact_name: 'Ui Caller', company: 'UI Call Co', phone: '515-555-0333', purpose: 'New business', summary: 'Wants a quote', follow_up_date: '2026-11-10' }, T);
     await nav('calls'); await sleep(1300);
