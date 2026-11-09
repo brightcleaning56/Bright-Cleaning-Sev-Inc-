@@ -10,7 +10,7 @@ CREATE TABLE contracts(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, title T
 CREATE TABLE invoices(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, invoice_number TEXT, amount REAL, paid_amount REAL DEFAULT 0, due_date TEXT, status TEXT, created_at TEXT);
 CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT);
 CREATE TABLE leads(id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT, email TEXT, kind TEXT, status TEXT, contact_name TEXT, company TEXT, phone TEXT, address TEXT, service TEXT, project_name TEXT, details TEXT, created_at TEXT, updated_at TEXT);
-CREATE TABLE projects(id INTEGER PRIMARY KEY AUTOINCREMENT, contract_id INTEGER, name TEXT, status TEXT, progress REAL, site_address TEXT);
+CREATE TABLE projects(id INTEGER PRIMARY KEY AUTOINCREMENT, contract_id INTEGER, customer_id INTEGER, name TEXT, status TEXT, progress REAL, site_address TEXT);
 CREATE TABLE visits(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, type TEXT, date TEXT, start_time TEXT, end_time TEXT, address TEXT, status TEXT, project_id INTEGER);
 CREATE TABLE audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT, action TEXT, entity TEXT, entity_id INTEGER, details TEXT, created_at TEXT);
 `);

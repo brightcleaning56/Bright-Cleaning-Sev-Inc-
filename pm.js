@@ -78,7 +78,7 @@ module.exports = function mountPM(app, ctx) {
     const behind = ['In Progress', 'Mobilization', 'Ready to mobilize'].includes(p.status) && ((p.due_date && p.due_date < today() && (p.progress || 0) < 100) || !!db.prepare("SELECT 1 FROM project_tasks WHERE project_id=? AND status='Open' AND due_date IS NOT NULL AND due_date<>'' AND due_date<?").get(p.id, today()));
     return { ...p, number: number(p), service_label: (SERVICES[p.service] || {}).label || null, contract: k ? { id: k.id, title: k.title, value: k.value, signature_status: k.signature_status, status: k.status } : null,
       contract_value: k ? Number(k.value) || 0 : 0, actual_cost: c.total, cost_by: c.by, readiness_complete: r.complete, readiness_missing: r.missing, behind,
-      awaiting_approval: p.status === 'Planning' && r.complete && (executed(k) || !!p.contract_waiver) && !p.dispatch_approved_by,
+      awaiting_approval: ['Planning', 'Contracted'].includes(p.status) && r.complete && (executed(k) || !!p.contract_waiver) && !p.dispatch_approved_by,
       tasks_open: db.prepare("SELECT COUNT(*) n FROM project_tasks WHERE project_id=? AND approved=1 AND status='Open'").get(p.id).n,
       tasks_review: db.prepare('SELECT COUNT(*) n FROM project_tasks WHERE project_id=? AND approved=0').get(p.id).n };
   }

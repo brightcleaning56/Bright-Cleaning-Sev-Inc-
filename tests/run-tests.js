@@ -1531,7 +1531,7 @@ async function startServer(env, dataDir) {
     const skipNo = await req('POST', `/api/admin/dispatch/visits/${v2}/skip`, { token: T, json: {} });
     const skip = await req('POST', `/api/admin/dispatch/visits/${v2}/skip`, { token: T, json: { reason: 'Building closed' } });
     const board = (await req('GET', '/api/admin/dispatch/board?date=2026-12-07', { token: T })).data;
-    assert(noCrew.status === 409 && staffD.status === 403 && d1.status === 200 && d1.data.crew === 1 && sent.length === 1 && sent[0].to_addr === 'ana@crew.test' && held.status === 409 && /Planning/.test(held.data.error) && hol.status === 409 && hol.data.holiday && skipNo.status === 400 && skip.status === 200 && board.kpis.today >= 1 && typeof board.kpis.available === 'number', JSON.stringify({ noCrew: noCrew.data, staffD: staffD.status, d1: d1.data, sent: sent.length, held: held.data, mv: mv.data, hol: hol.data, k: board.kpis }));
+    assert(noCrew.status === 409 && staffD.status === 403 && d1.status === 200 && d1.data.crew === 1 && sent.length === 1 && sent[0].to_addr === 'ana@crew.test' && held.status === 409 && /Planning|tentative/i.test(held.data.error) && hol.status === 409 && hol.data.holiday && skipNo.status === 400 && skip.status === 200 && board.kpis.today >= 1 && typeof board.kpis.available === 'number', JSON.stringify({ noCrew: noCrew.data, staffD: staffD.status, d1: d1.data, sent: sent.length, held: held.data, mv: mv.data, hol: hol.data, k: board.kpis }));
     return `no crew 409; staff dispatch 403; dispatched with email to ${sent[0].to_addr}; project in Planning blocks dispatch; holiday move 409; skip needs reason; board KPIs today ${board.kpis.today}, available ${board.kpis.available}/${board.kpis.staff}`;
   });
   await check('Schedule', 'Crew link: sees only own dispatched jobs, no prices; check-in/out records time; checklist gates completion; incident reaches Issues; approved time posts labor cost to the project', async () => {
@@ -1757,6 +1757,24 @@ async function startServer(env, dataDir) {
     const ok = cs.status === 200 && before === 0 && projects.length === 1 && projects[0].status === 'Contracted' && kc.project_id === projects[0].id;
     assert(ok, JSON.stringify({ cs: cs.status, before, projects: projects.map(p => [p.id, p.status]), project_id: kc.project_id }));
     return `countersign created project #${projects[0].id} (Contracted) and linked contract.project_id`;
+  });
+  await check('Flow', 'Office sign-off releases visits: a visit planned on an unsigned contract is Tentative, becomes Scheduled at countersign; a project cannot be created as Completed', async () => {
+    const k = (await req('POST', '/api/admin/contracts', { token: T, json: { company: 'ReleaseCo', customer_name: 'Rel Owner', title: 'ReleaseCo cleaning', value: 900, status: 'Draft' } })).data;
+    const kid = k.id || (k.contract && k.contract.id);
+    await req('PATCH', `/api/admin/contracts2/${kid}`, { token: T, json: { email: 'owner@release.test', value: 900, scope: 'Weekly cleaning', start_date: '2026-12-01', end_date: '2027-11-30' } });
+    const pj = (await req('POST', '/api/admin/projects', { token: T, json: { name: 'ReleaseCo job', contract_id: kid, status: 'Planning', service: 'janitorial' } })).data;
+    const pid = pj.id || (pj.project && pj.project.id);
+    const vis = await req('POST', '/api/admin/visits', { token: T, json: { title: 'ReleaseCo walkthrough', date: '2026-12-02', project_id: pid } });
+    const before = (await req('GET', '/api/admin/visits', { token: T })).data.visits.find(v => v.id === (vis.data.id || (vis.data.visit && vis.data.visit.id)));
+    const s1 = await req('POST', `/api/admin/contracts2/${kid}/send`, { token: T });
+    const tok = s1.data.link.split('/').pop();
+    await req('POST', `/api/contract/${tok}/sign`, { json: { name: 'Rel Owner', title: 'Owner', agree: true } });
+    const cs = await req('POST', `/api/admin/contracts2/${kid}/countersign`, { token: T, json: { name: 'Eric Moore' } });
+    const after = (await req('GET', '/api/admin/visits', { token: T })).data.visits.find(v => v.project_id === pid);
+    const completed = await req('POST', '/api/admin/projects', { token: T, json: { name: 'Done at birth', status: 'Completed' } });
+    const ok = vis.status === 201 && before && before.status === 'Tentative' && cs.status === 200 && after && after.status === 'Scheduled' && completed.status === 409;
+    assert(ok, JSON.stringify({ visit: vis.status, before: before && before.status, cs: cs.status, after: after && after.status, completed: completed.status }));
+    return `visit on unsigned contract: Tentative → Scheduled at countersign; project created as Completed refused (409)`;
   });
   await check('Contracts', 'Decline with reason; editing a sent contract voids the old link; amendment supersedes the original once executed; renewal shifts dates and price; dashboard counts', async () => {
     const kid = globalThis.__k;

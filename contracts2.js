@@ -97,7 +97,8 @@ module.exports = function mountContracts(app, ctx) {
   app.post('/api/admin/contracts2/:id/countersign', auth, (req, res) => {
     const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can countersign contracts.' });
-    const approvedOnline = k.proposal_status === 'Approved';
+    // A client's online proposal approval only stands for the original contract; amendments and renewals need their own signature.
+    const approvedOnline = k.proposal_status === 'Approved' && !k.parent_id && (k.kind || 'Contract') === 'Contract';
     if (k.signature_status !== 'Customer signed' && !approvedOnline) return res.status(409).json({ error: 'The customer has not approved or signed this contract yet.' });
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Type your full name to countersign.' });
     db.prepare("UPDATE contracts SET signature_status='Signed', status='Active', countersigned_by=?, countersigned_at=?, updated_at=? WHERE id=?").run(`${name} (${who(req)})`, now(), now(), k.id);
@@ -105,6 +106,8 @@ module.exports = function mountContracts(app, ctx) {
     // Office sign-off creates the job if the contract has none, then moves it to Contracted (it can now be scheduled).
     ensureProject(k);
     db.prepare("UPDATE projects SET status=CASE WHEN status='Planning' THEN 'Contracted' ELSE status END, updated_at=? WHERE contract_id=?").run(now(), k.id);
+    // Visits planned before sign-off go live now, so staff and the customer portal see them.
+    db.prepare("UPDATE visits SET status='Scheduled', updated_at=? WHERE status='Tentative' AND project_id IN (SELECT id FROM projects WHERE contract_id=?)").run(now(), k.id);
     logAction(req, 'countersigned', 'contract', k.id, `${k.number} by ${name} — executed`);
     res.json({ contract: get(k.id) });
   });

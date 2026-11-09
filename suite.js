@@ -151,6 +151,8 @@ module.exports = function mountSuite(app, ctx) {
   app.post('/api/admin/visits', auth, (req, res) => {
     const { out, errs } = visitValidate(req.body || {}, null);
     if (errs.length) return res.status(400).json({ error: errs.join(' ') });
+    // Same rule as the project work orders: until the job is contracted or dispatch-approved, a visit stays Tentative (hidden from crew and the portal).
+    if (out.project_id) { const p = db.prepare('SELECT status, dispatch_approved_by FROM projects WHERE id=?').get(out.project_id); if (p && !p.dispatch_approved_by && !['Contracted', 'Ready to mobilize', 'Mobilization', 'In Progress', 'Quality Review', 'Completed'].includes(p.status)) out.status = 'Tentative'; }
     const cols = Object.keys(out), t = now();
     const info = db.prepare(`INSERT INTO visits(${cols.join(',')},created_by,created_at,updated_at) VALUES(${cols.map(() => '?').join(',')},?,?,?)`).run(...cols.map(c => out[c]), who(req), t, t);
     logAction(req, 'scheduled', 'visit', info.lastInsertRowid, `${out.title} on ${out.date}`);
