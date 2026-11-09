@@ -11,6 +11,7 @@ new MutationObserver(muts => { for (const m of muts) for (const node of m.addedN
 const usd = n => n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString('en-US');
 const money = n => n == null ? '—' : '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 let token = sessionStorage.getItem('bi_token'), me = null, tab = 'command', navKey = 'command', SUBVIEW = '';
+let workspaceTabSet = false;   // the first screen after sign-in depends on the role (set once per session)
 const CLOSED = new Set();
 const PAGE_HEAD = {
   projects: ['Projects', 'Every commercial permit in your territory, grouped by job site. From city open-data records, refreshed hourly.', 'layers'],
@@ -639,7 +640,7 @@ async function leadTab(t, body) {
           ${open ? `<button data-bidform="${i.id}" data-due="${esc(r.dueDate)}">${i.myBid ? 'Revise bid' : 'Submit bid'}</button>` : ''}</div>
         ${i.myBid ? `<small>Your bid: <strong>${money(i.myBid.total)}${i.myBid.recurring ? '/mo' : ''}</strong> · ${esc(i.myBid.status.replace('_', ' '))} · revision ${i.myBid.revision} · ${ago(i.myBid.submittedAt)}${i.myBid.receiptId ? ` · receipt <b>${esc(i.myBid.receiptId)}</b> <span title="SHA-256 fingerprint of the exact bid document">(${esc(i.myBid.sha256.slice(0, 12))}…)</span>` : ''}</small>` : ''}
         <div id="bf-${i.id}"></div></div></div>`; }))).join('')
-      : '<div class="empty">No invitations yet. Set your trades in Plan & profile, and you\'ll be invited automatically when a GC or property manager in your territory posts work you do.</div>';
+      : (me.org?.trades || []).length ? `<div class="empty">No open invitations right now. You're set up for ${esc((me.org.trades || []).map(k => (TRADES_LIST.find(t => t.key === k) || {}).label || k).join(', '))}, so a GC or property manager in your territory will invite you when work matches.</div>` : '<div class="empty">No invitations yet. Set your trades in Plan & profile, and you\'ll be invited automatically when a GC or property manager in your territory posts work you do.</div>';
     bindDocOpen(body);
     for (const i of inv) { const prior = await api('GET', '/api/estimates?invitationId=' + i.id).catch(() => []); if (prior.length) openEstimate(i.id, prior[0]); }
     body.querySelectorAll('[data-est-manual]').forEach(b => b.onclick = () => openEstimate(b.dataset.estManual, null));
@@ -848,6 +849,7 @@ const ROLE_TEXT = {
   developer: ['Owner workspace', 'Publish projects with trade packages, invite contractors, and compare and award bids.'],
   property_manager: ['Owner workspace', 'Publish projects with trade packages, invite contractors, and compare and award bids.'],
 };
+const OWNER_KINDS = ['owner', 'developer', 'property_manager'];
 const SEGMENT_TEXT = {
   subcontractor: ['Subcontractor workspace', 'Invitations and projects that match your trades and territory.'],
   service_provider: ['Service provider workspace', 'Cleaning and facility-service bids in your territory. Approved rate cards price matching requests.'],
@@ -1088,7 +1090,7 @@ async function buyerView() {
      <select id="sv"><option value="">No instant pricing</option><option value="post_construction">Post-construction clean</option><option value="janitorial">Recurring janitorial</option><option value="windows">Windows</option><option value="floor_care">Floor care</option><option value="pressure_washing">Pressure washing</option></select>
      <input id="sf2" type="number" min="1" placeholder="Square feet"><input id="fq" type="number" min="1" placeholder="Visits per month (janitorial)"></div></details>
    <button class="primary x-27af8985" ${verified?'':'disabled'} >Post request</button></form><div class="err" id="re"></div></div></div>
-  <h2 class="x-d1cd810f" >Your requests</h2><section id="body"></section>
+  <div id="sumstrip"></div><h2 class="x-d1cd810f" >${OWNER_KINDS.includes(me.org.buyerKind) ? 'Your projects' : 'Your bid packages'}</h2><section id="body"></section>
   <h2 class="x-855107b5" >Signed contracts</h2><section id="contracts"></section>
   <div class="grid2 x-49fcd855" ><div class="card" id="teamc"></div><div class="card" id="subc"></div></div></div>`;
   publisherPanels();
@@ -1106,6 +1108,11 @@ async function buyerView() {
   $('#contracts').innerHTML = cs.length ? contractTable(cs, 'sellerName', 'Provider') : '<div class="empty">Contracts you sign appear here with a downloadable record.</div>';
   bindDocs();
   const reqs = await api('GET', '/api/requests');
+  { const open = reqs.filter(r => r.status === 'open' || r.status === 'draft').length, awarded = reqs.filter(r => r.status === 'awarded').length;
+    const bids = reqs.reduce((n, r) => n + (r.willBid ?? 0), 0), invited = reqs.reduce((n, r) => n + (r.invited ?? 0), 0);
+    const due = reqs.filter(r => r.status === 'open' && r.dueDate).map(r => r.dueDate).sort()[0];
+    const tiles = [[reqs.length, OWNER_KINDS.includes(me.org.buyerKind) ? 'projects' : 'bid packages'], [open, 'open for bids'], [invited, 'contractors invited'], [bids, 'said they will bid'], [awarded, 'awarded'], [due ? String(due).slice(0, 10) : '—', 'next bid due']];
+    $('#sumstrip').innerHTML = `<div class="buyer-tiles">${tiles.map(([n, l]) => `<div><b>${esc(String(n))}</b><small>${esc(l)}</small></div>`).join('')}</div>`; }
   let pjTimer;
   $('#pjq').oninput = () => { clearTimeout(pjTimer); pjTimer = setTimeout(async () => {
     const q = $('#pjq').value.trim(), st = $('#st').value.trim(); const box = $('#pjres');
@@ -1182,6 +1189,8 @@ async function render() {
   try { me = me || await api('GET', '/api/me'); } catch { return; }
   if (me.org?.kind === 'buyer') return buyerView();
   const isSub = me.org?.kind === 'subscriber';
+  if (isSub && !TRADES_LIST.length) TRADES_LIST = await (await fetch('/api/trades')).json().catch(() => []);
+  if (isSub && !workspaceTabSet) { tab = navKey = me.org.segment ? 'invitations' : 'command'; workspaceTabSet = true; }   // subcontractors and service providers land on their bid invitations
   if (location.hash.startsWith('#project/')) { tab = 'projects'; }
   if (location.hash.startsWith('#contractor/')) { tab = 'contractors'; }
   if (location.hash === '#invitations') { tab = 'invitations'; history.replaceState(null, '', location.pathname); }

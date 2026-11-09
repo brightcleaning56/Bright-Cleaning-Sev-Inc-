@@ -35,6 +35,10 @@ with sync_playwright() as p:
         heads = d.locator('.role-banner h2').all_inner_texts()
         if heads != [want]: problems.append(f'{email}: banner {heads}, wanted {want}')
         if d.locator('.role-steps li').count() < 3: problems.append(f'{email}: setup steps missing')
+        if email == 'trade@elec.test' and 'Invitations to Bid' not in d.inner_text('body'): problems.append('subcontractor does not land on bid invitations')
+        if email == 'pm@acme.test':
+            if d.locator('.buyer-tiles > div').count() != 6: problems.append('owner: summary tiles missing')
+            if 'Your projects' not in d.inner_text('body'): problems.append('owner: projects heading missing')
         ctx.close()
     b.close()
 print('PROBLEMS: ' + repr(problems))
