@@ -3281,6 +3281,20 @@ async function startServer(env, dataDir) {
     return 'Command Center card present and wired to the queue summary';
   });
 
+  await check('Work queue', 'Attachments: listed and downloaded from Outlook on demand; refused cleanly when the inbox is not connected or the email is unknown; never stored on the server', async () => {
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const mid = pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES('wq-att','att.person@example.com','Att Person','Plans attached','See attached',?,?)").run(new Date().toISOString(), new Date().toISOString()).lastInsertRowid;
+    pdb.close();
+    const list = await req('GET', `/api/admin/inbox/${mid}/attachments`, { token: T });
+    const dl = await req('GET', `/api/admin/inbox/${mid}/attachments/AAMk-fake`, { token: T });
+    const missing = await req('GET', '/api/admin/inbox/999999/attachments', { token: T });
+    const missingDl = await req('GET', '/api/admin/inbox/999999/attachments/x', { token: T });
+    const signedOut = await req('GET', `/api/admin/inbox/${mid}/attachments`);
+    const chk = { notConnected409: list.status === 409, downloadNotConnected409: dl.status === 409, unknown404: missing.status === 404 && missingDl.status === 404, signedOutRefused: signedOut.status === 401, screenWired: (await req('GET', '/admin/admin.js')).data.toString().includes('wqAtt') };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, list: list.status, dl: dl.status }));
+    return 'attachments refused cleanly when Outlook is not connected; unknown emails 404; signed-out refused; the Thread view lists and downloads them';
+  });
+
   server.child.kill(); smtp.close();
   const pass = results.filter(r => r.status === 'PASS').length;
   fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify({ run_at: new Date().toISOString(), node: process.version, pass, fail: results.length - pass, results }, null, 2));

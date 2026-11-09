@@ -2681,7 +2681,23 @@
     const body = j.messages.length
       ? j.messages.map(m => `<div class="thread-msg ${m.kind === 'sent' ? 'sent' : ''}"><small>${esc(fmtWhen(m.at))} · ${m.kind === 'sent' ? 'Sent' : 'Received'}${m.status ? ' · ' + esc(m.status) : ''} · ${esc(m.who || '')}</small><p><b>${esc(m.subject || '')}</b></p><p>${esc(m.text || '')}</p></div>`).join('')
       : '<p class="muted">No messages with this address yet.</p>';
-    openDrawer({ title: 'Conversation', sub: j.address, body: body + '<p class="muted">Attachments are not stored yet.</p>', footer: '' });
+    openDrawer({ title: 'Conversation', sub: j.address, body: body + '<h3>Attachments on this email</h3><div id="wqAtt"><p class="muted">Loading…</p></div>', footer: '' });
+    try {
+      const att = await api(`/api/admin/inbox/${id}/attachments`);
+      $('#wqAtt').innerHTML = att.attachments.length
+        ? att.attachments.map(x => `<p><button class="btn ghost" type="button" data-att="${esc(x.id)}" data-att-name="${esc(x.name)}">${esc(x.name)} · ${Math.max(1, Math.round(x.size / 1024))} KB</button></p>`).join('')
+        : '<p class="muted">No attachments.</p>';
+    } catch (err) { $('#wqAtt').innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
+    $('#wqAtt').addEventListener('click', async e => {
+      const b = e.target.closest('[data-att]'); if (!b) return;
+      try {
+        const r = await fetch(`/api/admin/inbox/${id}/attachments/${encodeURIComponent(b.dataset.att)}`, { headers: { Authorization: 'Bearer ' + token } });
+        if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Download failed'); }
+        const url = URL.createObjectURL(await r.blob());
+        const link = document.createElement('a'); link.href = url; link.download = b.dataset.attName || 'attachment'; document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      } catch (err) { toast(err.message, true); }
+    });
   }
   async function loadCcWork() {
     const box = $('#ccWorkKpis'); if (!box) return;

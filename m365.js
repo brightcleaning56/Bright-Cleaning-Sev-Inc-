@@ -99,5 +99,28 @@ module.exports = function mountM365(app, ctx) {
     const w = [], a = []; for (const k of ['lead_id', 'customer_id']) if (req.query[k]) { w.push(`${k}=?`); a.push(Number(req.query[k])); }
     res.json({ messages: db.prepare(`SELECT id, from_addr, from_name, subject, preview, received_at, web_link, lead_id, customer_id FROM inbox_messages ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY received_at DESC LIMIT 200`).all(...a) });
   });
+  // Attachments are read from Outlook when someone asks for them; nothing is copied to the server.
+  const inboxGraphId = id => db.prepare('SELECT graph_id FROM inbox_messages WHERE id=?').get(Number(id));
+  app.get('/api/admin/inbox/:id/attachments', auth, async (req, res) => {
+    const m = inboxGraphId(req.params.id); if (!m) return res.status(404).json({ error: 'Email not found.' });
+    if (!tok()) return res.status(409).json({ error: 'The Outlook inbox is not connected, so attachments cannot be opened.' });
+    try {
+      const j = await graph('/v1.0/me/messages/' + encodeURIComponent(m.graph_id) + '/attachments?$select=id,name,contentType,size,isInline');
+      res.json({ attachments: (j.value || []).filter(a => !a.isInline).map(a => ({ id: a.id, name: a.name || 'attachment', content_type: a.contentType || 'application/octet-stream', size: a.size || 0 })) });
+    } catch (e) { res.status(502).json({ error: 'Could not load the attachments: ' + e.message }); }
+  });
+  app.get('/api/admin/inbox/:id/attachments/:aid', auth, async (req, res) => {
+    const m = inboxGraphId(req.params.id); if (!m) return res.status(404).json({ error: 'Email not found.' });
+    if (!tok()) return res.status(409).json({ error: 'The Outlook inbox is not connected, so attachments cannot be opened.' });
+    try {
+      const a = await graph('/v1.0/me/messages/' + encodeURIComponent(m.graph_id) + '/attachments/' + encodeURIComponent(req.params.aid));
+      if (!a.contentBytes) return res.status(415).json({ error: 'This attachment cannot be downloaded here.' });
+      const name = String(a.name || 'attachment').replace(/[^\w.\- ]+/g, '_').slice(0, 150) || 'attachment';
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', 'attachment; filename="' + name + '"');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(Buffer.from(a.contentBytes, 'base64'));
+    } catch (e) { res.status(502).json({ error: 'Could not download the attachment: ' + e.message }); }
+  });
   ctx.m365Sync = sync;
 };
