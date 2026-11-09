@@ -496,7 +496,8 @@
 .cwpanel{max-width:none}
 .cwframe{height:min(70vh,820px)}
 @media (max-width:1100px){.cwbody{grid-template-columns:1fr}}
-@media (max-width:900px){.cwSplit{grid-template-columns:1fr}#v-contracts.has-contract .cwList{display:none}}
+.cwempty{min-height:220px;display:grid;align-content:center;justify-items:start;gap:6px;border-style:dashed}
+@media (max-width:900px){.cwSplit{grid-template-columns:1fr}#v-contracts.has-contract .cwList{display:none}#cwWrap{display:none}#v-contracts.has-contract #cwWrap{display:block}}
 </style>
 </head>
 <body class="adminbody">

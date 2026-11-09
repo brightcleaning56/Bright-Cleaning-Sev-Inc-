@@ -1546,7 +1546,10 @@
   // Two-column view on wide screens; on phones the open contract replaces the list.
   function setContractLayout(open) {
     const v = $('#v-contracts'); if (v) v.classList.toggle('has-contract', !!open);
-    $('#cwWrap').hidden = !open;
+    const w = $('#cwWrap');
+    w.hidden = false;
+    // Wide screens keep the right column with a prompt; on phones CSS hides it until a contract is open.
+    if (!open) w.innerHTML = '<div class="cwcard cwempty"><h3>No contract selected</h3><p class="muted">Choose a contract on the left to see its document, terms, signatures and history.</p></div>';
     renderContractCards();
   }
   function showContractRoute() {

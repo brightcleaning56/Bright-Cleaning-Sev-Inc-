@@ -507,7 +507,7 @@ async function check(area, name, fn) {
     const termsShown = !d.querySelector('#cwWrap [data-panel="terms"]').hidden && d.querySelector('#cwWrap [data-panel="overview"]').hidden;
     const wsShown = d.getElementById('v-contracts').classList.contains('has-contract') && d.getElementById('cwWrap').hidden === false;
     d.querySelector('#cwWrap [data-cw-back]').click(); await sleep(400);
-    const back = w.location.hash === '#contracts' && !d.getElementById('v-contracts').classList.contains('has-contract') && d.getElementById('cwWrap').hidden === true;
+    const back = w.location.hash === '#contracts' && !d.getElementById('v-contracts').classList.contains('has-contract') && d.getElementById('cwWrap').textContent.includes('No contract selected');
     const chk = { route: route === '#contracts/' + kid, allTabs, termsShown, wsShown, back };
     assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, tabs }));
     return 'route #contracts/' + kid + '; ' + tabs.length + ' section tabs; tab switch keeps the form; Back returns to the register';
