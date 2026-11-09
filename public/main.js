@@ -1096,7 +1096,7 @@ async function buyerView() {
      <select id="sv"><option value="">No instant pricing</option><option value="post_construction">Post-construction clean</option><option value="janitorial">Recurring janitorial</option><option value="windows">Windows</option><option value="floor_care">Floor care</option><option value="pressure_washing">Pressure washing</option></select>
      <input id="sf2" type="number" min="1" placeholder="Square feet"><input id="fq" type="number" min="1" placeholder="Visits per month (janitorial)"></div></details>
    <button class="primary x-27af8985" ${verified?'':'disabled'} >Post request</button></form><div class="err" id="re"></div></div></div>
-  <div id="sumstrip"></div><div class="card bidders-card" id="bidders"></div><h2 class="x-d1cd810f" >${OWNER_KINDS.includes(me.org.buyerKind) ? 'Your projects' : 'Your bid packages'}</h2><section id="body"></section>
+  <div id="sumstrip"></div><div class="card bidders-card" id="bidders"></div><div class="card" id="analytics"></div><h2 class="x-d1cd810f" >${OWNER_KINDS.includes(me.org.buyerKind) ? 'Your projects' : 'Your bid packages'}</h2><section id="body"></section>
   <h2 class="x-855107b5" >Signed contracts</h2><section id="contracts"></section>
   <div class="grid2 x-49fcd855" ><div class="card" id="teamc"></div><div class="card" id="subc"></div></div></div>`;
   publisherPanels();
@@ -1130,6 +1130,21 @@ async function buyerView() {
     $('#bidders').innerHTML = `<h3>${title}</h3>` + (rows.length
       ? `<div class="scroll"><table><tr><th>Company</th><th>Trades</th><th class="num">Invited to</th><th class="num">Will bid</th><th class="num">Bid submitted</th><th class="num">Opened plans</th></tr>${rows.map(c => `<tr><td>${esc(c.company)}</td><td><small>${esc([...c.trades].map(k => (TRADES_LIST.find(t => t.key === k) || {}).label || k).join(', ') || '—')}</small></td><td class="num">${c.packages}</td><td class="num">${c.willBid}</td><td class="num">${c.bids}</td><td class="num">${c.viewed}</td></tr>`).join('')}</table></div>`
       : '<div class="empty">No companies invited yet. Invitations go out when a package is posted and matching companies are in your territory.</div>'); }
+  { // Owners: project status and awarded value. GCs: bid spread for each package.
+    const withBids = await Promise.all(reqs.filter(r => r.submissions).map(async r => ({ r, subs: await api('GET', `/api/requests/${r.id}/submissions`).catch(() => []) })));
+    const count = st => reqs.filter(r => r.status === st).length;
+    if (OWNER_KINDS.includes(me.org.buyerKind)) {
+      const awarded = withBids.filter(x => x.r.status === 'awarded');
+      const value = awarded.reduce((n, x) => n + (Number(x.subs.find(z => z.id === x.r.awardedSubmissionId)?.total) || 0), 0);
+      $('#analytics').innerHTML = `<h3>Project status</h3><div class="buyer-tiles"><div><b>${count('open')}</b><small>open for bids</small></div><div><b>${awarded.length}</b><small>awarded</small></div><div><b>${count('closed')}</b><small>closed</small></div><div><b>${money(value)}</b><small>awarded value</small></div></div>`;
+    } else {
+      const spread = withBids.filter(x => x.subs.length).map(x => { const t = x.subs.map(z => Number(z.total)).filter(n => n > 0); const avg = t.reduce((a, b) => a + b, 0) / (t.length || 1);
+        return `<tr><td>${esc(x.r.title)}</td><td class="num">${t.length}</td><td class="num">${t.length ? money(Math.min(...t)) : '—'}</td><td class="num">${t.length ? money(avg) : '—'}</td><td class="num">${t.length ? money(Math.max(...t)) : '—'}</td></tr>`; });
+      $('#analytics').innerHTML = `<h3>Bid spread by package</h3>` + (spread.length
+        ? `<div class="scroll"><table><tr><th>Package</th><th class="num">Bids</th><th class="num">Low</th><th class="num">Average</th><th class="num">High</th></tr>${spread.join('')}</table></div>`
+        : '<div class="empty">No bids yet. Low, average and high bids appear here as subcontractors submit.</div>');
+    }
+  }
   let pjTimer;
   $('#pjq').oninput = () => { clearTimeout(pjTimer); pjTimer = setTimeout(async () => {
     const q = $('#pjq').value.trim(), st = $('#st').value.trim(); const box = $('#pjres');

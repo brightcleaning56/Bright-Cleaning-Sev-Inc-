@@ -37,9 +37,11 @@ with sync_playwright() as p:
         if d.locator('.role-steps li').count() < 3: problems.append(f'{email}: setup steps missing')
         if email == 'trade@elec.test' and 'Invitations to Bid' not in d.inner_text('body'): problems.append('subcontractor does not land on bid invitations')
         if email == 'pm@acme.test':
-            if d.locator('.buyer-tiles > div').count() != 6: problems.append('owner: summary tiles missing')
+            if d.locator('#sumstrip .buyer-tiles > div').count() != 6: problems.append('owner: summary tiles missing')
             if 'Your projects' not in d.inner_text('body'): problems.append('owner: projects heading missing')
             if d.locator('#bidders tr').count() - 1 < 2: problems.append('owner: contractors on your projects missing the invited companies')
+            if 'Project status' not in d.inner_text('#analytics'): problems.append('owner: project status card missing')
+            if d.locator('#analytics .buyer-tiles > div').count() != 4: problems.append('owner: project status tiles wrong')
         ctx.close()
     # Each subscriber role has its own menu
     menus = {}
@@ -48,6 +50,11 @@ with sync_playwright() as p:
         d.fill('#e', email); d.fill('#p', 'demo password 123'); d.click('button.primary'); d.wait_for_timeout(2500)
         menus[email] = set(t.strip() for t in d.locator('aside.side a, aside.side button').all_inner_texts() if t.strip())
         ctx.close()
+    ctx, d = fresh(b, '/app', '#e')
+    d.fill('#e', 'gc@ryan.test'); d.fill('#p', 'demo password 123'); d.click('button.primary'); d.wait_for_selector('#analytics', timeout=15000); d.wait_for_timeout(1000)
+    if 'Bid spread by package' not in d.inner_text('#analytics'): problems.append('GC: bid spread card missing')
+    if 'Subcontractors bidding on your packages' not in d.inner_text('#bidders'): problems.append('GC: bidders heading wrong')
+    ctx.close()
     sub, svc, full = menus['trade@elec.test'], menus['svc@clean.test'], menus['sub@em.test']
     if 'Market Activity' in sub or 'AI Floor Plan Analyzer' in sub: problems.append('subcontractor menu shows items outside its role')
     if 'Plan Room' in svc or 'Drawing Sets' in svc: problems.append('service provider menu shows plan room')

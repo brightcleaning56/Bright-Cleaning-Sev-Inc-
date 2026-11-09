@@ -35,6 +35,10 @@ s.put('users', { email: 'pm@acme.test', role: 'owner', orgId: buyer.id, password
 // Demo bid requests from the owner, posted the way the app posts them, so the owner and subcontractor dashboards show real work.
 import { quickPublish } from '../src/publishing.js';
 const pmUser = s.list('users', u => u.email === 'pm@acme.test')[0];
+// A verified general contractor with one package, so the GC dashboard has its own bid spread view.
+const ryan = s.put('orgs', { slug: 'ryan', name: 'Ryan Companies', kind: 'buyer', buyerKind: 'general_contractor', status: 'active', publisher: { status: 'verified', note: 'demo: verified' }, settings: {} });
+s.put('users', { email: 'gc@ryan.test', role: 'owner', orgId: ryan.id, passwordHash: hashPassword('demo password 123') });
+quickPublish(s, ryan, s.list('users', u => u.email === 'gc@ryan.test')[0], { title: 'Drywall and ceilings, Seattle school', address: '40 Cedar Ave', city: 'Seattle', state: 'WA', projectType: 'education', trades: ['drywall'], dueDate: D(25), description: 'Drywall, ceilings and taping for two classroom wings.' });
 const posted1 = quickPublish(s, buyer, pmUser, { title: 'Electrical rough-in, Seattle office', address: '500 Union St', city: 'Seattle', state: 'WA', projectType: 'office', trades: ['electrical'], dueDate: D(21), description: 'Rough-in and trim for a 4-floor office fit-out.' });
 const posted2 = quickPublish(s, buyer, pmUser, { title: 'Post-construction clean, Seattle clinic', address: '900 Pine St', city: 'Seattle', state: 'WA', projectType: 'medical', services: ['post_construction'], squareFeet: 18000, dueDate: D(14), description: 'Final clean and window detail before occupancy.' });
 if (!posted1.ok || !posted2.ok) console.error('demo requests not posted', posted1.error || posted2.error);
