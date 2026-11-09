@@ -142,3 +142,14 @@ test('no public page or app script carries an inline style attribute or a <style
     }
   }
 });
+
+test('Get Started leads to the role chooser, which offers all four roles', async t => {
+  const base = await serve(t);
+  const r = await fetch(`${base}/get-started`);
+  assert.equal(r.status, 200);
+  const html = await r.text();
+  for (const role of ['gc', 'owner', 'sub', 'service']) assert.ok(html.includes(`href="/app#signup-${role}"`), `chooser offers ${role}`);
+  const home = await (await fetch(`${base}/`)).text();
+  assert.ok(home.includes('href="/get-started"'), 'homepage Get Started goes to the chooser');
+  assert.ok(!/href="\/app">Get Started/.test(home), 'no Get Started button goes straight to sign-in');
+});

@@ -140,3 +140,41 @@ a.pg-card:hover{border-color:#b9cde8}
   .pg-table{display:block;overflow-x:auto;white-space:nowrap}
 }
 @media(max-width:420px){.pg-hero{padding:44px 0 50px}.pg-actions .btn{width:100%;justify-content:center}.pg-strip-row{grid-template-columns:repeat(3,1fr)}}
+
+/* Inline styles moved to classes (keeps the CSP free of unsafe-inline for the website). */
+.st-03361798{background:#9fc3ef!important}
+.st-068a8ddc{grid-column:1/-1!important}
+.st-2517a51b{margin-top:22px!important}
+.st-285582c7{color:var(--blue)!important}
+.st-2c4fd3ed{color:#0b1d35!important}
+.st-31159d03{cursor:pointer;font:800 17px Manrope,sans-serif;color:#0b1d35!important}
+.st-330ce2f2{max-width:860px!important}
+.st-33606bb6{border:1px solid #dfe7f0;border-radius:12px;padding:16px 20px;margin-bottom:12px;background:#fff!important}
+.st-4e330d89{display:grid;grid-template-columns:1fr 1fr;gap:10px!important}
+.st-5465dcb7{margin:0;color:#0b1d35!important}
+.st-55b07cdd{color:#62748b;font-size:13px!important}
+.st-597c84c6{border:1px solid #dfe7f0;border-radius:8px;padding:10px 12px!important}
+.st-59877cc0{background:#7b5cf0!important}
+.st-5e0faad2{font-size:13px!important}
+.st-62e4a0e1{background:#2867d7!important}
+.st-650d5200{border-radius:16px;box-shadow:0 30px 70px rgba(0,0,0,.35);background:linear-gradient(180deg,#9fc3ef,#dbe7f7)!important}
+.st-67180e56{color:#62748b!important}
+.st-6cb285c6{font-size:12px!important}
+.st-6fd1c246{border:1px solid #dfe7f0;border-radius:8px;padding:12px;text-align:center!important}
+.st-72c7216a{max-width:760px;margin:0 0 36px;grid-template-columns:1fr auto;align-items:end!important}
+.st-75f1c157{display:flex;justify-content:space-between;border:1px solid #dfe7f0;border-radius:8px;padding:10px 12px!important}
+.st-7c619740{align-items:center!important}
+.st-7e2ed365{background:#1d9a68!important}
+.st-845a4228{color:#2867d7!important}
+.st-8c31a259{color:#62748b;margin:10px 0 0!important}
+.st-8de34d79{color:var(--blue);font-weight:700!important}
+.st-9aa121fc{display:grid;gap:10px!important}
+.st-bb6a43fd{position:absolute!important}
+.st-db576083{color:#0b1d35;font-size:13px!important}
+.st-e563d311{justify-self:end!important}
+.st-ef0b7a11{margin-bottom:0!important}
+.st-f6641f34{display:grid;gap:8px!important}
+.st-fb2d9859{border:1px solid #dfe7f0;border-radius:14px;padding:12px;background:#fbfcfe!important}
+
+/* Generated page styles moved to classes. */
+.st-33fcd4c3{gap:8px!important}

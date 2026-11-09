@@ -22,6 +22,11 @@ s.put('users', { email: 'eric@bc.test', role: 'platform_owner', orgId: bc.id, pa
 s.put('users', { email: 'ops@bc.test', role: 'member', platformRoles: ['platform_admin'], orgId: bc.id, passwordHash: hashPassword('demo password 123') });   // staff account for the MFA browser check
 const sub = s.put('orgs', { slug: 'sub', name: 'Emerald Glass', kind: 'subscriber', trade: 'Glazing', territories: ['WA'], status: 'active', settings: {}, subscription: { plan: 'trial', status: 'trialing', trialEndsAt: new Date(Date.now() + 9 * 864e5).toISOString() } });
 s.put('users', { email: 'sub@em.test', role: 'owner', orgId: sub.id, passwordHash: hashPassword('demo password 123') });
+// Role demo accounts: a subcontractor and a service provider, set up the way sign-up sets them up.
+const trade = s.put('orgs', { slug: 'trade', name: 'Bright Electric', kind: 'subscriber', segment: 'subcontractor', trade: 'Electrical', trades: ['electrical'], territories: ['WA'], status: 'active', settings: {}, subscription: { plan: 'trial', status: 'trialing', trialEndsAt: new Date(Date.now() + 9 * 864e5).toISOString() } });
+s.put('users', { email: 'trade@elec.test', role: 'owner', orgId: trade.id, passwordHash: hashPassword('demo password 123') });
+const svc = s.put('orgs', { slug: 'svc', name: 'Clear Pane Cleaning', kind: 'subscriber', segment: 'service_provider', trade: 'Construction cleaning, Janitorial & facility services', trades: ['cleaning', 'janitorial'], services: ['post_construction', 'windows'], territories: ['WA'], status: 'active', settings: {}, subscription: { plan: 'trial', status: 'trialing', trialEndsAt: new Date(Date.now() + 9 * 864e5).toISOString() } });
+s.put('users', { email: 'svc@clean.test', role: 'owner', orgId: svc.id, passwordHash: hashPassword('demo password 123') });
 const buyer = s.put('orgs', { slug: 'gc', name: 'Acme PM', kind: 'buyer', buyerKind: 'property_manager', status: 'active', publisher: { status: 'verified', note: 'demo: verified' }, settings: {} });
 s.put('users', { email: 'pm@acme.test', role: 'owner', orgId: buyer.id, passwordHash: hashPassword('demo password 123') });
 bootstrap(s); // same startup as production (includes the project-core backfill)

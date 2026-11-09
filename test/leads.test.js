@@ -133,8 +133,8 @@ test('HTTP: subscriber signup → verify → search; buyers and unverified accou
   t.after(() => srv.close());
   const base = `http://127.0.0.1:${srv.address().port}`;
   const call = async (m, p, b, tok) => { const r = await fetch(base + p, { method: m, headers: { 'content-type': 'application/json', ...(tok ? { authorization: 'Bearer ' + tok } : {}) }, body: b && JSON.stringify(b) }); const tx = await r.text(); try { return { status: r.status, body: JSON.parse(tx) }; } catch { return { status: r.status, body: tx, headers: r.headers }; } };
-  assert.equal((await call('POST', '/api/signup/subscriber', { company: 'Prairie Roofing', trade: 'Roofing', name: 'Jo', email: 'jo@prairie.test', password: 'long enough password', state: 'ZZ' })).status, 400);
-  assert.equal((await call('POST', '/api/signup/subscriber', { company: 'Prairie Roofing', trade: 'Roofing', name: 'Jo', email: 'jo@prairie.test', password: 'long enough password', state: 'IA' })).status, 200);
+  assert.equal((await call('POST', '/api/signup/subscriber', { company: 'Prairie Roofing', segment: 'subcontractor', trades: ['roofing'], name: 'Jo', email: 'jo@prairie.test', password: 'long enough password', state: 'ZZ' })).status, 400);
+  assert.equal((await call('POST', '/api/signup/subscriber', { company: 'Prairie Roofing', segment: 'subcontractor', trades: ['roofing'], name: 'Jo', email: 'jo@prairie.test', password: 'long enough password', state: 'IA' })).status, 200);
   const tok = (await call('POST', '/api/login', { email: 'jo@prairie.test', password: 'long enough password' })).body.token;
   assert.equal((await call('GET', '/api/projects', undefined, tok)).status, 403); // must confirm email first
   const link = store.list('messages', m => m.kind === 'verification').pop().link;

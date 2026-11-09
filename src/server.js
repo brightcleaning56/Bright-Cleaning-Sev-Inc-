@@ -8,7 +8,7 @@ import { now } from './store.js';
 import { seedSources, canCollect, sourceComplianceIssues } from './sources/registry.js';
 import { csvImport } from './sources/adapters.js';
 import { ingestPermits } from './permits.js';
-import { draftRateCard, approveRateCard } from './estimate.js';
+import { draftRateCard, approveRateCard, CATEGORIES } from './estimate.js';
 import { validateContact, normName, transition } from './domain.js';
 import { runCycleGuarded, cycleStatus, handleEmailEvent } from './autopilot.js';
 import { readiness } from './readiness.js';
@@ -198,21 +198,31 @@ export function createServer(store, deps = {}) {
       TextBody: `Confirm your email to ${what}:\n\n${link}\n\nIf you didn't sign up, ignore this message.`, MessageStream: config.postmarkStream }, deps);
     store.put('messages', { orgId: org.id, kind: 'verification', dryRun: !!r.dryRun, to: email, link: r.dryRun ? link : undefined, messageId: r.messageId || null });
   };
+  // Subcontractors and service providers sign up with the trades they perform. Matching uses trade keys, so the
+  // keys are saved on the company at sign-up (a company with no trades never receives invitations).
   route('POST', '/api/signup/subscriber', null, async ({ body, ip }) => {
     need(rateLimit('signup:' + ip, 5, 3600e3), 429, 'too many signups from this address');
-    need(body.company && body.name && body.trade, 400, 'company, name and trade required');
+    need(body.company && body.name, 400, 'company and name required');
+    const segment = body.segment === 'service_provider' ? 'service_provider' : 'subcontractor';
+    const chosen = Array.isArray(body.trades) ? [...new Set(body.trades.map(String))] : [];
+    need(chosen.length || body.segment === 'service_provider', 400, 'choose the trades you perform');
+    need(chosen.every(t => TRADES.some(([k]) => k === t)), 400, 'unknown trade');
+    const services = segment === 'service_provider' ? (Array.isArray(body.services) ? [...new Set(body.services.map(String))] : []) : [];
+    need(segment !== 'service_provider' || (services.length && services.every(x => CATEGORIES.includes(x))), 400, 'choose the services you provide');
+    const trades = segment === 'service_provider' ? [...new Set([...chosen, 'cleaning'])] : chosen;
     const state = String(body.state || '').toUpperCase();
-    need(ALL_STATES.includes(state), 400, 'choose the state you want leads in');
+    need(ALL_STATES.includes(state), 400, 'choose the state you work in');
     const email = String(body.email || '').toLowerCase();
     need(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email), 400, 'valid business email required');
     need(!store.list('users', u => u.email === email).length, 409, 'email already registered');
     let passwordHash; try { passwordHash = hashPassword(body.password || ''); } catch (e) { throw new HttpError(400, e.message); }
+    const label = trades.map(k => TRADES.find(([key]) => key === k)[1]).join(', ');
     const org = store.put('orgs', { slug: 'sub-' + Math.random().toString(36).slice(2, 8), name: String(body.company).slice(0, 200), kind: 'subscriber',
-      trade: String(body.trade).slice(0, 80), territories: [state], status: 'pending_verification', legal: {}, settings: defaultSettings(),
+      segment, trade: label.slice(0, 200), trades, services, territories: [state], status: 'pending_verification', legal: {}, settings: defaultSettings(),
       subscription: { plan: 'trial', status: 'trialing', trialEndsAt: new Date(Date.now() + 14 * 864e5).toISOString() } });
     const user = store.put('users', { email, name: String(body.name).slice(0, 120), passwordHash, role: 'owner', orgId: org.id });
     await sendVerification(org, user, email, 'start your 14-day BUILDINTEL trial');
-    store.audit({ actor: email, orgId: org.id, action: 'subscriber.signup', detail: { trade: org.trade, state } });
+    store.audit({ actor: email, orgId: org.id, action: 'subscriber.signup', detail: { segment, trades, state } });
     return { ok: true, message: 'Check your email to confirm your account and start your trial.' };
   });
   route('POST', '/api/signup/buyer', null, async ({ body, ip }) => {
@@ -850,7 +860,7 @@ export function createServer(store, deps = {}) {
       if (req.method === 'GET' && url.pathname === '/ui-screens') return sendFramable(res, 200, fs.readFileSync(path.join(ROOT, 'public/ui-screens/index.html'), 'utf8'));
       if (req.method === 'GET' && url.pathname === '/home.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/home.css')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/pages.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/pages.css')).pipe(res); }
-      const PUBLIC_PAGES = new Set(['platform', 'project-intelligence', 'marketplace', 'plan-room', 'takeoff-estimating', 'bid-management', 'service-contractors', 'data-trust', 'pricing', 'about', 'solutions', 'contact', 'faq']);
+      const PUBLIC_PAGES = new Set(['get-started', 'platform', 'project-intelligence', 'marketplace', 'plan-room', 'takeoff-estimating', 'bid-management', 'service-contractors', 'data-trust', 'pricing', 'about', 'solutions', 'contact', 'faq']);
       const publicPage = url.pathname.replace(/^\/|\/$/g, '');
       if (req.method === 'GET' && PUBLIC_PAGES.has(publicPage)) return sendFramable(res, 200, fs.readFileSync(path.join(ROOT, 'public/pages', publicPage + '.html'), 'utf8'));
       if (req.method === 'GET' && url.pathname === '/')

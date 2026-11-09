@@ -47,7 +47,7 @@ const PAGE_HEAD = {
   pipeline: ['Bids', 'Bids drafted, approved and sent by the autopilot.', 'send'], opps: ['Autopilot Opportunities', 'Scored opportunities the autopilot can price.', 'brief'],
   gaps: ['GCs to Add', 'Contractors with active projects but no verified contact yet.', 'users'], overview: ['Bid Analytics', 'Bid pipeline value, win rate and response times.', 'chart'],
 };
-const EXTRA_TABS = ['map', 'market', 'planroom', 'estimates', 'directory', 'contracts', 'invitations', 'insurance', 'coverage', 'team', 'subscription'];
+const EXTRA_TABS = ['map', 'market', 'planroom', 'estimates', 'directory', 'contracts', 'invitations', 'insurance', 'coverage', 'team', 'subscription', 'rates'];
 
 async function api(method, path, body) {
   const r = await fetch(path, {method, headers: {'Content-Type': 'application/json', ...(token ? {Authorization: 'Bearer ' + token} : {})}, body: body ? JSON.stringify(body) : undefined});
@@ -60,10 +60,7 @@ function loginView() {
   <label for="e">Email</label><input id="e" type="email" autocomplete="username" required>
   <label for="p">Password</label><input id="p" type="password" autocomplete="current-password" required>
   <div class="err" id="le"></div><button class="primary x-0ccf4e6b" >Sign in</button>
-  <p class="x-86de7ac6" >Contractor or supplier? <a href="#" id="ss">Find construction leads — 14-day free trial</a></p>
-  <p>General contractor or property manager? <a href="#" id="su">Request cleaning bids</a></p></form>`;
-  $('#ss').onclick = ev => { ev.preventDefault(); subscriberSignupView(); };
-  $('#su').onclick = ev => { ev.preventDefault(); signupView(); };
+  <p class="x-86de7ac6" >New to BUILDINTEL? <a href="/get-started">Create an account. Tell us who you are first.</a></p></form>`;
   $('#lf').onsubmit = async ev => { ev.preventDefault();
     try { const r = await api('POST', '/api/login', {email: $('#e').value, password: $('#p').value}); token = r.token; sessionStorage.setItem('bi_token', token); render(); }
     catch (e) { $('#le').textContent = e.message; } };
@@ -796,40 +793,76 @@ async function renderPlanComparison(sel) {
       + '<ul class="x-0ca2fa6d" >' + p.lines.map(l => '<li>' + esc(l) + '</li>').join('') + '</ul></div>').join('')
     + '</div>';
 }
-function subscriberSignupView() {
-  setTimeout(() => renderPlanComparison('#plancmp'), 0); // after the form is drawn, so the handlers below bind to it
-  $('#app').innerHTML = `<div class="x-f22f052e" id="plancmp" ></div><form class="login" id="sf"><h1>Find construction leads</h1><p>New commercial projects from city permit records, with timelines and who to contact. 14 days free, no card needed.</p>
-  <label for="c">Company</label><input id="c" required>
-  <label for="t">Your trade</label><input id="t" placeholder="e.g. Commercial cleaning, Electrical, Roofing" required>
-  <label for="st">State you want leads in</label><input id="st" maxlength="2" placeholder="IA" required>
-  <label for="n">Your name</label><input id="n" required>
-  <label for="e">Work email</label><input id="e" type="email" autocomplete="username" required>
-  <label for="p">Password (12+ characters)</label><input id="p" type="password" minlength="12" autocomplete="new-password" required>
-  <div class="err" id="le"></div><button class="primary x-0ccf4e6b" >Start free trial</button>
-  <p class="x-86de7ac6" ><a href="#" id="bk">Back to sign in</a></p></form>`;
-  $('#bk').onclick = ev => { ev.preventDefault(); loginView(); };
-  $('#sf').onsubmit = async ev => { ev.preventDefault();
-    try { const r = await api('POST', '/api/signup/subscriber', { company: $('#c').value, trade: $('#t').value, state: $('#st').value, name: $('#n').value, email: $('#e').value, password: $('#p').value });
-      $('#sf').innerHTML = `<h1>Check your email</h1><p>${esc(r.message)}</p><p><a href="/app">Sign in</a></p>`; }
-    catch (e) { $('#le').textContent = e.message; } };
-}
-
-function signupView() {
-  $('#app').innerHTML = `<form class="login" id="sf"><h1>Request cleaning bids</h1><p>Post a project once. Qualified cleaning companies send priced proposals to your inbox here.</p>
-  <label for="c">Company</label><input id="c" required>
-  <label for="k">You are a</label><select id="k"><option value="general_contractor">General contractor</option><option value="property_manager">Property manager</option><option value="developer">Developer</option><option value="owner">Building owner</option></select>
+// Sign-up by role. Each role gets its own form and the account is set up for that role from the first login.
+const ROLE_SIGNUP = {
+  gc: { title: 'General contractor or GM', intro: 'Post bid packages, invite matching subcontractors, compare every bid side by side and award with an e-signature.', endpoint: 'buyer',
+    kinds: [['general_contractor', 'General contractor'], ['construction_manager', 'Construction manager']], kindLabel: 'Your company is a' },
+  owner: { title: 'Owner, developer or property manager', intro: 'Publish projects with trade packages, invite contractors, and compare and award bids with a signed record.', endpoint: 'buyer',
+    kinds: [['owner', 'Building owner'], ['developer', 'Developer'], ['property_manager', 'Property manager']], kindLabel: 'You are a' },
+  sub: { title: 'Subcontractor', intro: 'Get invited to bids that match the trades you perform and your territory, and find projects early from permit records.', endpoint: 'subscriber', segment: 'subcontractor' },
+  service: { title: 'Service provider', intro: 'Get invited to cleaning and facility-service bids, and price matching requests with your approved rate cards.', endpoint: 'subscriber', segment: 'service_provider' },
+};
+const SERVICE_OPTIONS = [['post_construction', 'Post-construction cleaning'], ['janitorial', 'Janitorial & facility cleaning'], ['windows', 'Window cleaning'],
+  ['pressure_washing', 'Pressure washing'], ['parking_lot', 'Parking lot & site care'], ['floor_care', 'Floor care'], ['other', 'Other facility services']];
+async function roleSignupView(role) {
+  const cfg = ROLE_SIGNUP[role];
+  if (!TRADES_LIST.length && cfg.endpoint === 'subscriber' && cfg.segment === 'subcontractor') TRADES_LIST = await (await fetch('/api/trades')).json().catch(() => []);
+  const kind = cfg.kinds ? `<label for="k">${cfg.kindLabel}<select id="k">${cfg.kinds.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>` : '';
+  const trades = cfg.segment === 'subcontractor'
+    ? `<fieldset class="role-set"><legend>Trades you perform (choose all that apply)</legend><div class="role-checks">${TRADES_LIST.filter(t => t.key !== 'general_contracting').map(t => `<label><input type="checkbox" name="tr" value="${t.key}"> ${esc(t.label)}</label>`).join('')}</div></fieldset>` : '';
+  const services = cfg.segment === 'service_provider'
+    ? `<fieldset class="role-set"><legend>Services you provide (choose all that apply)</legend><div class="role-checks">${SERVICE_OPTIONS.map(([v, l]) => `<label><input type="checkbox" name="sv" value="${v}"> ${esc(l)}</label>`).join('')}</div></fieldset>` : '';
+  const state = cfg.endpoint === 'subscriber'
+    ? `<label for="st">State you work in</label><input id="st" maxlength="2" placeholder="IA" required>` : '';
+  $('#app').innerHTML = `<form class="login" id="sf"><h1>${esc(cfg.title)}</h1><p>${esc(cfg.intro)}</p>
+  <label for="c">Company</label><input id="c" required>${kind}${trades}${services}${state}
   <label for="n">Your name</label><input id="n" required>
   <label for="e">Work email</label><input id="e" type="email" autocomplete="username" required>
   <label for="p">Password (12+ characters)</label><input id="p" type="password" minlength="12" autocomplete="new-password" required>
   <div class="err" id="le"></div><button class="primary x-0ccf4e6b" >Create account</button>
-  <p class="x-86de7ac6" ><a href="#" id="bk">Back to sign in</a></p></form>`;
-  $('#bk').onclick = ev => { ev.preventDefault(); loginView(); };
-  $('#sf').onsubmit = async ev => { ev.preventDefault();
-    try { const r = await api('POST', '/api/signup/buyer', {company: $('#c').value, kind: $('#k').value, name: $('#n').value, email: $('#e').value, password: $('#p').value});
-      $('#sf').innerHTML = `<h1>Check your email</h1><p>${esc(r.message)}</p><p><a href="/app">Sign in</a></p>`; }
-    catch (e) { $('#le').textContent = e.message; } };
+  <p class="x-86de7ac6" ><a href="/app">I already have an account</a></p></form>`;
+  $('#sf').onsubmit = async ev => { ev.preventDefault(); $('#le').textContent = '';
+    const picked = name => [...document.querySelectorAll(`input[name=${name}]:checked`)].map(x => x.value);
+    const base = { company: $('#c').value, name: $('#n').value, email: $('#e').value, password: $('#p').value };
+    try {
+      let r;
+      if (cfg.endpoint === 'buyer') r = await api('POST', '/api/signup/buyer', { ...base, kind: $('#k').value });
+      else if (cfg.segment === 'subcontractor') r = await api('POST', '/api/signup/subscriber', { ...base, segment: cfg.segment, trades: picked('tr'), state: $('#st').value });
+      else r = await api('POST', '/api/signup/subscriber', { ...base, segment: cfg.segment, services: picked('sv'), trades: ['cleaning', 'janitorial'], state: $('#st').value });
+      $('#sf').innerHTML = `<h1>Check your email</h1><p>${esc(r.message)}</p><p><a href="/app">Sign in</a></p>`;
+    } catch (e) { $('#le').textContent = e.message; } };
 }
 
+// In-page step links (for example "Post your first request") scroll to their form and focus its first field.
+function bindFocusLinks() {
+  document.querySelectorAll('[data-focus]').forEach(b => b.onclick = () => {
+    const box = document.getElementById(b.dataset.focus); if (!box) return;
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' }); box.querySelector('input,textarea,select')?.focus();
+  });
+}
+// Dashboard banner: who this workspace is for, plus the setup steps that remain.
+const ROLE_TEXT = {
+  general_contractor: ['General contractor workspace', 'Post bid packages, invite matching subcontractors, compare bids and award contracts.'],
+  construction_manager: ['General contractor workspace', 'Post bid packages, invite matching subcontractors, compare bids and award contracts.'],
+  owner: ['Owner workspace', 'Publish projects with trade packages, invite contractors, and compare and award bids.'],
+  developer: ['Owner workspace', 'Publish projects with trade packages, invite contractors, and compare and award bids.'],
+  property_manager: ['Owner workspace', 'Publish projects with trade packages, invite contractors, and compare and award bids.'],
+};
+const SEGMENT_TEXT = {
+  subcontractor: ['Subcontractor workspace', 'Invitations and projects that match your trades and territory.'],
+  service_provider: ['Service provider workspace', 'Cleaning and facility-service bids in your territory. Approved rate cards price matching requests.'],
+};
+function roleBannerHtml(org, steps = []) {
+  const text = org.kind === 'buyer' ? ROLE_TEXT[org.buyerKind] : SEGMENT_TEXT[org.segment];
+  if (!text) return '';
+  const done = steps.filter(x => x[1]).length;
+  const list = steps.map(([label, ok, target]) => {
+    const name = esc(label);
+    const link = ok || !target ? name : target.startsWith('#') ? `<button type="button" class="linkish" data-focus="${target.slice(1)}">${name}</button>` : `<a href="#" data-goto="${target}">${name}</a>`;
+    return `<li class="${ok ? 'done' : ''}"><span aria-hidden="true">${ok ? '✓' : '○'}</span>${link}</li>`;
+  }).join('');
+  return `<section class="role-banner" aria-label="Your workspace"><div><small>${done} of ${steps.length} setup steps done</small><h2>${text[0]}</h2><p>${text[1]}</p></div>${steps.length ? `<ol class="role-steps">${list}</ol>` : ''}</section>`;
+}
 const sv = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICON = {
   home: sv('<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>'), pin: sv('<path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
@@ -1034,7 +1067,10 @@ async function openPublication(id) {
 async function buyerView() {
   if (!TRADES_LIST.length) TRADES_LIST = await (await fetch('/api/trades')).json().catch(() => []);
   const verified = me.org.status === 'active';
+  const myRequests = await api('GET', '/api/requests').catch(() => []);
+  const steps = [['Confirm your email', verified, null], ['Add your company details', !!(me.org.legal && Object.keys(me.org.legal).length), null], ['Post your first request', myRequests.length > 0, '#rf']];
   $('#app').innerHTML = `<div class="wrap"><header><h1>BUILDINTEL</h1><span class="who">${esc(me.org.name)} · ${esc(me.user.email)} <button id="lo">Sign out</button></span></header>
+  ${roleBannerHtml(me.org, steps)}
   ${verified ? '' : '<div class="empty x-49f14f8f" >Confirm your email to post requests. Check your inbox for the link.</div>'}
   <div id="verc"></div><div id="pubc"></div>
   <div class="sign x-6384e367" ><div><h2>Quick post: one trade package</h2><p>For a single trade. For a full project with several trade packages and plan rooms, use <b>New project</b> above. BUILDINTEL invites every matching contractor in that area; they answer will-bid / won't-bid and submit bids here.</p>
@@ -1056,6 +1092,7 @@ async function buyerView() {
   <h2 class="x-855107b5" >Signed contracts</h2><section id="contracts"></section>
   <div class="grid2 x-49fcd855" ><div class="card" id="teamc"></div><div class="card" id="subc"></div></div></div>`;
   publisherPanels();
+  bindFocusLinks();
   $('#lo').onclick = async () => { await api('POST', '/api/logout').catch(()=>{}); token = null; me = null; sessionStorage.removeItem('bi_token'); render(); };
   $('#rf').onsubmit = async ev => { ev.preventDefault();
     const trades = [...document.querySelectorAll('input[name=tr]:checked')].map(x => x.value);
@@ -1141,7 +1178,7 @@ const SUB_TABS = [...LEAD_TABS, ['plan', 'Plan & profile']];
 const TABS = [['readiness', 'Launch gates'], ...LEAD_TABS, ['overview', 'Overview'], ['pipeline', 'Bids'], ['opps', 'Opportunities'], ['gaps', 'Add GCs next'], ['contracts', 'Contracts'], ['insurance', 'Insurance & licenses'], ['rates', 'Pricing'], ['plan', 'Company profile'], ['sources', 'Data sources']];
 
 async function render() {
-  if (!token) return loginView();
+  if (!token) { const sg = location.hash.match(/^#signup-(gc|owner|sub|service)$/); return sg ? roleSignupView(sg[1]) : loginView(); }
   try { me = me || await api('GET', '/api/me'); } catch { return; }
   if (me.org?.kind === 'buyer') return buyerView();
   const isSub = me.org?.kind === 'subscriber';
@@ -1193,6 +1230,12 @@ async function render() {
   api('GET', '/api/invitations').then(v => { const n = v.filter(i => i.request.status === 'open' && i.intent === 'undecided').length; if (n) { $('#bellN').textContent = n; $('#bellN').hidden = false; } }).catch(() => {});
   if (isSub) {
     const a = await api('GET', '/api/access');
+    const gaps = await api('GET', '/api/prequal/me').catch(() => null);
+    const steps = [['Confirm your email', me.org.status !== 'pending_verification', null], ['Trades and territory', (me.org.trades || []).length > 0 && (me.org.territories || []).length > 0, 'plan'],
+      ['Company details', !!(me.org.legal && me.org.legal.name), 'plan'], ['Insurance and licenses', !!gaps && Array.isArray(gaps.flags) && gaps.flags.length === 0, 'insurance']];
+    if (me.org.segment === 'service_provider') { const rc = await api('GET', '/api/rate-cards').catch(() => []); steps.push(['Approved rate card', rc.some(x => x.status === 'approved'), 'rates']); }
+    $('#sign').insertAdjacentHTML('beforebegin', roleBannerHtml(me.org, steps));
+    bindFocusLinks();
     $('#sign').innerHTML = a.ok ? (a.plan === 'trial' ? `<div class="card x-ae8369b5" ><span class="pill amber">Free trial</span> ${Math.max(0, Math.ceil((Date.parse(a.trialEndsAt) - Date.now()) / 864e5))} day(s) left · Territory: ${esc(a.territories.join(', '))} · <a href="#" data-goto="plan">Choose a plan</a></div>` : '')
       : `<div class="card x-5da2c578" >${esc(a.reason)}. <a href="#" data-goto="plan">Choose a plan</a></div>`;
     document.querySelectorAll('[data-goto]').forEach(x => x.onclick = ev => { ev.preventDefault(); go(x.dataset.goto); });

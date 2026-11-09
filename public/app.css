@@ -324,3 +324,22 @@ body{font-size:13px}h2{font-size:20px}h3{font-size:14.5px;margin-bottom:8px}
 
 /* Inline styles moved to classes (keeps the CSP free of unsafe-inline). */
 .x-5c6a598b{max-width:1080px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:12px!important}
+
+/* Role banner and setup steps on each workspace dashboard */
+.role-banner{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start;background:#fff;border:1px solid var(--line,#dfe7f0);border-left:4px solid #f5b82e;border-radius:12px;padding:16px 18px;margin:0 0 14px}
+.role-banner small{color:#8a5a00;font-weight:700}
+.role-banner h2{margin:4px 0 4px;font-size:18px;color:#0b1d35}
+.role-banner p{margin:0;color:#62748b;font-size:14px}
+.role-steps{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:14px}
+.role-steps li{display:flex;gap:10px;align-items:center;color:#14263c}
+.role-steps li span{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1.5px solid #c9d6e6;font-size:12px;flex:none}
+.role-steps li.done span{background:#1d9a68;border-color:#1d9a68;color:#fff}
+.role-steps li.done{color:#62748b}
+.role-set{border:1px solid #dfe7f0;border-radius:10px;padding:10px 12px;margin:0}
+.role-set legend{font-weight:700;padding:0 6px;color:#0b1d35}
+.role-checks{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.role-checks label{display:flex;gap:8px;align-items:center;font-weight:400;font-size:14px}
+.role-checks input{width:auto}
+@media (max-width:760px){.role-banner{grid-template-columns:1fr}.role-checks{grid-template-columns:1fr}}
+
+.role-steps .linkish{background:none;border:0;padding:0;font:inherit;color:#2867d7;font-weight:600;text-decoration:underline;cursor:pointer}
