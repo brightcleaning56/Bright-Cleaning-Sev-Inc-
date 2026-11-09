@@ -379,7 +379,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
         if (open) { const keep = Object.entries(f).filter(([k, v]) => v && k !== 'details'); if (keep.length) db.prepare(`UPDATE leads SET ${keep.map(([k]) => k + '=?').join(',')} WHERE id=?`).run(...keep.map(([, v]) => v), open.id);
           db.prepare('UPDATE leads SET details=? WHERE id=?').run(String(open.details || '') + `\n\nCalled again ${today()} (AI receptionist): ` + details.replace(/^Phone call with Bright Clean's AI receptionist\.\n?/, ''), open.id);
           db.prepare('UPDATE ai_call_sessions SET lead_id=? WHERE call_sid=?').run(open.id, sess.call_sid); sess.lead_id = open.id; return 'This caller already has an open request; it was updated (no duplicate).'; } }
-      const id = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,service,project_type,address,square_footage,bid_due_date,details,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'New',?)`)
+      const id = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,service,project_type,address,square_footage,bid_due_date,details,status,created_at,origin) VALUES(?,?,?,?,?,?,?,?,?,?,?,'New',?,'inbound_call')`)
         .run(cat === 'construction' ? 'bid' : 'inquiry', f.contact_name, f.company, f.email, f.phone, f.service, f.project_type, f.address, f.square_footage, f.bid_due_date, f.details, now()).lastInsertRowid;
       db.prepare('UPDATE ai_call_sessions SET lead_id=? WHERE call_sid=?').run(id, sess.call_sid); sess.lead_id = id;
       db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('AI receptionist', 'created', 'lead', id, `from call ${sess.call_sid}`, now());

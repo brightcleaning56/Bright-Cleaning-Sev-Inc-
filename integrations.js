@@ -47,7 +47,7 @@ module.exports = function (app, { db, auth, logAction, clean, isEmail, notify })
     if (!name && !email && !phone) return res.status(400).json({ error: 'Send at least a name, an email or a phone number.' });
     if (email && !isEmail(email)) return res.status(400).json({ error: 'That email address is not valid.' });
     const label = 'API: ' + key.name + (source ? ' · ' + source : '');
-    const id = db.prepare("INSERT INTO leads(kind,contact_name,company,email,phone,project_name,service,details,status,intake,created_at) VALUES('inquiry',?,?,?,?,?,?,?,'New',?,?)")
+    const id = db.prepare("INSERT INTO leads(kind,contact_name,company,email,phone,project_name,service,details,status,intake,created_at,origin) VALUES('inquiry',?,?,?,?,?,?,?,'New',?,?,'api')")
       .run(name, company, email, phone, project, service, details, label, now()).lastInsertRowid;
     db.prepare('UPDATE api_keys SET last_used_at=? WHERE id=?').run(now(), key.id);
     logAction({ user: { email: 'api:' + key.name } }, 'received lead', 'lead', id, label);

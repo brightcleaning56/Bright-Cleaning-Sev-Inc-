@@ -206,8 +206,8 @@ module.exports = function mountIntake(app, ctx) {
     const fl = flags(service, a, files.length);
     const details = [summary(service, a), b.notes && 'Notes: ' + clean(b.notes, 4000)].filter(Boolean).join('\n\n');
     const now = new Date().toISOString();
-    const info = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,project_name,project_type,service,address,square_footage,bid_due_date,start_date,frequency,details,files,created_at,intake,service_key)
-      VALUES('bid',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    const info = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,project_name,project_type,service,address,square_footage,bid_due_date,start_date,frequency,details,files,created_at,intake,service_key,origin)
+      VALUES('bid',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'website')`).run(
       clean(b.contact_name, 150), clean(b.company, 200), clean(b.email, 254), clean(b.phone, 60),
       clean(a.property_name || b.project_name || '', 200), def.title, def.title, clean(b.address, 500),
       a.square_footage ? String(a.square_footage) : (a.area_sqft ? String(a.area_sqft) : ''), a.bid_due_date || '', a.start_date || '', a.frequency || '',

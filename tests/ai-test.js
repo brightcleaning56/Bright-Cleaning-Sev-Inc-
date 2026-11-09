@@ -295,6 +295,33 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
     return `${cases[0].number} from the AI call; call #${call.id} stays in Calls (Handled by AI) and is linked; transcript attached; retry did not duplicate`;
   });
 
+  await check('Lead source: the AI is told where each lead came from and gets every saved field (contact form, staff-added, quote form)', async () => {
+    const cf = await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ name: 'Web Contact', email: 'web.contact@ai.test', phone: '515-555-0199', message: 'Do you clean after water restoration? Our third floor is done.' }), redirect: 'manual' });
+    assert(cf.status < 400, 'contact form status ' + cf.status);
+    const pat = await api('POST', '/api/admin/leads', { contact_name: 'Pat Builder', company: 'Build Co', email: 'pat.build@ai.test', phone: '515-555-0123', details: 'Two-story office, final clean' }, T);
+    const leads = (await api('GET', '/api/admin/leads', null, T)).data.leads || [];
+    const webId = (leads.find(l => l.email === 'web.contact@ai.test') || {}).id;
+    const patId = (leads.find(l => l.email === 'pat.build@ai.test') || {}).id;
+    assert(webId && patId, 'leads not found: ' + JSON.stringify({ webId, patId, pat: pat.status }));
+    const web = leads.find(l => l.id === webId), staff = leads.find(l => l.id === patId);
+    assert(web.origin === 'website' && staff.origin === 'manual', 'origins: ' + JSON.stringify({ web: web.origin, staff: staff.origin }));
+    const triage = async id => { const r = await api('POST', `/api/admin/ai/leads/${id}/triage`, null, T); assert(r.status === 200, 'triage ' + r.status); };
+    await triage(webId); await triage(patId);
+    const promptFor = mark => { const s = [...seen].reverse().find(x => x.body && JSON.stringify(x.body).includes(mark)); return s ? JSON.stringify(s.body) : ''; };
+    const webPrompt = promptFor('web.contact@ai.test'), staffPrompt = promptFor('pat.build@ai.test');
+    const chk = {
+      contactLabel: webPrompt.includes('Where this lead came from: Website contact form message'),
+      contactMessage: webPrompt.includes('Do you clean after water restoration'),
+      contactNotStaff: !webPrompt.includes('did NOT contact us'),
+      contactStatus: webPrompt.includes('status: New'),
+      staffLabel: staffPrompt.includes('Added by Bright Clean staff'),
+      staffRule: staffPrompt.includes('did NOT contact us'),
+      staffDetails: staffPrompt.includes('Two-story office, final clean')
+    };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, webId, patId }));
+    return 'contact-form lead told it wrote to us (not outreach), with its message and status; staff-added lead told to reach out; every saved field reaches the prompt';
+  });
+
   child.kill(); fake.close();
   fs.writeFileSync(path.join(__dirname, 'ai-results.json'), JSON.stringify({ run_at: new Date().toISOString(), results }, null, 2));
   console.log(`${results.filter(r => r.status === 'PASS').length}/${results.length} passed`); process.exit(results.every(r => r.status === 'PASS') ? 0 : 1);

@@ -37,20 +37,36 @@ Never invent prices, rates, availability, insurance, licenses, certifications or
     return JSON.parse(m[0]);
   }
 
+  // What a lead's source means in plain words, so the reply matches how the lead actually reached us.
+  const REACH_OUT = 'BRIGHT CLEAN ADDED THIS CONTACT to reach out to them. They did NOT contact us. Do NOT say they reached out, called, filled in a form, or ask us to thank them for anything. Introduce Bright Clean in one or two sentences: commercial janitorial, construction final, rough and touch-up cleaning, multifamily common areas and unit turnovers, window cleaning, power washing and floor care. Say we would like to learn about their projects and what they need cleaned, ask the questions needed to price, and offer a call or site walkthrough.';
+  function leadSource(l) {
+    const d = String(l.details || '');
+    let form = null; try { form = l.intake ? JSON.parse(l.intake) : null; } catch { form = null; }
+    const origin = l.origin || (form ? 'website' : 'manual');
+    if (origin === 'inbound_call' || /^Source: Phone call/.test(d)) return { label: 'Phone call to Bright Clean', how: 'They called Bright Clean and the call was logged. Thank them for calling and answer what they asked about.' };
+    if (origin === 'portal' || /^Source: client portal/.test(d)) return { label: 'Client portal request', how: 'They sent this request from their Bright Clean client portal. Thank them and confirm we have the request.' };
+    if (origin === 'api') return { label: 'Partner or integration: ' + (String(l.intake || '').replace(/^API:\s*/, '') || 'partner website'), how: 'A partner website or tool sent this contact to us. Thank them for their interest and say we received their request through that source.' };
+    if (origin === 'website' && form) return { label: 'Website quote request' + (form.service ? ' (' + form.service + ')' : ''), how: 'They filled in the quote request form on our website. Thank them and confirm the details we still need before we can price the work.' };
+    if (origin === 'website') return { label: 'Website contact form message', how: 'They wrote to us through the contact form on our website. Reply to their message directly: answer what they asked and thank them for writing. Do not say they filled in a quote request unless the details say so.' };
+    return { label: 'Added by Bright Clean staff (we reach out to them)', how: REACH_OUT };
+  }
+
   // ---------- Lead triage + reply draft ----------
   async function triageLead(id) {
     const l = db.prepare('SELECT * FROM leads WHERE id=?').get(id);
     if (!l) throw new Error('Lead not found.');
-    const facts = ['kind', 'contact_name', 'company', 'email', 'phone', 'project_name', 'project_type', 'service', 'address', 'square_footage', 'bid_due_date', 'start_date', 'frequency', 'details']
-      .filter(k => l[k]).map(k => `${k}: ${String(l[k]).slice(0, 3000)}`).join('\n');
-    const how = {
-      website: 'They filled in the Bright Clean request form on our website. Thank them for their request.',
-      inbound_call: 'They called Bright Clean. Thank them for calling.',
-      portal: 'They sent this request from their Bright Clean client portal. Thank them for their request.',
-      manual: 'BRIGHT CLEAN ADDED THIS CONTACT to reach out to them. They did NOT contact us. Do NOT say they reached out, called, filled in a form, or ask us to thank them for anything. Introduce Bright Clean in one or two sentences: commercial janitorial, construction final, rough and touch-up cleaning, multifamily common areas and unit turnovers, window cleaning, power washing and floor care. Say we would like to learn about their projects and what they need cleaned, ask the questions needed to price, and offer a call or site walkthrough.',
-      import: 'BRIGHT CLEAN ADDED THIS CONTACT to reach out to them. They did NOT contact us. Do NOT say they reached out, called, filled in a form, or ask us to thank them for anything. Introduce Bright Clean in one or two sentences: commercial janitorial, construction final, rough and touch-up cleaning, multifamily common areas and unit turnovers, window cleaning, power washing and floor care. Say we would like to learn about their projects and what they need cleaned, ask the questions needed to price, and offer a call or site walkthrough.'
-    }[(l.origin === 'outbound' ? 'manual' : l.origin) || 'website'] || 'Thank them for their request.';
-    const text = await call([{ role: 'user', content: `Lead source: ${l.origin || 'website'}. ${how}\n\nLead details:\n${facts}\n\nReturn ONLY JSON with keys:
+    const src = leadSource(l);
+    const facts = ['kind', 'contact_name', 'company', 'email', 'phone', 'project_name', 'project_type', 'service', 'address', 'square_footage', 'bid_due_date', 'start_date', 'frequency', 'status', 'notes', 'details']
+      .filter(k => l[k]).map(k => `${k}: ${String(l[k]).slice(0, 3000)}`);
+    let files = []; try { files = (JSON.parse(l.files || '[]') || []).map(f => f.name).filter(Boolean); } catch { files = []; }
+    if (files.length) facts.push(`files attached: ${files.slice(0, 10).join(', ')}`);
+    const text = await call([{ role: 'user', content: `Where this lead came from: ${src.label}.
+What that means for the reply: ${src.how}
+
+Lead details:
+${facts.join('\n')}
+
+Return ONLY JSON with keys:
 "summary" (2 sentences), "category" (one of construction, multifamily, janitorial, windows, power_washing, parking, unit_turnover, other),
 "priority" (High/Normal/Low with bid deadlines or large projects High), "missing" (array of short items still needed before pricing, e.g. drawings, square footage, site visit),
 "next_step" (one sentence for the Bright Clean team), "reply_subject", "reply_body" (a short, friendly email from Bright Clean that follows the lead source above, asks only for the missing items, and promises follow-up. No prices.)` }], COMPANY, 1200);

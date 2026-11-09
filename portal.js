@@ -357,7 +357,7 @@ module.exports = function mountPortal(app, ctx) {
     if (!service) return res.status(400).json({ error: 'Choose the service you need.' });
     if (details.length < 10) return res.status(400).json({ error: 'Describe what you need in a few words.' });
     const at = now();
-    const id = db.prepare("INSERT INTO leads(kind,status,contact_name,company,email,phone,address,service,project_name,details,created_at,updated_at) VALUES('bid','New',?,?,?,?,?,?,?,?,?,?)")
+    const id = db.prepare("INSERT INTO leads(kind,status,contact_name,company,email,phone,address,service,project_name,details,created_at,updated_at,origin) VALUES('bid','New',?,?,?,?,?,?,?,?,?,?,'portal')")
       .run(name || company || sess.email, company, sess.email, phone, address, service, service, 'Source: client portal\n' + details, at, at).lastInsertRowid;
     try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, 'requested service in client portal', 'lead', id, service, at); } catch { /* */ }
     const m = getMailer && getMailer();
