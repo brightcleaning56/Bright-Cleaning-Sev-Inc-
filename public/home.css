@@ -154,3 +154,4 @@ body.home{background:#fff}
 .h-sample-body .h-badge+strong{display:block}
 @media(max-width:1050px){.h-dash-row{grid-template-columns:1fr}.h-plan,.h-dash{grid-template-columns:1fr}.h-side{display:none}}
 @media(max-width:760px){.h-dash-main .h-kpis{grid-template-columns:repeat(2,1fr)}.h-take{grid-template-columns:1fr}.h-plan{grid-template-columns:1fr}.h-tree{border-right:0;border-bottom:1px solid var(--line)}}
+@media(max-width:420px){.h-search{display:none}}
