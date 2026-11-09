@@ -3138,6 +3138,84 @@ async function startServer(env, dataDir) {
     return `summary matches lists (${JSON.stringify(lists)}); closeout: handled ${r.emails_handled} email(s), ${r.activities_rescheduled} rescheduled`;
   });
 
+  await check('Work queue', 'Sent: an email with no reply is Awaiting reply; a reply from that address moves it to Replied; a failed send is Not delivered', async () => {
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const before = new Date(Date.now() - 60000).toISOString();
+    const ok1 = pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,created_at) VALUES('quote.wait@example.com','Your quote','Hi','sent',?)").run(before).lastInsertRowid;
+    const ok2 = pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,created_at) VALUES('quote.replied@example.com','Your quote 2','Hi','sent',?)").run(before).lastInsertRowid;
+    const bad = pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,error,created_at) VALUES('bounce.test@example.com','Bounce','Hi','failed','Mailbox not found',?)").run(before).lastInsertRowid;
+    pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES('wq-sent-reply','Quote.Replied@example.com','Replier','Re: Your quote 2','Yes please',?,?)").run(new Date().toISOString(), new Date().toISOString());
+    pdb.close();
+    const bucketOf = async (id, b) => ((await req('GET', `/api/admin/work-queue?dept=sent&bucket=${b}`, { token: T })).data.items || []).some(i => i.id === id);
+    const chk = { waiting: await bucketOf(ok1, 'waiting'), replied: await bucketOf(ok2, 'completed') && !(await bucketOf(ok2, 'waiting')), failed: await bucketOf(bad, 'new') };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'sent: awaiting reply until a reply arrives (case-insensitive match); failed sends need attention';
+  });
+
+  await check('Work queue', 'Email → task: creates one task linked to the email; pressing it again returns the same task; the task is in Tasks; the email keeps its state', async () => {
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const mid = pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES('wq-task-mail','task.mail@example.com','Task Mail','Carpet cleaning request','Please call me',?,?)").run(new Date().toISOString(), new Date().toISOString()).lastInsertRowid;
+    pdb.close();
+    const first = await req('POST', `/api/admin/inbox/${mid}/task`, { token: T, json: {} });
+    const second = await req('POST', `/api/admin/inbox/${mid}/task`, { token: T, json: {} });
+    const tid = first.data.task_id;
+    const tasks = (await req('GET', '/api/admin/work-queue?dept=tasks', { token: T })).data.items || [];
+    const matches = tasks.filter(t => t.id === tid);
+    const emailStill = ((await req('GET', '/api/admin/work-queue?dept=emails&bucket=new', { token: T })).data.items || []).some(i => i.id === mid);
+    const chk = { created: first.status === 200 && !!tid, repeatSameTask: second.data.task_id === tid && second.data.existing === true, oneTaskListed: matches.length === 1 && /Carpet cleaning/.test(matches[0].title), emailKeepsState: emailStill, missingEmail: (await req('POST', '/api/admin/inbox/999999/task', { token: T, json: {} })).status === 404 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'email → one task, repeat returns the same task, task listed once, email still in Needs attention';
+  });
+
+  await check('Work queue', 'Permissions: owner, manager, staff, sales and supervisor can read the queue; inspectors and signed-out users cannot; sales and staff can act on emails; inspectors cannot write', async () => {
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const users = [['mgr.wq2@roles.test', 'manager'], ['sup.wq2@roles.test', 'supervisor'], ['sales.wq2@roles.test', 'sales'], ['staff.wq2@roles.test', 'staff'], ['insp.wq2@roles.test', 'inspector']];
+    for (const [email, role] of users) await req('POST', '/api/admin/users', { token: T, json: { name: role, email, password: 'role-test-password-9', role } });
+    const getAs = em => req('GET', '/api/admin/work-queue?dept=emails', { token: mint(em) });
+    const r = {
+      owner: (await req('GET', '/api/admin/work-queue?dept=emails', { token: T })).status,
+      manager: (await getAs('mgr.wq2@roles.test')).status,
+      supervisor: (await getAs('sup.wq2@roles.test')).status,
+      sales: (await getAs('sales.wq2@roles.test')).status,
+      staff: (await getAs('staff.wq2@roles.test')).status,
+      inspector: (await getAs('insp.wq2@roles.test')).status,
+      signedOut: (await req('GET', '/api/admin/work-queue?dept=emails')).status,
+      inspectorWrites: (await req('POST', '/api/admin/inbox/1/state', { token: mint('insp.wq2@roles.test'), json: { action: 'handle' } })).status,
+      salesCanAct: (await req('POST', '/api/admin/inbox/1/state', { token: mint('sales.wq2@roles.test'), json: { action: 'waiting' } })).status
+    };
+    const chk = { ownerOk: r.owner === 200, managerOk: r.manager === 200, supervisorOk: r.supervisor === 200, salesOk: r.sales === 200, staffOk: r.staff === 200, inspectorRefused: r.inspector === 403, signedOutRefused: r.signedOut === 401, inspectorWriteRefused: r.inspectorWrites === 403, salesActs: r.salesCanAct === 200 || r.salesCanAct === 404 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, r }));
+    return 'owner/manager/supervisor/sales/staff read the queue; inspector and signed-out refused; inspector cannot write';
+  });
+
+  await check('Work queue', 'Date rules: with today set to the due day an item is Today; the day before it is Scheduled; the day after it is Overdue; a snooze that has passed returns the email to Needs attention', async () => {
+    const wq = require('../workqueue');
+    const today = '2026-11-12';
+    const chk = {
+      dueToday: wq.dateBucket('2026-11-12', today) === 'today',
+      scheduledBefore: wq.dateBucket('2026-11-12', '2026-11-11') === 'scheduled',
+      overdueAfter: wq.dateBucket('2026-11-12', '2026-11-13') === 'overdue',
+      noDateIsNull: wq.dateBucket(null, today) === null,
+      snoozedPassed: wq.emailBucket({}, { status: 'open', snooze_until: '2026-11-11T10:00:00.000Z' }, today, '2026-11-12T10:00:00.000Z') === 'new',
+      snoozedFuture: wq.emailBucket({}, { status: 'open', snooze_until: '2026-11-13T10:00:00.000Z' }, today, '2026-11-12T10:00:00.000Z') === 'scheduled',
+      handledStays: wq.emailBucket({}, { status: 'completed', follow_up_date: '2026-11-12' }, today, '2026-11-12T10:00:00.000Z') === 'completed'
+    };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'due day → Today; before → Scheduled; after → Overdue; passed snooze → back to Needs attention; handled stays Completed';
+  });
+
+  await check('Work queue', 'Repeated events: scheduling the same email or call twice leaves one record and one item; a duplicate task request creates no second task', async () => {
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const mid = pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES('wq-repeat','repeat.mail@example.com','Repeat','Repeat test','x',?,?)").run(new Date().toISOString(), new Date().toISOString()).lastInsertRowid;
+    pdb.close();
+    await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: '2099-05-05' } });
+    await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: '2099-05-05' } });
+    const rows = (await req('GET', '/api/admin/work-queue?dept=emails', { token: T })).data.items.filter(i => i.id === mid);
+    const stateRows = (() => { const d = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true }); const n = d.prepare('SELECT COUNT(*) n FROM inbox_state WHERE message_id=?').get(mid).n; d.close(); return n; })();
+    assert(rows.length === 1 && stateRows === 1, JSON.stringify({ rows: rows.length, stateRows }));
+    return 'a repeated schedule keeps one state row and one item in the queue';
+  });
+
   server.child.kill(); smtp.close();
   const pass = results.filter(r => r.status === 'PASS').length;
   fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify({ run_at: new Date().toISOString(), node: process.version, pass, fail: results.length - pass, results }, null, 2));

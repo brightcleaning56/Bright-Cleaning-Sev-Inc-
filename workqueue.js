@@ -13,7 +13,7 @@
 // Dates use the business time zone (BUSINESS_TZ), via bizdate.js.
 const { today: bizToday, TZ } = require('./bizdate');
 
-const DEPTS = ['emails', 'calls', 'leads', 'tasks'];
+const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent'];
 const MISSED = ['Missed', 'Voicemail', 'No answer', 'No-answer'];
 const ISSUE_CLOSED = ['Resolved', 'Verified', 'Closed'];
 const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));
@@ -71,7 +71,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const cols = t => db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
   db.exec(`CREATE TABLE IF NOT EXISTS inbox_state(message_id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT 'open', follow_up_date TEXT,
     snooze_until TEXT, assigned_to TEXT, note TEXT, updated_by TEXT, updated_at TEXT NOT NULL)`);
-  for (const [t, c] of [['calls', 'assigned_to'], ['calls', 'handled_at'], ['calls', 'handled_by'], ['leads', 'assigned_to'], ['customer_issues', 'assigned_to']]) {
+  for (const [t, c] of [['calls', 'assigned_to'], ['calls', 'handled_at'], ['calls', 'handled_by'], ['leads', 'assigned_to'], ['customer_issues', 'assigned_to'], ['inbox_state', 'task_id']]) {
     if (!cols(t).includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} TEXT`);
   }
   const today = () => bizToday();
@@ -88,6 +88,17 @@ module.exports = function (app, { db, auth, logAction, clean }) {
           assigned_to: r.assigned_to, lead_id: r.lead_id, customer_id: r.customer_id, due: r.follow_up_date || (r.snooze_until ? r.snooze_until.slice(0, 10) : null),
           bucket: emailBucket(r, r.state ? { status: r.state, follow_up_date: r.follow_up_date, snooze_until: r.snooze_until } : null, t, now), note: r.note,
           link: `/api/admin/inbox?lead_id=${r.lead_id || ''}`
+        }));
+    }
+    if (dept === 'sent') {
+      // Outgoing emails. A reply from the same address after sending means the email is answered.
+      return db.prepare(`SELECT e.id, e.to_addr, e.subject, e.status, e.error, e.created_at,
+          (SELECT MIN(m.received_at) FROM inbox_messages m WHERE LOWER(m.from_addr) = LOWER(e.to_addr) AND m.received_at > e.created_at) AS replied_at
+        FROM email_log e ORDER BY e.created_at DESC LIMIT 1000`).all().map(r => ({
+          dept, id: r.id, title: r.subject || '(no subject)', who: r.to_addr || '', when: r.created_at,
+          assigned_to: null, lead_id: null, customer_id: null, due: null,
+          bucket: r.status === 'failed' ? 'new' : r.replied_at ? 'completed' : 'waiting',
+          note: r.status === 'failed' ? (r.error || 'Not delivered') : r.replied_at ? 'Replied' : 'Awaiting reply'
         }));
     }
     if (dept === 'calls') {
@@ -182,6 +193,27 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       .run(id, next.status, next.follow_up_date || null, next.snooze_until || null, next.assigned_to || null, next.note || null, who, t);
     logAction(req, `email ${action}`, 'inbox_message', id, `${m.subject || ''}${next.follow_up_date ? ' → ' + next.follow_up_date : ''}${next.snooze_until ? ' → snoozed until ' + next.snooze_until : ''}`);
     res.json({ ok: true, status: next.status });
+  });
+
+  // Create a task from an email. Pressing it again returns the same open task (no duplicates).
+  app.post('/api/admin/inbox/:id/task', auth, (req, res) => {
+    const id = Number(req.params.id);
+    const m = db.prepare('SELECT * FROM inbox_messages WHERE id=?').get(id);
+    if (!m) return res.status(404).json({ error: 'Email not found.' });
+    const st = db.prepare('SELECT * FROM inbox_state WHERE message_id=?').get(id);
+    if (st && st.task_id) {
+      const open = db.prepare("SELECT id FROM customer_issues WHERE id=? AND status NOT IN ('Resolved','Verified','Closed')").get(st.task_id);
+      if (open) return res.json({ ok: true, task_id: open.id, existing: true });
+    }
+    const b = req.body || {}, t = nowIso(), who = (req.user && req.user.email) || 'admin';
+    const due = validDate(b.due_date) ? b.due_date : null;
+    const title = clean(`Reply: ${m.subject || m.from_name || m.from_addr}`, 200);
+    const tid = db.prepare("INSERT INTO customer_issues(type,title,description,priority,status,assigned_to,due_date,customer_comms,created_by,created_at,updated_at,customer_id) VALUES('task',?,?,?,?,?,?,?,?,?,?,?)")
+      .run(title, clean(`From email from ${m.from_name || ''} <${m.from_addr || ''}>\n${m.preview || ''}`, 1500), 'Normal', 'Open', clean(b.assigned_to, 120) || null, due, 'Not needed', who, t, t, m.customer_id || null).lastInsertRowid;
+    db.prepare(`INSERT INTO inbox_state(message_id,status,task_id,updated_by,updated_at) VALUES(?,'open',?,?,?)
+      ON CONFLICT(message_id) DO UPDATE SET task_id=excluded.task_id, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).run(id, tid, who, t);
+    logAction(req, 'created task from email', 'inbox_message', id, `task #${tid}`);
+    res.json({ ok: true, task_id: tid, existing: false });
   });
 
   // Calls: handle the call, or schedule a callback (leaves Today, shows in Scheduled until its date), or assign.

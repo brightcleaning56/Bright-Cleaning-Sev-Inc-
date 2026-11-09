@@ -2526,9 +2526,10 @@
 
   // ---------- Email Center ----------
   // ---------- Today's work: one daily queue across emails, calls, leads and tasks ----------
-  const WQ_DEPTS = [['emails', 'Emails'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks']];
+  const WQ_DEPTS = [['emails', 'Emails'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks']];
   const WQ_BUCKETS = {
     emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
+    sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
     calls: [['new', 'New calls'], ['missed', 'Missed calls'], ['today', 'Callbacks today'], ['overdue', 'Overdue'], ['waiting', 'Waiting'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All calls']],
     leads: [['new', 'New, no next step'], ['today', 'Follow-ups today'], ['overdue', 'Overdue'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['closed', 'Lost or converted'], ['all', 'All leads']],
     tasks: [['new', 'No due date'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All tasks']]
@@ -2569,16 +2570,18 @@
     const btn = (act, label, cls = 'ghost') => `<button class="btn ${cls}" type="button" data-wq-act="${act}" data-wq-dept="${d}" data-id="${id}">${label}</button>`;
     let next = '';
     if (d === 'emails') {
-      next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting for reply')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
+      next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting for reply')}${btn('task', 'Create task')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
         <div class="wqrow-act"><input type="datetime-local" data-until-for="${id}" aria-label="Snooze until">${btn('snooze', 'Snooze')}</div>`;
     } else if (d === 'calls') {
       next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
     } else if (d === 'leads') {
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
+    } else if (d === 'sent') {
+      next = '<span class="muted">Tracked automatically</span>';
     } else {
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div>`;
     }
-    return `<tr>${when}${who}${owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
+    return `<tr>${when}${who}${d === 'sent' ? '<td>—</td>' : owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
   }
   const WQ_LABEL_TEXT = { new: 'Needs attention', missed: 'Missed', today: 'Today', overdue: 'Overdue', waiting: 'Waiting', scheduled: 'Scheduled', completed: 'Completed', closed: 'Closed' };
 
@@ -2610,9 +2613,15 @@
     if (act === 'schedule' && !date) return toast('Choose a date first.', true);
     if (act === 'snooze' && !untilRaw) return toast('Choose when to bring it back.', true);
     let method = 'POST', url, json;
-    if (d === 'emails') {
+    if (d === 'emails' && act === 'task') {
+      url = `/api/admin/inbox/${id}/task`;
+      json = owner ? { assigned_to: owner } : {};
+    } else if (d === 'emails') {
       url = `/api/admin/inbox/${id}/state`;
       json = act === 'schedule' ? { action: 'schedule', date } : act === 'snooze' ? { action: 'snooze', until: new Date(untilRaw).toISOString() } : act === 'assign' ? { action: 'assign', assigned_to: owner } : { action: act };
+    } else if (d === 'sent') {
+      toast('Sent emails are tracked automatically.');
+      return;
     } else if (d === 'calls') {
       url = `/api/admin/calls/${id}/work`;
       json = act === 'schedule' ? { action: 'schedule', date } : act === 'assign' ? { action: 'assign', assigned_to: owner } : { action: act };
