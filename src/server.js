@@ -110,6 +110,13 @@ const send = (res, code, body, type = 'application/json') => {
   res.writeHead(code, { 'Content-Type': type, ...SEC_HEADERS });
   res.end(type === 'application/json' ? JSON.stringify(body) : body);
 };
+// Public website pages may be framed by the same site only (the UI screen gallery previews them).
+// The app and Super Admin keep X-Frame-Options DENY.
+const sendFramable = (res, code, body, type = 'text/html; charset=utf-8') => {
+  res.writeHead(code, { 'Content-Type': type, ...SEC_HEADERS, 'X-Frame-Options': 'SAMEORIGIN',
+    'Content-Security-Policy': SEC_HEADERS['Content-Security-Policy'].replace("default-src 'self';", "default-src 'self'; frame-ancestors 'self';") });
+  res.end(body);
+};
 const readBody = req => new Promise((resolve, reject) => {
   let size = 0; const chunks = [];
   req.on('data', c => { size += c.length; if (size > 5e6) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
@@ -829,13 +836,14 @@ export function createServer(store, deps = {}) {
       if (req.method === 'GET' && url.pathname === '/site.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/site.js')).pipe(res); }
       if (req.method === 'GET' && (url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico')) { res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/favicon.svg')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/product.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/product.css')).pipe(res); }
+      if (req.method === 'GET' && url.pathname === '/ui-screens') return sendFramable(res, 200, fs.readFileSync(path.join(ROOT, 'public/ui-screens/index.html'), 'utf8'));
       if (req.method === 'GET' && url.pathname === '/home.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/home.css')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/pages.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/pages.css')).pipe(res); }
       const PUBLIC_PAGES = new Set(['platform', 'project-intelligence', 'marketplace', 'plan-room', 'takeoff-estimating', 'bid-management', 'service-contractors', 'data-trust', 'pricing', 'about', 'solutions', 'contact', 'faq']);
       const publicPage = url.pathname.replace(/^\/|\/$/g, '');
-      if (req.method === 'GET' && PUBLIC_PAGES.has(publicPage)) return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/pages', publicPage + '.html'), 'utf8'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && PUBLIC_PAGES.has(publicPage)) return sendFramable(res, 200, fs.readFileSync(path.join(ROOT, 'public/pages', publicPage + '.html'), 'utf8'));
       if (req.method === 'GET' && url.pathname === '/')
-        return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/site.html'), 'utf8'), 'text/html; charset=utf-8');
+        return sendFramable(res, 200, fs.readFileSync(path.join(ROOT, 'public/site.html'), 'utf8'));
       if (req.method === 'GET' && ['/app', '/app/', '/login', '/index.html'].includes(url.pathname))
         return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8'), 'text/html; charset=utf-8');
       if (req.method === 'GET' && url.pathname.startsWith('/legal/')) {

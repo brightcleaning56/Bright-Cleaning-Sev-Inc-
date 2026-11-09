@@ -7,6 +7,7 @@ automated public permit data, plus an optional bid autopilot and a buyer portal 
 - Public product website: `/` (feature overview, workflows, roles, data rights, source coverage, pricing disclosures). Product pages: `/platform`, `/project-intelligence`, `/marketplace`, `/plan-room`, `/takeoff-estimating`, `/bid-management`, `/service-contractors`, `/data-trust`, `/solutions`, `/pricing`, `/about`, `/contact`, `/faq`.
 - Authenticated subscriber/publisher workspace: `/app` or `/login`.
 - Protected platform Super Admin portal: `/admin`.
+- UI screen gallery: `/ui-screens` (live previews of every public page included in this source package).
 - Website accuracy and route contract: `docs/WEBSITE-SPEC.md`. The website is checked by `test/website.test.js` (routes, content policy, every internal link) and by `qa/website_flow.py` in the browser QA.
 
 ## Acceptance evidence

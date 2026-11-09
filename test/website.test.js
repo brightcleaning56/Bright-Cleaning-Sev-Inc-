@@ -110,3 +110,12 @@ test('the contact form is wired to the public inquiry route', () => {
   const js = fs.readFileSync(path.join(ROOT, 'public/site.js'), 'utf8');
   assert.match(js, /fetch\('\/api\/inquiries'/);
 });
+
+test('the UI screen gallery is served and links to all public screens', async t => {
+  const base = await serve(t);
+  const r = await fetch(`${base}/ui-screens`);
+  assert.equal(r.status, 200);
+  const html = await r.text();
+  assert.match(html, /BUILDINTEL UI Screen Gallery/);
+  for (const p of ['/', ...PAGES.map(x => '/' + x)]) assert.ok(html.includes(`href="${p}"`), `gallery links to ${p}`);
+});
