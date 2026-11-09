@@ -23,3 +23,16 @@
 .header-actions .btn-small{font-size:14px;padding:11px 18px;border-radius:9px}
 @media(max-width:1050px){.header-actions .login-link{display:none}.primary-nav .nav-login{display:block;font-weight:700}}
 .header-actions .btn{white-space:nowrap}
+
+/* Icons and header controls shared by every page */
+.ic{width:26px;height:26px;fill:none;stroke:var(--blue);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic-s{width:16px;height:16px;stroke:currentColor;vertical-align:-3px;margin-left:6px}
+.ic-xs{width:15px;height:15px;stroke:currentColor;vertical-align:-3px;margin-right:4px}
+.h-search{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;color:var(--navy)}
+.h-search .ic{stroke:var(--navy);width:20px;height:20px}
+.h-search:hover{background:var(--soft)}
+.header-actions{flex:none}
+.header-actions .btn,.header-actions .login-link{white-space:nowrap;flex:none}
+.primary-nav{gap:22px}
+.primary-nav>a{font-size:14.5px;font-weight:600}
+@media(max-width:420px){.h-search{display:none}}
