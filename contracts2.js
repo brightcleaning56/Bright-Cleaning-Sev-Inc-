@@ -26,6 +26,17 @@ module.exports = function mountContracts(app, ctx) {
   const number = k => `C-${String(k.created_at || '').slice(0, 4) || '2026'}-${1000 + k.id}${k.version > 1 ? '-v' + k.version : ''}`;
   const get = id => { const k = db.prepare('SELECT * FROM contracts WHERE id=?').get(Number(id)); if (!k) return k; const src = k.estimate_id ? db.prepare('SELECT status FROM estimates WHERE id=?').get(k.estimate_id) : null; return { ...k, number: number(k), proposal_status: src ? src.status : null }; };
   const base = () => process.env.PUBLIC_BASE_URL || process.env.PUBLIC_URL || 'https://brightclean.net';
+  // A signed contract is the job. Contracts made without a proposal had no project, so create one when none is linked.
+  const ensureProject = k => {
+    if (db.prepare('SELECT id FROM projects WHERE contract_id=?').get(k.id)) return false;
+    const site = k.estimate_id ? ((db.prepare('SELECT site_address FROM estimates WHERE id=?').get(k.estimate_id) || {}).site_address || null) : null;
+    const status = ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status) ? 'Contracted' : 'Planning';
+    const pid = db.prepare("INSERT INTO projects(contract_id,estimate_id,customer_id,customer_name,company,name,site_address,status,progress,created_at) VALUES(?,?,?,?,?,?,?,?,0,?)").run(k.id, k.estimate_id || null, k.customer_id || null, k.customer_name || null, k.company || null, k.title || 'Commercial cleaning services', site, status, now()).lastInsertRowid;
+    db.prepare('UPDATE contracts SET project_id=COALESCE(project_id,?) WHERE id=?').run(pid, k.id);
+    return true;
+  };
+  // One-time repair for signed contracts that were executed before this rule existed. Safe to run on every start.
+  try { for (const row of db.prepare("SELECT * FROM contracts WHERE status='Active' AND signature_status IN ('Signed','Executed','Fully signed')").all()) ensureProject(row); } catch (e) { console.error('Contract-to-project repair failed:', e.message); }
   const locked = k => ['Customer signed', 'Signed'].includes(k.signature_status);
   const executed = k => ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status);
   const fill = k => { // pull customer email/scope from the linked proposal once
@@ -91,7 +102,8 @@ module.exports = function mountContracts(app, ctx) {
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Type your full name to countersign.' });
     db.prepare("UPDATE contracts SET signature_status='Signed', status='Active', countersigned_by=?, countersigned_at=?, updated_at=? WHERE id=?").run(`${name} (${who(req)})`, now(), now(), k.id);
     if (k.parent_id) { db.prepare("UPDATE contracts SET status='Superseded', superseded_by=? WHERE (id=? OR parent_id=?) AND id<>? AND status<>'Closed'").run(k.id, k.parent_id, k.parent_id, k.id); db.prepare('UPDATE projects SET contract_id=? WHERE contract_id IN (SELECT id FROM contracts WHERE (id=? OR parent_id=?) AND id<>?)').run(k.id, k.parent_id, k.parent_id, k.id); }
-    // Office sign-off moves the project to Contracted (it can now be scheduled).
+    // Office sign-off creates the job if the contract has none, then moves it to Contracted (it can now be scheduled).
+    ensureProject(k);
     db.prepare("UPDATE projects SET status=CASE WHEN status='Planning' THEN 'Contracted' ELSE status END, updated_at=? WHERE contract_id=?").run(now(), k.id);
     logAction(req, 'countersigned', 'contract', k.id, `${k.number} by ${name} — executed`);
     res.json({ contract: get(k.id) });

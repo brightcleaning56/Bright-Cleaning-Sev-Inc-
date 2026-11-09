@@ -1743,6 +1743,21 @@ async function startServer(env, dataDir) {
     assert(s0.status === 400 && /customer email/.test(s0.data.error) && bad.status === 400 && s1.status === 200 && page.status === 200 && /Sign contract|Contract/.test(html) && pub.value === 48600 && /Net 30/.test(JSON.stringify(pub)) && !/public_token|signed_ip|countersigned_by/.test(leak) && st.signature_status === 'Viewed' && st.viewed_at && noAgree.status === 400 && oneName.status === 400 && sg.status === 200 && again.status === 409 && edit.status === 409 && staffCs.status === 403 && /Customer signed/.test(before) && cs.status === 200 && cs.data.contract.signature_status === 'Signed' && cs.data.contract.status === 'Active' && !/contract/.test(after || '') && pt.startsWith('%PDF') && pt.includes('Sam Sign') && pt.includes('Eric Moore'), JSON.stringify({ s0: s0.data, s1: s1.data, st: st.signature_status, before, after, cs: cs.data }));
     return `send blocked until email/value/scope/start set; link viewed → Viewed; one-word name / no authorization 400; signed (IP+time); re-sign 409; edit after signing 409; staff countersign 403; owner countersign → Signed + Active; project hold no longer cites the contract; PDF has both signatures; no internal fields on the public link`;
   });
+  await check('Contracts', 'A signed contract with no project creates its job at countersign (Contracted, linked both ways)', async () => {
+    const k = (await req('POST', '/api/admin/contracts', { token: T, json: { company: 'JobCo', customer_name: 'Job Owner', title: 'JobCo cleaning', value: 1200, status: 'Draft' } })).data;
+    const kid = k.id || (k.contract && k.contract.id);
+    await req('PATCH', `/api/admin/contracts2/${kid}`, { token: T, json: { email: 'owner@jobco.test', value: 1200, scope: 'Nightly cleaning', start_date: '2026-12-01', end_date: '2027-11-30' } });
+    const s1 = await req('POST', `/api/admin/contracts2/${kid}/send`, { token: T });
+    const tok = s1.data.link.split('/').pop();
+    await req('POST', `/api/contract/${tok}/sign`, { json: { name: 'Job Owner', title: 'Owner', agree: true } });
+    const before = (await req('GET', '/api/admin/pm/projects', { token: T })).data.projects.filter(x => x.contract_id === kid).length;
+    const cs = await req('POST', `/api/admin/contracts2/${kid}/countersign`, { token: T, json: { name: 'Eric Moore' } });
+    const projects = (await req('GET', '/api/admin/pm/projects', { token: T })).data.projects.filter(x => x.contract_id === kid);
+    const kc = (await req('GET', `/api/admin/contracts2/${kid}`, { token: T })).data.contract;
+    const ok = cs.status === 200 && before === 0 && projects.length === 1 && projects[0].status === 'Contracted' && kc.project_id === projects[0].id;
+    assert(ok, JSON.stringify({ cs: cs.status, before, projects: projects.map(p => [p.id, p.status]), project_id: kc.project_id }));
+    return `countersign created project #${projects[0].id} (Contracted) and linked contract.project_id`;
+  });
   await check('Contracts', 'Decline with reason; editing a sent contract voids the old link; amendment supersedes the original once executed; renewal shifts dates and price; dashboard counts', async () => {
     const kid = globalThis.__k;
     const k2 = (await req('POST', '/api/admin/contracts', { token: T, json: { company: 'Declineco', title: 'Declineco windows', value: 5000, status: 'Draft' } })).data;
