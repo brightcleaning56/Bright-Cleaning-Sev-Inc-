@@ -1776,6 +1776,27 @@ async function startServer(env, dataDir) {
     assert(ok, JSON.stringify({ visit: vis.status, before: before && before.status, cs: cs.status, after: after && after.status, completed: completed.status }));
     return `visit on unsigned contract: Tentative → Scheduled at countersign; project created as Completed refused (409)`;
   });
+  await check('Contracts', 'Amendment and renewal of a proposal-approved contract need the customer signature before countersign; the original countersigns on the approval', async () => {
+    await req('PUT', '/api/admin/approval-rules', { token: T, json: { min_margin_pct: 15, max_total: 25000, flag_pre_pricing: false, approve_all: false } });
+    const items = (await req('GET', '/api/admin/scopes', { token: T })).data.items;
+    const mo = items.find(i => i.name === 'Move-in / move-out clean – 2 Bed / 2 Bath').id;
+    const est = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Amy Amend', company: 'Amend Co', email: 'amy@amend.test', project_name: 'Amend turns', scope: 'Monthly unit turns', scope_category: 'multifamily', use_line_items: 1, labor_rate: 20, labor_hours: 10, line_items: [{ scope_id: mo, quantity: 6 }] } })).data.estimate;
+    await req('PATCH', `/api/admin/estimates/${est.id}`, { token: T, json: { status: 'Sent' } });
+    const tok = (await req('GET', '/api/admin/estimates/' + est.id, { token: T })).data.estimate.public_token;
+    const yes = await req('POST', `/api/proposal/${tok}/respond`, { json: { decision: 'approve', signer_name: 'Amy Signer', signer_title: 'Owner', agree: true } });
+    const kid = (await req('GET', '/api/admin/contracts', { token: T })).data.contracts.find(c => c.estimate_id === est.id).id;
+    await req('PATCH', `/api/admin/contracts2/${kid}`, { token: T, json: { start_date: '2026-12-01', end_date: '2027-11-30' } });
+    const cs0 = await req('POST', `/api/admin/contracts2/${kid}/countersign`, { token: T, json: { name: 'Eric Moore' } });
+    const am = await req('POST', `/api/admin/contracts2/${kid}/amend`, { token: T, json: { reason: 'Add a porter day' } });
+    const amId = am.data.id || (am.data.contract && am.data.contract.id);
+    const acs = await req('POST', `/api/admin/contracts2/${amId}/countersign`, { token: T, json: { name: 'Eric Moore' } });
+    const rn = await req('POST', `/api/admin/contracts2/${kid}/renew`, { token: T, json: {} });
+    const rnId = rn.data.id || (rn.data.contract && rn.data.contract.id);
+    const rcs = rnId ? await req('POST', `/api/admin/contracts2/${rnId}/countersign`, { token: T, json: { name: 'Eric Moore' } }) : { status: 0, data: {} };
+    const ok = yes.status === 200 && cs0.status === 200 && am.status === 201 && acs.status === 409 && rn.status === 201 && rcs.status === 409;
+    assert(ok, JSON.stringify({ yes: yes.status, cs0: cs0.status, am: am.status, acs: acs.status, rn: rn.status, rcs: rcs.status, err: acs.data && acs.data.error }));
+    return `original countersigned on approval (200); amendment countersign refused (${acs.status}) until the customer signs; renewal countersign refused (${rcs.status})`;
+  });
   await check('Contracts', 'Decline with reason; editing a sent contract voids the old link; amendment supersedes the original once executed; renewal shifts dates and price; dashboard counts', async () => {
     const kid = globalThis.__k;
     const k2 = (await req('POST', '/api/admin/contracts', { token: T, json: { company: 'Declineco', title: 'Declineco windows', value: 5000, status: 'Draft' } })).data;
