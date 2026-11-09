@@ -38,3 +38,16 @@
     function show(text, ok) { status.textContent = text; status.className = 'status ' + (ok ? 'ok' : 'err'); }
   });
 })();
+// Homepage walkthrough: pause and play button.
+(() => {
+  document.querySelectorAll('[data-demo]').forEach(demo => {
+    const btn = demo.querySelector('.h-demo-play');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const paused = demo.classList.toggle('paused');
+      btn.textContent = paused ? '▶' : '❚❚';
+      btn.setAttribute('aria-label', paused ? 'Play walkthrough' : 'Pause walkthrough');
+      btn.setAttribute('aria-pressed', String(paused));
+    });
+  });
+})();
