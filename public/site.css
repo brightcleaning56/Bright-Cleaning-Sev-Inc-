@@ -22,3 +22,4 @@
 .header-actions .login-link{display:inline-flex;align-items:center;padding:10px 16px;border:1.5px solid #c9d6e6;border-radius:9px;color:var(--navy);font-weight:700;font-size:14px;background:#fff}
 .header-actions .btn-small{font-size:14px;padding:11px 18px;border-radius:9px}
 @media(max-width:1050px){.header-actions .login-link{display:none}.primary-nav .nav-login{display:block;font-weight:700}}
+.header-actions .btn{white-space:nowrap}
