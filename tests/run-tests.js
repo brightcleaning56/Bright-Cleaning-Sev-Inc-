@@ -3029,6 +3029,115 @@ async function startServer(env, dataDir) {
     return `status off; triage, call notes and takeoff all 503 "${a.data.error}"`;
   });
 
+  await check('Work queue', 'Email: a new email is in Needs Attention; a follow-up for a future date leaves Today and shows in Scheduled; it returns on its date; handled emails are Completed; opening it changes nothing', async () => {
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const mid = pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES(?,?,?,?,?,?,?)")
+      .run('wq-' + Date.now(), 'property.mgr@example.com', 'Property Manager', 'Hallway cleaning quote', 'Can you quote hallway cleaning?', new Date().toISOString(), new Date().toISOString()).lastInsertRowid;
+    pdb.close();
+    const bizToday = require('../bizdate').today();
+    const tomorrow = new Date(bizToday + 'T12:00:00Z'); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const future = '2099-11-12';
+    const find = async (bucket) => ((await req('GET', `/api/admin/work-queue?dept=emails&bucket=${bucket}`, { token: T })).data.items || []).find(i => i.id === mid);
+    const inNew = !!(await find('new'));
+    await req('GET', '/api/admin/inbox', { token: T }); // opening/reading changes nothing
+    const stillNew = !!(await find('new'));
+    const sched = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: future, note: 'Send quote on Nov 12' } });
+    const scheduled = !!(await find('scheduled')), notToday = !(await find('today')), notNew = !(await find('new'));
+    const sched2 = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: future } });
+    const countAll = ((await req('GET', '/api/admin/work-queue?dept=emails', { token: T })).data.items || []).filter(i => i.id === mid).length;
+    const todayFu = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: bizToday } });
+    const inToday = !!(await find('today'));
+    const handled = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'handle' } });
+    const completed = !!(await find('completed')), leftToday = !(await find('today'));
+    const bad = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: 'next week' } });
+    const missing = await req('POST', '/api/admin/inbox/999999/state', { token: T, json: { action: 'handle' } });
+    const snooze = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'snooze', until: new Date(Date.now() + 86400000 * 3).toISOString() } });
+    const snoozed = !!(await find('scheduled'));
+    const chk = { inNew, stillNew, scheduled, notToday, notNew, sched: sched.status === 200, noDuplicate: countAll === 1 && sched2.status === 200, inToday: todayFu.status === 200 && inToday, handled: handled.status === 200 && completed && leftToday, badRefused: bad.status === 400, missing404: missing.status === 404, snoozed: snooze.status === 200 && snoozed };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'email: new → scheduled (out of Today) → due today → completed; snooze works; duplicates impossible; bad input refused';
+  });
+
+  await check('Work queue', 'Calls: a callback for tomorrow leaves Today and shows in Scheduled; a handled call is Completed; the call is listed once; assignment works', async () => {
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const cid = pdb.prepare("INSERT INTO calls(direction,phone,contact_name,company,outcome,purpose,summary,created_by,created_at) VALUES('Inbound',?,?,?,?,?,?,?,?)")
+      .run('+15155550199', 'Callback Caller', 'Apt Group', 'Answered', 'New business', 'Wants hallway cleaning', 'system', new Date().toISOString()).lastInsertRowid;
+    pdb.close();
+    const bizToday = require('../bizdate').today();
+    const tomorrow = new Date(bizToday + 'T12:00:00Z'); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const tom = tomorrow.toISOString().slice(0, 10);
+    const bucketOf = async (b) => ((await req('GET', `/api/admin/work-queue?dept=calls&bucket=${b}`, { token: T })).data.items || []).filter(i => i.id === cid).length;
+    const before = await bucketOf('new');
+    const sch = await req('POST', `/api/admin/calls/${cid}/work`, { token: T, json: { action: 'schedule', date: tom, assigned_to: 'office@brightclean.net' } });
+    const today1 = await bucketOf('today'), sched = await bucketOf('scheduled'), new1 = await bucketOf('new');
+    const all = (await req('GET', '/api/admin/work-queue?dept=calls', { token: T })).data.items || [];
+    const listedOnce = all.filter(i => i.id === cid).length === 1;
+    const assigned = all.find(i => i.id === cid);
+    const handled = await req('POST', `/api/admin/calls/${cid}/work`, { token: T, json: { action: 'handle' } });
+    const done = await bucketOf('completed');
+    const badAction = await req('POST', `/api/admin/calls/${cid}/work`, { token: T, json: { action: 'explode' } });
+    const chk = { startsNew: before === 1, schedOk: sch.status === 200, notToday: today1 === 0, scheduled: sched === 1, notNew: new1 === 0, listedOnce, assignedSaved: !!assigned && assigned.assigned_to === 'office@brightclean.net', handled: handled.status === 200 && done === 1, badActionRefused: badAction.status === 400 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'call: new → callback tomorrow (out of Today, in Scheduled) → handled and Completed; listed once; assignment saved';
+  });
+
+  await check('Work queue', 'Leads: a lead with a future next action leaves Today but stays in CRM; it appears on its due date; assignment works; the follow-up task is not listed twice', async () => {
+    const made = await (await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Queue Lead', email: 'queue.lead@example.com', message: 'Queue test lead' }) })).json();
+    const id = made.id;
+    const bizToday = require('../bizdate').today();
+    const inLeads = async (b) => ((await req('GET', `/api/admin/work-queue?dept=leads&bucket=${b}`, { token: T })).data.items || []).filter(i => i.id === id).length;
+    const fut = await req('POST', `/api/admin/leads/${id}/follow-up`, { token: T, json: { date: '2099-01-15', note: 'Walkthrough follow-up' } });
+    const scheduled = await inLeads('scheduled'), today1 = await inLeads('today');
+    const crmStill = (await req('GET', '/api/admin/leads', { token: T })).data.leads.some(l => l.id === id);
+    const taskItems = ((await req('GET', '/api/admin/work-queue?dept=tasks', { token: T })).data.items || []);
+    const leadTaskShown = taskItems.some(t => t.id === (fut.data && fut.data.issue_id));
+    const asg = await req('POST', `/api/admin/leads/${id}/assign`, { token: T, json: { assigned_to: 'sales@brightclean.net' } });
+    const assigned = ((await req('GET', '/api/admin/work-queue?dept=leads', { token: T })).data.items || []).find(i => i.id === id);
+    const dueToday = await req('POST', `/api/admin/leads/${id}/follow-up`, { token: T, json: { date: bizToday, note: 'Call today' } });
+    const today2 = await inLeads('today');
+    const chk = { futureHidesFromToday: fut.status === 200 && scheduled === 1 && today1 === 0, crmKeeps: crmStill, taskNotDuplicated: !leadTaskShown, assigned: asg.status === 200 && assigned && assigned.assigned_to === 'sales@brightclean.net', dueTodayShows: dueToday.status === 200 && today2 === 1 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'lead: future follow-up is scheduled (out of Today) but kept in CRM; due today shows; owner saved; no duplicate task';
+  });
+
+  await check('Work queue', 'Tasks: a task due today is in Today; moving its date to next week schedules it; resolved tasks are Completed; staff can act, inspectors cannot read the queue', async () => {
+    const bizToday = require('../bizdate').today();
+    const created = await req('POST', '/api/admin/issues', { token: T, json: { type: 'task', title: 'Queue task check', due_date: bizToday, priority: 'Normal' } });
+    const tid = created.data && (created.data.id || (created.data.issue && created.data.issue.id));
+    assert(tid, 'task not created: ' + JSON.stringify(created.data).slice(0, 200));
+    const inT = async (b) => ((await req('GET', `/api/admin/work-queue?dept=tasks&bucket=${b}`, { token: T })).data.items || []).filter(i => i.id === tid).length;
+    const today1 = await inT('today');
+    const moved = await req('POST', `/api/admin/tasks/${tid}/work`, { token: T, json: { due_date: '2099-03-01', assigned_to: 'office@brightclean.net' } });
+    const sched = await inT('scheduled'), notToday = (await inT('today')) === 0;
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    await req('POST', '/api/admin/users', { token: T, json: { name: 'Ivy Inspector', email: 'insp.wq@roles.test', password: 'role-test-password-2', role: 'inspector' } });
+    await req('POST', '/api/admin/users', { token: T, json: { name: 'Sam Staff', email: 'staff.wq@roles.test', password: 'role-test-password-3', role: 'staff' } });
+    const inspector = await req('GET', '/api/admin/work-queue?dept=tasks', { token: mint('insp.wq@roles.test') });
+    const staffOk = await req('GET', '/api/admin/work-queue?dept=tasks', { token: mint('staff.wq@roles.test') });
+    const closed = await req('PATCH', `/api/admin/issues/${tid}`, { token: T, json: { status: 'Resolved', resolution: 'Handled in the work-queue test' } });
+    const done = await inT('completed');
+    const chk = { todayShows: today1 === 1, moved: moved.status === 200 && sched === 1 && notToday, inspectorRefused: inspector.status === 403, staffAllowed: staffOk.status === 200, resolvedCompleted: closed.status === 200 && done === 1 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'task: due today → rescheduled out of Today → resolved and Completed; inspector refused the queue; staff allowed';
+  });
+
+  await check('Work queue', 'Summary counts match the lists; closeout reports the day and records rescheduled work as rescheduled', async () => {
+    const s = (await req('GET', '/api/admin/work-queue/summary', { token: T })).data;
+    const lists = {};
+    for (const d of ['emails', 'calls', 'leads', 'tasks']) lists[d] = ((await req('GET', `/api/admin/work-queue?dept=${d}`, { token: T })).data.items || []).length;
+    const countsMatch = ['emails', 'calls', 'leads', 'tasks'].every(d => s.counts[d].all === lists[d]);
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const hid = pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES(?,?,?,?,?,?,?)")
+      .run('wq-close-' + Date.now(), 'closeout.test@example.com', 'Closeout Test', 'Closeout handled email', 'Quote request', new Date().toISOString(), new Date().toISOString()).lastInsertRowid;
+    pdb.close();
+    await req('POST', `/api/admin/inbox/${hid}/state`, { token: T, json: { action: 'handle' } });
+    const c = await req('GET', '/api/admin/closeout', { token: T });
+    const r = c.data;
+    const chk = { summaryMatches: countsMatch, closeoutOk: c.status === 200 && typeof r.calls_handled === 'number', emailHandledCounted: r.emails_handled >= 1, rescheduledCounted: r.activities_rescheduled >= 1, exceptionsList: Array.isArray(r.exceptions), badDate: (await req('GET', '/api/admin/closeout?date=nope', { token: T })).status === 400 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, lists, counts: s.counts, r }));
+    return `summary matches lists (${JSON.stringify(lists)}); closeout: handled ${r.emails_handled} email(s), ${r.activities_rescheduled} rescheduled`;
+  });
+
   server.child.kill(); smtp.close();
   const pass = results.filter(r => r.status === 'PASS').length;
   fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify({ run_at: new Date().toISOString(), node: process.version, pass, fail: results.length - pass, results }, null, 2));

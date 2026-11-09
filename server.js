@@ -153,6 +153,7 @@ require('./complaints')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>ma
 require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./subscriptions')(app,{db,auth,logAction,clean,adminEmail});
+require('./workqueue')(app,{db,auth,logAction,clean});
 // Same follow-up the emailed proposal link gets: approval creates a draft contract and planning project, and the office is told.
 const afterDecision=(e,decision)=>{
   if(decision==='approve'&&ops&&ops.isOn('auto_handoff')&&!db.prepare("SELECT id FROM contracts WHERE estimate_id=? AND status<>'Closed'").get(e.id)){
