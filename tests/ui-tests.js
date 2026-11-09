@@ -521,9 +521,10 @@ async function check(area, name, fn) {
     const titles = [...d.querySelectorAll('#rows-contracts .cwCard b')].map(b => b.textContent);
     let captured = null; const realCreate = w.URL.createObjectURL; w.URL.createObjectURL = b => { captured = b; return 'blob:test'; };
     if (!w.URL.revokeObjectURL) w.URL.revokeObjectURL = () => {}; // jsdom has no revokeObjectURL; browsers do
-    const stopDownload = e => { if (e.target.download) e.preventDefault(); }; // a download link must not navigate the test page
-    d.addEventListener('click', stopDownload, true);
-    try { d.getElementById('cwExport').click(); await sleep(100); } finally { w.URL.createObjectURL = realCreate; d.removeEventListener('click', stopDownload, true); }
+    // The export makes a detached download link and clicks it; skip that click so the test page does not navigate.
+    const realAnchorClick = w.HTMLAnchorElement.prototype.click;
+    w.HTMLAnchorElement.prototype.click = function () { if (this.download) return; return realAnchorClick.call(this); };
+    try { d.getElementById('cwExport').click(); await sleep(100); } finally { w.URL.createObjectURL = realCreate; w.HTMLAnchorElement.prototype.click = realAnchorClick; }
     const sorted = titles[0] === 'Sort high' && titles[1] === 'Sort low';
     const csvOk = !!captured && captured.type === 'text/csv' && captured.size > 40;
     assert(sorted && csvOk, JSON.stringify({ titles, csv: captured && captured.type }));
