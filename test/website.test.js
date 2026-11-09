@@ -119,3 +119,26 @@ test('the UI screen gallery is served and links to all public screens', async t 
   assert.match(html, /BUILDINTEL UI Screen Gallery/);
   for (const p of ['/', ...PAGES.map(x => '/' + x)]) assert.ok(html.includes(`href="${p}"`), `gallery links to ${p}`);
 });
+
+test('the content policy forbids inline styles and scripts on every served page', async t => {
+  const base = await serve(t);
+  for (const p of ['/', '/pricing', '/app', '/admin']) {
+    const r = await fetch(`${base}${p}`);
+    const csp = r.headers.get('content-security-policy') || '';
+    assert.ok(!/'unsafe-inline'/.test(csp.split(';').find(d => d.trim().startsWith('style-src')) || ''), `${p}: style-src has no unsafe-inline`);
+    assert.ok(!/'unsafe-inline'/.test(csp.split(';').find(d => d.trim().startsWith('script-src')) || ''), `${p}: script-src has no unsafe-inline`);
+  }
+});
+
+test('no public page or app script carries an inline style attribute or a <style> block', () => {
+  const dirs = [path.join(ROOT, 'public'), path.join(ROOT, 'public', 'pages'), path.join(ROOT, 'public', 'ui-screens')];
+  for (const dir of dirs) {
+    for (const f of fs.readdirSync(dir)) {
+      const full = path.join(dir, f);
+      if (!fs.statSync(full).isFile() || !/\.(html|js)$/.test(f)) continue;
+      const text = fs.readFileSync(full, 'utf8');
+      assert.ok(!/(^|[\s<"'`])style=["'`]/m.test(text), `${f} has an inline style attribute`);
+      assert.ok(!/<style[\s>]/i.test(text), `${f} has a <style> block`);
+    }
+  }
+});

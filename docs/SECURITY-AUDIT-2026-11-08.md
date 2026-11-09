@@ -40,3 +40,10 @@ independent penetration test, which the launch gates still require.
 2. Move the webhook secret to a header (finding 4).
 3. Make email verification a POST confirmation (finding 5).
 4. Commission the independent penetration test before launch.
+
+## Status update: inline styles removed from the content policy
+- The `style-src` policy no longer allows `'unsafe-inline'`. Every page, the app, the Super Admin portal and the UI gallery load their styles from stylesheet files (`site.css`, `product.css`, `home.css`, `app.css`, `admin.css`, `gallery.css`, `plain.css`).
+- Styles that depend on data (bar widths, status colours) are applied through `element.style` after rendering, which the policy allows.
+- Bid documents (proposals and signed records) keep their own styles under a narrow document policy with no scripts, frames or forms.
+- Tests (`test/website.test.js`) fail if `'unsafe-inline'` returns to `style-src` or an inline style attribute or `<style>` block is added to the served pages.
+- Script policy (`script-src 'self'`) was already strict; no `'unsafe-inline'` for scripts.

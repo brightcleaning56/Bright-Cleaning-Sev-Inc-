@@ -33,7 +33,7 @@ function dialog({ title, message, needReason = true, extra = '', okLabel = 'Conf
 async function stepUp() {
   const mfa = ME?.mfa === 'enabled';
   const r = await dialog({ title: 'Confirm your identity', message: 'This action needs recent confirmation (valid for 10 minutes).', needReason: false, okLabel: 'Confirm',
-    extra: '<label>Password<br><input type="password" name="password" autocomplete="current-password" style="width:100%"></label>' + (mfa ? '<br><label>Authenticator code<br><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="width:100%"></label>' : '') });
+    extra: '<label>Password<br><input class="x-0466783d" type="password" name="password" autocomplete="current-password" ></label>' + (mfa ? '<br><label>Authenticator code<br><input class="x-0466783d" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" ></label>' : '') });
   if (!r) throw new Error('cancelled');
   await api('POST', '/api/admin/step-up', { password: r.password, ...(mfa ? { code: r.code } : {}) });
 }
@@ -70,7 +70,7 @@ async function render() {
     ${NAV.map(([g, items]) => `<div class="grp">${esc(g)}</div>${items.map(([k, label, perm]) => k === null ? `<button disabled title="Not built yet">${esc(label)}<small>${esc(perm)}</small></button>`
       : k.startsWith('ext:') ? (can(perm) ? `<button data-ext="${esc(k.slice(4))}">${esc(label)} ↗</button>` : '')
       : can(perm) ? `<button data-nav="${k}" ${parts[0] === k || ({ company: 'companies', user: 'users', project: 'projects', package: 'packages', document: 'documents', source: 'sources' }[parts[0]] === k) ? 'aria-current="page"' : ''}>${esc(label)}</button>` : '').join('')}`).join('')}</nav>
-    <div><div id="top"><button id="menu" aria-controls="side" aria-expanded="false">☰ Menu</button><span id="crumbs"></span><span class="row"><span style="position:relative"><input id="gs" placeholder="Search companies and users" aria-label="Search companies and users" style="width:260px"><div id="gsr" class="card" style="display:none;position:absolute;right:0;top:36px;width:360px;z-index:5"></div></span>
+    <div><div id="top"><button id="menu" aria-controls="side" aria-expanded="false">☰ Menu</button><span id="crumbs"></span><span class="row"><span class="x-d461c96d" ><input class="x-a20ea0de" id="gs" placeholder="Search companies and users" aria-label="Search companies and users" ><div id="gsr" class="card x-b95e0bd8" ></div></span>
       <span class="muted">${esc(ME.email)}</span><button id="out">Sign out</button></span></div><main id="main" tabindex="-1"><p class="muted">Loading…</p></main></div></div>`;
   document.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => { $('#side').classList.remove('open'); go(b.dataset.nav); });
   $('#menu').onclick = () => { const o = $('#side').classList.toggle('open'); $('#menu').setAttribute('aria-expanded', String(o)); if (o) $('#side').querySelector('button:not([disabled])')?.focus(); };
@@ -86,14 +86,14 @@ async function render() {
 const crumbs = list => { $('#crumbs').innerHTML = list.map(([l, h]) => h ? `<a href="#/${h}">${esc(l)}</a>` : esc(l)).join(' / '); document.title = list.at(-1)[0] + ' · BUILDINTEL Super Admin'; };
 function renderLogin() {
   $('#app').innerHTML = `<form id="login" class="card"><h2>BUILDINTEL Super Admin</h2><p class="muted">Sign in with a BUILDINTEL platform account.</p>
-    <label>Email<br><input id="le" type="email" autocomplete="username" style="width:100%"></label><br><br><label>Password<br><input id="lp" type="password" autocomplete="current-password" style="width:100%"></label>
+    <label>Email<br><input class="x-0466783d" id="le" type="email" autocomplete="username" ></label><br><br><label>Password<br><input class="x-0466783d" id="lp" type="password" autocomplete="current-password" ></label>
     <p class="err" id="lerr"></p><button class="primary">Sign in</button></form>`;
   $('#login').onsubmit = async ev => { ev.preventDefault();
     const code = $('#lc')?.value.trim();
     const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: $('#le').value.trim(), password: $('#lp').value, ...(code ? { code } : {}) }) });
     const d = await r.json().catch(() => ({}));
     if (r.ok) { TOKEN = d.token; sessionStorage.setItem('bi_admin_token', TOKEN); return render(); }
-    if (d.mfaRequired && !$('#lc')) $('#lp').closest('label').insertAdjacentHTML('afterend', '<br><br><label>Authenticator code<br><input id="lc" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="width:100%"></label>');
+    if (d.mfaRequired && !$('#lc')) $('#lp').closest('label').insertAdjacentHTML('afterend', '<br><br><label>Authenticator code<br><input class="x-0466783d" id="lc" inputmode="numeric" autocomplete="one-time-code" maxlength="6" ></label>');
     $('#lerr').textContent = d.error || 'sign-in failed'; $('#lc')?.focus(); };
 }
 async function signOut() { try { await api('POST', '/api/logout'); } catch {} sessionStorage.removeItem('bi_admin_token'); TOKEN = null; location.hash = ''; render(); }
@@ -108,7 +108,7 @@ async function globalSearch() {
 function pager(res, base, q) {
   const cur = Number(q.get('cursor') || 0), lim = Number(q.get('limit') || 25);
   const prev = new URLSearchParams(q); prev.set('cursor', Math.max(0, cur - lim)); const next = new URLSearchParams(q); next.set('cursor', res.nextCursor || 0);
-  return `<div class="row" style="justify-content:space-between;margin-top:8px"><small class="muted">${res.total} total · showing ${res.items.length ? cur + 1 : 0}–${cur + res.items.length} · as of ${fmt(res.asOf)}</small>
+  return `<div class="row x-efea1db0" ><small class="muted">${res.total} total · showing ${res.items.length ? cur + 1 : 0}–${cur + res.items.length} · as of ${fmt(res.asOf)}</small>
     <span class="row"><button ${cur ? '' : 'disabled'} data-go="${esc(base + '?' + prev)}">Previous</button><button ${res.nextCursor ? '' : 'disabled'} data-go="${esc(base + '?' + next)}">Next</button></span></div>`;
 }
 const bindGo = root => root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.hash = '#/' + b.dataset.go; });
@@ -127,7 +127,7 @@ async function viewDashboard() {
   crumbs([['Dashboard']]);
   const d = await api('GET', '/api/admin/overview');
   $('#main').innerHTML = `<p class="muted">Computed from stored records · as of ${fmt(d.asOf)} (${esc(d.timezone)}). Hover a number for its formula. Values that cannot be measured yet say why instead of showing zero.</p>` +
-    d.sections.map(s => `<section class="card"><h2 style="margin-top:0;font-size:16px">${esc(s.title)}</h2><div class="cards">${s.cards.map(c => `<div class="metric">${c.unavailable
+    d.sections.map(s => `<section class="card"><h2 class="x-3ba311cd" >${esc(s.title)}</h2><div class="cards">${s.cards.map(c => `<div class="metric">${c.unavailable
       ? `<b>—</b><small>${esc(c.label)}</small><div class="na">${esc(c.unavailable)}</div>`
       : c.drill && can(c.drill.perm || (c.drill.view === 'users' ? 'admin.user.read' : 'admin.company.read')) ? `<button title="${esc(c.formula)}" data-drill='${esc(JSON.stringify(c.drill))}'><b>${esc(c.value)}</b><small>${esc(c.label)} ›</small></button>`
       : `<span title="${esc(c.formula)}"><b>${esc(c.value)}</b><small>${esc(c.label)}</small></span>`}</div>`).join('')}</div></section>`).join('');
@@ -151,7 +151,7 @@ async function viewCompany(parts) {
   const v = c.verificationDetail, body = {
     overview: `<table><tr><th>Legal name</th><td>${esc(c.legal?.name || c.name)}</td></tr><tr><th>Type</th><td>${esc(c.type)} ${esc(c.buyerKind || '')}</td></tr><tr><th>Status</th><td>${statusPill(c.status)}</td></tr><tr><th>Verification</th><td>${statusPill(c.verification)}</td></tr><tr><th>Created</th><td>${fmt(c.createdAt)}</td></tr><tr><th>Company ID</th><td><code>${esc(c.id)}</code></td></tr></table>`,
     verification: `<table><tr><th>Status</th><td>${statusPill(v.status)}</td></tr>${v.evidence ? `<tr><th>Evidence</th><td>${Object.entries(v.evidence).filter(([, x]) => x).map(([k, x]) => `${esc(k)}: ${esc(x)}`).join('<br>')}</td></tr>` : ''}<tr><th>Requested</th><td>${fmt(v.requestedAt)}</td></tr><tr><th>Last decision</th><td>${esc(v.decidedBy || '—')} ${v.decidedAt ? fmt(v.decidedAt) : ''}<br>${esc(v.note || '')}</td></tr></table>
-      ${c.type === 'publisher' && can('admin.company.verify') ? `<div class="row" style="margin-top:10px"><button class="primary" data-dec="approve">Approve</button><button data-dec="request_info">Request more information</button><button class="danger" data-dec="reject">Reject</button></div>` : ''}`,
+      ${c.type === 'publisher' && can('admin.company.verify') ? `<div class="row x-d2c171b1" ><button class="primary" data-dec="approve">Approve</button><button data-dec="request_info">Request more information</button><button class="danger" data-dec="reject">Reject</button></div>` : ''}`,
     members: `<table><tr><th>User</th><th>Company role</th><th>Platform roles</th><th>State</th><th>Last login</th></tr>${c.members.map(m => `<tr><td><a href="#/user/${m.id}">${esc(m.email)}</a></td><td>${esc(m.role)}</td><td>${esc(m.platformRoles.join(', ') || '—')}</td><td>${statusPill(m.disabled ? 'disabled' : 'active')}</td><td>${fmt(m.lastLoginAt)}</td></tr>`).join('')}</table>`,
     markets: `<p><b>Trades:</b> ${esc(c.trades.join(', ') || '—')}</p><p><b>Territories:</b> ${esc(c.territories.join(', ') || '—')}</p>`,
     credentials: c.credentials.length ? `<table><tr><th>Kind</th><th>Status</th><th>Expires</th></tr>${c.credentials.map(x => `<tr><td>${esc(x.kind)}</td><td>${esc(x.status)}</td><td>${esc(x.expiresOn || '—')}</td></tr>`).join('')}</table>` : '<p class="muted">No licenses or insurance on file.</p>',
@@ -161,10 +161,10 @@ async function viewCompany(parts) {
     support: `<h3>Restrictions</h3>${c.restrictions.length ? c.restrictions.map(r => `<div>${esc(r.type)} · ${fmt(r.at)} · ${esc(r.by)} — ${esc(r.reason)}</div>`).join('') : '<p class="muted">None.</p>'}
       ${can('admin.company.suspend') && c.type !== 'platform company' ? `<p>${c.status === 'suspended' ? '<button id="react" class="primary">Reactivate company</button>' : '<button id="susp" class="danger">Suspend company</button>'}</p>` : ''}
       <h3>Internal notes</h3><p class="muted">Visible to BUILDINTEL staff only.</p>${c.notes.map(n => `<div class="card"><small class="muted">${esc(n.author)} · ${fmt(n.createdAt)}</small><div>${esc(n.body)}</div></div>`).join('') || '<p class="muted">No notes.</p>'}
-      <form id="nf" class="row"><input name="body" placeholder="Add an internal note" style="flex:1" aria-label="Internal note"><button>Add note</button></form>`,
+      <form id="nf" class="row"><input class="x-97445a8d" name="body" placeholder="Add an internal note"  aria-label="Internal note"><button>Add note</button></form>`,
     activity: `<table><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr>${c.activity.map(a => `<tr><td>${fmt(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td><small>${esc(a.detail?.reason || '')}${a.detail?.after ? ' → ' + esc(JSON.stringify(a.detail.after)) : ''}</small></td></tr>`).join('') || '<tr><td colspan="4" class="muted">No activity.</td></tr>'}</table>`,
   };
-  $('#main').innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">${esc(c.name)}</h2><span>${statusPill(c.status)} ${statusPill(c.verification)}</span></div>
+  $('#main').innerHTML = `<div class="card"><div class="row x-a562f4fd" ><h2 class="x-11696618" >${esc(c.name)}</h2><span>${statusPill(c.status)} ${statusPill(c.verification)}</span></div>
     <div class="tabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" data-tab="${k}">${esc(l)}</button>`).join('')}</div><div role="tabpanel">${body[tab] || body.overview}</div></div>`;
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => go(`company/${id}/${b.dataset.tab}`));
   const reload = () => viewCompany(parts);
@@ -187,10 +187,10 @@ async function viewUser(parts) {
   const id = parts[1]; const u = await api('GET', '/api/admin/users/' + id);
   crumbs([['Users', 'users'], [u.email]]);
   const self = u.email === ME.email;
-  $('#main').innerHTML = `<div class="card"><h2 style="margin-top:0">${esc(u.email)}</h2><table><tr><th>Company</th><td>${u.orgId ? `<a href="#/company/${u.orgId}">${esc(u.company)}</a>` : '—'}</td></tr><tr><th>Company role</th><td>${esc(u.companyRole)}</td></tr>
+  $('#main').innerHTML = `<div class="card"><h2 class="x-d462248a" >${esc(u.email)}</h2><table><tr><th>Company</th><td>${u.orgId ? `<a href="#/company/${u.orgId}">${esc(u.company)}</a>` : '—'}</td></tr><tr><th>Company role</th><td>${esc(u.companyRole)}</td></tr>
     <tr><th>State</th><td>${statusPill(u.state)}</td></tr><tr><th>Active sessions</th><td>${u.activeSessions}</td></tr><tr><th>MFA</th><td>${esc(u.mfa)} ${u.mfa === 'enabled' && can('admin.security.manage') && !self ? '<button id="umfa" class="danger">Reset MFA</button>' : ''}</td></tr><tr><th>Last login</th><td>${fmt(u.lastLoginAt)}</td></tr>
     <tr><th>Platform roles</th><td>${esc(u.platformRoles.join(', ') || 'none')}</td></tr></table>
-    ${can('admin.user.manage') && !self ? `<div class="row" style="margin-top:10px">${u.state === 'disabled' ? '<button id="uen" class="primary">Reactivate user</button>' : '<button id="udis" class="danger">Disable user</button>'}<button id="urev" ${u.activeSessions ? '' : 'disabled title="No active sessions"'}>Sign out everywhere</button></div>` : self ? '<p class="muted">You cannot change your own account here.</p>' : ''}
+    ${can('admin.user.manage') && !self ? `<div class="row x-d2c171b1" >${u.state === 'disabled' ? '<button id="uen" class="primary">Reactivate user</button>' : '<button id="udis" class="danger">Disable user</button>'}<button id="urev" ${u.activeSessions ? '' : 'disabled title="No active sessions"'}>Sign out everywhere</button></div>` : self ? '<p class="muted">You cannot change your own account here.</p>' : ''}
     ${can('admin.roles.manage') && !self ? `<h3>Platform roles</h3><div class="row"><select id="rsel" aria-label="Platform role">${Object.entries(ME.roles).map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('')}</select><button id="rgrant">Grant</button><button id="rrev">Revoke</button></div><p class="muted">Role changes require password confirmation. Only a platform owner can grant or revoke platform owner.</p>` : ''}
     <h3>Sign-in history</h3>${u.loginHistory.map(h => `<div><small>${fmt(h.at)} · ${esc(h.action)}</small></div>`).join('') || '<p class="muted">No sign-ins recorded.</p>'}</div>`;
   const reload = () => viewUser(parts);
@@ -367,11 +367,11 @@ async function viewProject(parts) {
   const p = await api('GET', '/api/admin/projects/' + encodeURIComponent(parts[1]));
   crumbs([['Projects', 'projects'], [p.name]]);
   const mayFix = can('admin.project.correct'), mayMerge = can('admin.project.merge');
-  $('#main').innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">${esc(p.name)}</h2><span><span class="pill">${esc(p.phase)}</span> <span class="pill ${p.status === 'active' ? 'green' : 'amber'}">${esc(p.status)}</span></span></div>
+  $('#main').innerHTML = `<div class="card"><div class="row x-a562f4fd" ><h2 class="x-11696618" >${esc(p.name)}</h2><span><span class="pill">${esc(p.phase)}</span> <span class="pill ${p.status === 'active' ? 'green' : 'amber'}">${esc(p.status)}</span></span></div>
     <p class="muted">${esc(p.id)} · ${esc(p.address || '')}, ${esc(p.city || '')}, ${esc(p.state || '')}${p.aliases.length ? ' · also known as ' + esc(p.aliases.join(', ')) : ''}${p.statusReason ? ' · ' + esc(p.statusReason) : ''}</p>
     ${mayFix ? `<div class="row"><button id="pfix">Correct a field</button><button id="pstat">Change status</button></div>` : ''}</div>
     <div class="card scroll"><h3>Permits (source records — never edited here)</h3><table><tr>${mayMerge ? '<th></th>' : ''}<th>Permit</th><th>Status</th><th>Description</th><th>Value</th><th>Linked by</th></tr>${p.permits.map(x => `<tr>${mayMerge ? `<td><input type="checkbox" class="splitpick" value="permit:${esc(x.id)}" aria-label="Select ${esc(x.permitId)}"></td>` : ''}<td>${x.sourceUrl ? `<a href="${esc(x.sourceUrl)}" target="_blank" rel="noopener">${esc(x.permitId)}</a>` : esc(x.permitId)}</td><td>${esc(x.status)}</td><td>${esc(String(x.description || '').slice(0, 90))}</td><td>${money(x.valuation)}</td><td><small>${esc(x.linkMethod)} · ${esc(x.confidence)}</small></td></tr>`).join('') || '<tr><td colspan="6" class="muted">No permits.</td></tr>'}</table>
-      ${mayMerge && p.permits.length > 1 ? '<button id="psplit" style="margin-top:8px">Split selected permits into a new project</button>' : ''}</div>
+      ${mayMerge && p.permits.length > 1 ? '<button class="x-8a77e5a3" id="psplit" >Split selected permits into a new project</button>' : ''}</div>
     ${p.landUse.length ? `<div class="card"><h3>Land-use filings</h3>${p.landUse.map(x => `<div>${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.file || x.id)}</a>` : esc(x.file || x.id)} — ${esc(x.title)}</div>`).join('')}</div>` : ''}
     <div class="card scroll"><h3>Bid packages</h3><table><tr><th>Package</th><th>Publisher</th><th>Status</th><th>Invited</th><th>Bids</th></tr>${p.packages.map(k => `<tr><td><a href="#/package/${k.id}">${esc(k.title)}</a></td><td>${esc(k.publisher)}</td><td>${esc(k.status)}</td><td>${k.invited}</td><td>${k.bids}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">None.</td></tr>'}</table></div>
     <div class="card"><h3>Team (with evidence)</h3>${p.companies.map(c => `<div>${esc(c.name)} <small class="muted">${esc(c.role.replace(/_/g, ' '))} · ${c.verified ? 'verified' : 'named'} · ${esc(c.method)} · ${c.evidence} source(s)</small></div>`).join('') || '<p class="muted">None.</p>'}
@@ -379,7 +379,7 @@ async function viewProject(parts) {
       <h3>Corrections</h3>${p.corrections.map(c => `<div><small>${fmt(c.at)} · ${esc(c.by)}: ${esc(c.field)} “${esc(c.from)}” → “${esc(c.to)}” — ${esc(c.reason)}</small></div>`).join('') || '<p class="muted">None — values are as derived from the sources.</p>'}</div>`;
   const reload = () => viewProject(parts);
   $('#pfix')?.addEventListener('click', async () => { if (await act('Correct a project field', 'The original value is kept in the correction history. Source permits are not changed.', `/api/admin/projects/${encodeURIComponent(p.id)}/resolve`, { action: 'correct' },
-    { extra: '<label>Field <select name="field"><option value="name">Project name</option><option value="projectType">Project type</option></select></label><br><label>New value<br><input name="value" style="width:100%"></label><br>' })) reload(); });
+    { extra: '<label>Field <select name="field"><option value="name">Project name</option><option value="projectType">Project type</option></select></label><br><label>New value<br><input class="x-0466783d" name="value" ></label><br>' })) reload(); });
   $('#pstat')?.addEventListener('click', async () => { if (await act('Change project status', 'Stale or invalid projects stay on record with the reason.', `/api/admin/projects/${encodeURIComponent(p.id)}/resolve`, { action: 'status' },
     { extra: '<label>Status <select name="status"><option>stale</option><option>invalid</option><option>active</option></select></label><br>' })) reload(); });
   $('#psplit')?.addEventListener('click', async () => { const linkIds = [...document.querySelectorAll('.splitpick:checked')].map(x => x.value);
@@ -404,9 +404,9 @@ async function viewDuplicates(_, q) {
 }
 async function viewMarkets() {
   crumbs([['Trades & markets']]); const m = await api('GET', '/api/admin/markets');
-  $('#main').innerHTML = `<p class="muted">Counts from stored records as of ${fmt(m.asOf)}. Project counts are records BUILDINTEL holds — not total market coverage.</p><div class="row" style="align-items:flex-start">
-    <div class="card scroll" style="flex:1;min-width:260px"><h3>Trades (subscriber companies)</h3><table><tr><th>Trade</th><th>Companies</th></tr>${m.trades.map(t => `<tr><td>${esc(t.trade)}</td><td>${t.companies}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">None.</td></tr>'}</table></div>
-    <div class="card scroll" style="flex:1;min-width:260px"><h3>Markets (states)</h3><table><tr><th>State</th><th>Subscriber companies</th><th>Projects held</th></tr>${m.markets.map(x => `<tr><td>${esc(x.state)}</td><td>${x.subscriberCompanies}</td><td>${x.projects}</td></tr>`).join('')}</table></div></div>`;
+  $('#main').innerHTML = `<p class="muted">Counts from stored records as of ${fmt(m.asOf)}. Project counts are records BUILDINTEL holds — not total market coverage.</p><div class="row x-0486f781" >
+    <div class="card scroll x-a58e8b24" ><h3>Trades (subscriber companies)</h3><table><tr><th>Trade</th><th>Companies</th></tr>${m.trades.map(t => `<tr><td>${esc(t.trade)}</td><td>${t.companies}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">None.</td></tr>'}</table></div>
+    <div class="card scroll x-a58e8b24" ><h3>Markets (states)</h3><table><tr><th>State</th><th>Subscriber companies</th><th>Projects held</th></tr>${m.markets.map(x => `<tr><td>${esc(x.state)}</td><td>${x.subscriberCompanies}</td><td>${x.projects}</td></tr>`).join('')}</table></div></div>`;
 }
 async function viewPackages(_, q) {
   crumbs([['Bid packages & bids']]); if (!q.get('sort')) q.set('sort', 'newest');
@@ -419,7 +419,7 @@ async function viewPackage(parts) {
   const k = await api('GET', '/api/admin/packages/' + parts[1]); crumbs([['Bid packages & bids', 'packages'], [k.title]]);
   const mayRevoke = can('admin.document.access.revoke');
   const revoked = new Set((await api('GET', '/api/admin/documents/' + (k.documents[0]?.id || '_none')).catch(() => ({ canView: [] }))).canView.filter(x => /REVOKED/.test(x.basis)).map(x => x.orgId));
-  $('#main').innerHTML = `<div class="card"><h2 style="margin-top:0">${esc(k.title)}</h2><p class="muted">${esc(k.publisher)} · ${esc(k.status)} · due ${esc(k.dueDate)} · ${esc(k.distribution)}${k.projectId ? ` · project <a href="#/project/${k.projectId}">${esc(k.projectId)}</a>` : ''}</p>
+  $('#main').innerHTML = `<div class="card"><h2 class="x-d462248a" >${esc(k.title)}</h2><p class="muted">${esc(k.publisher)} · ${esc(k.status)} · due ${esc(k.dueDate)} · ${esc(k.distribution)}${k.projectId ? ` · project <a href="#/project/${k.projectId}">${esc(k.projectId)}</a>` : ''}</p>
     ${k.award ? `<p><b>Awarded</b> to ${esc(k.award.company)} · ${money(k.award.total)} · signed ${fmt(k.award.signedAt)}${k.award.signer ? ' by ' + esc(k.award.signer) : ''}</p>` : ''}</div>
     <div class="card scroll"><h3>Invitations</h3><table><tr><th>Company</th><th>Intent</th><th>Invited</th><th>Opened plans</th><th>Plan access</th></tr>${k.invitations.map(i => `<tr><td>${esc(i.company)}</td><td>${esc(i.intent)}</td><td>${fmt(i.invitedAt)}</td><td>${fmt(i.viewedAt)}</td>
       <td>${revoked.has(i.orgId) ? '<span class="pill red">revoked</span>' : '<span class="pill green">allowed</span>'} ${mayRevoke && k.documents.length ? `<button data-acc="${esc(i.orgId)}" data-rev="${!revoked.has(i.orgId)}">${revoked.has(i.orgId) ? 'Restore' : 'Revoke'}</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No invitations.</td></tr>'}</table></div>
@@ -438,7 +438,7 @@ async function viewDocuments(_, q) {
 }
 async function viewDocument(parts) {
   const d = await api('GET', '/api/admin/documents/' + parts[1]); crumbs([['Plan-room documents', 'documents'], [d.name]]);
-  $('#main').innerHTML = `<div class="card"><h2 style="margin-top:0">${esc(d.name)}</h2><table><tr><th>Package</th><td><a href="#/package/${d.packageId}">${esc(d.package || '')}</a></td></tr><tr><th>Revision</th><td>${esc(d.revision)}</td></tr><tr><th>State</th><td>${esc(d.state)}${d.quarantine ? ' — ' + esc(d.quarantine.reason) : ''}</td></tr>
+  $('#main').innerHTML = `<div class="card"><h2 class="x-d462248a" >${esc(d.name)}</h2><table><tr><th>Package</th><td><a href="#/package/${d.packageId}">${esc(d.package || '')}</a></td></tr><tr><th>Revision</th><td>${esc(d.revision)}</td></tr><tr><th>State</th><td>${esc(d.state)}${d.quarantine ? ' — ' + esc(d.quarantine.reason) : ''}</td></tr>
     <tr><th>Fingerprint (SHA-256)</th><td><code>${esc(d.sha256 || '—')}</code></td></tr><tr><th>Validation</th><td>${esc(d.validation)}</td></tr><tr><th>Malware scan</th><td>${esc(d.malwareScan)}</td></tr><tr><th>Storage</th><td>${esc(d.storage)}</td></tr></table>
     ${can('admin.document.access.revoke') ? `<p>${d.state === 'quarantined' ? '<button id="drel" class="primary">Release from quarantine</button>' : '<button id="dq" class="danger">Quarantine file</button>'}</p>` : ''}</div>
     <div class="card scroll"><h3>Who can open it</h3><table><tr><th>Company</th><th>Basis</th></tr>${d.canView.map(x => `<tr><td>${esc(x.company)}</td><td>${esc(x.basis)}</td></tr>`).join('')}</table><p class="muted">${d.state === 'quarantined' ? 'Quarantined: nobody can open it until released.' : 'Checked again every time a link is opened.'}</p></div>`;
@@ -452,7 +452,7 @@ function labelTables() { document.querySelectorAll('main table').forEach(t => { 
 async function viewSubscriptions(_, q) {
   crumbs([['Subscriptions']]); if (!q.get('sort')) q.set('sort', 'company');
   const r = await api('GET', '/api/admin/subscriptions?' + q), may = can('admin.billing.manage');
-  $('#main').innerHTML = `<div class="card"><b>Revenue:</b> <span class="na" style="color:var(--warn)">${esc(r.revenue.unavailable)}</span> · Stripe: ${esc(r.stripe)}<br><small class="muted">Manual adjustments grant access only — they never record a payment.</small></div>` +
+  $('#main').innerHTML = `<div class="card"><b>Revenue:</b> <span class="na x-81fa6ce4" >${esc(r.revenue.unavailable)}</span> · Stripe: ${esc(r.stripe)}<br><small class="muted">Manual adjustments grant access only — they never record a payment.</small></div>` +
     filterForm([['q', 'Company'], ['line', 'Line', ['subscriber', 'publisher']], ['plan', 'Plan', r.catalog.filter(c => c.key !== 'internal').map(c => c.key)], ['sort', 'Sort', ['company', 'plan']]], q, 'subscriptions') +
     `<div class="card scroll"><table><tr><th>Company</th><th>Plan</th><th>Status</th><th>Access</th><th>Payment</th><th>Seats</th><th>AI today</th><th></th></tr>${r.items.map(x => `<tr><td><a href="#/company/${x.orgId}">${esc(x.company)}</a></td><td>${esc(x.planName)}${x.listPrice ? '<br><small class="muted">list $' + x.listPrice + '/mo (proposed)</small>' : ''}</td><td>${esc(x.status)}${x.trialEndsAt ? '<br><small>trial to ' + fmt(x.trialEndsAt) + '</small>' : ''}</td><td><small>${esc(x.access)}</small></td><td><small>${esc(x.paymentState)}</small></td><td>${esc(x.seats)}</td><td>${esc(x.aiToday)}</td>
       <td>${may ? `<button data-adj="${x.orgId}" data-line="${x.line}" data-trial="${x.plan === 'trial'}">Adjust</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">None.</td></tr>'}</table>${pager(r, 'subscriptions', q)}</div>
@@ -473,10 +473,10 @@ async function viewSources(_, q) {
 }
 async function viewSource(parts) {
   const x = await api('GET', '/api/admin/sources/' + parts[1]); crumbs([['Data sources', 'sources'], [x.name]]);
-  $('#main').innerHTML = `<div class="card"><h2 style="margin-top:0">${esc(x.name)}</h2><table><tr><th>Jurisdiction</th><td>${esc(x.jurisdiction)}</td></tr><tr><th>State</th><td>${x.enabled ? 'running (' + esc(x.schedule) + ')' : 'paused'}</td></tr><tr><th>Freshness</th><td>${esc(x.freshness)} · newest record ${esc(x.lastRecordDate || '—')}</td></tr>
+  $('#main').innerHTML = `<div class="card"><h2 class="x-d462248a" >${esc(x.name)}</h2><table><tr><th>Jurisdiction</th><td>${esc(x.jurisdiction)}</td></tr><tr><th>State</th><td>${x.enabled ? 'running (' + esc(x.schedule) + ')' : 'paused'}</td></tr><tr><th>Freshness</th><td>${esc(x.freshness)} · newest record ${esc(x.lastRecordDate || '—')}</td></tr>
     <tr><th>Terms review</th><td>${x.authorized ? 'complete' + (x.authorization?.evidence ? ' — ' + esc(x.authorization.evidence) : '') : '<b>Cannot run until:</b><br>' + x.compliance.map(esc).join('<br>')}${x.termsUrl ? `<br><a href="${esc(x.termsUrl)}" target="_blank" rel="noopener">View terms</a>` : ''}</td></tr>
     <tr><th>Last error</th><td>${esc(x.lastError || '—')}</td></tr><tr><th>Last probe</th><td>${x.lastProbe ? fmt(x.lastProbe.at) + ' · source updated ' + esc(x.lastProbe.lastUpdated || '?') : '—'}</td></tr></table>
-    <div class="row" style="margin-top:10px">${x.enabled ? '<button id="spause">Pause</button><button id="sretry" class="primary">Retry now</button>' : `<button id="sresume" class="primary" ${x.authorized ? '' : 'disabled title="Terms review incomplete"'}>Resume</button>`}<button id="sprobe">Probe</button><button id="sresync" class="danger">Resync (archive & re-pull)</button></div><p id="smsg" class="muted"></p></div>
+    <div class="row x-d2c171b1" >${x.enabled ? '<button id="spause">Pause</button><button id="sretry" class="primary">Retry now</button>' : `<button id="sresume" class="primary" ${x.authorized ? '' : 'disabled title="Terms review incomplete"'}>Resume</button>`}<button id="sprobe">Probe</button><button id="sresync" class="danger">Resync (archive & re-pull)</button></div><p id="smsg" class="muted"></p></div>
     <div class="card scroll"><h3>Import history</h3><table><tr><th>When</th><th>Result</th><th>Received</th><th>New</th><th>Updated</th><th>Rejected</th><th>Error</th></tr>${x.importRuns.map(j => `<tr><td>${fmt(j.at)}</td><td>${j.status === 'ok' ? '<span class="pill green">ok</span>' : '<span class="pill red">failed</span>'}</td><td>${j.received ?? ''}</td><td>${j.inserted ?? ''}</td><td>${j.updated ?? ''}</td><td>${j.rejected ?? ''}</td><td><small>${esc(j.error || '')}</small></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No runs yet.</td></tr>'}</table></div>`;
   const reload = () => viewSource(parts);
   $('#spause')?.addEventListener('click', async () => { if (await act('Pause source', 'Stops hourly pulls until resumed.', `/api/admin/sources/${x.id}/enabled`, { enabled: false })) reload(); });
@@ -488,7 +488,7 @@ async function viewSource(parts) {
 async function viewAi(_, q) {
   crumbs([['AI usage & limits']]); if (!q.get('sort')) q.set('sort', 'month');
   const r = await api('GET', '/api/admin/ai/usage?' + q);
-  $('#main').innerHTML = `<div class="card"><b>Provider:</b> ${esc(r.provider)} · <b>Cost:</b> <span style="color:var(--warn)">${esc(r.cost.unavailable)}</span><br><b>Accuracy:</b> <span style="color:var(--warn)">${esc(r.accuracy.unavailable)}</span><br><small class="muted">AI quantities stay suggestions until an estimator confirms them. Limits here can only lower a plan's allowance.</small></div>` +
+  $('#main').innerHTML = `<div class="card"><b>Provider:</b> ${esc(r.provider)} · <b>Cost:</b> <span class="x-81fa6ce4" >${esc(r.cost.unavailable)}</span><br><b>Accuracy:</b> <span class="x-81fa6ce4" >${esc(r.accuracy.unavailable)}</span><br><small class="muted">AI quantities stay suggestions until an estimator confirms them. Limits here can only lower a plan's allowance.</small></div>` +
     filterForm([['active', 'Only companies using AI', ['true']], ['sort', 'Sort', ['month', 'company']]], q, 'ai') +
     `<div class="card scroll"><table><tr><th>Company</th><th>Today</th><th>This month</th><th>Confirmed</th><th>Unconfirmed</th><th>Daily allowance</th><th></th></tr>${r.items.map(x => `<tr><td><a href="#/company/${x.orgId}">${esc(x.company)}</a></td><td>${x.today}</td><td>${x.thisMonth}</td><td>${x.confirmed}</td><td>${x.unconfirmed}</td><td>${x.allowance}${x.override != null ? ` <small>(limited from ${x.planAllowance})</small>` : ''}</td><td><button data-ail="${x.orgId}">Set limit</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">None.</td></tr>'}</table>${pager(r, 'ai', q)}</div>`;
   bindFilter('ai'); bindGo($('#main'));
@@ -496,10 +496,10 @@ async function viewAi(_, q) {
 }
 async function viewSecurity() {
   crumbs([['My security']]);
-  $('#main').innerHTML = `<div class="card"><h2 style="margin-top:0">Two-step sign-in (authenticator app)</h2>${ME.mfa === 'enabled' ? '<p><span class="pill green">On</span> Sign-in and sensitive actions ask for a 6-digit code. Lost your phone? Another administrator with security permission can reset it after confirming your identity.</p>'
+  $('#main').innerHTML = `<div class="card"><h2 class="x-d462248a" >Two-step sign-in (authenticator app)</h2>${ME.mfa === 'enabled' ? '<p><span class="pill green">On</span> Sign-in and sensitive actions ask for a 6-digit code. Lost your phone? Another administrator with security permission can reset it after confirming your identity.</p>'
     : `<p>Use an authenticator app (Google Authenticator, 1Password, Authy, Microsoft Authenticator). Once on, sign-in and sensitive actions ask for its 6-digit code.</p><button id="mfas" class="primary">Set up</button><div id="mfab"></div>`}</div>`;
   $('#mfas')?.addEventListener('click', async () => { const r = await api('POST', '/api/admin/mfa/setup', {});
-    $('#mfab').innerHTML = `<p>In your app, add an account and enter this key (or open the setup link on your phone):</p><p><code style="font-size:16px;letter-spacing:2px">${esc(r.secret.replace(/(.{4})/g, '$1 ').trim())}</code></p><p><a href="${esc(r.uri)}">Setup link</a></p>
+    $('#mfab').innerHTML = `<p>In your app, add an account and enter this key (or open the setup link on your phone):</p><p><code class="x-2e5998fc" >${esc(r.secret.replace(/(.{4})/g, '$1 ').trim())}</code></p><p><a href="${esc(r.uri)}">Setup link</a></p>
       <form id="mfae" class="row"><input name="code" inputmode="numeric" maxlength="6" placeholder="6-digit code" aria-label="Code from your app"><button class="primary">Turn on</button><span class="err" id="mfaerr"></span></form>`;
     $('#mfae').onsubmit = async ev => { ev.preventDefault(); try { await api('POST', '/api/admin/mfa/enable', { code: ev.target.code.value.trim() }); toast('Two-step sign-in is on.'); render(); } catch (e) { $('#mfaerr').textContent = e.message; } }; });
 }
