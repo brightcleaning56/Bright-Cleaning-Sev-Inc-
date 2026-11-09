@@ -25,6 +25,7 @@ reset_main; QA_PORT=4401 check "project publishing (draft → checklist → publ
 QA_PORT=4402 check "drawing takeoff (6,400 SF / 80 LF)" "PROBLEMS: \[\]" python3 qa/takeoff_flow.py
 QA_PORT=4402 check "AI analysis → estimate → bid"     "PROBLEMS: \[\]" python3 qa/estimate_flow.py
 QA_PORT=4401 check "role sign-up and workspace banners (GC/GM, owner, subcontractor, service provider)" "PROBLEMS: \[\]" python3 qa/roles_flow.py
+QA_PORT=4401 check "Super Admin review screens (publisher verification, owner authority, company record)" "PROBLEMS: \[\]" python3 qa/staff_review_flow.py
 QA_PORT=4401 check "public website (homepage, every page, mobile menu, sign-in hand-off to /app, clean console)" "PROBLEMS: \[\]" python3 qa/website_flow.py
 kill "${PIDS[@]}" 2>/dev/null
 echo "mode: CORE_READS=${CORE_READS:-off} · screenshots and logs: $QA_OUT"; exit $FAIL

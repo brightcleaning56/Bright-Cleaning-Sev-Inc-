@@ -39,6 +39,7 @@ with sync_playwright() as p:
         if email == 'pm@acme.test':
             if d.locator('.buyer-tiles > div').count() != 6: problems.append('owner: summary tiles missing')
             if 'Your projects' not in d.inner_text('body'): problems.append('owner: projects heading missing')
+            if d.locator('#bidders tr').count() - 1 < 2: problems.append('owner: contractors on your projects missing the invited companies')
         ctx.close()
     # Each subscriber role has its own menu
     menus = {}

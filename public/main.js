@@ -1096,7 +1096,7 @@ async function buyerView() {
      <select id="sv"><option value="">No instant pricing</option><option value="post_construction">Post-construction clean</option><option value="janitorial">Recurring janitorial</option><option value="windows">Windows</option><option value="floor_care">Floor care</option><option value="pressure_washing">Pressure washing</option></select>
      <input id="sf2" type="number" min="1" placeholder="Square feet"><input id="fq" type="number" min="1" placeholder="Visits per month (janitorial)"></div></details>
    <button class="primary x-27af8985" ${verified?'':'disabled'} >Post request</button></form><div class="err" id="re"></div></div></div>
-  <div id="sumstrip"></div><h2 class="x-d1cd810f" >${OWNER_KINDS.includes(me.org.buyerKind) ? 'Your projects' : 'Your bid packages'}</h2><section id="body"></section>
+  <div id="sumstrip"></div><div class="card bidders-card" id="bidders"></div><h2 class="x-d1cd810f" >${OWNER_KINDS.includes(me.org.buyerKind) ? 'Your projects' : 'Your bid packages'}</h2><section id="body"></section>
   <h2 class="x-855107b5" >Signed contracts</h2><section id="contracts"></section>
   <div class="grid2 x-49fcd855" ><div class="card" id="teamc"></div><div class="card" id="subc"></div></div></div>`;
   publisherPanels();
@@ -1119,6 +1119,17 @@ async function buyerView() {
     const due = reqs.filter(r => r.status === 'open' && r.dueDate).map(r => r.dueDate).sort()[0];
     const tiles = [[reqs.length, OWNER_KINDS.includes(me.org.buyerKind) ? 'projects' : 'bid packages'], [open, 'open for bids'], [invited, 'contractors invited'], [bids, 'said they will bid'], [awarded, 'awarded'], [due ? String(due).slice(0, 10) : '—', 'next bid due']];
     $('#sumstrip').innerHTML = `<div class="buyer-tiles">${tiles.map(([n, l]) => `<div><b>${esc(String(n))}</b><small>${esc(l)}</small></div>`).join('')}</div>`; }
+  { // Companies on this company's work: one row per company across every request.
+    const withInvites = reqs.filter(r => (r.invited || 0) > 0);
+    const lists = await Promise.all(withInvites.map(r => api('GET', `/api/requests/${r.id}/planholders`).catch(() => [])));
+    const by = new Map();
+    lists.flat().forEach(x => { const c = by.get(x.company) || { company: x.company || 'Company', trades: new Set(), packages: 0, willBid: 0, bids: 0, viewed: 0 };
+      (x.trades || []).forEach(t => c.trades.add(t)); c.packages++; if (x.intent === 'will_bid') c.willBid++; if (x.bid) c.bids++; if (x.viewedPlans) c.viewed++; by.set(x.company, c); });
+    const rows = [...by.values()].sort((a, b) => b.bids - a.bids || b.packages - a.packages);
+    const title = OWNER_KINDS.includes(me.org.buyerKind) ? 'Contractors on your projects' : 'Subcontractors bidding on your packages';
+    $('#bidders').innerHTML = `<h3>${title}</h3>` + (rows.length
+      ? `<div class="scroll"><table><tr><th>Company</th><th>Trades</th><th class="num">Invited to</th><th class="num">Will bid</th><th class="num">Bid submitted</th><th class="num">Opened plans</th></tr>${rows.map(c => `<tr><td>${esc(c.company)}</td><td><small>${esc([...c.trades].map(k => (TRADES_LIST.find(t => t.key === k) || {}).label || k).join(', ') || '—')}</small></td><td class="num">${c.packages}</td><td class="num">${c.willBid}</td><td class="num">${c.bids}</td><td class="num">${c.viewed}</td></tr>`).join('')}</table></div>`
+      : '<div class="empty">No companies invited yet. Invitations go out when a package is posted and matching companies are in your territory.</div>'); }
   let pjTimer;
   $('#pjq').oninput = () => { clearTimeout(pjTimer); pjTimer = setTimeout(async () => {
     const q = $('#pjq').value.trim(), st = $('#st').value.trim(); const box = $('#pjres');

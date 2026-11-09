@@ -17,14 +17,16 @@ with sync_playwright() as p:
     sub = login('sub@em.test', 'sub'); sub.click('nav button[data-t=plan]'); sub.wait_for_timeout(500); sub.check('input[name=ptr][value=electrical]'); sub.click('#pff button.primary'); sub.wait_for_timeout(400)
     gc = login('pm@acme.test', 'gc')
     gc.fill('#t', 'Medical office electrical'); gc.fill('#a', '700 Pike St'); gc.fill('#ci', 'Seattle'); gc.fill('#st', 'WA'); gc.fill('#dd', due); gc.check('input[name=tr][value=electrical]'); gc.click('#rf button.primary'); gc.wait_for_timeout(3200)
-    gc.set_input_files('form[data-up] input[type=file]', [F('A2.1 - Level 1 Floor Plan.pdf'), F('E2.01_Lighting_Plan.pdf'), F('Project Manual - Division 26 Electrical.pdf')])
-    gc.click('form[data-up] button'); gc.wait_for_timeout(1500)
+    up = gc.locator('div.gate', has_text='Medical office electrical').locator('form[data-up]')   # this check's package, not the seeded ones
+    up.locator('input[type=file]').set_input_files([F('A2.1 - Level 1 Floor Plan.pdf'), F('E2.01_Lighting_Plan.pdf'), F('Project Manual - Division 26 Electrical.pdf')])
+    up.locator('button').click(); gc.wait_for_timeout(1500)
     txt = gc.inner_text('body'); steps.append('1 GC plan room indexed: ' + str(all(k in txt for k in ['Architectural', 'Electrical', 'Specifications', 'A2.1 — Level 1 Floor Plan', 'E2.01 — Lighting Plan'])))
-    gc.set_input_files('form[data-up] input[type=file]', [F('E2.01_Lighting_Plan rev1.pdf')]); gc.check('form[data-up] input[name=add]'); gc.fill('form[data-up] input[name=note]', 'Revised lighting layout, level 1'); gc.click('form[data-up] button'); gc.wait_for_timeout(1500)
+    up = gc.locator('div.gate', has_text='Medical office electrical').locator('form[data-up]')
+    up.locator('input[type=file]').set_input_files([F('E2.01_Lighting_Plan rev1.pdf')]); up.locator('input[name=add]').check(); up.locator('input[name=note]').fill('Revised lighting layout, level 1'); up.locator('button').click(); gc.wait_for_timeout(1500)
     steps.append('2 addendum posted: ' + str('Addendum 1' in gc.inner_text('body')))
     sub.click('nav button[data-t=invitations]'); sub.wait_for_timeout(1000)
     st = sub.inner_text('body'); steps.append('3 bidder sees plan room + addendum gate: ' + str('Plan room' in st and 'Addendum 1 posted' in st))
-    docid = sub.get_attribute('[data-doc-open] >> nth=0', 'data-doc-open')
+    docid = sub.get_attribute('[data-doc-open]:has-text("Floor Plan") >> nth=0', 'data-doc-open')   # the sheet this check uploaded, not other packages' files
     ok = sub.evaluate('''async id => { const tok = sessionStorage.getItem('bi_token');
       const l = await (await fetch('/api/documents/' + id + '/link', { method: 'POST', headers: { Authorization: 'Bearer ' + tok } })).json();
       const r = await fetch(l.url); const head = new Uint8Array(await r.arrayBuffer()).slice(0, 5);
