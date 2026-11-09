@@ -454,6 +454,29 @@
   #v-workqueue .st b { display: block; font-size: 22px; margin: 2px 0; }
   #v-workqueue .st small { display: block; }
   @media (max-width: 720px) { #v-workqueue .wqrow-act input { max-width: 100%; } }
+.cwtop{margin-bottom:8px}
+.cwhead{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-bottom:12px}
+.cwhead h1{margin:0;font-size:24px}
+.cwbadges{display:flex;gap:8px;flex-wrap:wrap}
+.cwactions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.cwlock{background:#fff7e6;border:1px solid #f1d7a0;border-radius:8px;padding:10px 12px}
+.cwtabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid #d9e2ec;margin:12px 0 16px}
+.cwtab{background:none;border:0;border-bottom:3px solid transparent;padding:10px 12px;font:inherit;color:#44566c;cursor:pointer}
+.cwtab.on{color:#0b4f8a;border-bottom-color:#1a6fc4;font-weight:600}
+.cwtab:focus-visible{outline:2px solid #1a6fc4;outline-offset:2px}
+.cwpanel{background:#fff;border:1px solid #e1e8f0;border-radius:12px;padding:18px;max-width:1100px}
+.cwcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px}
+.cwcards div{background:#f6f9fc;border-radius:10px;padding:12px}
+.cwcards small{display:block;color:#5b6b7d}
+.cwdocbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.cwframe{width:100%;height:min(78vh,900px);border:1px solid #cfd9e4;border-radius:10px;background:#525659}
+.cwdl{display:grid;grid-template-columns:max-content 1fr;gap:8px 16px}
+.cwdl dt{color:#5b6b7d}
+.cwdl dd{margin:0}
+.cwlist{list-style:none;padding:0;margin:0}
+.cwlist li{padding:8px 0;border-bottom:1px solid #eef2f6}
+.cwlink{width:100%;padding:8px;border:1px solid #ccd5df;border-radius:8px}
+@media (max-width:720px){.cwpanel{padding:14px}.cwframe{height:60vh}}
 </style>
 </head>
 <body class="adminbody">
@@ -786,10 +809,13 @@
     </section>
 
     <section class="view" id="v-contracts">
+      <div id="regWrap">
       <div class="pagehead"><div><h1>Contracts</h1><p>Approved proposals create a draft contract here automatically. Click a contract to edit it.</p></div><button class="btn" data-new="contracts">New contract</button></div>
       <div class="kpis6" id="regKpis-contracts"></div><div class="segtabs" id="regTabs-contracts" role="tablist"></div>
       <div class="toolbar"><input type="search" data-search="contracts" placeholder="Search contracts…" aria-label="Search contracts"><select data-filter="contracts" aria-label="Filter by status"></select></div>
       <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Contract</th><th>Customer</th><th>Term</th><th class="num">Value</th><th>Signature</th><th>Status</th></tr></thead><tbody id="rows-contracts"></tbody></table></div>
+      </div>
+      <div id="cwWrap" hidden></div>
     </section>
 
     <section class="view" id="v-projects">

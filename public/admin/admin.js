@@ -269,6 +269,7 @@
   // ---------- Navigation ----------
   const VIEWS = ['website', 'overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
+    view = String(view || '').split('/')[0];
     if (view === 'customer') view = 'customers';
     if (!VIEWS.includes(view)) view = 'overview';
     if (state.me && Array.isArray(state.me.views) && !state.me.views.includes(view)) view = state.me.home || state.me.views[0];
@@ -276,13 +277,14 @@
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'v-' + view));
     const navView = view === 'estimator' ? 'proposals' : view === 'customer' ? 'customers' : view;
     $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === navView));
-    const hash = '#' + view;
+    const cur = location.hash || '';
+    const hash = view === 'contracts' && cur.startsWith('#contracts/') ? cur : '#' + view;
     if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash);
     window.scrollTo(0, 0);
     load(view);
   }
   window.addEventListener('popstate', () => go((location.hash || '#overview').slice(1)));
-  $$('#nav button').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
+  $$('#nav button').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'contracts') { if (!leaveContract()) return; history.replaceState(null, '', '#contracts'); } go(b.dataset.view); }));
   document.addEventListener('click', e => {
     const link = e.target.closest('[data-view-link]');
     if (link) go(link.dataset.viewLink);
@@ -300,6 +302,7 @@
       if (view === 'customers') await loadCustomers();
       if (view === 'proposals') await loadEstimates();
       if (['contracts', 'projects', 'invoices'].includes(view)) await loadRegister(view);
+      if (view === 'contracts') showContractRoute();
       if (view === 'subscriptions') loadSubscriptions();
       if (view === 'clientmsgs') loadClientMsgs();
       if (view === 'issues') await loadIssues();
@@ -1496,32 +1499,151 @@
     });
   }
 
+  // ---------- Contract workspace: a full page (not a drawer). Sections are tabs over ONE form, so Save keeps every field. ----------
+  var CW_TABS = [['overview', 'Overview'], ['parties', 'Parties & contacts'], ['document', 'Contract document'], ['scope', 'Scope & pricing'], ['terms', 'Terms & conditions'], ['schedule', 'Schedule & duration'], ['signatures', 'Signatures'], ['amendments', 'Amendments & versions'], ['activity', 'Activity & audit'], ['related', 'Related records']];
+  var cwTab = 'overview', cwDirty = false, cwPdf = null, cwData = null;
+  function contractRouteId() { const p = (location.hash || '').slice(1).split('/'); return p[0] === 'contracts' && p[1] ? Number(p[1]) : null; }
+  function leaveContract() {
+    if (cwDirty && !confirm('You have unsaved changes to this contract. Leave without saving?')) return false;
+    cwDirty = false; if (cwPdf) { URL.revokeObjectURL(cwPdf); cwPdf = null; }
+    return true;
+  }
+  function backToContracts() {
+    if (!leaveContract()) return;
+    history.pushState(null, '', '#contracts');
+    showContractRoute();
+  }
+  // Called after the register loads: shows the register, or the workspace when the URL names a contract.
+  function showContractRoute() {
+    const id = contractRouteId();
+    $('#regWrap').hidden = !!id; $('#cwWrap').hidden = !id;
+    if (id) return openContract(id);
+    cwData = null; cwDirty = false;
+    if (cwPdf) { URL.revokeObjectURL(cwPdf); cwPdf = null; }
+  }
   async function openContract(id) {
-    let d; try { d = await api('/api/admin/contracts2/' + id); } catch (e) { return toast(e.message, true); }
-    const k = d.contract, signed = ['Customer signed', 'Signed'].includes(k.signature_status), exec = ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status);
-    const stTone = { 'Not sent': '', Sent: 'blue', Viewed: 'blue', 'Customer signed': 'amber', Signed: 'green', Declined: 'red' }[k.signature_status || 'Not sent'] || '';
-    openDrawer({ title: `${k.number} · ${k.title || 'Contract'}`, sub: `${k.kind || 'Contract'} · ${k.company || k.customer_name || ''} · ${k.signature_status || 'Not sent'} · ${k.status}`,
-      body: `${k.signature_status === 'Declined' ? `<p class="err" style="display:block">Customer declined: ${esc(k.decline_reason || '')}. Edit the contract and send it again.</p>` : ''}
-        ${k.signed_at ? `<p class="muted">Customer signed: <b>${esc(k.signer_name)}</b>${k.signer_title ? ', ' + esc(k.signer_title) : ''} · ${fmtWhen(k.signed_at)} · IP ${esc(k.signed_ip || '')}${k.countersigned_at ? `<br>Countersigned: <b>${esc(k.countersigned_by)}</b> · ${fmtWhen(k.countersigned_at)}` : ''}</p>` : ''}
-        ${k.link && !signed ? `<p>Signing link: <input readonly value="${esc(k.link)}" style="width:100%;padding:8px;border:1px solid #ccd5df;border-radius:8px" id="kLink"> <small class="muted">${k.viewed_at ? 'Viewed ' + fmtWhen(k.viewed_at) : k.sent_at ? 'Sent ' + fmtWhen(k.sent_at) : ''}</small></p>` : ''}
-        <form class="ig" id="kForm"><div class="wide"><label>Title</label><input name="title" value="${esc(k.title || '')}"></div><div><label>Company</label><input name="company" value="${esc(k.company || '')}"></div><div><label>Customer contact</label><input name="customer_name" value="${esc(k.customer_name || '')}"></div>
-          <div><label>Customer email (receives the link)</label><input name="email" value="${esc(k.email || '')}" placeholder="Required before you send for signature"></div><div><label>Contract value ($)</label><input name="value" inputmode="decimal" value="${esc(k.value || '')}"></div><div><label>Start</label><input type="date" name="start_date" value="${esc(k.start_date || '')}"></div><div><label>End</label><input type="date" name="end_date" value="${esc(k.end_date || '')}"></div>
-          <div><label>Payment terms</label><input name="payment_terms" value="${esc(k.payment_terms || 'Net 30')}"></div><div><label>Billing</label><input name="billing" value="${esc(k.billing || '')}" placeholder="e.g. Monthly in advance"></div><div><label>Auto-renew</label><select name="auto_renew"><option value="">No</option><option value="1"${k.auto_renew ? ' selected' : ''}>Yes</option></select></div><div><label>Notice days</label><input name="notice_days" inputmode="numeric" value="${esc(k.notice_days ?? 30)}"></div>
-          <div class="wide"><label>Scope of work</label><textarea name="scope" rows="5">${esc(k.scope || '')}</textarea></div><div class="wide"><label>Terms and conditions</label><textarea name="terms" rows="8">${esc(k.terms || d.default_terms)}</textarea></div></form>
-        ${d.versions.length > 1 ? `<h3 class="secth">Versions</h3>${d.versions.map(v => `<p style="margin:3px 0"><button class="linklike" data-kv="${v.id}">v${v.version || 1}</button> ${badge(v.status)} ${esc(v.signature_status || '')} · ${money(v.value)}</p>`).join('')}` : ''}
-        <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity yet.</p>'}</div>`,
-      footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="kPdf">PDF</button>${!signed ? '<button class="btn ghost" id="kSave">Save</button>' : ''}${!signed && k.status !== 'Superseded' ? `<button class="btn" id="kSend">${k.link ? 'Re-send link' : 'Send for signature'}</button>` : ''}${(k.signature_status === 'Customer signed' || k.proposal_status === 'Approved') && !k.countersigned_at ? '<button class="btn" id="kCs">Countersign</button>' : ''}${exec ? '<button class="btn ghost" id="kAmend">Amend</button><button class="btn ghost" id="kRenew">Renew</button>' : ''}` });
-    if (signed) $$('#kForm input, #kForm textarea, #kForm select').forEach(x => x.disabled = true);
-    const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
+    if (cwData && cwData.contract.id !== id && !leaveContract()) return;
+    if (contractRouteId() !== id) history.pushState(null, '', '#contracts/' + id);
+    $('#regWrap').hidden = true; $('#cwWrap').hidden = false;
+    let d; try { d = await api('/api/admin/contracts2/' + id); } catch (e) { toast(e.message, true); return backToContracts(); }
+    cwData = d; cwDirty = false;
+    renderContract();
+  }
+  async function loadContractPdf(id) {
+    const fr = $('#cwFrame'); if (!fr) return;
+    try {
+      const r = await fetch(`/api/admin/contracts2/${id}/pdf`, { headers: { Authorization: 'Bearer ' + token } });
+      if (!r.ok) throw new Error('The contract PDF is not available.');
+      if (cwPdf) URL.revokeObjectURL(cwPdf);
+      cwPdf = URL.createObjectURL(await r.blob());
+      fr.src = cwPdf;
+    } catch (e) { fr.outerHTML = `<p class="err" style="display:block">${esc(e.message)}</p>`; }
+  }
+  function renderContract() {
+    const d = cwData, k = d.contract, id = k.id;
+    const signed = ['Customer signed', 'Signed'].includes(k.signature_status), exec = ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status);
+    const sig = k.signature_status || 'Not sent', ro = signed ? ' disabled' : '';
+    const inp = (name, label, val, o = {}) => `<div${o.wide ? ' class="wide"' : ''}><label for="cw_${name}">${label}</label>` +
+      (o.area ? `<textarea id="cw_${name}" name="${name}" rows="${o.rows || 4}"${ro}>${esc(val)}</textarea>`
+        : `<input id="cw_${name}" name="${name}"${o.type ? ` type="${o.type}"` : ''} value="${esc(val)}"${o.ph ? ` placeholder="${esc(o.ph)}"` : ''}${ro}>`) +
+      (o.help ? `<small class="muted">${o.help}</small>` : '') + '</div>';
+    const panel = key => `data-panel="${key}"${cwTab === key ? '' : ' hidden'}`;
+    const dl = d.documents && d.documents.length ? d.documents.map(x => `<li>${esc(x.title || x.file_name || 'Document')} <small class="muted">${esc(x.kind || '')} · ${fmtWhen(x.created_at)}</small></li>`).join('') : '';
+    $('#cwWrap').innerHTML = `
+      <div class="cwtop"><button type="button" class="linklike" data-cw-back>← Contracts</button></div>
+      <div class="cwhead"><div><h1>${esc(k.number)} · ${esc(k.title || 'Contract')}</h1><p class="muted">${esc(k.kind || 'Contract')} · ${esc(k.company || k.customer_name || '')}</p></div>
+        <div class="cwbadges">${badge(k.status)} ${badge(sig)}</div></div>
+      <div class="cwactions">
+        ${!signed ? '<button type="button" class="btn ghost" id="kSave">Save</button>' : ''}
+        ${!signed && k.status !== 'Superseded' ? `<button type="button" class="btn" id="kSend">${k.link ? 'Re-send link' : 'Send for signature'}</button>` : ''}
+        ${(k.signature_status === 'Customer signed' || k.proposal_status === 'Approved') && !k.countersigned_at ? '<button type="button" class="btn" id="kCs">Countersign</button>' : ''}
+        <button type="button" class="btn ghost" id="kPdf">Download PDF</button>
+        ${exec ? '<button type="button" class="btn ghost" id="kAmend">Amend</button><button type="button" class="btn ghost" id="kRenew">Renew</button>' : ''}
+      </div>
+      ${k.signature_status === 'Declined' ? `<p class="err" style="display:block">Customer declined: ${esc(k.decline_reason || '')}. Edit the contract and send it again.</p>` : ''}
+      ${signed ? '<p class="muted cwlock">This contract is signed and locked. Changes need a formal amendment; the signed version is kept.</p>' : ''}
+      <nav class="cwtabs" role="tablist" aria-label="Contract sections">${CW_TABS.map(([key, label]) => `<button type="button" role="tab" class="cwtab${cwTab === key ? ' on' : ''}" data-cwtab="${key}" aria-selected="${cwTab === key}">${label}</button>`).join('')}</nav>
+      <form id="kForm" class="cwform">
+        <section class="cwpanel" ${panel('overview')}>
+          <div class="cwcards">
+            <div><small>Contract value</small><b>${money(k.value)}</b></div>
+            <div><small>Term</small><b>${esc(k.start_date || '—')} → ${esc(k.end_date || 'open')}</b></div>
+            <div><small>Signature</small><b>${esc(sig)}</b></div>
+            <div><small>Renewal</small><b>${k.auto_renew ? 'Auto-renews' : 'Does not auto-renew'} · notice ${esc(k.notice_days ?? 30)} days</b></div>
+          </div>
+          <p class="muted">Edit fields in the other sections, then press Save. Signed contracts are locked; changes need an amendment.</p>
+        </section>
+        <section class="cwpanel" ${panel('parties')}><div class="ig">
+          ${inp('company', 'Company', k.company || '')}${inp('customer_name', 'Customer contact', k.customer_name || '')}
+          ${inp('email', 'Customer email (receives the signing link)', k.email || '', { wide: true, ph: 'Required before you send for signature' })}
+        </div></section>
+        <section class="cwpanel" ${panel('document')}>
+          <div class="cwdocbar"><button type="button" class="btn ghost" id="cwPrint">Print</button><button type="button" class="btn ghost" id="cwDl">Download PDF</button><button type="button" class="btn ghost" id="cwFull">Full screen</button></div>
+          <iframe id="cwFrame" class="cwframe" title="Contract ${esc(k.number)}"></iframe>
+          <p class="muted">Shows the saved contract document. Use the viewer's controls for page navigation, zoom and search (Ctrl+F).</p>
+        </section>
+        <section class="cwpanel" ${panel('scope')}><div class="ig">
+          ${inp('scope', 'Scope of work', k.scope || '', { wide: true, area: true, rows: 6 })}
+          ${inp('value', 'Contract value ($)', k.value || '')}${inp('payment_terms', 'Payment terms', k.payment_terms || 'Net 30')}
+          ${inp('billing', 'Billing', k.billing || '', { wide: true, ph: 'e.g. Monthly in advance' })}
+        </div></section>
+        <section class="cwpanel" ${panel('terms')}><div class="ig">
+          ${inp('terms', 'Terms and conditions', k.terms || d.default_terms, { wide: true, area: true, rows: 16 })}
+        </div>${signed ? '' : '<button type="button" class="btn ghost" id="cwStd">Use standard terms</button>'}</section>
+        <section class="cwpanel" ${panel('schedule')}><div class="ig">
+          ${inp('start_date', 'Start', k.start_date || '', { type: 'date' })}${inp('end_date', 'End', k.end_date || '', { type: 'date' })}
+          <div><label for="cw_auto_renew">Auto-renew</label><select id="cw_auto_renew" name="auto_renew"${ro}><option value="">No</option><option value="1"${k.auto_renew ? ' selected' : ''}>Yes</option></select></div>
+          ${inp('notice_days', 'Notice days', k.notice_days ?? 30)}
+        </div></section>
+        <section class="cwpanel" ${panel('signatures')}>
+          <dl class="cwdl">
+            <dt>Status</dt><dd>${esc(sig)}</dd>
+            <dt>Sent</dt><dd>${k.sent_at ? fmtWhen(k.sent_at) : '—'}</dd>
+            <dt>Viewed by customer</dt><dd>${k.viewed_at ? fmtWhen(k.viewed_at) : '—'}</dd>
+            <dt>Customer signed</dt><dd>${k.signed_at ? `${esc(k.signer_name || '')}${k.signer_title ? ', ' + esc(k.signer_title) : ''} · ${fmtWhen(k.signed_at)} · IP ${esc(k.signed_ip || '')}` : '—'}</dd>
+            <dt>Countersigned</dt><dd>${k.countersigned_at ? `${esc(k.countersigned_by || '')} · ${fmtWhen(k.countersigned_at)}` : '—'}</dd>
+          </dl>
+          ${k.link && !signed ? `<p>Signing link: <input readonly value="${esc(k.link)}" id="kLink" class="cwlink"></p>` : ''}
+        </section>
+        <section class="cwpanel" ${panel('amendments')}>
+          ${d.versions.length ? `<ul class="cwlist">${d.versions.map(v => `<li><button type="button" class="linklike" data-kv="${v.id}">v${v.version || 1}</button> ${badge(v.status)} ${esc(v.signature_status || '')} · ${money(v.value)}</li>`).join('')}</ul>` : '<p class="muted">No versions yet.</p>'}
+          <p class="muted">Amendments and renewals are new versions. The signed version is kept and never overwritten.</p>
+        </section>
+        <section class="cwpanel" ${panel('activity')}><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity yet.</p>'}</div></section>
+        <section class="cwpanel" ${panel('related')}>
+          <ul class="cwlist">
+            <li>Proposal: ${k.estimate_id ? `#${esc(k.estimate_id)}` : 'Not linked'}</li>
+            <li>Customer: ${k.customer_id ? `#${esc(k.customer_id)}` : 'Not linked'}</li>
+            <li>Project: ${k.project_id ? `${esc(k.project_name || '#' + k.project_id)}` : 'Not linked'}</li>
+          </ul>
+          ${dl ? `<h3>Project documents</h3><ul class="cwlist">${dl}</ul>` : ''}
+        </section>
+      </form>`;
+    // Tabs switch panels without losing what is typed.
+    $$('#cwWrap [data-cwtab]').forEach(b => b.onclick = () => {
+      cwTab = b.dataset.cwtab;
+      $$('#cwWrap [data-cwtab]').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); });
+      $$('#cwWrap [data-panel]').forEach(p => { p.hidden = p.dataset.panel !== cwTab; });
+    });
+    $('#kForm').addEventListener('submit', e => e.preventDefault());
+    $('#kForm').addEventListener('input', () => { cwDirty = true; });
+    $('#kForm').addEventListener('change', () => { cwDirty = true; });
+    window.onbeforeunload = () => (cwDirty ? 'You have unsaved changes to this contract.' : undefined);
+    $('[data-cw-back]').onclick = backToContracts;
+    const act = (sel, fn) => { const el = $('#cwWrap ' + sel); if (el) el.onclick = fn; };
     const save = () => { const f = formObj($('#kForm')); return api('/api/admin/contracts2/' + id, { method: 'PATCH', json: { ...f, auto_renew: !!f.auto_renew } }); };
-    act('#kSave', async () => { try { await save(); toast('Saved'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
-    act('#kSend', async () => { try { await save(); const r = await api(`/api/admin/contracts2/${id}/send`, { method: 'POST' }); try { await navigator.clipboard.writeText(r.link); } catch { /* */ } toast(r.emailed ? 'Sent to the customer for signature (link copied)' : 'Signing link created and copied — email could not be sent, share the link'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
-    act('#kCs', async () => { const name = prompt('Office sign-off: type your full name to sign off this contract. The project becomes Contracted.'); if (!name) return; try { await api(`/api/admin/contracts2/${id}/countersign`, { method: 'POST', json: { name } }); toast('Signed off — contract executed, project is Contracted'); loadRegister('contracts'); openContract(id); } catch (e) { toast(e.message, true); } });
+    act('#kSave', async () => { try { await save(); toast('Saved'); loadRegister('contracts'); await openContract(id); } catch (e) { toast(e.message, true); } });
+    act('#kSend', async () => { try { await save(); const r = await api(`/api/admin/contracts2/${id}/send`, { method: 'POST' }); try { await navigator.clipboard.writeText(r.link); } catch { /* */ } toast(r.emailed ? 'Sent to the customer for signature (link copied)' : 'Signing link created and copied. Email could not be sent, so share the link.'); loadRegister('contracts'); await openContract(id); } catch (e) { toast(e.message, true); } });
+    act('#kCs', async () => { const name = prompt('Office sign-off: type your full name to sign off this contract. The project becomes Contracted.'); if (!name) return; try { await api(`/api/admin/contracts2/${id}/countersign`, { method: 'POST', json: { name } }); toast('Signed off. Contract executed, project is Contracted.'); loadRegister('contracts'); await openContract(id); } catch (e) { toast(e.message, true); } });
     act('#kPdf', () => downloadFile({ name: k.number + '.pdf', url: `/api/admin/contracts2/${id}/pdf` }));
-    act('#kAmend', async () => { const reason = prompt('What does the amendment change?'); if (!reason) return; try { const r = await api(`/api/admin/contracts2/${id}/amend`, { method: 'POST', json: { reason } }); toast('Amendment drafted'); loadRegister('contracts'); openContract(r.id); } catch (e) { toast(e.message, true); } });
-    act('#kRenew', async () => { const pct = prompt('Price change for the renewal term (%), e.g. 3 or 0:', '0'); if (pct === null) return; try { const r = await api(`/api/admin/contracts2/${id}/renew`, { method: 'POST', json: { increase_pct: Number(pct) || 0 } }); toast(`Renewal drafted: ${r.start_date} to ${r.end_date}`); loadRegister('contracts'); openContract(r.id); } catch (e) { toast(e.message, true); } });
-    $$('#drawerRoot [data-kv]').forEach(b => b.onclick = () => openContract(Number(b.dataset.kv)));
-    $$('#drawerRoot [data-close]').forEach(el => el.onclick = closeDrawer);
+    act('#cwDl', () => downloadFile({ name: k.number + '.pdf', url: `/api/admin/contracts2/${id}/pdf` }));
+    act('#cwPrint', () => { const fr = $('#cwFrame'); if (fr && fr.contentWindow) fr.contentWindow.print(); });
+    act('#cwFull', () => { const fr = $('#cwFrame'); if (fr && fr.requestFullscreen) fr.requestFullscreen(); });
+    act('#cwStd', () => { const t = $('#cw_terms'); if (t) { t.value = d.default_terms; cwDirty = true; } });
+    act('#kAmend', async () => { const reason = prompt('What does the amendment change?'); if (!reason) return; try { const r = await api(`/api/admin/contracts2/${id}/amend`, { method: 'POST', json: { reason } }); toast('Amendment drafted'); loadRegister('contracts'); await openContract(r.id); } catch (e) { toast(e.message, true); } });
+    act('#kRenew', async () => { const pct = prompt('Price change for the renewal term (%), e.g. 3 or 0:', '0'); if (pct === null) return; try { const r = await api(`/api/admin/contracts2/${id}/renew`, { method: 'POST', json: { increase_pct: Number(pct) || 0 } }); toast(`Renewal drafted: ${r.start_date} to ${r.end_date}`); loadRegister('contracts'); await openContract(r.id); } catch (e) { toast(e.message, true); } });
+    $$('#cwWrap [data-kv]').forEach(b => b.onclick = () => openContract(Number(b.dataset.kv)));
+    loadContractPdf(id);
   }
   function regHeader(t) {
     const R = state[t] || [], sel = $(`[data-filter="${t}"]`), tabs = $('#regTabs-' + t), kp = $('#regKpis-' + t);

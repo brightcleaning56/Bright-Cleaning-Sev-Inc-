@@ -484,15 +484,33 @@ async function check(area, name, fn) {
     const link = $('#kLink') && $('#kLink').value;
     const tok = link.split('/').pop();
     const sg = await (await fetch(B + `/api/contract/${tok}/sign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Una Contract', agree: true }) })).json();
-    d.querySelector('#drawerRoot [data-close]').click(); await sleep(200);
+    d.querySelector('#cwWrap [data-cw-back]').click(); await sleep(200);
     await nav('overview'); await nav('contracts'); await sleep(900);
     const awaiting = txt('#regKpis-contracts');
     d.querySelector(`#rows-contracts [data-rec="contracts:${kid}"]`).click(); await sleep(1200);
     w.prompt = () => 'UI Owner';
     $('#kCs').click(); await sleep(1500);
-    const sub = txt('#drawerRoot');
+    const sub = txt('#cwWrap');
     assert(link && /\/contract\//.test(link) && sg.ok && /need your countersignature/.test(awaiting) && /Signed/.test(sub) && /UI Owner/.test(sub) && /Amend/.test(sub), JSON.stringify({ link, sg, sub: sub.slice(0, 200) }));
     return 'saved terms + sent: link shown; customer signed on public link; KPI shows countersign needed; Countersign → Signed, Amend/Renew offered';
+  });
+  await check('Contracts UI', 'Contract opens as a full-page workspace: route, every section tab, tab switch keeps the form, Back returns to the register', async () => {
+    const k = await api('POST', '/api/admin/contracts', { company: 'WS Co', customer_name: 'Wes Space', title: 'Workspace test', value: 500, status: 'Draft' }, T);
+    const kid = k.id || (k.contract && k.contract.id);
+    await nav('contracts'); await sleep(900);
+    d.querySelector(`#rows-contracts [data-rec="contracts:${kid}"]`).click(); await sleep(1200);
+    const route = w.location.hash;
+    const tabs = [...d.querySelectorAll('#cwWrap [data-cwtab]')].map(b => b.dataset.cwtab);
+    const sections = ['overview', 'parties', 'document', 'scope', 'terms', 'schedule', 'signatures', 'amendments', 'activity', 'related'];
+    const allTabs = sections.every(s => tabs.includes(s));
+    d.querySelector('#cwWrap [data-cwtab="terms"]').click(); await sleep(100);
+    const termsShown = !d.querySelector('#cwWrap [data-panel="terms"]').hidden && d.querySelector('#cwWrap [data-panel="overview"]').hidden;
+    const wsShown = d.getElementById('regWrap').hidden === true && d.getElementById('cwWrap').hidden === false;
+    d.querySelector('#cwWrap [data-cw-back]').click(); await sleep(400);
+    const back = w.location.hash === '#contracts' && d.getElementById('regWrap').hidden === false;
+    const chk = { route: route === '#contracts/' + kid, allTabs, termsShown, wsShown, back };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, tabs }));
+    return 'route #contracts/' + kid + '; ' + tabs.length + ' section tabs; tab switch keeps the form; Back returns to the register';
   });
   await check('Calls UI', 'Calls page: phone-capture status strip; call panel shows transcript box and Analyze button; Scopes and Activity show KPI cards; activity search filters', async () => {
     await api('POST', '/api/admin/calls', { contact_name: 'Ui Caller', company: 'UI Call Co', phone: '515-555-0333', purpose: 'New business', summary: 'Wants a quote', follow_up_date: '2026-11-10' }, T);
