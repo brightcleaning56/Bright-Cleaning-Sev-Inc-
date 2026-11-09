@@ -10,7 +10,7 @@ with sync_playwright() as p:
     b = p.chromium.launch()
     def login(email, who):
         pg = b.new_page(viewport={'width': 1400, 'height': 1100}); watch(pg, who)
-        pg.goto(BASE + '/'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1200); return pg
+        pg.goto(BASE + '/app'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1200); return pg
     sub = login('sub@em.test', 'sub'); sub.click('nav button[data-t="plan"]'); sub.wait_for_timeout(600)
     sub.check('input[name=ptr][value=electrical]'); sub.click('#pff button.primary'); sub.wait_for_timeout(500)
     gc = login('pm@acme.test', 'gc')

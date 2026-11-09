@@ -12,7 +12,7 @@ with sync_playwright() as p:
     pg.click('main a[href^="#/project/"] >> nth=0'); pg.wait_for_timeout(800); checked += af.dead_controls(pg, 'project', problems)
     pg.click('#pfix'); pg.wait_for_selector('#dlg[open]'); pg.select_option('#dlgx [name=field]', 'name'); pg.fill('#dlgx [name=value]', 'Pine St Office Tower'); af.confirm(pg, 'Name from the developer site plan'); pg.wait_for_timeout(700)
     t = pg.inner_text('main'); steps.append('1 project directory → profile → correct name; history kept, source permits shown unchanged: ' + str('Pine St Office Tower' in t and 'Name from the developer site plan' in t and 'source records' in t))
-    sub = b.new_page(); sub.goto(BASE + '/'); sub.fill('#e', 'sub@em.test'); sub.fill('#p', 'demo password 123'); sub.click('button.primary'); sub.wait_for_timeout(1000)
+    sub = b.new_page(); sub.goto(BASE + '/app'); sub.fill('#e', 'sub@em.test'); sub.fill('#p', 'demo password 123'); sub.click('button.primary'); sub.wait_for_timeout(1000)
     stok = sub.evaluate("sessionStorage.getItem('bi_token')")
     docs = sub.request.get(BASE + '/api/documents', headers={'authorization': 'Bearer ' + stok}).json(); did = docs[0]['id']
     link = sub.request.post(BASE + f'/api/documents/{did}/link', headers={'authorization': 'Bearer ' + stok}).json()['url']

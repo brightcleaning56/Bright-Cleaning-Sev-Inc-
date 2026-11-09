@@ -11,7 +11,7 @@ def watch(pg, who):
     pg.on('dialog', lambda d: (problems.append(f'{who} unexpected dialog: {d.message}'), d.dismiss()))
 def login(b, email, who):
     pg = b.new_page(viewport={'width': 1200, 'height': 900}); watch(pg, who)
-    pg.goto(BASE + '/'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1000)
+    pg.goto(BASE + '/app'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1000)
     return pg
 with sync_playwright() as p:
     b = p.chromium.launch()
@@ -32,6 +32,6 @@ with sync_playwright() as p:
             pg.click('nav button[data-t=planning]'); pg.wait_for_timeout(500)
         print(who, 'tabs visited:', len(tabs))
     pg = login(b, 'pm@acme.test', 'buyer'); pg.wait_for_timeout(1500); print('buyer view loaded:', 'Project Publishing Center' in pg.content())
-    m = b.new_page(viewport={'width': 390, 'height': 844}); watch(m, 'signup'); m.goto(BASE + '/'); m.click('#ss'); m.wait_for_timeout(300); m.click('text=Back to sign in'); m.click('#su'); m.wait_for_timeout(300)
+    m = b.new_page(viewport={'width': 390, 'height': 844}); watch(m, 'signup'); m.goto(BASE + '/app'); m.click('#ss'); m.wait_for_timeout(300); m.click('text=Back to sign in'); m.click('#su'); m.wait_for_timeout(300)
     b.close()
 print('PROBLEMS:', len(problems)); [print(' -', x) for x in problems]

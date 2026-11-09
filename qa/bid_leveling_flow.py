@@ -11,7 +11,7 @@ def watch(pg, who):
     pg.on('dialog', lambda d: (problems.append(f'{who} dialog: {d.message}'), d.dismiss()))
 def login(b, email, who):
     pg = b.new_page(viewport={'width': 1200, 'height': 1000}); watch(pg, who)
-    pg.goto(BASE + '/'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1000)
+    pg.goto(BASE + '/app'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1000)
     return pg
 due = (datetime.date.today() + datetime.timedelta(days=10)).isoformat()
 with sync_playwright() as p:

@@ -804,7 +804,7 @@ function subscriberSignupView() {
   $('#bk').onclick = ev => { ev.preventDefault(); loginView(); };
   $('#sf').onsubmit = async ev => { ev.preventDefault();
     try { const r = await api('POST', '/api/signup/subscriber', { company: $('#c').value, trade: $('#t').value, state: $('#st').value, name: $('#n').value, email: $('#e').value, password: $('#p').value });
-      $('#sf').innerHTML = `<h1>Check your email</h1><p>${esc(r.message)}</p><p><a href="/">Sign in</a></p>`; }
+      $('#sf').innerHTML = `<h1>Check your email</h1><p>${esc(r.message)}</p><p><a href="/app">Sign in</a></p>`; }
     catch (e) { $('#le').textContent = e.message; } };
 }
 
@@ -820,7 +820,7 @@ function signupView() {
   $('#bk').onclick = ev => { ev.preventDefault(); loginView(); };
   $('#sf').onsubmit = async ev => { ev.preventDefault();
     try { const r = await api('POST', '/api/signup/buyer', {company: $('#c').value, kind: $('#k').value, name: $('#n').value, email: $('#e').value, password: $('#p').value});
-      $('#sf').innerHTML = `<h1>Check your email</h1><p>${esc(r.message)}</p><p><a href="/">Sign in</a></p>`; }
+      $('#sf').innerHTML = `<h1>Check your email</h1><p>${esc(r.message)}</p><p><a href="/app">Sign in</a></p>`; }
     catch (e) { $('#le').textContent = e.message; } };
 }
 

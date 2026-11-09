@@ -9,7 +9,7 @@ with sync_playwright() as p:
     b = p.chromium.launch()
     for email in ['sub@em.test', 'eric@bc.test']:
         pg = b.new_page(viewport={'width': 1500, 'height': 1000}); errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
-        pg.goto(f'http://127.0.0.1:{port}/'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1200)
+        pg.goto(f'http://127.0.0.1:{port}/app'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1200)
         keys = [x.get_attribute('data-t') for x in pg.query_selector_all('nav button')]
         for k in keys:
             pg.click(f'nav button[data-t="{k}"]'); pg.wait_for_timeout(700)

@@ -25,7 +25,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(); total = 0; suspects = []
     for email in accounts:
         pg = b.new_page(viewport={'width': 1600, 'height': 1000}); cdp = pg.context.new_cdp_session(pg)
-        pg.goto(f'http://127.0.0.1:{port}/'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1500)
+        pg.goto(f'http://127.0.0.1:{port}/app'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1500)
         keys = [x.get_attribute('data-t') for x in pg.query_selector_all('nav button')] or ['buyer']
         for k in keys:
             if k != 'buyer': pg.click(f'nav button[data-t="{k}"]'); pg.wait_for_timeout(900)

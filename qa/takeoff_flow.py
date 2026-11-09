@@ -7,7 +7,7 @@ steps, problems = [], []
 with sync_playwright() as p:
     b = p.chromium.launch(); pg = b.new_page(viewport={'width': 1700, 'height': 1450})
     pg.on('pageerror', lambda e: problems.append(str(e))); pg.on('response', lambda r: r.status >= 500 and problems.append(f'{r.status} {r.url}'))
-    pg.goto(BASE + '/'); pg.fill('#e', 'est@prairie.test'); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1500)
+    pg.goto(BASE + '/app'); pg.fill('#e', 'est@prairie.test'); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1500)
     pg.click('nav button[data-t="invitations"]'); pg.wait_for_timeout(1500)
     pg.click('[data-measure]'); pg.wait_for_timeout(2500)
     steps.append('1 sheet rendered by self-hosted pdf.js: ' + str(pg.evaluate("() => { const c = document.querySelector('#tkc'); return !!c && c.width > 1000; }")))

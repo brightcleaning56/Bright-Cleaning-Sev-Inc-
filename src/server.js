@@ -809,7 +809,18 @@ export function createServer(store, deps = {}) {
         return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/admin.html'), 'utf8'), 'text/html; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/main.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/main.js')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/admin.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/admin.js')).pipe(res); }
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html'))
+      // Public marketing website. The authenticated product workspace stays at /app and /login.
+      if (req.method === 'GET' && url.pathname === '/site.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/site.css')).pipe(res); }
+      if (req.method === 'GET' && url.pathname === '/site.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/site.js')).pipe(res); }
+      if (req.method === 'GET' && (url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico')) { res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/favicon.svg')).pipe(res); }
+      if (req.method === 'GET' && url.pathname === '/home.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/home.css')).pipe(res); }
+      if (req.method === 'GET' && url.pathname === '/pages.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/pages.css')).pipe(res); }
+      const PUBLIC_PAGES = new Set(['platform', 'project-intelligence', 'marketplace', 'plan-room', 'takeoff-estimating', 'bid-management', 'service-contractors', 'data-trust', 'pricing', 'about', 'solutions', 'contact', 'faq']);
+      const publicPage = url.pathname.replace(/^\/|\/$/g, '');
+      if (req.method === 'GET' && PUBLIC_PAGES.has(publicPage)) return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/pages', publicPage + '.html'), 'utf8'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/')
+        return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/site.html'), 'utf8'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && ['/app', '/app/', '/login', '/index.html'].includes(url.pathname))
         return send(res, 200, fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8'), 'text/html; charset=utf-8');
       if (req.method === 'GET' && url.pathname.startsWith('/legal/')) {
         const f = path.join(ROOT, 'docs/policies', path.basename(url.pathname) + '.md');
@@ -847,7 +858,7 @@ export function createServer(store, deps = {}) {
         const org = p?.o && store.get('orgs', p.o);
         const valid = org && ['buyer', 'subscriber'].includes(org.kind) && Date.now() - p.t < 7 * 864e5;
         const page = (code, inner) => send(res, code, `<!doctype html><meta name=viewport content="width=device-width"><body style="font-family:sans-serif;max-width:520px;margin:60px auto;padding:0 16px">${inner}</body>`, 'text/html');
-        const signIn = '<p><a href="/">Sign in</a></p>';
+        const signIn = '<p><a href="/app">Sign in</a></p>';
         if (!valid) return page(400, '<h1>This link is invalid or has expired</h1><p>Sign up again or ask BUILDINTEL support for a new link.</p>');
         if (req.method === 'GET') {
           if (org.status !== 'pending_verification') return page(200, `<h1>Email already confirmed</h1>${signIn}`);

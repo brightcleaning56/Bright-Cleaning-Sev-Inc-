@@ -49,7 +49,7 @@ export function buildDigest(store, org, { includePlatform = false } = {}) {
     const r = readiness(store);
     lines.push(`Launch gates: ${r.verdict} (${r.passed}/${r.total}). Open: ${r.gates.filter(g => g.status !== 'pass').map(g => g.name).join('; ')}`, '');
   }
-  lines.push(`Open the dashboard: ${config.baseUrl}/`);
+  lines.push(`Open the dashboard: ${config.baseUrl}/app`);
   return { subject: `BUILDINTEL: ${pending.length} to approve, ${replies.length} replies, ${money(a.value.outstanding)} out`, text: lines.join('\n') };
 }
 
@@ -83,10 +83,10 @@ export async function sendLeadAlerts(store, { fetchImpl, force = false } = {}) {
         for (const h of hits.slice(0, 25)) {
           lines.push(`• ${h.title} — ${h.address}, ${h.city}, ${h.state}`);
           lines.push(`  ${h.why}; ${h.stage.replace('_', ' ')}${h.valuation ? `; reported value $${Number(h.valuation).toLocaleString()}` : ''}${h.estimatedStart ? `; est. start ${h.estimatedStart}` : ''}`);
-          lines.push(`  ${config.baseUrl}/#project/${h.id}`);
+          lines.push(`  ${config.baseUrl}/app#project/${h.id}`);
         }
         if (hits.length > 25) lines.push('', `…and ${hits.length - 25} more in the app.`);
-        lines.push('', `Manage alerts: ${config.baseUrl}/`);
+        lines.push('', `Manage alerts: ${config.baseUrl}/app`);
         const from = config.platformFrom || org.senderEmail;
         const r = from ? await sendEmail({ From: from, To: search.alertEmail, Subject: `BUILDINTEL: ${hits.length} project(s) for "${search.name}"`, TextBody: lines.join('\n'), MessageStream: config.postmarkStream }, { fetchImpl })
           : { ok: false, error: 'no PLATFORM_FROM configured' };
@@ -111,7 +111,7 @@ export async function sendLeadAlerts(store, { fetchImpl, force = false } = {}) {
     if (changes.length) {
       const owners = store.list('users', u => u.orgId === org.id && ['owner', 'platform_owner'].includes(u.role) && !u.disabled);
       const lines = [`${changes.length} tracked project(s) changed stage:`, ''];
-      for (const c of changes) lines.push(`• ${c.p.projectName || c.p.description || 'Project'} — ${c.p.address}, ${c.p.city}: ${c.from} → ${c.to} (you marked it "${c.t.stage}")`, `  ${config.baseUrl}/#project/${c.p.id}`);
+      for (const c of changes) lines.push(`• ${c.p.projectName || c.p.description || 'Project'} — ${c.p.address}, ${c.p.city}: ${c.from} → ${c.to} (you marked it "${c.t.stage}")`, `  ${config.baseUrl}/app#project/${c.p.id}`);
       const from = config.platformFrom || org.senderEmail;
       for (const u of owners) {
         const r = from ? await sendEmail({ From: from, To: u.email, Subject: `BUILDINTEL: ${changes.length} tracked project(s) changed stage`, TextBody: lines.join('\n'), MessageStream: config.postmarkStream }, { fetchImpl })
@@ -154,7 +154,7 @@ export async function sendInvitationNotices(store, { fetchImpl } = {}) {
     const r = store.get('bidRequests', i.requestId);
     if (r?.status === 'open' && (r.addendumCount || 0) > (i.addendumNotified || 0)) {
       const org = store.get('orgs', i.sellerOrgId); const last = r.addenda.at(-1);
-      const text = `Addendum ${r.addendumCount} was posted for "${r.title}" (${r.address}, ${r.city}).${last?.note ? '\n\n' + last.note : ''}\n\nReview and acknowledge it before bidding: ${config.baseUrl}/#invitations`;
+      const text = `Addendum ${r.addendumCount} was posted for "${r.title}" (${r.address}, ${r.city}).${last?.note ? '\n\n' + last.note : ''}\n\nReview and acknowledge it before bidding: ${config.baseUrl}/app#invitations`;
       const from = config.platformFrom || org?.senderEmail;
       for (const u of store.list('users', u => u.orgId === i.sellerOrgId && !u.disabled)) {
         const res = from ? await sendEmail({ From: from, To: u.email, Subject: `Addendum ${r.addendumCount}: ${r.title}`, TextBody: text, MessageStream: config.postmarkStream }, { fetchImpl }) : { ok: false, error: 'no PLATFORM_FROM configured' };
@@ -173,7 +173,7 @@ export async function sendInvitationNotices(store, { fetchImpl } = {}) {
     if (!gate.send) { out.push({ org: org.slug, invitations: items.length, deferred: gate.reason }); continue; }
     const owners = store.list('users', u => u.orgId === orgId && ['owner', 'platform_owner', 'member'].includes(u.role) && !u.disabled);
     const lines = [`You've been invited to bid on ${items.length} project(s):`, ''];
-    for (const { r } of items) lines.push(`• ${r.title} — ${r.address}, ${r.city}, ${r.state}`, `  From ${r.buyerName} · bids due ${String(r.dueDate).slice(0, 10)}`, `  ${config.baseUrl}/#invitations`);
+    for (const { r } of items) lines.push(`• ${r.title} — ${r.address}, ${r.city}, ${r.state}`, `  From ${r.buyerName} · bids due ${String(r.dueDate).slice(0, 10)}`, `  ${config.baseUrl}/app#invitations`);
     const from = config.platformFrom || org.senderEmail;
     for (const u of owners) {
       const r = from ? await sendEmail({ From: from, To: u.email, Subject: `BUILDINTEL: ${items.length} invitation(s) to bid`, TextBody: lines.join('\n'), MessageStream: config.postmarkStream }, { fetchImpl })

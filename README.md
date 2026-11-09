@@ -3,6 +3,12 @@
 **Construction lead intelligence for contractors and suppliers** (the iSqFt / BidClerk category), built on
 automated public permit data, plus an optional bid autopilot and a buyer portal for GCs and property managers.
 
+## Public website and application routes
+- Public product website: `/` (feature overview, workflows, roles, data rights, source coverage, pricing disclosures). Product pages: `/platform`, `/project-intelligence`, `/marketplace`, `/plan-room`, `/takeoff-estimating`, `/bid-management`, `/service-contractors`, `/data-trust`, `/solutions`, `/pricing`, `/about`, `/contact`, `/faq`.
+- Authenticated subscriber/publisher workspace: `/app` or `/login`.
+- Protected platform Super Admin portal: `/admin`.
+- Website accuracy and route contract: `docs/WEBSITE-SPEC.md`. The website is checked by `test/website.test.js` (routes, content policy, every internal link) and by `qa/website_flow.py` in the browser QA.
+
 ## Acceptance evidence
 **Release check:** `TEST_DATABASE_URL=postgres://… bash scripts/verify-release.sh` (clean install, all tests with no skips, audit, browser QA in both modes) → `docs/RELEASE-VERIFICATION.md`. Latest: PASS.
 Design for the next version: `docs/PROJECT-CORE.md` (Project Intelligence Core).

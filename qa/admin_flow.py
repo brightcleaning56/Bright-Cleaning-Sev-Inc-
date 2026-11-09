@@ -44,7 +44,7 @@ with sync_playwright() as p:
     pg.click('#react'); confirm(pg, 'Report resolved: legitimate company'); pg.wait_for_timeout(800)
     r2 = gc.request.post(BASE + '/api/login', data=json.dumps({'email': 'pm@acme.test', 'password': 'demo password 123'}), headers={'content-type': 'application/json'})
     steps.append('   reactivated, GC can sign in again: ' + str(r2.status == 200))
-    sub = b.new_page(); sub.goto(BASE + '/'); sub.fill('#e', 'sub@em.test'); sub.fill('#p', 'demo password 123'); sub.click('button.primary'); sub.wait_for_timeout(1000)
+    sub = b.new_page(); sub.goto(BASE + '/app'); sub.fill('#e', 'sub@em.test'); sub.fill('#p', 'demo password 123'); sub.click('button.primary'); sub.wait_for_timeout(1000)
     pg.fill('#gs', 'sub@'); pg.wait_for_timeout(900); pg.click('#gsr a:has-text("sub@em.test")'); pg.wait_for_timeout(800); checked += dead_controls(pg, 'user')
     pg.click('#urev'); confirm(pg, 'Reported lost laptop'); pg.wait_for_timeout(600)
     r3 = sub.request.get(BASE + '/api/me', headers={'authorization': 'Bearer ' + sub.evaluate("sessionStorage.getItem('bi_token')")})

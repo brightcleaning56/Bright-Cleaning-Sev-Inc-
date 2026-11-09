@@ -13,7 +13,7 @@ def watch(pg, who):
 with sync_playwright() as p:
     b = p.chromium.launch(); ctx = b.new_context(viewport={'width': 1200, 'height': 1100})
     def login(email, who):
-        pg = ctx.new_page(); watch(pg, who); pg.goto(BASE + '/'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1000); return pg
+        pg = ctx.new_page(); watch(pg, who); pg.goto(BASE + '/app'); pg.fill('#e', email); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1000); return pg
     sub = login('sub@em.test', 'sub'); sub.click('nav button[data-t=plan]'); sub.wait_for_timeout(500); sub.check('input[name=ptr][value=electrical]'); sub.click('#pff button.primary'); sub.wait_for_timeout(400)
     gc = login('pm@acme.test', 'gc')
     gc.fill('#t', 'Medical office electrical'); gc.fill('#a', '700 Pike St'); gc.fill('#ci', 'Seattle'); gc.fill('#st', 'WA'); gc.fill('#dd', due); gc.check('input[name=tr][value=electrical]'); gc.click('#rf button.primary'); gc.wait_for_timeout(3200)

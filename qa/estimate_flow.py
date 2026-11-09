@@ -7,7 +7,7 @@ problems, steps = [], []
 with sync_playwright() as p:
     b = p.chromium.launch(); pg = b.new_page(viewport={'width': 1400, 'height': 1100})
     pg.on('pageerror', lambda e: problems.append(str(e))); pg.on('response', lambda r: r.status >= 500 and problems.append(f'{r.status} {r.url}'))
-    pg.goto(BASE + '/'); pg.fill('#e', 'est@prairie.test'); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1200)
+    pg.goto(BASE + '/app'); pg.fill('#e', 'est@prairie.test'); pg.fill('#p', 'demo password 123'); pg.click('button.primary'); pg.wait_for_timeout(1200)
     pg.click('nav button[data-t=invitations]'); pg.wait_for_timeout(1200)
     pg.click('[data-ai]'); pg.wait_for_timeout(800)
     steps.append('1 verified analysis shown: ' + str('Verified by' in pg.inner_text('body')))

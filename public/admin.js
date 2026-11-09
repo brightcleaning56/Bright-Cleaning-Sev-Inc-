@@ -74,7 +74,7 @@ async function render() {
       <span class="muted">${esc(ME.email)}</span><button id="out">Sign out</button></span></div><main id="main" tabindex="-1"><p class="muted">Loading…</p></main></div></div>`;
   document.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => { $('#side').classList.remove('open'); go(b.dataset.nav); });
   $('#menu').onclick = () => { const o = $('#side').classList.toggle('open'); $('#menu').setAttribute('aria-expanded', String(o)); if (o) $('#side').querySelector('button:not([disabled])')?.focus(); };
-  document.querySelectorAll('[data-ext]').forEach(b => b.onclick = () => { sessionStorage.setItem('bi_token', TOKEN); window.location.href = '/' + b.dataset.ext; });   // same sign-in carries over
+  document.querySelectorAll('[data-ext]').forEach(b => b.onclick = () => { sessionStorage.setItem('bi_token', TOKEN); window.location.href = '/app' + b.dataset.ext; });   // same sign-in carries over
   $('#out').onclick = signOut;
   let tmr; $('#gs').oninput = () => { clearTimeout(tmr); tmr = setTimeout(globalSearch, 250); };
   const views = { dashboard: viewDashboard, companies: viewCompanies, company: viewCompany, users: viewUsers, user: viewUser, verification: viewVerification, authority: viewAuthority, audit: viewAudit,

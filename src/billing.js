@@ -38,7 +38,7 @@ export async function createCheckout(org, plan, { fetchImpl = fetch } = {}) {
   const body = new URLSearchParams({
     mode: 'subscription', 'line_items[0][price]': price, 'line_items[0][quantity]': '1',
     client_reference_id: org.id, 'subscription_data[metadata][orgId]': org.id,
-    success_url: `${config.baseUrl}/?billing=success`, cancel_url: `${config.baseUrl}/?billing=cancel`,
+    success_url: `${config.baseUrl}/app?billing=success`, cancel_url: `${config.baseUrl}/app?billing=cancel`,
   });
   if (org.stripeCustomerId) body.set('customer', org.stripeCustomerId);
   const res = await fetchImpl('https://api.stripe.com/v1/checkout/sessions', {
