@@ -3249,6 +3249,38 @@ async function startServer(env, dataDir) {
     return 'missed call escalates after the threshold and sorts first; returning it clears it; closeout counts it';
   });
 
+  await check('Work queue', 'Email links and thread: an email links to a real lead, a missing lead or customer is refused, linking nothing is refused; the thread shows received and sent mail with that address; priority filters tasks', async () => {
+    const lead = await (await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Link Target', email: 'link.target@example.com', message: 'Link test' }) })).json();
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const mid = pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES('wq-thread','thread.person@example.com','Thread Person','Thread question','First message',?,?)").run(new Date(Date.now() - 3600000).toISOString(), new Date().toISOString()).lastInsertRowid;
+    pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,created_at) VALUES('Thread.Person@example.com','Our reply','We can help',?,?)").run('sent', new Date(Date.now() - 1800000).toISOString());
+    pdb.close();
+    const okLink = await req('POST', `/api/admin/inbox/${mid}/link`, { token: T, json: { lead_id: lead.id } });
+    const badLead = await req('POST', `/api/admin/inbox/${mid}/link`, { token: T, json: { lead_id: 999999 } });
+    const badCust = await req('POST', `/api/admin/inbox/${mid}/link`, { token: T, json: { customer_id: 999999 } });
+    const empty = await req('POST', `/api/admin/inbox/${mid}/link`, { token: T, json: {} });
+    const missing = await req('POST', '/api/admin/inbox/999999/link', { token: T, json: { lead_id: lead.id } });
+    const linked = ((await req('GET', `/api/admin/inbox?lead_id=${lead.id}`, { token: T })).data.messages || []).some(m => m.id === mid);
+    const thread = await req('GET', `/api/admin/inbox/${mid}/thread`, { token: T });
+    const kinds = (thread.data.messages || []).map(m => m.kind);
+    const threadOk = thread.status === 200 && kinds.includes('received') && kinds.includes('sent') && kinds[0] === 'received';
+    await req('POST', '/api/admin/issues', { token: T, json: { type: 'task', title: 'Priority high check', priority: 'High', due_date: '2099-01-01' } });
+    await req('POST', '/api/admin/issues', { token: T, json: { type: 'task', title: 'Priority low check', priority: 'Low', due_date: '2099-01-01' } });
+    const high = ((await req('GET', '/api/admin/work-queue?dept=tasks&priority=High', { token: T })).data.items || []);
+    const onlyHigh = high.length > 0 && high.every(t => t.priority === 'High') && high.some(t => t.title === 'Priority high check') && !high.some(t => t.title === 'Priority low check');
+    const chk = { linkWorks: okLink.status === 200 && linked, badLeadRefused: badLead.status === 400, badCustomerRefused: badCust.status === 400, emptyRefused: empty.status === 400, missingEmail404: missing.status === 404, threadShowsBoth: threadOk, priorityFilter: onlyHigh };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, kinds }));
+    return 'email links to a real lead only; thread shows received and sent mail; priority filter works on tasks';
+  });
+
+  await check('Work queue', 'Command Center: the signed-in page has a Today’s work card; the summary is available to owners and staff', async () => {
+    const html = (await req('GET', '/admin/')).data.toString();
+    const adminJs = (await req('GET', '/admin/admin.js')).data.toString();
+    const chk = { card: html.includes('id="ccWorkKpis"'), wiredToOverview: adminJs.includes('loadCcWork().catch'), staffSummary: (await req('GET', '/api/admin/work-queue/summary', { token: T })).status === 200 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'Command Center card present and wired to the queue summary';
+  });
+
   server.child.kill(); smtp.close();
   const pass = results.filter(r => r.status === 'PASS').length;
   fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify({ run_at: new Date().toISOString(), node: process.version, pass, fail: results.length - pass, results }, null, 2));

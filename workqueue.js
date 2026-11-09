@@ -88,7 +88,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const cols = t => db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
   db.exec(`CREATE TABLE IF NOT EXISTS inbox_state(message_id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT 'open', follow_up_date TEXT,
     snooze_until TEXT, assigned_to TEXT, note TEXT, updated_by TEXT, updated_at TEXT NOT NULL)`);
-  for (const [t, c] of [['calls', 'assigned_to'], ['calls', 'handled_at'], ['calls', 'handled_by'], ['leads', 'assigned_to'], ['customer_issues', 'assigned_to'], ['inbox_state', 'task_id']]) {
+  for (const [t, c] of [['calls', 'assigned_to'], ['calls', 'handled_at'], ['calls', 'handled_by'], ['leads', 'assigned_to'], ['customer_issues', 'assigned_to'], ['inbox_state', 'task_id'], ['inbox_state', 'project_id']]) {
     if (!cols(t).includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} TEXT`);
   }
   const today = () => bizToday();
@@ -98,11 +98,11 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const t = today(), now = nowIso();
     if (dept === 'emails') {
       return db.prepare(`SELECT m.id, m.from_name, m.from_addr, m.subject, m.preview, m.received_at, m.lead_id, m.customer_id,
-          s.status AS state, s.follow_up_date, s.snooze_until, s.assigned_to, s.note, s.updated_at AS state_at
+          s.status AS state, s.follow_up_date, s.snooze_until, s.assigned_to, s.note, s.updated_at AS state_at, s.project_id
         FROM inbox_messages m LEFT JOIN inbox_state s ON s.message_id = m.id
         WHERE m.from_addr NOT LIKE '%@brightclean.net' ORDER BY m.received_at DESC LIMIT 1000`).all().map(r => ({
           dept, id: r.id, title: r.subject || '(no subject)', who: r.from_name || r.from_addr, when: r.received_at,
-          assigned_to: r.assigned_to, lead_id: r.lead_id, customer_id: r.customer_id, due: r.follow_up_date || (r.snooze_until ? r.snooze_until.slice(0, 10) : null),
+          assigned_to: r.assigned_to, lead_id: r.lead_id, customer_id: r.customer_id, project_id: r.project_id || null, due: r.follow_up_date || (r.snooze_until ? r.snooze_until.slice(0, 10) : null),
           bucket: emailBucket(r, r.state ? { status: r.state, follow_up_date: r.follow_up_date, snooze_until: r.snooze_until } : null, t, now), note: r.note
         }));
     }
@@ -159,6 +159,8 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const assignee = req.query.assigned_to ? String(req.query.assigned_to) : null;
     let list = items(dept);
     if (bucket && bucket !== 'all') list = list.filter(x => x.bucket === bucket);
+    const priority = req.query.priority ? String(req.query.priority) : null;
+    if (priority && dept === 'tasks') list = list.filter(x => String(x.priority || '').toLowerCase() === priority.toLowerCase());
     if (assignee === 'unassigned') list = list.filter(x => !x.assigned_to);
     else if (assignee) list = list.filter(x => x.assigned_to === assignee);
     res.json({ dept, bucket: bucket || 'all', today: today(), timezone: TZ, items: sortItems(list).slice(0, 500) });
@@ -210,6 +212,39 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       .run(id, next.status, next.follow_up_date || null, next.snooze_until || null, next.assigned_to || null, next.note || null, who, t);
     logAction(req, `email ${action}`, 'inbox_message', id, `${m.subject || ''}${next.follow_up_date ? ' → ' + next.follow_up_date : ''}${next.snooze_until ? ' → snoozed until ' + next.snooze_until : ''}`);
     res.json({ ok: true, status: next.status });
+  });
+
+  // Link an email to a lead, customer and/or project. Only records that exist can be linked.
+  app.post('/api/admin/inbox/:id/link', auth, (req, res) => {
+    const id = Number(req.params.id);
+    const m = db.prepare('SELECT id, subject FROM inbox_messages WHERE id=?').get(id);
+    if (!m) return res.status(404).json({ error: 'Email not found.' });
+    const b = req.body || {};
+    const lead = b.lead_id ? Number(b.lead_id) : null, customer = b.customer_id ? Number(b.customer_id) : null, project = b.project_id ? Number(b.project_id) : null;
+    if (lead && !db.prepare('SELECT id FROM leads WHERE id=?').get(lead)) return res.status(400).json({ error: 'That lead does not exist.' });
+    if (customer && !db.prepare('SELECT id FROM customers WHERE id=?').get(customer)) return res.status(400).json({ error: 'That customer does not exist.' });
+    if (project && !db.prepare('SELECT id FROM projects WHERE id=?').get(project)) return res.status(400).json({ error: 'That project does not exist.' });
+    if (!lead && !customer && !project) return res.status(400).json({ error: 'Choose a lead, customer or project to link.' });
+    const t = nowIso(), who = (req.user && req.user.email) || 'admin';
+    if (lead) db.prepare('UPDATE inbox_messages SET lead_id=? WHERE id=?').run(lead, id);
+    if (customer) db.prepare('UPDATE inbox_messages SET customer_id=? WHERE id=?').run(customer, id);
+    if (project) db.prepare(`INSERT INTO inbox_state(message_id,status,project_id,updated_by,updated_at) VALUES(?,'open',?,?,?)
+      ON CONFLICT(message_id) DO UPDATE SET project_id=excluded.project_id, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).run(id, project, who, t);
+    logAction(req, 'linked email', 'inbox_message', id, [lead && 'lead #' + lead, customer && 'customer #' + customer, project && 'project #' + project].filter(Boolean).join(', '));
+    res.json({ ok: true });
+  });
+
+  // The conversation with one address: every email received from it and every email we sent to it, oldest first.
+  // Attachments are not stored by the inbox sync yet, so they are not included.
+  app.get('/api/admin/inbox/:id/thread', auth, (req, res) => {
+    const m = db.prepare('SELECT id, from_addr FROM inbox_messages WHERE id=?').get(Number(req.params.id));
+    if (!m) return res.status(404).json({ error: 'Email not found.' });
+    const addr = String(m.from_addr || '').toLowerCase();
+    const received = db.prepare('SELECT id, from_name, from_addr, subject, preview, received_at AS at FROM inbox_messages WHERE LOWER(from_addr)=? ORDER BY received_at').all(addr)
+      .map(r => ({ kind: 'received', id: r.id, who: r.from_name || r.from_addr, subject: r.subject, text: r.preview, at: r.at }));
+    const sent = db.prepare('SELECT id, to_addr, subject, body, status, created_at AS at FROM email_log WHERE LOWER(to_addr)=? ORDER BY created_at').all(addr)
+      .map(r => ({ kind: 'sent', id: r.id, who: r.to_addr, subject: r.subject, text: r.body, status: r.status, at: r.at }));
+    res.json({ address: addr, messages: [...received, ...sent].sort((a, b) => String(a.at).localeCompare(String(b.at))) });
   });
 
   // Create a task from an email. Pressing it again returns the same open task (no duplicates).

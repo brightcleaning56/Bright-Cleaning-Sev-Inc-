@@ -11,7 +11,7 @@
   body.adminbody { background: var(--bg); margin: 0; }
   [hidden] { display: none !important; }
 
-  .adminlogin { max-width: 420px; margin: 9vh auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: var(--shadow); }
+  .adminlogin { width: min(420px, calc(100% - 32px)); max-width: 420px; margin: 9vh auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: var(--shadow); }
   .adminlogin h1 { color: var(--navy); margin: 22px 0 14px; }
   .adminlogin .field { margin-bottom: 14px; }
   .adminlogin label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
@@ -448,6 +448,8 @@
   #v-workqueue .wqrow-act { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 2px 0; }
   #v-workqueue .wqrow-act input { border: 1px solid var(--line2); border-radius: 8px; padding: 6px 8px; font: inherit; max-width: 200px; }
   #v-workqueue td { vertical-align: top; }
+  .thread-msg { border-left: 3px solid #d5dde7; padding: 6px 10px; margin: 10px 0; }
+  .thread-msg.sent { border-color: #1565d8; }
   #v-workqueue .st span { display: block; }
   #v-workqueue .st b { display: block; font-size: 22px; margin: 2px 0; }
   #v-workqueue .st small { display: block; }
@@ -516,6 +518,7 @@
         <div class="headact"><select id="ccDays" aria-label="Period"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select>
         <button class="btn" data-action="new-estimate">New estimate</button></div></div>
       <div class="kpis" id="ccKpis"></div>
+      <div class="card" style="margin:12px 0"><div class="kpis small" id="ccWorkKpis" aria-label="Today’s work"></div><p><button class="btn ghost" type="button" data-view-link="workqueue">Open Today’s work</button></p></div>
       <div id="ccLive" class="cclive" aria-live="polite"></div>
       <div class="cc3">
         <div class="card"><h2>Pipeline</h2><div id="ccPipe" class="funnel"></div></div>
@@ -541,7 +544,7 @@
       <div class="kpis small" id="wqKpis"></div>
       <div class="wqtabs" id="wqDepts" role="tablist" aria-label="Department"></div>
       <div class="wqchips" id="wqBuckets" aria-label="View"></div>
-      <div class="toolbar"><select id="wqOwnerFilter" aria-label="Owner"><option value="">Everyone</option><option value="unassigned">Unassigned</option></select><span class="muted" id="wqCount"></span></div>
+      <div class="toolbar"><input type="search" id="wqSearch" placeholder="Search name, company or subject" aria-label="Search today’s work"><select id="wqPriority" aria-label="Priority" hidden><option value="">Any priority</option><option value="Urgent">Urgent</option><option value="High">High</option><option value="Normal">Normal</option><option value="Low">Low</option></select><select id="wqOwnerFilter" aria-label="Owner"><option value="">Everyone</option><option value="unassigned">Unassigned</option></select><span class="muted" id="wqCount"></span></div>
       <datalist id="wqOwners"></datalist>
       <div class="tablewrap"><table class="t"><thead><tr><th>When / due</th><th>Item</th><th>Who</th><th>Owner</th><th>Next step</th></tr></thead><tbody id="wqRows"></tbody></table></div>
     </section>

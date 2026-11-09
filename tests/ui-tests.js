@@ -20,7 +20,7 @@ async function check(area, name, fn) {
 
 (async () => {
   const OWNER = 'owner@brightclean.test', PW = 'owner-password-1234';
-  const env = { ...process.env, PORT: String(PORT), NODE_ENV: 'staging', JWT_SECRET: crypto.randomBytes(40).toString('hex'), ADMIN_EMAIL: OWNER, ADMIN_PASSWORD_HASH: await bcrypt.hash(PW, 10), DATA_DIR: path.join(work, 'data'), UPLOAD_DIR: path.join(work, 'up'), DISABLE_SCHEDULER: '1' };
+  const env = { ...process.env, PORT: String(PORT), RATE_LIMIT_PUBLIC: '5000', NODE_ENV: 'staging', JWT_SECRET: crypto.randomBytes(40).toString('hex'), ADMIN_EMAIL: OWNER, ADMIN_PASSWORD_HASH: await bcrypt.hash(PW, 10), DATA_DIR: path.join(work, 'data'), UPLOAD_DIR: path.join(work, 'up'), DISABLE_SCHEDULER: '1' };
   const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: 'ignore' });
   for (let i = 0; i < 50; i++) { try { if ((await fetch(B + '/health')).ok) break; } catch { } await sleep(150); }
   const api = async (m, u, j, t) => (await fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: j ? JSON.stringify(j) : undefined })).json();

@@ -294,7 +294,7 @@
 
   async function load(view) {
     try {
-      if (view === 'overview') await loadOverview();
+      if (view === 'overview') { await loadOverview(); loadCcWork().catch(() => {}); }
       if (view === 'workqueue') await loadWorkQueue();
       if (view === 'leads') await loadLeads();
       if (view === 'customers') await loadCustomers();
@@ -2570,7 +2570,7 @@
     const btn = (act, label, cls = 'ghost') => `<button class="btn ${cls}" type="button" data-wq-act="${act}" data-wq-dept="${d}" data-id="${id}">${label}</button>`;
     let next = '';
     if (d === 'emails') {
-      next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting for reply')}${btn('task', 'Create task')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
+      next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting for reply')}${btn('task', 'Create task')}${btn('link', 'Link')}${btn('thread', 'Thread')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
         <div class="wqrow-act"><input type="datetime-local" data-until-for="${id}" aria-label="Snooze until">${btn('snooze', 'Snooze')}</div>`;
     } else if (d === 'calls') {
       next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
@@ -2587,10 +2587,13 @@
 
   async function wqRender() {
     wqTabs();
-    const qs = `dept=${wq.dept}&bucket=${wq.bucket}` + (wq.owner ? `&assigned_to=${encodeURIComponent(wq.owner)}` : '');
+    const priority = wq.dept === 'tasks' ? $('#wqPriority').value : '';
+    $('#wqPriority').hidden = wq.dept !== 'tasks';
+    const qs = `dept=${wq.dept}&bucket=${wq.bucket}` + (wq.owner ? `&assigned_to=${encodeURIComponent(wq.owner)}` : '') + (priority ? `&priority=${encodeURIComponent(priority)}` : '');
     const j = await api('/api/admin/work-queue?' + qs);
-    $('#wqRows').innerHTML = j.items.length ? j.items.map(wqRow).join('') : '<tr><td colspan="5" class="muted">Nothing here right now.</td></tr>';
-    $('#wqCount').textContent = `${j.items.length} item${j.items.length === 1 ? '' : 's'}${j.items.length === 500 ? ' (first 500 shown)' : ''}`;
+    const shown = wqFilterText(j.items);
+    $('#wqRows').innerHTML = shown.length ? shown.map(wqRow).join('') : '<tr><td colspan="5" class="muted">Nothing here right now.</td></tr>';
+    $('#wqCount').textContent = `${shown.length} item${shown.length === 1 ? '' : 's'}${j.items.length === 500 ? ' (first 500 shown)' : ''}`;
   }
 
   async function loadWorkQueue() {
@@ -2606,6 +2609,8 @@
 
   async function wqAct(btn) {
     const act = btn.dataset.wqAct, d = btn.dataset.wqDept, id = btn.dataset.id;
+    if (act === 'link') return wqLink(id);
+    if (act === 'thread') return wqThread(id);
     const date = (document.querySelector(`[data-date-for="${id}"]`) || {}).value || '';
     const ownerEl = document.querySelector(`[data-owner-for="${id}"]`);
     const owner = ownerEl ? ownerEl.value.trim() : '';
@@ -2649,6 +2654,46 @@
       footer: ''
     });
   }
+
+  // Round 3: search, priority, email links and thread, Command Center card.
+  const wqFilterText = (items) => {
+    const q = ($('#wqSearch').value || '').trim().toLowerCase();
+    return q ? items.filter(i => `${i.title || ''} ${i.who || ''}`.toLowerCase().includes(q)) : items;
+  };
+  async function wqLink(id) {
+    const lead = prompt('Lead number to link (leave blank to skip):', '');
+    if (lead === null) return;
+    const customer = prompt('Customer number to link (leave blank to skip):', '');
+    if (customer === null) return;
+    const project = prompt('Project number to link (leave blank to skip):', '');
+    if (project === null) return;
+    const json = {};
+    if (lead.trim()) json.lead_id = lead.trim();
+    if (customer.trim()) json.customer_id = customer.trim();
+    if (project.trim()) json.project_id = project.trim();
+    if (!Object.keys(json).length) return toast('Nothing to link.', true);
+    await api(`/api/admin/inbox/${id}/link`, { method: 'POST', json });
+    toast('Linked');
+    await loadWorkQueue();
+  }
+  async function wqThread(id) {
+    const j = await api(`/api/admin/inbox/${id}/thread`);
+    const body = j.messages.length
+      ? j.messages.map(m => `<div class="thread-msg ${m.kind === 'sent' ? 'sent' : ''}"><small>${esc(fmtWhen(m.at))} · ${m.kind === 'sent' ? 'Sent' : 'Received'}${m.status ? ' · ' + esc(m.status) : ''} · ${esc(m.who || '')}</small><p><b>${esc(m.subject || '')}</b></p><p>${esc(m.text || '')}</p></div>`).join('')
+      : '<p class="muted">No messages with this address yet.</p>';
+    openDrawer({ title: 'Conversation', sub: j.address, body: body + '<p class="muted">Attachments are not stored yet.</p>', footer: '' });
+  }
+  async function loadCcWork() {
+    const box = $('#ccWorkKpis'); if (!box) return;
+    const s = await api('/api/admin/work-queue/summary');
+    box.innerHTML = WQ_DEPTS.map(([k, l]) => {
+      const c = s.counts[k] || {};
+      return `<div class="st"><span>${l}</span><b>${(c.new || 0) + (c.missed || 0) + (c.contact_today || 0)}</b><small>need attention · ${(c.today || 0) + (c.overdue || 0)} due or overdue</small></div>`;
+    }).join('');
+  }
+  const wqRefresh = () => wqRender().catch(err => toast(err.message, true));
+  $('#wqSearch').addEventListener('input', wqRefresh);
+  $('#wqPriority').addEventListener('change', wqRefresh);
 
   $('#wqDepts').addEventListener('click', e => {
     const b = e.target.closest('[data-wq-dept]'); if (!b) return;
