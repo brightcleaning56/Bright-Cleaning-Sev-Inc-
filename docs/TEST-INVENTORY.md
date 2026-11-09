@@ -1,6 +1,13 @@
 # Automated test inventory
 
-**174 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**225 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+
+## admin-phase2b.test.js (5)
+- the window is twelve consecutive UTC months ending at the as-of month
+- analytics count stored records by month, show zeros honestly, and exclude the platform company
+- analytics report sources with their last success and last error, never invented numbers
+- the action queue lists only items that need a decision, oldest first
+- over HTTP: the admin pages are permission-gated
 
 ## admin-phase3.test.js (5)
 - phase 3 permission matrix: every new route × every platform role; company users always denied
@@ -15,6 +22,24 @@
 - data sources: unreviewed terms cannot run; resume → retry pulls real records → import history → resync archives
 - workflow 13 (partial): AI limits can only lower the plan allowance, and the analyzer enforces them; cost/accuracy stay unavailable
 - MFA: enroll with a real code; sign-in and step-up need it; wrong and reused codes refused; reset signs the user out
+
+## admin-phase5.test.js (7)
+- incidents open with a severity and move only along allowed steps, each step recorded
+- an export needs the dataset permission and a reason; a support agent cannot export the audit log
+- downloads need the creator, the right token, and a live export; expired ones are refused
+- CSV cells are escaped and spreadsheet formulas are neutralised
+- the health center labels what is not connected or not measured instead of calling it healthy
+- jobs overview reports counts and the last backup, or says none has run
+- over HTTP: export creation and download are permission-gated end to end
+
+## admin-support.test.js (7)
+- a case needs a real company, a subject of 5+ characters, and a known priority
+- internal notes never reach the company; customer notes do
+- a company cannot open another company’s case
+- status moves follow the transition rules and need a reason
+- every change is audited with actor, target and outcome
+- the list filters by status and the detail shows history
+- over HTTP: only support staff can manage cases; a company sees only its own, customer-visible view
 
 ## admin.test.js (8)
 - permission matrix: every admin route × every platform role, plus company users; deny by default, denials audited
@@ -33,6 +58,11 @@
 - AI analyzer: only printed areas survive, every item keeps its sheet, starts unverified, can be confirmed
 - AI analyzer: no access to plan rooms you are not invited to; daily limit; bad model output handled
 - accuracy scoring: recall, exact printed areas, and invented areas counted against the model
+
+## audit-security.test.js (3)
+- a spoofed X-Forwarded-For cannot reset the sign-in rate limit when no proxy is trusted
+- behind a trusted proxy, X-Forwarded-For identifies the real client
+- Postmark webhooks accept only HTTP Basic credentials; the secret is not accepted in the URL
 
 ## autopilot.test.js (8)
 - full cycle in dry-run: collect → qualify → estimate → draft → approve → preview, never marked sent
@@ -158,6 +188,19 @@
 - one server saving the same record many times in a row never conflicts with itself; stale deletes are refused
 - a large save (2,000 records with long ids) succeeds and every change reaches the other server
 
+## notifications.test.js (5)
+- defaults are immediate with a cap of 3 emails a day, and out-of-range values are clamped
+- a daily digest sends at most one batch per 24 hours; immediate mode sends each batch
+- the daily cap stops emails once reached, and resets the next day
+- over HTTP: only a company owner can read or change the setting, and bad values are refused
+- every match states the trades it shares and the territory, in plain language
+
+## plan-comparison.test.js (4)
+- each subscriber plan is described in plain terms that match its real limits
+- the free trial and the custom enterprise plan are described honestly
+- internal and free-tier plans never appear in the public comparison
+- over HTTP the comparison is public and needs no sign-in
+
 ## planroom-national.test.js (7)
 - text is extracted from real PDFs on the server
 - drawing sets → sheets → revisions, linked to the project; addendum becomes the current revision
@@ -205,12 +248,26 @@
 - AI credits come from the plan (never above the platform cap); Free has none
 - coverage states the document situation explicitly: uploaded (with revision), intentionally none, or missing — plus blockers
 
+## role-flows.test.js (4)
+- subcontractor: signs up, confirms, signs in, and is invited to a matching request only
+- service provider: signs up with services, confirms, and is invited to cleaning work from an owner
+- general contractor and owner: each sees only their own requests and can post
+- a construction manager posting for an owner must show the owner authorization and see it reviewed
+
+## roles.test.js (3)
+- a subcontractor signs up with the trade keys that invitations match on
+- a service provider signs up with services and is matched to cleaning work
+- a general contractor or owner signs up with a valid buyer type only
+
 ## round3.test.js (5)
 - credentials: expired insurance pauses all bidding; adding a current certificate resumes it
 - credentials: proposals say "on file" until independently verified; verification needs evidence
 - e-signature: award records signer, consent, IP and document hash; tampering is detected
 - digest: approvals, gaps, expiring insurance; sent once per week; platform owner also sees gates
 - store change tracking marks every write path, including cross-tenant suppression
+
+## schema-fresh.test.js (1)
+- the store initializes on an empty database and the phases table has its seq column
 
 ## sql-reads.test.js (1)
 - SQL search returns exactly the in-memory results: every filter, sort, page, both grouping modes
@@ -220,6 +277,20 @@
 - estimate math checked by hand; quantity edits are flagged as adjusted; validation
 - rate-card lines price from approved cleaning rates; unapproved cards cannot price
 - submit as bid: amount = estimate total, bid lists quantities with sources; locked after submission
+
+## website.test.js (12)
+- the homepage is the public website; the workspace stays at /app and /login
+- every public product page is served, with its own title and the shared styles
+- website pages respect the content policy: no inline scripts or event handlers
+- every internal link on the website leads to a page that exists
+- the workspace sign-in links and emailed deep links point at /app, not the homepage
+- the public contact form stores a valid inquiry and rejects an invalid one
+- inquiries are visible only to Super Admin staff with the support permission
+- the contact form is wired to the public inquiry route
+- the UI screen gallery is served and links to all public screens
+- the content policy forbids inline styles and scripts on every served page
+- no public page or app script carries an inline style attribute or a <style> block
+- Get Started leads to the role chooser, which offers all four roles
 
 ## workspace.test.js (3)
 - a permit shows bid packages and drawings at the same site only to invited companies

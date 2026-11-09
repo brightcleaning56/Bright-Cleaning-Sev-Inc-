@@ -1076,7 +1076,7 @@ async function buyerView() {
   if (!TRADES_LIST.length) TRADES_LIST = await (await fetch('/api/trades')).json().catch(() => []);
   const verified = me.org.status === 'active';
   const myRequests = await api('GET', '/api/requests').catch(() => []);
-  const steps = [['Confirm your email', verified, null], ['Add your company details', !!(me.org.legal && Object.keys(me.org.legal).length), null], ['Post your first request', myRequests.length > 0, '#rf'], ['Invite contractors to a package', myRequests.some(r => (r.invited || 0) > 0), '#rf']];
+  const steps = [['Confirm your email', verified, null], ['Add your company details', !!(me.org.legal && Object.keys(me.org.legal).length), null], ['Company verified to publish', me.org.publisher?.status === 'verified', '#pubc'], ['Post your first request', myRequests.length > 0, '#rf'], ['Invite contractors to a package', myRequests.some(r => (r.invited || 0) > 0), '#rf']];
   $('#app').innerHTML = `<div class="wrap"><header><h1>BUILDINTEL</h1><span class="who">${esc(me.org.name)} · ${esc(me.user.email)} <button id="lo">Sign out</button></span></header>
   ${roleBannerHtml(me.org, steps)}
   ${verified ? '' : '<div class="empty x-49f14f8f" >Confirm your email to post requests. Check your inbox for the link.</div>'}
@@ -1087,7 +1087,7 @@ async function buyerView() {
    <input id="t" placeholder="Project title" required><input id="a" placeholder="Street address" required><input id="ci" placeholder="City" required><input id="st" placeholder="State" maxlength="2" required>
    <select id="pt">${['office','retail','warehouse','industrial','multifamily','medical','education','hospitality','restaurant','institutional','mixed_use','other_commercial'].map(x=>`<option>${x}</option>`).join('')}</select>
    <label class="x-bbe2ad4b" >Bids due<input id="dd" type="date" required></label>
-   <input id="docs" placeholder="Link to plans & specs (optional)"></div>
+   <input id="docs" placeholder="Link to plans & specs (optional)">${me.org.buyerKind === 'construction_manager' ? '<input id="authev" placeholder="Owner authorization: letter or contract reference (required when you post for an owner)">' : ''}</div>
    <div class="x-d461c96d" ><input id="pjq" placeholder="Link to an existing BUILDINTEL project (optional): type 3+ letters of the name or address, after the state" autocomplete="off"><input type="hidden" id="pjid">
      <div id="pjres" class="panel x-ac51a92a" ></div><small class="x-6f28f390" id="pjsel" ></small></div>
    <textarea class="x-3de47ccc" id="ds" rows="3" placeholder="Scope / notes for bidders" ></textarea>
@@ -1106,7 +1106,7 @@ async function buyerView() {
     const trades = [...document.querySelectorAll('input[name=tr]:checked')].map(x => x.value);
     const projectId = $('#pjid').value || undefined;
     try { const r = await api('POST', '/api/requests', {title: $('#t').value, address: $('#a').value, city: $('#ci').value, state: $('#st').value, projectType: $('#pt').value, dueDate: $('#dd').value,
-      description: $('#ds').value, documentsUrl: $('#docs').value || undefined, trades, services: $('#sv').value ? [$('#sv').value] : undefined,
+      description: $('#ds').value, documentsUrl: $('#docs').value || undefined, authorizationEvidence: $('#authev')?.value || undefined, trades, services: $('#sv').value ? [$('#sv').value] : undefined,
       squareFeet: Number($('#sf2').value) || undefined, frequencyPerMonth: Number($('#fq').value) || undefined, projectId});
       $('#re').style.color = 'var(--pass)'; $('#re').textContent = `Posted. ${r.invited} matching contractor(s) invited so far; more are invited as they join.`; setTimeout(render, 2500); }
     catch (e) { $('#re').textContent = e.message; } };
