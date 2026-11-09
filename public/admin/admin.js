@@ -267,7 +267,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['website', 'overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['website', 'overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
   function go(view, replace) {
     if (view === 'customer') view = 'customers';
     if (!VIEWS.includes(view)) view = 'overview';
@@ -295,6 +295,7 @@
   async function load(view) {
     try {
       if (view === 'overview') await loadOverview();
+      if (view === 'workqueue') await loadWorkQueue();
       if (view === 'leads') await loadLeads();
       if (view === 'customers') await loadCustomers();
       if (view === 'proposals') await loadEstimates();
@@ -2524,6 +2525,139 @@
   }
 
   // ---------- Email Center ----------
+  // ---------- Today's work: one daily queue across emails, calls, leads and tasks ----------
+  const WQ_DEPTS = [['emails', 'Emails'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks']];
+  const WQ_BUCKETS = {
+    emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
+    calls: [['new', 'New calls'], ['missed', 'Missed calls'], ['today', 'Callbacks today'], ['overdue', 'Overdue'], ['waiting', 'Waiting'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All calls']],
+    leads: [['new', 'New, no next step'], ['today', 'Follow-ups today'], ['overdue', 'Overdue'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['closed', 'Lost or converted'], ['all', 'All leads']],
+    tasks: [['new', 'No due date'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All tasks']]
+  };
+  const wq = { dept: 'emails', bucket: 'new', owner: '', counts: null, users: null };
+  const wqIsDue = b => b === 'today' || b === 'overdue';
+
+  async function wqLoadUsers() {
+    if (wq.users) return wq.users;
+    try { const j = await api('/api/admin/users'); wq.users = (j.users || []).map(u => u.email).filter(Boolean); }
+    catch { wq.users = []; }
+    $('#wqOwners').innerHTML = wq.users.map(e => `<option value="${esc(e)}"></option>`).join('');
+    $('#wqOwnerFilter').innerHTML = '<option value="">Everyone</option><option value="unassigned">Unassigned</option>' + wq.users.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
+    $('#wqOwnerFilter').value = wq.owner;
+    return wq.users;
+  }
+
+  function wqTabs() {
+    const c = wq.counts || {};
+    $('#wqDepts').innerHTML = WQ_DEPTS.map(([k, l]) => `<button type="button" role="tab" aria-selected="${wq.dept === k}" class="wqtab ${wq.dept === k ? 'on' : ''}" data-wq-dept="${k}">${l}${c[k] ? ` <span>${c[k].all || 0}</span>` : ''}</button>`).join('');
+    $('#wqBuckets').innerHTML = WQ_BUCKETS[wq.dept].map(([k, l]) => `<button type="button" class="wqchip ${wq.bucket === k ? 'on' : ''}" data-wq-bucket="${k}">${l}${c[wq.dept] && c[wq.dept][k] !== undefined ? ` · ${c[wq.dept][k]}` : ''}</button>`).join('');
+  }
+
+  function wqKpis(counts) {
+    $('#wqKpis').innerHTML = WQ_DEPTS.map(([k, l]) => {
+      const c = counts[k] || {};
+      return `<div class="st"><span>${l}: needs attention</span><b>${(c.new || 0) + (c.missed || 0)}</b><small>${c.today || 0} due today · ${c.overdue || 0} overdue · ${c.waiting || 0} waiting · ${c.scheduled || 0} scheduled</small></div>`;
+    }).join('');
+  }
+
+  function wqRow(it) {
+    const id = it.id, d = it.dept;
+    const dueText = it.due ? `<small>${wqIsDue(it.bucket) || it.bucket === 'scheduled' ? 'Due' : 'Date'} ${esc(it.due)}</small>` : '';
+    const when = `<td>${esc(fmtWhen(it.when))}${dueText ? '<br>' + dueText : ''}<br><small class="muted">${esc(WQ_LABEL_TEXT[it.bucket] || it.bucket)}</small></td>`;
+    const owner = `<td><div class="wqrow-act"><input list="wqOwners" data-owner-for="${id}" data-dept="${d}" value="${esc(it.assigned_to || '')}" placeholder="Unassigned" aria-label="Owner"><button class="btn ghost" type="button" data-wq-act="assign" data-wq-dept="${d}" data-id="${id}">Save</button></div></td>`;
+    const who = `<td>${esc(it.who || '')}</td><td>${esc(it.title || '')}${it.note ? `<br><small class="muted">${esc(String(it.note).slice(0, 160))}</small>` : ''}</td>`;
+    const dateIn = `<input type="date" data-date-for="${id}" aria-label="Date">`;
+    const btn = (act, label, cls = 'ghost') => `<button class="btn ${cls}" type="button" data-wq-act="${act}" data-wq-dept="${d}" data-id="${id}">${label}</button>`;
+    let next = '';
+    if (d === 'emails') {
+      next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting for reply')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
+        <div class="wqrow-act"><input type="datetime-local" data-until-for="${id}" aria-label="Snooze until">${btn('snooze', 'Snooze')}</div>`;
+    } else if (d === 'calls') {
+      next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
+    } else if (d === 'leads') {
+      next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
+    } else {
+      next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div>`;
+    }
+    return `<tr>${when}${who}${owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
+  }
+  const WQ_LABEL_TEXT = { new: 'Needs attention', missed: 'Missed', today: 'Today', overdue: 'Overdue', waiting: 'Waiting', scheduled: 'Scheduled', completed: 'Completed', closed: 'Closed' };
+
+  async function wqRender() {
+    wqTabs();
+    const qs = `dept=${wq.dept}&bucket=${wq.bucket}` + (wq.owner ? `&assigned_to=${encodeURIComponent(wq.owner)}` : '');
+    const j = await api('/api/admin/work-queue?' + qs);
+    $('#wqRows').innerHTML = j.items.length ? j.items.map(wqRow).join('') : '<tr><td colspan="5" class="muted">Nothing here right now.</td></tr>';
+    $('#wqCount').textContent = `${j.items.length} item${j.items.length === 1 ? '' : 's'}${j.items.length === 500 ? ' (first 500 shown)' : ''}`;
+  }
+
+  async function loadWorkQueue() {
+    await wqLoadUsers();
+    const s = await api('/api/admin/work-queue/summary');
+    wq.counts = s.counts;
+    const dueNow = WQ_DEPTS.reduce((n, [k]) => n + (s.counts[k].today || 0) + (s.counts[k].overdue || 0), 0);
+    const nav = $('#navToday'); if (nav) { nav.hidden = !dueNow; nav.textContent = String(dueNow); }
+    $('#wqDate').textContent = `Business day ${s.today} · ${s.timezone}`;
+    wqKpis(s.counts);
+    await wqRender();
+  }
+
+  async function wqAct(btn) {
+    const act = btn.dataset.wqAct, d = btn.dataset.wqDept, id = btn.dataset.id;
+    const date = (document.querySelector(`[data-date-for="${id}"]`) || {}).value || '';
+    const ownerEl = document.querySelector(`[data-owner-for="${id}"]`);
+    const owner = ownerEl ? ownerEl.value.trim() : '';
+    const untilRaw = (document.querySelector(`[data-until-for="${id}"]`) || {}).value || '';
+    if (act === 'schedule' && !date) return toast('Choose a date first.', true);
+    if (act === 'snooze' && !untilRaw) return toast('Choose when to bring it back.', true);
+    let method = 'POST', url, json;
+    if (d === 'emails') {
+      url = `/api/admin/inbox/${id}/state`;
+      json = act === 'schedule' ? { action: 'schedule', date } : act === 'snooze' ? { action: 'snooze', until: new Date(untilRaw).toISOString() } : act === 'assign' ? { action: 'assign', assigned_to: owner } : { action: act };
+    } else if (d === 'calls') {
+      url = `/api/admin/calls/${id}/work`;
+      json = act === 'schedule' ? { action: 'schedule', date } : act === 'assign' ? { action: 'assign', assigned_to: owner } : { action: act };
+    } else if (d === 'leads') {
+      if (act === 'clear') { method = 'DELETE'; url = `/api/admin/leads/${id}/follow-up`; }
+      else if (act === 'schedule') { url = `/api/admin/leads/${id}/follow-up`; json = { date, note: 'Next step from Today’s work' }; }
+      else { url = `/api/admin/leads/${id}/assign`; json = { assigned_to: owner }; }
+    } else {
+      url = `/api/admin/tasks/${id}/work`;
+      json = act === 'schedule' ? { due_date: date } : { assigned_to: owner };
+    }
+    await api(url, { method, json });
+    toast(act === 'schedule' ? 'Scheduled' : act === 'assign' ? 'Owner saved' : 'Saved');
+    await loadWorkQueue();
+  }
+
+  async function openCloseout() {
+    const r = await api('/api/admin/closeout');
+    const rows = [['New leads received', r.new_leads_received], ['Calls handled', r.calls_handled], ['Emails handled', r.emails_handled], ['Follow-ups completed', r.follow_ups_completed], ['Tasks completed', r.tasks_completed], ['Activities rescheduled', r.activities_rescheduled], ['Overdue now', r.overdue_now], ['Awaiting customer', r.awaiting_customer], ['Unassigned open items', r.unassigned_open], ['Needs attention now', r.needs_attention_now]];
+    openDrawer({
+      title: 'End-of-day report', sub: `${r.date} · ${r.timezone}`,
+      body: `<table class="t"><tbody>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</tbody></table>
+        <h3>Needs management attention</h3>${r.exceptions.length ? `<ul>${r.exceptions.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="muted">No exceptions.</p>'}
+        <p class="muted">Rescheduled work is reported as rescheduled, not completed.${r.note ? ' ' + esc(r.note) : ''}</p>`,
+      footer: ''
+    });
+  }
+
+  $('#wqDepts').addEventListener('click', e => {
+    const b = e.target.closest('[data-wq-dept]'); if (!b) return;
+    wq.dept = b.dataset.wqDept; wq.bucket = WQ_BUCKETS[wq.dept][0][0];
+    wqRender().catch(err => toast(err.message, true));
+  });
+  $('#wqBuckets').addEventListener('click', e => {
+    const b = e.target.closest('[data-wq-bucket]'); if (!b) return;
+    wq.bucket = b.dataset.wqBucket;
+    wqRender().catch(err => toast(err.message, true));
+  });
+  $('#wqOwnerFilter').addEventListener('change', e => { wq.owner = e.target.value; wqRender().catch(err => toast(err.message, true)); });
+  $('#wqRows').addEventListener('click', e => {
+    const b = e.target.closest('[data-wq-act]'); if (!b) return;
+    wqAct(b).catch(err => toast(err.message, true));
+  });
+  $('#wqCloseoutBtn').addEventListener('click', () => openCloseout().catch(err => toast(err.message, true)));
+
   const mailState = { emails: [] };
   $('#emailSearch').addEventListener('input', () => renderEmails()); $('#emailStatus').addEventListener('change', () => renderEmails());
   async function loadEmails() {

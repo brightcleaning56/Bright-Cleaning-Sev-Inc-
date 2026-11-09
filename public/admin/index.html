@@ -440,6 +440,15 @@
   #v-settings .pill.amber { background: #fff4d6; color: #9a6700; }
   #v-settings .aiswitch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0 14px; border-bottom: 1px solid var(--line2); margin-bottom: 12px; }
   #v-settings .aiswitch span { font-weight: 700; }
+  #v-workqueue .wqtabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; }
+  #v-workqueue .wqtab, #v-workqueue .wqchip { border: 1px solid var(--line2); background: #fff; border-radius: 999px; padding: 7px 14px; font: inherit; font-weight: 700; color: #2b3b4e; cursor: pointer; }
+  #v-workqueue .wqtab span, #v-workqueue .wqchip { font-variant-numeric: tabular-nums; }
+  #v-workqueue .wqtab.on, #v-workqueue .wqchip.on { background: #1565d8; border-color: #1565d8; color: #fff; }
+  #v-workqueue .wqchips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  #v-workqueue .wqrow-act { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 2px 0; }
+  #v-workqueue .wqrow-act input { border: 1px solid var(--line2); border-radius: 8px; padding: 6px 8px; font: inherit; max-width: 200px; }
+  #v-workqueue td { vertical-align: top; }
+  @media (max-width: 720px) { #v-workqueue .wqrow-act input { max-width: 100%; } }
 </style>
 </head>
 <body class="adminbody">
@@ -460,6 +469,7 @@
     <div class="logo"><span class="logo-mark">B</span><span>BRIGHT CLEAN<small>OPERATIONS</small></span></div>
     <nav id="nav" aria-label="Admin sections">
       <button data-view="overview">Command Center</button>
+      <button data-view="workqueue">Today’s work <span class="count" id="navToday" hidden></span></button>
       <div class="sep"></div>
       <button data-view="leads">Leads <span class="count" id="navNew" hidden></span></button>
       <button data-view="customers">Customers</button>
@@ -522,6 +532,16 @@
       <div class="card" id="ovRenewCard" hidden><h2>Contracts ending in the next 45 days</h2><ul class="attn" id="ovRenew"></ul></div>
     </section>
 
+    <section class="view" id="v-workqueue">
+      <div class="pagehead"><div><h1>Today’s work</h1><p>What needs attention now. Future items wait in Scheduled, handled items move to Completed, and nothing is deleted.</p><p class="muted" id="wqDate"></p></div>
+        <div class="headact"><button class="btn ghost" id="wqCloseoutBtn" type="button">End-of-day report</button></div></div>
+      <div class="kpis small" id="wqKpis"></div>
+      <div class="wqtabs" id="wqDepts" role="tablist" aria-label="Department"></div>
+      <div class="wqchips" id="wqBuckets" aria-label="View"></div>
+      <div class="toolbar"><select id="wqOwnerFilter" aria-label="Owner"><option value="">Everyone</option><option value="unassigned">Unassigned</option></select><span class="muted" id="wqCount"></span></div>
+      <datalist id="wqOwners"></datalist>
+      <div class="tablewrap"><table class="t"><thead><tr><th>When / due</th><th>Item</th><th>Who</th><th>Owner</th><th>Next step</th></tr></thead><tbody id="wqRows"></tbody></table></div>
+    </section>
     <section class="view" id="v-leads">
       <div class="pagehead"><div><h1>Leads</h1><p>Everything that comes in from the website. Click a row to see details, add notes or start a quote.</p></div>
         <button class="btn ghost" id="exportCsv">Export CSV</button></div>

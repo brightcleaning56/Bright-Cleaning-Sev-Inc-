@@ -12,9 +12,9 @@ const ROLES = {
 const ALL_VIEWS = null; // null = every page
 const VIEWS = {
   owner: ALL_VIEWS, manager: ALL_VIEWS, staff: ALL_VIEWS,
-  supervisor: ['overview', 'issues', 'calls', 'customers', 'schedule', 'quality', 'projects', 'documents', 'scopes', 'settings'],
+  supervisor: ['overview', 'workqueue', 'issues', 'calls', 'customers', 'schedule', 'quality', 'projects', 'documents', 'scopes', 'settings'],
   inspector: ['quality', 'schedule', 'customers', 'documents', 'settings'],
-  sales: ['overview', 'leads', 'customers', 'proposals', 'contracts', 'projects', 'calls', 'emails', 'issues', 'documents', 'scopes', 'takeoffs']
+  sales: ['overview', 'workqueue', 'leads', 'customers', 'proposals', 'contracts', 'projects', 'calls', 'emails', 'issues', 'documents', 'scopes', 'takeoffs']
 };
 const HOME = { inspector: 'quality', sales: 'leads' };
 // Supervisor: everything a staff member may do EXCEPT money, sales and system administration.

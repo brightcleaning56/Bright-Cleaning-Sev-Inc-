@@ -44,11 +44,11 @@ async function check(area, name, fn) {
   const $$rows = () => d.querySelectorAll('#slRows tr').length;
   const nav = async v => { d.querySelector(`#nav [data-view="${v}"]`).click(); await sleep(600); };
 
-  await check('Admin UI', 'Signed-in portal loads with all 20 sections', async () => {
+  await check('Admin UI', 'Signed-in portal loads with all 23 sections', async () => {
     const views = [...d.querySelectorAll('.view')].map(v => v.id);
-    assert(!$('#app').hidden && views.length === 22, views.join(',')); return views.join(', ');
+    assert(!$('#app').hidden && views.length === 23, views.join(',')); return views.join(', ');
   });
-  for (const v of ['overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'takeoffs', 'schedule', 'quality', 'documents', 'website', 'reports', 'proposals', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'settings']) {
+  for (const v of ['overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'takeoffs', 'schedule', 'quality', 'documents', 'website', 'reports', 'proposals', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'settings']) {
     await check('Admin UI', `Section "${v}" opens and renders`, async () => {
       await nav(v); const el = $('#v-' + v);
       assert(el.classList.contains('active') && el.textContent.trim().length > 20, 'not active'); return el.querySelector('h1').textContent;
