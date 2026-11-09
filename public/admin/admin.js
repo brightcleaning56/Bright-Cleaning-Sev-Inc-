@@ -1486,6 +1486,7 @@
   function renderRegister(t) {
     const cfg = REG[t];
     regHeader(t);
+    if (t === 'contracts') return renderContractCards();
     const q = ($(`[data-search="${t}"]`).value || '').trim().toLowerCase();
     const st = $(`[data-filter="${t}"]`).value;
     const rows = state[t].filter(r => !st || (t === 'invoices' ? invoiceState(r) === st : r.status === st))
@@ -1501,7 +1502,7 @@
 
   // ---------- Contract workspace: a full page (not a drawer). Sections are tabs over ONE form, so Save keeps every field. ----------
   var CW_TABS = [['overview', 'Overview'], ['parties', 'Parties & contacts'], ['document', 'Contract document'], ['scope', 'Scope & pricing'], ['terms', 'Terms & conditions'], ['schedule', 'Schedule & duration'], ['signatures', 'Signatures'], ['amendments', 'Amendments & versions'], ['activity', 'Activity & audit'], ['related', 'Related records']];
-  var cwTab = 'overview', cwDirty = false, cwPdf = null, cwData = null;
+  var cwTab = 'document', cwDirty = false, cwPdf = null, cwData = null;
   function contractRouteId() { const p = (location.hash || '').slice(1).split('/'); return p[0] === 'contracts' && p[1] ? Number(p[1]) : null; }
   function leaveContract() {
     if (cwDirty && !confirm('You have unsaved changes to this contract. Leave without saving?')) return false;
@@ -1514,17 +1515,51 @@
     showContractRoute();
   }
   // Called after the register loads: shows the register, or the workspace when the URL names a contract.
+  var cwPage = 1, CW_PAGE = 8;
+  // Left column of the Contracts view: status tiles, filter pills, search and the contract cards, with paging.
+  function renderContractCards() {
+    const list = $('#rows-contracts'); if (!list) return;
+    const q = ($('[data-search="contracts"]').value || '').trim().toLowerCase();
+    const st = $('[data-filter="contracts"]').value;
+    const all = (state.contracts || []).filter(r => !st || r.status === st)
+      .filter(r => !q || [r.number, r.title, r.company, r.customer_name, r.email].join(' ').toLowerCase().includes(q));
+    const pages = Math.max(1, Math.ceil(all.length / CW_PAGE));
+    if (cwPage > pages) cwPage = pages;
+    const first = (cwPage - 1) * CW_PAGE, rows = all.slice(first, first + CW_PAGE), sel = contractRouteId();
+    list.innerHTML = rows.length ? rows.map(r => `<div class="cwCard${r.id === sel ? ' on' : ''}" data-rec="contracts:${r.id}" role="button" tabindex="0" aria-label="Open ${esc(r.number)}">
+        <div class="cwCardTop"><small>${esc(r.number)}</small>${badge(r.status)}</div>
+        <b>${esc(r.title || 'Contract')}</b>
+        <span class="muted">${esc(r.company || r.customer_name || '')}</span>
+        <div class="cwCardRow"><span>${money(r.value)}</span>${r.payment_terms ? `<span class="muted">${esc(r.payment_terms)}</span>` : ''}<span class="muted">${esc(r.signature_status || 'Not sent')}</span></div>
+      </div>`).join('') : '<p class="muted emptyrow">No contracts match.</p>';
+    $$('#rows-contracts [data-rec]').forEach(el => {
+      const open = () => openRecord('contracts', Number(el.dataset.rec.split(':')[1]));
+      el.onclick = open;
+      el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+    });
+    const pager = $('#cwPager');
+    if (pager) pager.innerHTML = `<button type="button" class="btn ghost small" id="cwPrev"${cwPage <= 1 ? ' disabled' : ''}>Previous</button><span class="muted">${all.length ? `${first + 1}–${Math.min(first + CW_PAGE, all.length)} of ${all.length}` : '0 contracts'}</span><button type="button" class="btn ghost small" id="cwNext"${cwPage >= pages ? ' disabled' : ''}>Next</button>`;
+    const prev = $('#cwPrev'), next = $('#cwNext');
+    if (prev) prev.onclick = () => { cwPage--; renderContractCards(); };
+    if (next) next.onclick = () => { cwPage++; renderContractCards(); };
+  }
+  // Two-column view on wide screens; on phones the open contract replaces the list.
+  function setContractLayout(open) {
+    const v = $('#v-contracts'); if (v) v.classList.toggle('has-contract', !!open);
+    $('#cwWrap').hidden = !open;
+    renderContractCards();
+  }
   function showContractRoute() {
     const id = contractRouteId();
-    $('#regWrap').hidden = !!id; $('#cwWrap').hidden = !id;
     if (id) return openContract(id);
     cwData = null; cwDirty = false;
     if (cwPdf) { URL.revokeObjectURL(cwPdf); cwPdf = null; }
+    setContractLayout(false);
   }
   async function openContract(id) {
     if (cwData && cwData.contract.id !== id && !leaveContract()) return;
     if (contractRouteId() !== id) history.pushState(null, '', '#contracts/' + id);
-    $('#regWrap').hidden = true; $('#cwWrap').hidden = false;
+    setContractLayout(true);
     let d; try { d = await api('/api/admin/contracts2/' + id); } catch (e) { toast(e.message, true); return backToContracts(); }
     cwData = d; cwDirty = false;
     renderContract();
@@ -1563,7 +1598,8 @@
       ${k.signature_status === 'Declined' ? `<p class="err" style="display:block">Customer declined: ${esc(k.decline_reason || '')}. Edit the contract and send it again.</p>` : ''}
       ${signed ? '<p class="muted cwlock">This contract is signed and locked. Changes need a formal amendment; the signed version is kept.</p>' : ''}
       <nav class="cwtabs" role="tablist" aria-label="Contract sections">${CW_TABS.map(([key, label]) => `<button type="button" role="tab" class="cwtab${cwTab === key ? ' on' : ''}" data-cwtab="${key}" aria-selected="${cwTab === key}">${label}</button>`).join('')}</nav>
-      <form id="kForm" class="cwform">
+      <div class="cwbody">
+      <form id="kForm" class="cwmain">
         <section class="cwpanel" ${panel('overview')}>
           <div class="cwcards">
             <div><small>Contract value</small><b>${money(k.value)}</b></div>
@@ -1618,7 +1654,23 @@
           </ul>
           ${dl ? `<h3>Project documents</h3><ul class="cwlist">${dl}</ul>` : ''}
         </section>
-      </form>`;
+      </form><aside class="cwside">
+        <div class="cwcard"><h3>Contract details</h3><dl class="cwdl">
+          <dt>Contract number</dt><dd>${esc(k.number)}</dd>
+          <dt>Status</dt><dd>${esc(k.status)}</dd>
+          <dt>Contract value</dt><dd>${money(k.value)}</dd>
+          <dt>Payment terms</dt><dd>${esc(k.payment_terms || '—')}</dd>
+          <dt>Start date</dt><dd>${esc(k.start_date || '—')}</dd>
+          <dt>End date</dt><dd>${esc(k.end_date || '—')}</dd>
+          <dt>Auto-renew</dt><dd>${k.auto_renew ? 'Yes' : 'No'}</dd>
+          <dt>Notice days</dt><dd>${esc(k.notice_days ?? 30)}</dd>
+        </dl></div>
+        <div class="cwcard"><h3>Related records</h3><ul class="cwlist">
+          <li>Proposal: ${k.estimate_id ? `<button type="button" class="linklike" data-view-link="proposals">#${esc(k.estimate_id)}</button>` : '<span class="muted">Not linked</span>'}</li>
+          <li>Customer: ${k.customer_id ? `<button type="button" class="linklike" data-view-link="customers">#${esc(k.customer_id)}</button>` : '<span class="muted">Not linked</span>'}</li>
+          <li>Project: ${k.project_id ? `<button type="button" class="linklike" data-view-link="projects">${esc(k.project_name || '#' + k.project_id)}</button>` : '<span class="muted">Not linked</span> <button type="button" class="btn ghost small" data-view-link="projects">Projects</button>'}</li>
+        </ul></div>
+      </aside></div>`;
     // Tabs switch panels without losing what is typed.
     $$('#cwWrap [data-cwtab]').forEach(b => b.onclick = () => {
       cwTab = b.dataset.cwtab;

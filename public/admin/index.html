@@ -477,6 +477,26 @@
 .cwlist li{padding:8px 0;border-bottom:1px solid #eef2f6}
 .cwlink{width:100%;padding:8px;border:1px solid #ccd5df;border-radius:8px}
 @media (max-width:720px){.cwpanel{padding:14px}.cwframe{height:60vh}}
+.cwSplit{display:grid;grid-template-columns:minmax(300px,380px) minmax(0,1fr);gap:18px;align-items:start}
+.cwList{min-width:0}
+#regKpis-contracts{grid-template-columns:repeat(2,minmax(0,1fr))!important;margin-bottom:10px}
+.cwCards{display:grid;gap:10px}
+.cwCard{background:#fff;border:1px solid #e1e8f0;border-radius:12px;padding:12px 14px;cursor:pointer;display:grid;gap:4px}
+.cwCard:hover{border-color:#9bbde0}
+.cwCard.on{border-color:#1a6fc4;box-shadow:0 0 0 2px rgba(26,111,196,.18)}
+.cwCard:focus-visible{outline:2px solid #1a6fc4;outline-offset:2px}
+.cwCardTop{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cwCardRow{display:flex;gap:10px;flex-wrap:wrap;font-size:13px}
+.cwpager{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;font-size:13px}
+.cwbody{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;align-items:start}
+.cwmain{min-width:0}
+.cwside{display:grid;gap:14px}
+.cwcard{background:#fff;border:1px solid #e1e8f0;border-radius:12px;padding:16px}
+.cwcard h3{margin:0 0 10px;font-size:15px}
+.cwpanel{max-width:none}
+.cwframe{height:min(70vh,820px)}
+@media (max-width:1100px){.cwbody{grid-template-columns:1fr}}
+@media (max-width:900px){.cwSplit{grid-template-columns:1fr}#v-contracts.has-contract .cwList{display:none}}
 </style>
 </head>
 <body class="adminbody">
@@ -809,13 +829,16 @@
     </section>
 
     <section class="view" id="v-contracts">
-      <div id="regWrap">
-      <div class="pagehead"><div><h1>Contracts</h1><p>Approved proposals create a draft contract here automatically. Click a contract to edit it.</p></div><button class="btn" data-new="contracts">New contract</button></div>
-      <div class="kpis6" id="regKpis-contracts"></div><div class="segtabs" id="regTabs-contracts" role="tablist"></div>
-      <div class="toolbar"><input type="search" data-search="contracts" placeholder="Search contracts…" aria-label="Search contracts"><select data-filter="contracts" aria-label="Filter by status"></select></div>
-      <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Contract</th><th>Customer</th><th>Term</th><th class="num">Value</th><th>Signature</th><th>Status</th></tr></thead><tbody id="rows-contracts"></tbody></table></div>
+      <div class="pagehead"><div><h1>Contracts</h1><p>Create, manage and track service contracts, signatures, renewals and amendments.</p></div><button class="btn" data-new="contracts">New contract</button></div>
+      <div class="cwSplit">
+        <div class="cwList">
+          <div class="kpis6" id="regKpis-contracts"></div><div class="segtabs" id="regTabs-contracts" role="tablist"></div>
+          <div class="toolbar"><input type="search" data-search="contracts" placeholder="Search contracts…" aria-label="Search contracts"><select data-filter="contracts" aria-label="Filter by status"></select></div>
+          <div id="rows-contracts" class="cwCards"></div>
+          <div class="cwpager" id="cwPager"></div>
+        </div>
+        <div id="cwWrap" hidden></div>
       </div>
-      <div id="cwWrap" hidden></div>
     </section>
 
     <section class="view" id="v-projects">
