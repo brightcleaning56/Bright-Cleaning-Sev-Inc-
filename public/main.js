@@ -850,6 +850,12 @@ const ROLE_TEXT = {
   property_manager: ['Owner workspace', 'Publish projects with trade packages, invite contractors, and compare and award bids.'],
 };
 const OWNER_KINDS = ['owner', 'developer', 'property_manager'];
+// Menu for each subscriber role (keys match the navigation below).
+const SUB_ROLE_NAV = {
+  subcontractor: ['command', 'projects', 'projects:opps', 'invitations', 'invitations:packages', 'invitations:bids', 'planroom', 'planroom:drawing', 'planroom:addenda',
+    'estimates', 'contractors', 'directory', 'tracked', 'searches', 'contracts', 'insurance', 'plan', 'subscription', 'team'],
+  service_provider: ['command', 'projects:opps', 'invitations', 'invitations:bids', 'rates', 'estimates', 'contractors', 'tracked', 'searches', 'contracts', 'insurance', 'plan', 'subscription', 'team'],
+};
 const SEGMENT_TEXT = {
   subcontractor: ['Subcontractor workspace', 'Invitations and projects that match your trades and territory.'],
   service_provider: ['Service provider workspace', 'Cleaning and facility-service bids in your territory. Approved rate cards price matching requests.'],
@@ -1070,7 +1076,7 @@ async function buyerView() {
   if (!TRADES_LIST.length) TRADES_LIST = await (await fetch('/api/trades')).json().catch(() => []);
   const verified = me.org.status === 'active';
   const myRequests = await api('GET', '/api/requests').catch(() => []);
-  const steps = [['Confirm your email', verified, null], ['Add your company details', !!(me.org.legal && Object.keys(me.org.legal).length), null], ['Post your first request', myRequests.length > 0, '#rf']];
+  const steps = [['Confirm your email', verified, null], ['Add your company details', !!(me.org.legal && Object.keys(me.org.legal).length), null], ['Post your first request', myRequests.length > 0, '#rf'], ['Invite contractors to a package', myRequests.some(r => (r.invited || 0) > 0), '#rf']];
   $('#app').innerHTML = `<div class="wrap"><header><h1>BUILDINTEL</h1><span class="who">${esc(me.org.name)} · ${esc(me.user.email)} <button id="lo">Sign out</button></span></header>
   ${roleBannerHtml(me.org, steps)}
   ${verified ? '' : '<div class="empty x-49f14f8f" >Confirm your email to post requests. Check your inbox for the link.</div>'}
@@ -1212,9 +1218,11 @@ async function render() {
     { key: isSub ? 'invitations:bids' : 'pipeline', label: 'Bid Management', icon: 'send' },
     { key: 'contracts', label: 'Awards & Contracts', icon: 'award' },
     { key: 'market:analytics', label: 'Analytics & Forecasting', icon: 'chart' },
-    { group: 'Admin & Settings', icon: 'gear', items: [['subscription', 'Subscription Center'], ['team', 'Team & Permissions'], ['publishers', 'Publisher Review'], ['coverage', 'Geographic Coverage'], ['plan', isSub ? 'Plan & Company Profile' : 'Company Profile'], ['insurance', 'Insurance & Licenses'], ['rates', 'Pricing'], ['opps', 'Autopilot Opportunities'], ['gaps', 'GCs to Add'], ['overview', 'Bid Analytics'], ['readiness', 'Launch Gates'], ['sources', 'Data Sources']] },
+    { group: 'Admin & Settings', icon: 'gear', items: [['subscription', 'Subscription Center'], ['team', 'Team & Permissions'], ['publishers', 'Publisher Review'], ['coverage', 'Geographic Coverage'], ['plan', isSub ? 'Plan & Company Profile' : 'Company Profile'], ['insurance', 'Insurance & Licenses'], ['rates', me.org?.segment === 'service_provider' ? 'Rate cards' : 'Pricing'], ['opps', 'Autopilot Opportunities'], ['gaps', 'GCs to Add'], ['overview', 'Bid Analytics'], ['readiness', 'Launch Gates'], ['sources', 'Data Sources']] },
   ];
-  const ok = k => avail.has(k.split(':')[0]);
+  // Each subscriber role sees its own menu. Keys not listed are not shown in that role's navigation (they stay reachable from the banners).
+  const roleSet = me.org?.kind === 'subscriber' && SUB_ROLE_NAV[me.org.segment] ? new Set(SUB_ROLE_NAV[me.org.segment]) : null;
+  const ok = k => avail.has(k.split(':')[0]) && (!roleSet || roleSet.has(k));
   const sel = k => k === navKey;
   const navHtml = NAV.map(n => n.key ? (ok(n.key) ? `<button class="solo" role="tab" data-t="${n.key}" aria-selected="${sel(n.key)}">${ICON[n.icon]}${n.label}</button>` : '')
     : (it => it.length ? `<div class="grp ${CLOSED.has(n.group) ? 'closed' : ''}" data-grp="${esc(n.group)}"><span>${ICON[n.icon]}${n.group}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="sub">` + it.map(([k, l]) => `<button role="tab" data-t="${k}" aria-selected="${sel(k)}">${l}</button>`).join('') + '</div>' : '')(n.items.filter(([k]) => ok(k)))).join('');

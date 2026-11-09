@@ -40,5 +40,18 @@ with sync_playwright() as p:
             if d.locator('.buyer-tiles > div').count() != 6: problems.append('owner: summary tiles missing')
             if 'Your projects' not in d.inner_text('body'): problems.append('owner: projects heading missing')
         ctx.close()
+    # Each subscriber role has its own menu
+    menus = {}
+    for email in ['trade@elec.test', 'svc@clean.test', 'sub@em.test']:
+        ctx, d = fresh(b, '/app', '#e')
+        d.fill('#e', email); d.fill('#p', 'demo password 123'); d.click('button.primary'); d.wait_for_timeout(2500)
+        menus[email] = set(t.strip() for t in d.locator('aside.side a, aside.side button').all_inner_texts() if t.strip())
+        ctx.close()
+    sub, svc, full = menus['trade@elec.test'], menus['svc@clean.test'], menus['sub@em.test']
+    if 'Market Activity' in sub or 'AI Floor Plan Analyzer' in sub: problems.append('subcontractor menu shows items outside its role')
+    if 'Plan Room' in svc or 'Drawing Sets' in svc: problems.append('service provider menu shows plan room')
+    if 'Rate cards' not in svc: problems.append('service provider menu lacks Rate cards')
+    if 'Awards & Contracts' not in sub or 'Awards & Contracts' not in svc: problems.append('contracts missing from a role menu')
+    if not (len(sub) < len(full) and len(svc) < len(full)): problems.append('role menus are not narrower than the full menu')
     b.close()
 print('PROBLEMS: ' + repr(problems))
