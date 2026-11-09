@@ -658,6 +658,55 @@
 
   // Flag email addresses the email provider refused (bounced / spam complaint / suppressed).
   function markBounced() { const spans = $$('#drawerRoot [data-bounce]'); if (!spans.length) return; api('/api/admin/email-undeliverable').then(r => { const bad = new Map((r.addresses || []).map(a => [a.address, a])); spans.forEach(sp => { const a = bad.get(sp.dataset.bounce); if (a) { sp.innerHTML = '<span class="pill" style="background:#c0392b;color:#fff" title="' + esc(a.reason || '') + '">⚠ Email bounced — check the spelling</span>'; } }); }).catch(() => {}); }
+  // ---------- Conversation: sent mail and replies for a set of addresses ----------
+  async function loadConversation(targetId, addresses) {
+    const box = document.getElementById(targetId);
+    if (!box) return;
+    const list = [...new Set((addresses || []).map(x => String(x || '').trim()).filter(Boolean))];
+    if (!list.length) { box.innerHTML = '<p class="muted">Add an email address to see the conversation.</p>'; return; }
+    try {
+      const j = await api('/api/admin/conversation?addresses=' + encodeURIComponent(list.join(',')));
+      const note = j.inbox_connected ? '' : '<p class="muted">New replies appear here only while the Outlook inbox is connected (Settings → Integrations).</p>';
+      box.innerHTML = note + (j.messages.length
+        ? '<table class="t"><thead><tr><th>When</th><th></th><th>Who</th><th>Subject</th></tr></thead><tbody>' + j.messages.map(m => `<tr class="click" data-conv="${m.kind}:${m.id}"><td>${esc(fmtWhen(m.at))}</td><td>${m.kind === 'sent' ? '<span class="badge teal">Sent</span>' : '<span class="badge green">Reply</span>'}${m.status === 'failed' ? ' <span class="badge red">Failed</span>' : ''}</td><td>${esc(m.who || '')}</td><td>${esc(m.subject || '')}</td></tr>`).join('') + '</tbody></table>'
+        : '<p class="muted">No emails with this address yet.</p>');
+      box.querySelectorAll('[data-conv]').forEach(row => row.addEventListener('click', () => {
+        const [kind, id] = row.dataset.conv.split(':');
+        const m = j.messages.find(x => x.kind === kind && String(x.id) === id);
+        if (m) openConvItem(m);
+      }));
+    } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
+  }
+  function openConvItem(m) {
+    const attachments = m.kind === 'reply' ? '<h3>Attachments</h3><div id="convAtt"><p class="muted">Loading…</p></div>' : '';
+    openDrawer({
+      title: m.subject || '(no subject)',
+      sub: (m.kind === 'sent' ? 'To ' : 'From ') + (m.who || '') + ' · ' + fmtWhen(m.at) + (m.status === 'failed' ? ' · failed' + (m.error ? ': ' + m.error : '') : ''),
+      body: `<pre style="white-space:pre-wrap;font:inherit">${esc(m.text || '')}</pre>${attachments}`,
+      footer: ''
+    });
+    if (m.kind === 'reply') loadAttachments(m.id, 'convAtt');
+  }
+  async function loadAttachments(inboxId, targetId) {
+    const box = document.getElementById(targetId);
+    if (!box) return;
+    try {
+      const att = await api(`/api/admin/inbox/${inboxId}/attachments`);
+      box.innerHTML = att.attachments.length
+        ? att.attachments.map(x => `<p><button class="btn ghost" type="button" data-att="${esc(x.id)}" data-att-name="${esc(x.name)}">${esc(x.name)} · ${Math.max(1, Math.round(x.size / 1024))} KB</button></p>`).join('')
+        : '<p class="muted">No attachments.</p>';
+      box.addEventListener('click', async e => {
+        const b = e.target.closest('[data-att]'); if (!b) return;
+        try {
+          const r = await fetch(`/api/admin/inbox/${inboxId}/attachments/${encodeURIComponent(b.dataset.att)}`, { headers: { Authorization: 'Bearer ' + token } });
+          if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Download failed'); }
+          const url = URL.createObjectURL(await r.blob());
+          const link = document.createElement('a'); link.href = url; link.download = b.dataset.attName || 'attachment'; document.body.appendChild(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 30000);
+        } catch (err) { toast(err.message, true); }
+      });
+    } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
+  }
   async function openLead(id) {
     let l;
     try { l = (await api('/api/admin/leads/' + id)).lead; } catch (err) { return toast(err.message, true); }
@@ -672,6 +721,7 @@
     const files = (l.files || []);
     let intake = null; try { intake = l.intake ? JSON.parse(l.intake) : null; } catch { intake = null; }
     const flagBox = intake && intake.flags && intake.flags.length ? `<div class="formsection">Needed before pricing</div><ul class="needs">${intake.flags.map(f => `<li>${esc(f.text)}</li>`).join('')}</ul>` : (intake ? '<div class="formsection">Needed before pricing</div><p class="muted">Nothing flagged. The answers cover what is needed to price this service.</p>' : '');
+    setTimeout(() => { if (l.email) loadConversation('leadConv', [l.email]); }, 0);
     openDrawer({
       title: l.contact_name || 'Lead #' + l.id,
       sub: `${KIND_LABEL[l.kind] || 'Lead'} #${l.id}${l.company ? ' · ' + l.company : ''}`,
@@ -679,6 +729,7 @@
         <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
         ${flagBox}
         <div id="leadAI"></div>
+        ${l.email ? '<div class="formsection">Conversation</div><div id="leadConv"><p class="muted">Loading…</p></div>' : ''}
         ${l.details ? `<div class="formsection">Details</div><div class="pre">${esc(l.details)}</div>` : ''}
         ${files.length ? `<div class="formsection">Attachments</div><div class="related"><ul>${files.map((f, i) => `<li><button class="linklike" data-file="${i}">${esc(f.name)}</button></li>`).join('')}</ul></div>` : ''}
         <div class="formsection">Follow-up</div>
@@ -836,9 +887,9 @@
       B.innerHTML = `<div class="card"><h2>Calls</h2><button class="btn" id="cpLog">Log call</button>${rowsOr(d.calls.map(x => `<tr><td>${esc(fmtWhen(x.created_at))}<small>${esc(x.direction)}</small></td><td>${esc(x.contact_name || x.phone || '—')}</td><td>${badge(x.purpose)}</td><td>${esc(x.outcome)}</td><td>${esc(x.summary || '')}</td></tr>`), ['When', 'Caller', 'Purpose', 'Outcome', 'Summary'], 'No calls recorded for this customer.')}</div>`;
       $('#cpLog').onclick = () => custAction('call');
     } else if (t === 'emails') {
-      B.innerHTML = `<div class="card"><h2>Emails</h2><p class="muted">Every email the system sent to this customer's contacts. Replies from customers arrive in Outlook until the Microsoft 365 inbox is connected.</p><button class="btn" id="cpMail">Send email</button>${rowsOr(d.emails.map(m => `<tr class="click" data-ml="${m.id}"><td>${esc(fmtWhen(m.created_at))}</td><td>${esc(m.to_addr)}</td><td>${esc(m.subject)}</td><td>${m.status === 'sent' ? '<span class="badge green">Sent</span>' : '<span class="badge red">Failed</span>'}</td></tr>`), ['When', 'To', 'Subject', 'Status'], 'No emails yet.')}</div>`;
+      B.innerHTML = `<div class="card"><h2>Emails</h2><p class="muted">Emails we sent to this customer and the replies that came back.</p><button class="btn" id="cpMail">Send email</button><div id="cpConv"><p class="muted">Loading…</p></div></div>`;
       $('#cpMail').onclick = () => custAction('email');
-      $$('[data-ml]').forEach(r => r.onclick = () => { const m = d.emails.find(x => x.id === Number(r.dataset.ml)); openDrawer({ title: m.subject, sub: `To ${esc(m.to_addr)} · ${esc(fmtWhen(m.created_at))}`, body: `<pre style="white-space:pre-wrap;font:inherit">${esc(m.body || '')}</pre>`, footer: '' }); });
+      loadConversation('cpConv', [d.customer.email, ...(d.contacts || []).map(c => c.email)]);
     } else if (t === 'issues') {
       B.innerHTML = `<div class="card"><h2>Issues &amp; complaints</h2><button class="btn" id="cpIss">Create issue</button>${rowsOr(d.issues.map(i => `<tr class="click" data-iss="${i.id}"><td><b>${esc(i.title)}</b><small>${esc(i.type)} · ${esc(i.category || '')}</small></td><td>${badge(i.priority)}</td><td>${badge(i.status)}</td><td>${esc(i.assigned_to || 'Unassigned')}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td></tr>`), ['Item', 'Priority', 'Status', 'Assigned', 'Due'], 'No issues for this customer.')}</div>`;
       $('#cpIss').onclick = () => custAction('issue');

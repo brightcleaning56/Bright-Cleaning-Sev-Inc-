@@ -315,6 +315,28 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     res.json({ ok: true });
   });
 
+  // Conversation with a set of addresses (a customer's contacts, or a lead's email): mail we sent, and replies we received.
+  // Replies only arrive when the Outlook inbox is connected; the response says so.
+  function conversationFor(addresses) {
+    const list = [...new Set(addresses.map(a => String(a || '').trim().toLowerCase()).filter(a => a.includes('@')))];
+    if (!list.length) return { addresses: [], inbox_connected: inboxConnected(), messages: [] };
+    const q = list.map(() => '?').join(',');
+    const sent = db.prepare(`SELECT id, to_addr, subject, body, status, error, created_at AS at FROM email_log WHERE LOWER(to_addr) IN (${q}) ORDER BY created_at DESC LIMIT 500`).all(...list)
+      .map(r => ({ kind: 'sent', id: r.id, who: r.to_addr, subject: r.subject, text: r.body, status: r.status, error: r.error, at: r.at }));
+    const received = db.prepare(`SELECT id, from_addr, from_name, subject, preview, received_at AS at FROM inbox_messages WHERE LOWER(from_addr) IN (${q}) ORDER BY received_at DESC LIMIT 500`).all(...list)
+      .map(r => ({ kind: 'reply', id: r.id, who: r.from_name || r.from_addr, subject: r.subject, text: r.preview, at: r.at }));
+    return { addresses: list, inbox_connected: inboxConnected(), messages: [...sent, ...received].sort((a, b) => String(b.at).localeCompare(String(a.at))) };
+  }
+  function inboxConnected() {
+    const r = db.prepare("SELECT value FROM settings WHERE key='m365_token'").get();
+    return !!(r && r.value);
+  }
+  app.get('/api/admin/conversation', auth, (req, res) => {
+    const addresses = String(req.query.addresses || '').split(',').slice(0, 20);
+    res.json(conversationFor(addresses));
+  });
+  module.exports.conversationFor = conversationFor;
+
   // ---- End-of-day closeout for one business day (business time zone, not UTC) ----
   app.get('/api/admin/closeout', auth, (req, res) => {
     const d = String(req.query.date || today());

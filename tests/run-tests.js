@@ -3295,6 +3295,41 @@ async function startServer(env, dataDir) {
     return 'attachments refused cleanly when Outlook is not connected; unknown emails 404; signed-out refused; the Thread view lists and downloads them';
   });
 
+  await check('Conversation', 'Conversation: mail we sent and replies from the same address appear together, newest first; a lead or customer shows them; signed-out refused; the Outlook-connection note is accurate', async () => {
+    const addr = 'conv.person@example.com';
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,created_at) VALUES(?,?,?,?,?)").run(addr, 'Conv quote', 'Here is the quote', 'sent', new Date(Date.now() - 7200000).toISOString());
+    pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES('wq-conv-reply',?,'Conv Person','Re: Conv quote','Thanks, looks good',?,?)").run(addr.toUpperCase(), new Date(Date.now() - 3600000).toISOString(), new Date().toISOString());
+    pdb.close();
+    const j = (await req('GET', `/api/admin/conversation?addresses=${encodeURIComponent(addr)}`, { token: T })).data;
+    const kinds = (j.messages || []).map(m => m.kind);
+    const newestFirst = (j.messages || []).every((m, i, a) => i === 0 || String(a[i - 1].at) >= String(m.at));
+    const none = (await req('GET', '/api/admin/conversation?addresses=', { token: T })).data;
+    const signedOut = await req('GET', `/api/admin/conversation?addresses=${encodeURIComponent(addr)}`);
+    const chk = { bothKinds: kinds.includes('sent') && kinds.includes('reply'), replyFirst: j.messages && j.messages[0].kind === 'reply', newestFirst, emptyAddresses: Array.isArray(none.messages) && none.messages.length === 0, signedOutRefused: signedOut.status === 401, notConnectedNote: j.inbox_connected === false };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, kinds }));
+    return 'conversation shows sent mail and replies together, newest first; the Outlook note is accurate';
+  });
+
+  await check('Portal', 'Portal Messages: a customer sees the emails we sent them and their replies (not other customers’ mail); signed-out refused', async () => {
+    const addr = 'portal.mail.person@example.com';
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,created_at) VALUES(?,?,?,?,?)").run(addr, 'Portal visible quote', 'Visible to them', 'sent', new Date().toISOString());
+    pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,created_at) VALUES('someone.else@example.com','Not theirs','Private',?,?)").run('sent', new Date().toISOString());
+    pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES('wq-portal-reply',?,'Portal Person','Their reply','Yes please',?,?)").run(addr, new Date().toISOString(), new Date().toISOString());
+    pdb.close();
+    const crypto = require('crypto');
+    const payload = Buffer.from(JSON.stringify({ email: addr, iat: Date.now(), exp: Date.now() + 3600000 })).toString('base64url');
+    const sig = crypto.createHmac('sha256', globalThis.__jwtSecret + ':client-portal').update(payload).digest('base64url');
+    const tok = payload + '.' + sig;
+    const me = await req('GET', '/api/portal/me', { token: tok });
+    const subjects = [...(me.data.emailsFromUs || []).map(m => m.subject), ...(me.data.emailsFromCustomer || []).map(m => m.subject)];
+    const signedOut = await req('GET', '/api/portal/me');
+    const chk = { status: me.status === 200, seesOwnSent: subjects.includes('Portal visible quote'), seesOwnReply: subjects.includes('Their reply'), hidesOthers: !subjects.includes('Not theirs'), signedOutRefused: signedOut.status === 401 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, status: me.status, sample: me.data && me.data.error }));
+    return 'portal shows only the customer’s own sent emails and replies';
+  });
+
   server.child.kill(); smtp.close();
   const pass = results.filter(r => r.status === 'PASS').length;
   fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify({ run_at: new Date().toISOString(), node: process.version, pass, fail: results.length - pass, results }, null, 2));

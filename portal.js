@@ -124,7 +124,13 @@ module.exports = function mountPortal(app, ctx) {
     // Files the customer uploaded from the portal (kept with their records).
     const uploads = db.prepare(`SELECT d.id, d.title, d.file_name, d.file_url, d.size, d.created_at, d.estimate_id FROM documents d WHERE lower(d.uploaded_by)=? AND d.kind='Customer upload' AND COALESCE(d.status,'Current')<>'Archived' ORDER BY d.id DESC LIMIT 50`).all(e)
       .map(d => ({ id: d.id, title: d.title || d.file_name || 'Document', file_name: d.file_name || '', file: path.basename(String(d.file_url || '')), size: d.size || 0, at: d.created_at, proposal_id: d.estimate_id || null }));
-    res.json({ email: e, uploads, inspections, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages, profile });
+    // Emails we sent this customer, and the emails they sent back to us (the inbox sync records those).
+    const safeAll = (sql, ...a) => { try { return db.prepare(sql).all(...a); } catch { return []; } };
+    const emailsFromUs = safeAll('SELECT id, subject, body, status, created_at FROM email_log WHERE lower(to_addr)=? ORDER BY id DESC LIMIT 30', e)
+      .map(m => ({ id: m.id, subject: m.subject || '', body: m.body || '', status: m.status, at: m.created_at }));
+    const emailsFromCustomer = safeAll('SELECT id, subject, preview, received_at FROM inbox_messages WHERE lower(from_addr)=? ORDER BY received_at DESC LIMIT 30', e)
+      .map(m => ({ id: m.id, subject: m.subject || '', body: m.preview || '', at: m.received_at }));
+    res.json({ email: e, uploads, inspections, proposals, contracts, invoices, projects, visits, activity: activity.slice(0, 10), properties, requests, messages, emailsFromUs, emailsFromCustomer, profile });
   });
 
   // A signed-in customer requests service from inside the portal. It becomes a bid lead on their own email.

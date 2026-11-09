@@ -119,6 +119,12 @@
     } else if (page === 'messages') {
       html = '<div class="panel"><h2>Contact Support</h2><form id="msgForm"><div class="field"><label>Subject</label><input name="subject" placeholder="For example: schedule change"></div><div class="field" style="margin-top:12px"><label>Message *</label><textarea name="body" rows="4" required></textarea></div><p style="margin-top:14px"><button class="primary-button" type="submit">Send message</button></p></form><p class="msg" id="msgMsg" role="status"></p><p class="muted">Urgent? Call <a href="tel:+15153033024">+1 (515) 303-3024</a>.</p></div>' +
         '<div class="panel" style="margin-top:16px"><h2>Conversations</h2>' + (d.messages.length ? '<ul style="list-style:none;padding:0;margin:0">' + d.messages.map(function (m) { return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + '</small><br><b>' + esc(m.subject) + '</b><br>' + esc(m.body) + (m.replies || []).map(function (r) { return '<div style="margin:8px 0 0 14px;padding:8px;background:#f2f7fc;border-radius:8px"><small>Bright Clean · ' + esc(String(r.at).slice(0, 10)) + '</small><br>' + esc(r.body) + '</div>'; }).join('') + '</li>'; }).join('') + '</ul>' : empty('No messages yet', 'Messages you send and replies from the Bright Clean team will appear here.')) + '</div>';
+      var mailAll = (d.emailsFromUs || []).map(function (m) { return { m: m, mine: false }; }).concat((d.emailsFromCustomer || []).map(function (m) { return { m: m, mine: true }; }));
+      mailAll.sort(function (a, b) { return String(b.m.at).localeCompare(String(a.m.at)); });
+      html += '<div class="panel" style="margin-top:16px"><h2>Emails with Bright Clean</h2>' +
+        (mailAll.length
+          ? '<ul style="list-style:none;padding:0;margin:0">' + mailAll.map(function (x) { var m = x.m; return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + (x.mine ? ' · Your email' : ' · Sent by Bright Clean') + '</small>' + (!x.mine && m.status === 'failed' ? ' <small>(not delivered)</small>' : '') + '<br><b>' + esc(m.subject) + '</b><details><summary class="muted">Show message</summary><pre style="white-space:pre-wrap;font:inherit">' + esc(m.body) + '</pre></details></li>'; }).join('') + '</ul>'
+          : '<p class="muted">Emails between you and Bright Clean will appear here.</p>') + '</div>';
     } else if (page === 'request') {
       requestPreset = requestPreset || '';
       html = '<div class="panel"><form id="rsForm">' +

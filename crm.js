@@ -47,6 +47,7 @@ module.exports = function mountCRM(app, ctx) {
     let payments = []; try { payments = db.prepare('SELECT * FROM payments ORDER BY received_at DESC').all().filter(p => iids.has(p.invoice_id)); } catch { /* no payments table */ }
     const calls = db.prepare('SELECT * FROM calls ORDER BY id DESC').all().filter(x => x.customer_id === c.id || (x.phone && phones.has(String(x.phone).replace(/\D/g, '').slice(-10))) || (company && String(x.company || '').toLowerCase().trim() === company));
     let mail = []; try { mail = db.prepare('SELECT id,to_addr,subject,body,status,error,created_at FROM email_log ORDER BY id DESC LIMIT 500').all().filter(m => String(m.to_addr || '').toLowerCase().split(/,\s*/).some(e => emails.has(e))); } catch { /* */ }
+    const replies = [...emails].length ? db.prepare(`SELECT id,from_addr,from_name,subject,preview,received_at FROM inbox_messages WHERE LOWER(from_addr) IN (${[...emails].map(() => '?').join(',')}) ORDER BY received_at DESC LIMIT 500`).all(...emails) : [];
     const issues = db.prepare('SELECT * FROM customer_issues WHERE customer_id=? ORDER BY id DESC').all(c.id);
     const docs = db.prepare('SELECT id,title,kind,revision,file_name,file_url,size,analysis_status,created_at FROM documents WHERE customer_id=? OR project_id IN (' + ([...pids].join(',') || '0') + ') ORDER BY id DESC').all(c.id);
     const visits = db.prepare('SELECT * FROM visits WHERE customer_id=? OR project_id IN (' + ([...pids].join(',') || '0') + ') ORDER BY date DESC').all(c.id);
@@ -68,12 +69,13 @@ module.exports = function mountCRM(app, ctx) {
     const notes = db.prepare('SELECT * FROM customer_notes WHERE customer_id=? ORDER BY pinned DESC, id DESC').all(c.id);
     const comms = [...calls.map(x => ({ type: 'call', at: x.created_at, title: `${x.direction} call · ${x.outcome}`, text: x.summary || '', by: x.created_by })),
       ...mail.map(x => ({ type: 'email', at: x.created_at, title: `Email: ${x.subject}`, text: `To ${x.to_addr}${x.status === 'failed' ? ' (failed)' : ''}`, by: 'system' })),
+      ...replies.map(x => ({ type: 'reply', at: x.received_at, title: `Reply: ${x.subject || '(no subject)'}`, text: x.preview || '', by: x.from_name || x.from_addr })),
       ...notes.map(x => ({ type: 'note', at: x.created_at, title: `Note · ${x.category}`, text: x.body, by: x.author }))].sort((a, b) => String(b.at).localeCompare(String(a.at)));
     const ids = { lead: leads.map(x => x.id), estimate: [...eids], contract: [...kids], project: [...pids], invoice: [...iids] };
     const act = db.prepare(`SELECT * FROM audit_log WHERE (entity='customer' AND entity_id=?) OR (entity IN ('contact','property','customer note') AND details LIKE ?) ORDER BY id DESC LIMIT 200`).all(c.id, `%customer #${c.id}%`)
       .concat(...Object.entries(ids).map(([k, v]) => v.length ? db.prepare(`SELECT * FROM audit_log WHERE entity=? AND entity_id IN (${v.join(',')}) ORDER BY id DESC LIMIT 100`).all(k) : []))
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 200);
-    return { customer: c, contacts, properties: db.prepare('SELECT * FROM customer_properties WHERE customer_id=? ORDER BY status, name').all(c.id), notes, calls, emails: mail, issues,
+    return { customer: c, contacts, properties: db.prepare('SELECT * FROM customer_properties WHERE customer_id=? ORDER BY status, name').all(c.id), notes, calls, emails: mail, replies, issues,
       leads, estimates: est.filter(e => ['Draft', 'Ready'].includes(e.status)), proposals: est.filter(e => !['Draft', 'Ready'].includes(e.status)), contracts, projects, invoices, payments, documents: docs, visits, inspections,
       financials, communications: comms, activity: act, options: { statuses: STATUSES, note_categories: NOTE_CATS, property_types: PROP_TYPES }, role: null };
   }
