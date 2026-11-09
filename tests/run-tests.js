@@ -516,7 +516,9 @@ async function startServer(env, dataDir) {
     P = r.data.estimate.id; PT = r.data.estimate.public_token;
     await req('POST', `/api/admin/estimates/${P}/send`, { token: T });
     m0 = mail.length; const res = await runAt(new Date(Date.now() + 8 * 864e5).toISOString()); await sleep(300);
-    assert(!s.settings.auto_proposal_reminders && !s.settings.auto_invoice_reminders && s.settings.auto_handoff && res.data.result.proposal_reminders === 0 && mail.length === m0, JSON.stringify([s.settings, res.data]));
+    // Bid deadline alerts are always on (they go to the owner, not the customer), so they are not reminders: ignore them here.
+    const sentNow = mail.slice(m0).filter(x => !/^(Bid due|MISSED bid deadline)/.test(x.subject));
+    assert(!s.settings.auto_proposal_reminders && !s.settings.auto_invoice_reminders && s.settings.auto_handoff && res.data.result.proposal_reminders === 0 && res.data.result.invoice_reminders === 0 && sentNow.length === 0, JSON.stringify([s.settings, res.data, mail.slice(m0).map(x => x.subject)]));
     return 'defaults: proposal reminders off, invoice reminders off, handoff on, backup on; 0 emails';
   });
   await check('Automation', 'Proposal reminders: none before day 3, one at day 3, one at day 7, never repeated', async () => {

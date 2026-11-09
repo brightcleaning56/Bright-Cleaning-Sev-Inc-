@@ -2711,21 +2711,39 @@
     const q = ($('#wqSearch').value || '').trim().toLowerCase();
     return q ? items.filter(i => `${i.title || ''} ${i.who || ''}`.toLowerCase().includes(q)) : items;
   };
+  // Pick the lead, customer or project for an email from lists (no typed record numbers).
   async function wqLink(id) {
-    const lead = prompt('Lead number to link (leave blank to skip):', '');
-    if (lead === null) return;
-    const customer = prompt('Customer number to link (leave blank to skip):', '');
-    if (customer === null) return;
-    const project = prompt('Project number to link (leave blank to skip):', '');
-    if (project === null) return;
-    const json = {};
-    if (lead.trim()) json.lead_id = lead.trim();
-    if (customer.trim()) json.customer_id = customer.trim();
-    if (project.trim()) json.project_id = project.trim();
-    if (!Object.keys(json).length) return toast('Nothing to link.', true);
-    await api(`/api/admin/inbox/${id}/link`, { method: 'POST', json });
-    toast('Linked');
-    await loadWorkQueue();
+    let leads = [], customers = [], projects = [];
+    try {
+      [leads, customers, projects] = await Promise.all([
+        api('/api/admin/leads').then(j => j.leads || []),
+        api('/api/admin/customers').then(j => j.customers || []),
+        api('/api/admin/pm/projects').then(j => j.projects || [])
+      ]);
+    } catch (err) { return toast(err.message, true); }
+    const opts = (rows, label) => '<option value="">Leave unchanged</option>' +
+      rows.slice(0, 300).map(r => `<option value="${r.id}">${esc(label(r))}</option>`).join('');
+    openDrawer({
+      title: 'Link this email',
+      sub: 'Choose the lead, customer or project this email belongs to. Leave a box on "Leave unchanged" to skip it.',
+      body: `<label>Lead<select id="lkLead">${opts(leads, l => `#${l.id} ${l.contact_name || l.company || l.email || ''}`)}</select></label>
+        <label>Customer<select id="lkCust">${opts(customers, c => `#${c.id} ${c.name || c.company || c.email || ''}`)}</select></label>
+        <label>Project<select id="lkProj">${opts(projects, p => `#${p.id} ${p.name || p.number || ''}`)}</select></label>`,
+      footer: '<button class="btn" id="lkSave" type="button">Link</button>'
+    });
+    $('#lkSave').onclick = async () => {
+      const json = {};
+      if ($('#lkLead').value) json.lead_id = Number($('#lkLead').value);
+      if ($('#lkCust').value) json.customer_id = Number($('#lkCust').value);
+      if ($('#lkProj').value) json.project_id = Number($('#lkProj').value);
+      if (!Object.keys(json).length) return toast('Choose at least one record to link.', true);
+      try {
+        await api(`/api/admin/inbox/${id}/link`, { method: 'POST', json });
+        toast('Linked');
+        closeDrawer();
+        await loadWorkQueue();
+      } catch (err) { toast(err.message, true); }
+    };
   }
   async function wqThread(id) {
     const j = await api(`/api/admin/inbox/${id}/thread`);
