@@ -252,6 +252,10 @@ async function viewSupport(parts, q) {
     ${r.items.map(c => `<tr><td><a href="#/support/${esc(c.id)}">${esc(c.subject)}</a></td><td>${esc(c.company)}</td><td>${esc(c.status)}</td><td>${esc(c.priority)}</td><td>${esc(c.assignee || '—')}</td><td>${fmt(c.updatedAt)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No support cases.</td></tr>'}</table></div>`;
   $('#newcase').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target);
     try { const c = await api('POST', '/api/admin/support', Object.fromEntries(f)); location.hash = '#/support/' + c.id; } catch (err) { toast(err.message); } };
+  const inq = (await api('GET', '/api/admin/inquiries')).items || [];
+  $('#main').insertAdjacentHTML('beforeend', `<div class="card scroll"><h3>Website inquiries</h3><p class="muted">Messages from the public contact form. Reply by email; these are not linked to an account.</p>
+    <table><tr><th>Received</th><th>From</th><th>Company</th><th>Type</th><th>Message</th></tr>
+    ${inq.map(x => `<tr><td>${fmt(x.createdAt)}</td><td>${esc(x.name)}<br><small class="muted"><a href="mailto:${esc(x.email)}">${esc(x.email)}</a></small></td><td>${esc(x.company || '—')}</td><td>${esc(x.type)}</td><td>${esc(x.message)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No messages yet.</td></tr>'}</table></div>`);
   bindGo($('#main'));
 }
 async function viewSupportCase(id) {

@@ -129,6 +129,20 @@ export function createServer(store, deps = {}) {
 
   // ---- public ----
   route('GET', '/health', null, () => ({ ok: !store.lastFlushError, at: now(), storage: store.kind || 'memory', lastFlushAt: store.lastFlushAt || null, storageError: store.lastFlushError ? 'write failed — see logs' : null }));
+  // Public contact form on the website. Stored for the Super Admin team to answer; no account needed.
+  const INQUIRY_TYPES = ['Book a demo', 'Subscribe to projects', 'Publish projects', 'Support', 'Partnership', 'Other'];
+  route('POST', '/api/inquiries', null, ({ body, ip }) => {
+    need(rateLimit('inquiry:' + ip, 5, 3600e3), 429, 'too many messages from this address, try again later');
+    const name = String(body.name || '').trim().slice(0, 120), email = String(body.email || '').trim().slice(0, 200);
+    const company = String(body.company || '').trim().slice(0, 200), type = String(body.type || '');
+    const message = String(body.message || '').trim().slice(0, 4000);
+    need(name.length >= 2, 400, 'enter your full name');
+    need(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 400, 'enter a valid email address');
+    need(INQUIRY_TYPES.includes(type), 400, 'choose an inquiry type');
+    need(message.length >= 10, 400, 'message must be at least 10 characters');
+    const q = store.put('inquiries', { name, email, company, type, message, status: 'new', createdAt: new Date().toISOString() });
+    return { ok: true, id: q.id, message: 'Thanks. Your message was received and the BUILDINTEL team will reply by email.' };
+  });
   route('POST', '/api/login', null, ({ body, ip }) => {
     need(rateLimit('login:' + ip, config.loginRateLimit, 15 * 60e3), 429, 'too many attempts, wait 15 minutes');
     const u = store.list('users', x => x.email === String(body.email || '').toLowerCase())[0];
@@ -538,6 +552,7 @@ export function createServer(store, deps = {}) {
   route('POST', '/api/admin/authority/:id/decision', A('admin.publisher.review'), ({ params, body, user, requestId }) => R2(admin.authorityDecision(store, { user, requestId }, params.id, body)));
   route('GET', '/api/admin/analytics', A('admin.dashboard.read'), () => adminPhase2b.platformAnalytics(store));
   route('GET', '/api/admin/action-queue', A('admin.dashboard.read'), () => adminPhase2b.actionQueue(store));
+  route('GET', '/api/admin/inquiries', A('admin.support.manage'), () => ({ items: store.list('inquiries').sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 100) }));
   route('GET', '/api/admin/support', A('admin.support.manage'), ({ query }) => R2(adminSupport.listCases(store, query)));
   route('POST', '/api/admin/support', A('admin.support.manage'), ({ body, user, requestId }) => R2(adminSupport.createCase(store, { user, requestId }, body)).case);
   route('GET', '/api/admin/support/:id', A('admin.support.manage'), ({ params }) => R2(adminSupport.caseDetail(store, params.id)).case);
@@ -813,6 +828,7 @@ export function createServer(store, deps = {}) {
       if (req.method === 'GET' && url.pathname === '/site.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/site.css')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/site.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/site.js')).pipe(res); }
       if (req.method === 'GET' && (url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico')) { res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/favicon.svg')).pipe(res); }
+      if (req.method === 'GET' && url.pathname === '/product.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/product.css')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/home.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/home.css')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/pages.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/pages.css')).pipe(res); }
       const PUBLIC_PAGES = new Set(['platform', 'project-intelligence', 'marketplace', 'plan-room', 'takeoff-estimating', 'bid-management', 'service-contractors', 'data-trust', 'pricing', 'about', 'solutions', 'contact', 'faq']);

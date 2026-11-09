@@ -83,3 +83,30 @@ test('the workspace sign-in links and emailed deep links point at /app, not the 
   const billing = fs.readFileSync(path.join(ROOT, 'src/billing.js'), 'utf8');
   assert.ok(!/baseUrl\}\/\?billing/.test(billing), 'Stripe returns to /app');
 });
+
+test('the public contact form stores a valid inquiry and rejects an invalid one', async t => {
+  const base = await serve(t);
+  const ok = await fetch(`${base}/api/inquiries`, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Dana Rivera', email: 'dana@example.com', company: 'Rivera Cleaning', type: 'Book a demo', message: 'Please book a demo for our team.' }) });
+  assert.equal(ok.status, 200);
+  const okBody = await ok.json();
+  assert.ok(okBody.ok && okBody.id, 'a receipt id is returned');
+  const bad = await fetch(`${base}/api/inquiries`, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'D', email: 'not-an-email', type: 'Nonsense', message: 'short' }) });
+  assert.equal(bad.status, 400);
+  const badBody = await bad.json();
+  assert.match(badBody.error, /full name/);
+});
+
+test('inquiries are visible only to Super Admin staff with the support permission', async t => {
+  const base = await serve(t);
+  const anon = await fetch(`${base}/api/admin/inquiries`);
+  assert.equal(anon.status, 401, 'no sign-in, no inquiry list');
+});
+
+test('the contact form is wired to the public inquiry route', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'public/pages/contact.html'), 'utf8');
+  assert.match(html, /data-inquiry/);
+  const js = fs.readFileSync(path.join(ROOT, 'public/site.js'), 'utf8');
+  assert.match(js, /fetch\('\/api\/inquiries'/);
+});

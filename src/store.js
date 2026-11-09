@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 const GLOBAL = ['orgs', 'users', 'sessions', 'sources', 'permits', 'companies', 'contacts',
   'suppression', 'privacyRequests', 'jobs', 'messages', 'bidRequests', 'submissions', 'contracts', 'licenses', 'signals', 'invitations', 'documents',
   'projects', 'projectLinks', 'projectCompanies', 'projectPhases', 'projectAliases', 'reviewQueue',
-  'drawingSets', 'drawingSheets', 'drawingRevisions', 'documentText', 'publications', 'adminNotes', 'supportCases', 'incidents', 'exports'];
+  'drawingSets', 'drawingSheets', 'drawingRevisions', 'documentText', 'publications', 'adminNotes', 'supportCases', 'incidents', 'exports', 'inquiries'];
 // Tenant collections: every record carries orgId and every access must supply it.
 const TENANT = ['rateCards', 'opportunities', 'proposals', 'bids', 'credentials', 'tracked', 'savedSearches', 'analyses', 'estimates', 'prequal', 'measurements'];
 
