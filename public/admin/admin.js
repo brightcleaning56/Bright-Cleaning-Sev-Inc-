@@ -712,7 +712,7 @@
     try { l = (await api('/api/admin/leads/' + id)).lead; } catch (err) { return toast(err.message, true); }
     const facts = [
       ['Type', KIND_LABEL[l.kind] || l.kind], ['Received', fmtWhen(l.created_at)], ['Contact', l.contact_name], ['Company', l.company],
-      ['Email', l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a> <span data-bounce="${esc(String(l.email).toLowerCase())}"></span>` : ''], ['Phone', l.phone ? `<a href="tel:${esc(l.phone)}">${esc(l.phone)}</a>` + ` <button type="button" class="btn small ghost" data-dial="${esc(l.phone)}" data-lead="${l.id}" data-name="${esc(l.company || l.contact_name || '')}">📞 Call</button>` : ''],
+      ['Email', l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a> <span data-bounce="${esc(String(l.email).toLowerCase())}"></span>` : '<span class="muted">None on file</span>'], ['Phone', l.phone ? `<a href="tel:${esc(l.phone)}">${esc(l.phone)}</a>` + ` <button type="button" class="btn small ghost" data-dial="${esc(l.phone)}" data-lead="${l.id}" data-name="${esc(l.company || l.contact_name || '')}">📞 Call</button>` : ''],
       ['Project', l.project_name], ['Project type', l.project_type], ['Services', l.service], ['Site address', l.address],
       ['Square footage', l.square_footage], ['Bid due', l.bid_due_date && fmtDate(l.bid_due_date)], ['Start date', l.start_date && fmtDate(l.start_date)],
       ['Frequency', l.frequency], ['Walkthrough', l.walkthrough]
@@ -1961,7 +1961,7 @@
       <p><b>Next step:</b> ${esc(ai.next_step || '')}</p>
       <div class="grid"><div class="f wide"><label for="aiSubj">Reply subject</label><input id="aiSubj" value="${esc(ai.reply_subject || '')}"></div>
       <div class="f wide"><label for="aiBody">Reply (edit before sending)</label><textarea id="aiBody" rows="8">${esc(ai.reply_body || '')}</textarea></div></div>
-      <button type="button" class="btn" id="aiSend"${l.email ? '' : ' disabled'}>Send reply to ${esc(l.email || 'customer')}</button> ${run}
+      <button type="button" class="btn" id="aiSend"${l.email ? '' : ' disabled'}>Send reply to ${esc(l.email || 'customer')}</button> ${run}${l.email ? '' : '<p class="muted">This lead has no email address, so a reply cannot be sent from here. Call the phone number on this lead, or add an email to the lead first.</p>'}
       ${ai.info_requested_at ? `<p><span class="badge green">Questions emailed to the customer</span> <small class="muted">${esc(fmtWhen(ai.info_requested_at))}</small></p>` : ''}
       <p class="hint">Replies cannot include prices. Automatic questions go out only when information is missing and the setting is on.</p>`;
     $('#aiRun').onclick = async () => { $('#aiRun').disabled = true; $('#aiRun').textContent = 'Analyzing…'; try { const r = await api(`/api/admin/ai/leads/${l.id}/triage`, { method: 'POST' }); l.ai = JSON.stringify(r.ai); renderLeadAI(l); } catch (e) { toast(e.message, true); $('#aiRun').disabled = false; $('#aiRun').textContent = 'Run AI triage'; } };

@@ -33,6 +33,8 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
   // Contact-form messages were filed as 'added by staff' before origins were set on insert. The audit log records each one.
   try { db.exec("UPDATE leads SET origin='website' WHERE origin='outbound' AND id IN (SELECT entity_id FROM audit_log WHERE entity='contact message' AND action='received')"); } catch { /* audit log not present yet */ }
 
+  try { db.exec("UPDATE leads SET origin='api' WHERE origin='website' AND intake LIKE 'API: %'"); } catch { /* leads table not ready */ }
+
   // One-time backfill for leads that existed before stages: anything touched is "worked", closed ones are "done".
   if (!cols.includes('stage')) {
     db.exec(`UPDATE leads SET stage = CASE

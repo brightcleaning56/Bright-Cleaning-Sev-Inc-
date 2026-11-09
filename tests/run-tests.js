@@ -3275,6 +3275,14 @@ async function startServer(env, dataDir) {
     return 'email links to a real lead only; thread shows received and sent mail; priority filter works on tasks';
   });
 
+  await check('Leads', 'Partner leads without an email: the drawer says "None on file" and explains why a reply cannot be sent; partner leads saved before origins were set are backfilled to API', async () => {
+    const adminJs = (await req('GET', '/admin/admin.js')).data.toString();
+    const leadstage = require('fs').readFileSync(require('path').join(__dirname, '..', 'leadstage.js'), 'utf8');
+    const chk = { noEmailRow: adminJs.includes('None on file'), noEmailReason: adminJs.includes('cannot be sent from here'), backfill: leadstage.includes("SET origin='api' WHERE origin='website' AND intake LIKE 'API: %'") };
+    assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
+    return 'drawer shows None on file and explains the blocked reply; partner backfill is in place';
+  });
+
   await check('Work queue', 'Command Center: the signed-in page has a Today’s work card; the summary is available to owners and staff', async () => {
     const html = (await req('GET', '/admin/')).data.toString();
     const adminJs = (await req('GET', '/admin/admin.js')).data.toString();
