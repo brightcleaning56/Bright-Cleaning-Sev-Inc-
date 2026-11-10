@@ -1,4 +1,4 @@
-  ok   Node 22.22.2 (needs >=22.13.0)
+  ok   Node 22.23.4 (needs >=22.13.0)
   ok   pdfjs-dist 6.4.299
   ok   pg 8.13.1
   ok   PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) reachable

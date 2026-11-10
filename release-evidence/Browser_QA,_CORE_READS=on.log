@@ -6,8 +6,12 @@ PASS  super admin phase 3 (projects, packages, plan access, documents, mobile me
 PASS  plan room + addenda flow
 PASS  bid leveling + prequalification
 PASS  super admin portal (dashboard, companies, suspend/reactivate, users, roles, audit, mobile)
+PASS  super admin phase 5 (analytics, queue, support, incidents, privacy, jobs & health, exports)
 PASS  super admin phase 4 + MFA (subscriptions, sources, AI limits, authenticator sign-in, phone cards)
 PASS  project publishing (draft → checklist → publish → invited)
 PASS  drawing takeoff (6,400 SF / 80 LF)
 PASS  AI analysis → estimate → bid
-mode: CORE_READS=on · screenshots and logs: /tmp/tmp.ICobtbHuRw/logs/qa-core-on
+PASS  role sign-up and workspace banners (GC/GM, owner, subcontractor, service provider)
+PASS  Super Admin review screens (publisher verification, owner authority, company record)
+PASS  public website (homepage, every page, mobile menu, sign-in hand-off to /app, clean console)
+mode: CORE_READS=on · screenshots and logs: /tmp/tmp.8GLLaDYWpD/logs/qa-core-on
