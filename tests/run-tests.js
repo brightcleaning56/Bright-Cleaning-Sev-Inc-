@@ -329,6 +329,13 @@ async function startServer(env, dataDir) {
     const c = (await req('GET', '/api/admin/customers', { token: T })).data.customers.filter(x => (x.company || '').toLowerCase() === 'prairie construction');
     assert(r.status === 201 && c.length === 1, 'entries ' + c.length); return '1 Prairie Construction entry after a no-email estimate';
   });
+  await check('Customers', 'Phone-only callers: the same number in another format is refused as a duplicate; a different number is a new customer', async () => {
+    const a = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Phone Caller', phone: '(515) 555-0281' } });
+    const b = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Phone Caller Again', phone: '+1 515-555-0281' } });
+    const c = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Other Caller', phone: '515-555-0282' } });
+    assert(a.status === 201 && b.status === 409 && c.status === 201 && a.data.id !== c.data.id, JSON.stringify([a.status, b.status, b.data.error, c.status]));
+    return 'Customer #' + a.data.id + ' created; the same number in another format refused (409); a different number → #' + c.data.id;
+  });
   // ---------- Estimating ----------
   const { estimateMath } = require('../estimating');
   await check('Estimating', 'Legacy formula unchanged when new fields are blank (20,000 sq ft example = $498.67)', async () => {
@@ -2130,6 +2137,12 @@ async function startServer(env, dataDir) {
       await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'WFG-D', project_id: p.id, customer_name: 'Cora Lect', company: 'Collect Co', email: 'ap@collect.test', amount: 777, due_date: addD(bdate, 30), status: 'Draft' } });
       const dash1 = (await req('GET', '/api/admin/dashboard', { token: T })).data.finance;
       const cust1 = (await req('GET', '/api/admin/customers', { token: T })).data.customers.find(c => c.company === 'Collect Co');
+      const pre = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === id1);
+      const over2 = await req('POST', `/api/admin/invoices/${id1}/refund`, { token: T, json: { amount: pre.paid_amount + 1, note: 'Too much' } });
+      const rf = await req('POST', `/api/admin/invoices/${id1}/refund`, { token: T, json: { amount: 500, note: 'Duplicate charge' } });
+      const post = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === id1);
+      const trail = (await req('GET', '/api/admin/audit-log', { token: T })).data.events.filter(a => a.entity === 'invoice' && Number(a.entity_id) === Number(id1) && a.action === 'refunded');
+      ok('11 A refund returns money: balance and status update, refund recorded in the activity log, cannot exceed what was received', over2.status === 409 && rf.status === 200 && Math.abs(post.paid_amount - (pre.paid_amount - 500)) < 0.01 && post.status === 'Partially Paid' && trail.length === 1, JSON.stringify({ over2: over2.status, rf: rf.status, paid: [pre.paid_amount, post.paid_amount], status: post.status, logged: trail.length }));
       ok('10 A Draft invoice is not billed: dashboard billed and the customer balance ignore it, matching Reports and Command', dash1.billed === dash0.billed && cust1.billed === cust0.billed && cust0.billed > 0, JSON.stringify({ dash: [dash0.billed, dash1.billed], cust: [cust0.billed, cust1.billed] }));
       const audit = (await req('GET', '/api/admin/audit-log', { token: T })).data.events.filter(a => a.entity === 'invoice' && [id1, id2].includes(Number(a.entity_id)));
       ok('9 Sends, the over-contract reason and payments are in the activity log', audit.some(a => /sent invoice/.test(a.action)) && audit.some(a => /above contract value/.test(a.details || '')), audit.map(a => a.action).join(', '));

@@ -151,6 +151,31 @@ module.exports = function mountAdminExt(app, ctx) {
     res.json({ ok: true, paid_amount: paid, status });
   });
 
+  // ---------- Invoices: refund ----------
+  // A refund returns money already received. It is kept as a negative payment so the payment history stays complete.
+  app.post('/api/admin/invoices/:id/refund', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req.user && req.user.email))) return res.status(403).json({ error: 'Only an owner or manager can record a refund.' });
+    const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(id(req));
+    if (!inv) return res.status(404).json({ error: 'Not found' });
+    if (['Draft', 'Void'].includes(inv.status)) return res.status(409).json({ error: 'Only a sent invoice can be refunded.' });
+    const amt = num(req.body && req.body.amount);
+    if (!amt) return res.status(400).json({ error: 'Enter a refund amount greater than zero.' });
+    const note = clean((req.body && req.body.note) || '', 300);
+    if (!note) return res.status(400).json({ error: 'Say why the money is being refunded.' });
+    const before = Math.round(Number(inv.paid_amount || 0) * 100) / 100;
+    if (amt > before + 0.005) return res.status(409).json({ error: `Only $${before.toFixed(2)} has been received on this invoice, so the refund cannot be more than that.` });
+    const paid = Math.round((before - amt) * 100) / 100;
+    const status = paid <= 0 ? 'Sent' : (paid >= Number(inv.amount || 0) ? 'Paid' : 'Partially Paid');
+    const nowIso = new Date().toISOString();
+    db.transaction(() => {
+      db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)')
+        .run(inv.id, -amt, 'Refund: ' + note, nowIso, (req.user && req.user.email) || null, nowIso);
+      db.prepare('UPDATE invoices SET paid_amount=?,status=? WHERE id=?').run(paid, status, inv.id);
+    })();
+    logAction(req, 'refunded', 'invoice', inv.id, `$${amt.toFixed(2)} refunded — ${note}`);
+    res.json({ ok: true, paid_amount: paid, status });
+  });
+
   app.get('/api/admin/next-invoice-number', auth, (req, res) => {
     const year = new Date().getFullYear();
     const rows = db.prepare(`SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?`).all(`BC-${year}-%`);

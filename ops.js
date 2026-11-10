@@ -64,8 +64,12 @@ module.exports = function mountOps(app, ctx) {
     if (email) return 'e:' + email;
     const company = clean(r.company).toLowerCase();
     if (company) return 'c:' + company;
+    const ph = phoneDigits(r.phone);
+    if (ph) return 'p:' + ph;
     return '';
   };
+  // Phone numbers compare on their last 10 digits, so (515) 555-0199, 515-555-0199 and +1 515 555 0199 are one number.
+  const phoneDigits = v => { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; };
   function upsertCustomer(r, source) {
     try {
       const key = matchKey(r); if (!key) return null;
@@ -74,6 +78,11 @@ module.exports = function mountOps(app, ctx) {
       // Match on email first, then on company name, so the same business is never listed twice.
       let existing = db.prepare('SELECT * FROM customers WHERE match_key=?').get(key);
       if (!existing && company) existing = db.prepare("SELECT * FROM customers WHERE lower(company)=? ORDER BY (email<>'') DESC, id LIMIT 1").get(company);
+      // A phone-only record (no email, no company) matches the one customer with that number. A number shared by several customers never auto-links.
+      if (!existing && !clean(r.email) && !clean(r.company) && phoneDigits(r.phone)) {
+        const same = db.prepare("SELECT * FROM customers WHERE phone<>'' ORDER BY id").all().filter(c => phoneDigits(c.phone) === phoneDigits(r.phone));
+        if (same.length === 1) existing = same[0];
+      }
       if (existing && !existing.email && clean(r.email)) {
         const ek = 'e:' + clean(r.email).toLowerCase();
         if (!db.prepare('SELECT id FROM customers WHERE match_key=?').get(ek)) db.prepare('UPDATE customers SET email=?, match_key=? WHERE id=?').run(clean(r.email, 254).toLowerCase(), ek, existing.id);
@@ -114,9 +123,9 @@ module.exports = function mountOps(app, ctx) {
     const b = req.body || {};
     if (!clean(b.name) && !clean(b.company)) return res.status(400).json({ error: 'Enter a contact name or company.' });
     if (b.email && !isEmail(b.email)) return res.status(400).json({ error: 'Enter a valid email address.' });
-    if (!b.email && !clean(b.company)) return res.status(400).json({ error: 'Enter an email or a company so the customer can be matched to their records.' });
+    if (!b.email && !clean(b.company) && !phoneDigits(b.phone)) return res.status(400).json({ error: 'Enter an email, a company or a phone number so the customer can be matched to their records.' });
     const key = matchKey(b);
-    if (db.prepare('SELECT id FROM customers WHERE match_key=?').get(key)) return res.status(409).json({ error: 'A customer with that email or company already exists.' });
+    if (db.prepare('SELECT id FROM customers WHERE match_key=?').get(key)) return res.status(409).json({ error: 'A customer with that email, company or phone number already exists.' });
     { const dupe = (b.company && db.prepare('SELECT id FROM customers WHERE lower(trim(company))=lower(trim(?))').get(b.company)) || (b.email && db.prepare('SELECT id FROM customers WHERE lower(email)=lower(?)').get(b.email)); if (dupe) return res.status(409).json({ error: `A customer with that email or company already exists (#${dupe.id}).`, id: dupe.id }); }
     const id = upsertCustomer({ ...b }, 'added manually');
     if (b.notes) db.prepare('UPDATE customers SET notes=? WHERE id=?').run(clean(b.notes, 5000), id);
