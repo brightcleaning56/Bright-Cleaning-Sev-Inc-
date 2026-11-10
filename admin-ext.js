@@ -188,7 +188,7 @@ module.exports = function mountAdminExt(app, ctx) {
   // ---------- Account & users ----------
   app.get('/api/admin/me', auth, (req, res) => { const R = require('./roles'), e = req.user && req.user.email, ow = String(adminEmail || '').toLowerCase(); const role = !ow || String(e || '').toLowerCase() === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(String(e || '').toLowerCase()) || {}).role || 'staff');
     const nm = role === 'owner' && String(e || '').toLowerCase() === ow ? ownerName() : ((db.prepare('SELECT name FROM admin_users WHERE lower(email)=?').get(String(e || '').toLowerCase()) || {}).name || '');
-    res.json({ email: e, name: nm, role, label: (R.ROLES[role] || {}).label || role, views: R.VIEWS[role] || null, home: R.HOME[role] || 'overview', sees_money: R.seesMoney(role) }); });
+    res.json({ email: e, name: nm, role, label: (R.ROLES[role] || {}).label || role, views: R.VIEWS[role] || null, home: R.HOME[role] || 'overview', sees_money: R.seesMoney(role), mfa_setup_required: !!(req.user && req.user.mfa !== true && ['owner', 'manager'].includes(role)) }); });
   const ownerName = () => { try { const r = db.prepare("SELECT value FROM settings WHERE key='owner_name'").get(); return (r && r.value) || process.env.ADMIN_NAME || 'Owner'; } catch { return process.env.ADMIN_NAME || 'Owner'; } };
   // Each person sets their own display name (owner account from the environment is stored in settings).
   app.put('/api/admin/account/name', auth, (req, res) => {
@@ -263,12 +263,12 @@ module.exports = function mountAdminExt(app, ctx) {
     else db.prepare('INSERT INTO admin_users(email,name,password_hash,created_at) VALUES(?,?,?,?)').run(email, 'Owner', hash, new Date().toISOString());
     logAction(req, 'changed password', 'account', row ? row.id : 0);
     ctx.bumpTv(email); // every other session ends now; this device gets a fresh token
-    res.json({ ok: true, token: ctx.signToken(email), message: 'Password changed. Other devices have been signed out.' });
+    res.json({ ok: true, token: ctx.signToken(email, req.user && req.user.mfa === true), message: 'Password changed. Other devices have been signed out.' });
   });
   app.post('/api/admin/account/sign-out-everywhere', auth, (req, res) => {
     const email = req.user && req.user.email; ctx.bumpTv(email);
     logAction(req, 'signed out other sessions', 'account', 0);
-    res.json({ ok: true, token: ctx.signToken(email), message: 'All other devices are signed out.' });
+    res.json({ ok: true, token: ctx.signToken(email, req.user && req.user.mfa === true), message: 'All other devices are signed out.' });
   });
 
   // Roles: owner (approves, manages roles and rules), manager (approves proposals), staff (prepares, requests approval).

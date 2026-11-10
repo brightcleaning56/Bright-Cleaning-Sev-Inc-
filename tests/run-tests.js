@@ -243,10 +243,11 @@ async function startServer(env, dataDir) {
 
   // ---------- Authentication & permissions ----------
   let T;
+  const signIn = require('./mfa-helper')((p, b, t) => req('POST', p, { json: b, token: t || undefined }));
   await check('Security', 'Admin login: correct password works, wrong password rejected', async () => {
     const bad = await req('POST', '/api/admin/login', { json: { email: OWNER, password: 'wrong-password-123' } });
     const ok = await req('POST', '/api/admin/login', { json: { email: OWNER, password: OWNER_PW } });
-    assert(bad.status === 401 && ok.status === 200 && ok.data.token, `${bad.status} ${ok.status}`); T = ok.data.token;
+    assert(bad.status === 401 && ok.status === 200 && ok.data.token, `${bad.status} ${ok.status}`); T = await signIn(OWNER, OWNER_PW);
     return '401 then 200 with 8-hour token';
   });
   // Approval rules get their own tests at the end; relax them so older flow tests (sending $0-margin drafts) run unchanged.
@@ -312,6 +313,16 @@ async function startServer(env, dataDir) {
     assert(mk.status === 201 && l1.status === 200 && l1.data.token && setup.status === 200 && en.status === 200 && l2.status === 200 && l2.data.mfa_required === true && !l2.data.token && wrong.status === 401 && right.status === 200 && right.data.token && me.status === 200,
       JSON.stringify({ mk: mk.status, l1: l1.status, en: en.status, l2: [l2.status, l2.data.mfa_required], wrong: wrong.status, right: right.status }));
     return 'enrolled; sign-in asks for a code; 000000 refused (401); current code signs in';
+  });
+  await check('Security', 'Owners and managers without a code-checked session can only set two-step sign-in up: other routes refuse them, the set-up routes work', async () => {
+    const jwt = require('../node_modules/jsonwebtoken');
+    const tok = jwt.sign({ role: 'admin', email: OWNER, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const me = await req('GET', '/api/admin/me', { token: tok });
+    const blocked = await req('GET', '/api/admin/leads', { token: tok });
+    const status = await req('GET', '/api/admin/mfa', { token: tok });
+    assert(me.status === 200 && me.data.mfa_setup_required === true && blocked.status === 403 && /Two-step/.test(blocked.data.error || '') && status.status === 200,
+      JSON.stringify({ me: me.status, blocked: blocked.status, status: status.status }));
+    return 'owner token without the code check: /me 200 (set-up flagged); leads 403; set-up status 200';
   });
   await check('Security', 'Login is rate limited (brute-force protection)', async () => {
     let s = []; for (let i = 0; i < 9; i++) s.push((await req('POST', '/api/admin/login', { json: { email: 'x@y.test', password: 'wrong-password-123' } })).status);
@@ -600,7 +611,7 @@ async function startServer(env, dataDir) {
     assert(badPhone.status === 400 && /phone/.test(badPhone.data.error), 'bad phone not refused: ' + JSON.stringify(badPhone.data));
     assert(get.data.settings && typeof get.data.settings.auto_backup === 'boolean' && !('biz_company_name' in get.data.settings), 'on/off settings changed shape');
     const mk = await req('POST', '/api/admin/users', { token: T, json: { name: 'Biz Staff', email: 'biz.staff@test.test', role: 'staff', password: 'staff-password-1234' } });
-    const sTok = require('../node_modules/jsonwebtoken').sign({ role: 'admin', email: 'biz.staff@test.test', tv: 0 }, env.JWT_SECRET);
+    const sTok = require('../node_modules/jsonwebtoken').sign({ role: 'admin', email: 'biz.staff@test.test', tv: 0, mfa: true }, env.JWT_SECRET);
     const sput = await req('PUT', '/api/admin/business-profile', { token: sTok, json: { company_name: 'Hacked' } });
     assert(mk.status === 201 && sput.status === 403, 'staff could change the profile: ' + sput.status + ' create ' + mk.status);
     return 'owner saves and reads the profile; bad email and phone refused with a message; on/off settings unchanged';
@@ -724,7 +735,7 @@ async function startServer(env, dataDir) {
     await killWait(server.child);
     const restoreDir = path.join(work, 'restore'); fs.mkdirSync(restoreDir); fs.copyFileSync(backupFile, path.join(restoreDir, 'brightclean.db'));
     const s2 = await startServer(env, restoreDir);
-    const t2 = (await req('POST', '/api/admin/login', { json: { email: OWNER, password: OWNER_PW } })).data.token;
+    const t2 = await signIn(OWNER, OWNER_PW);
     const leads = (await req('GET', '/api/admin/leads', { token: t2 })).data.leads.length;
     await killWait(s2.child);
     server = await startServer(env, dataDir);
@@ -732,7 +743,7 @@ async function startServer(env, dataDir) {
     return `integrity ok; live [${liveCounts}] vs backup [${bakCounts}]; restored instance served ${leads} leads`;
   });
   await check('Backup', 'Daily backup runs on schedule and keeps only the 14 newest', async () => {
-    T = (await req('POST', '/api/admin/login', { json: { email: OWNER, password: OWNER_PW } })).data.token;
+    T = await signIn(OWNER, OWNER_PW);
     const dir = path.join(dataDir, 'backups');
     for (let i = 0; i < 16; i++) fs.writeFileSync(path.join(dir, `brightclean-2026010${i % 10}-0000${String(i).padStart(2, '0')}.db`), 'x');
     const old = new Date(Date.now() - 2 * 864e5); for (const f of fs.readdirSync(dir)) fs.utimesSync(path.join(dir, f), old, old);
@@ -2667,7 +2678,7 @@ async function startServer(env, dataDir) {
     const jwt = require('../node_modules/jsonwebtoken');
     const em = 'sess@brightclean.test', pw1 = 'session-password-one-1', pw2 = 'session-password-two-2';
     await req('POST', '/api/admin/users', { token: T, json: { name: 'Sess', email: em, password: pw1, role: 'staff' } });
-    const mint = () => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' }); // login is rate-limited (8/15 min) and the suite has used it up
+    const mint = () => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' }); // login is rate-limited (8/15 min) and the suite has used it up
     const a = mint(), b = mint();
     const legacy = jwt.sign({ role: 'admin', email: em }, globalThis.__jwtSecret || process.env.__JWT || '', { expiresIn: '1h' });
     const legacyOk = globalThis.__jwtSecret ? (await req('GET', '/api/admin/leads', { token: legacy })).status : 200;
@@ -2829,7 +2840,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Security', 'Roles: supervisor and inspector are enforced on the server — supervisor runs field operations but never sees money/sales/settings; inspector only quality; staff unchanged; roles assignable at creation; /me gives the pages each role sees', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const mk = async (em, role) => (await req('POST', '/api/admin/users', { token: T, json: { name: role, email: em, password: 'role-test-password-1', role } })).status;
     const cS = await mk('sup@roles.test', 'supervisor'), cI = await mk('insp@roles.test', 'inspector'), bad = await mk('x@roles.test', 'emperor'), ownerTry = await mk('o2@roles.test', 'owner');
     const S = mint('sup@roles.test'), I = mint('insp@roles.test'), st = async (tok, m, path, json) => (await req(m, path, { token: tok, json })).status;
@@ -2862,7 +2873,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Security', 'Sales role: enforced on the server — sales pages and leads/estimates/proposals/calls/email work; invoices, finance reports, settings writes, user admin and audit log are refused; no finance groups in Command Center', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const cSa = (await req('POST', '/api/admin/users', { token: T, json: { name: 'Sally Sales', email: 'sales@roles.test', password: 'role-test-password-1', role: 'sales' } })).status;
     const SA = mint('sales@roles.test'), st = async (tok, m, path, json) => (await req(m, path, { token: tok, json })).status;
     const me = (await req('GET', '/api/admin/me', { token: SA })).data;
@@ -2876,7 +2887,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Website', 'Website photos & video: the public gallery shows the shipped photos and page video; admin uploads, hide/show, reorder, replace and delete work; only registered files are served; upload content is checked; only owner, manager and office staff can change it', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const up = async (tok, method, path, parts) => { const fd = new FormData(); for (const [k, v] of Object.entries(parts || {})) { if (v && v.blob) fd.append(k, new Blob([v.bytes], { type: v.type || 'application/octet-stream' }), v.name); else fd.append(k, v); } const r = await fetch(B + path, { method, headers: tok ? { Authorization: 'Bearer ' + tok } : {}, body: fd }); let j = {}; try { j = await r.json(); } catch { /* none */ } return { status: r.status, data: j }; };
     const jpg = (n) => ({ blob: true, name: n, type: 'image/jpeg', bytes: Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(600, 7)]) });
     const mp4 = (n) => ({ blob: true, name: n, type: 'video/mp4', bytes: Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(400, 1)]) });
@@ -2997,7 +3008,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Security', 'Supervisor cannot read company settings or the reminder log; own account and quality work still allowed', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const S = mint('sup@roles.test');
     const sGet = (await req('GET', '/api/admin/settings', { token: S })).status;
     const ownerGet = (await req('GET', '/api/admin/settings', { token: T })).status;
@@ -3007,7 +3018,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Settings', 'Labor assumptions: owner stores the business-plan values; invalid values refused; staff can read and not change; supervisor refused', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const get0 = await req('GET', '/api/admin/labor-assumptions', { token: T });
     const put = await req('PUT', '/api/admin/labor-assumptions', { token: T, json: { payroll_burden_pct: 22 } });
     const get1 = await req('GET', '/api/admin/labor-assumptions', { token: T });
@@ -3029,7 +3040,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Leads', 'Lead review: owner marks leads real or fake and archives or restores them in bulk; invalid actions refused; supervisors refused', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const mk = async n => (await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Review ' + n, email: `review${n}@example.com`, message: 'Bulk review test' }) })).json();
     const a = await mk(1), b = await mk(2);
     const bulk = (tok, ids, action) => req('POST', '/api/admin/leads/bulk', { token: tok, json: { ids, action } });
@@ -3053,7 +3064,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Leads', 'Lead stages and follow-ups: a note moves a new lead to being worked; a follow-up hides it until its date and creates a task in Issues & tasks; clearing returns it; restore sets it back to new; staff allowed, supervisor refused', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const made = await (await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Stage Test', email: 'stage.test@example.com', message: 'Stage test lead' }) })).json();
     const id = made.id;
     const get = async () => (await req('GET', '/api/admin/leads', { token: T })).data.leads.find(l => l.id === id);
@@ -3086,7 +3097,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Leads', 'Lead to customer: converting a lead creates (or matches) one customer, links it, moves the lead to converted, and never duplicates on a second convert; supervisors refused', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const made = await (await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Convert Test', email: 'convert.test@example.com', message: 'Please send a quote' }) })).json();
     const id = made.id;
     const lead = async () => (await req('GET', '/api/admin/leads', { token: T })).data.leads.find(l => l.id === id);
@@ -3107,7 +3118,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Phone', 'Automatic callbacks: off by default; owner only; cannot be turned on without the legal-review confirmation; daily limit checked; leads are flagged for callback', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const g0 = await req('GET', '/api/admin/outbound-callbacks', { token: T });
     const onNoLegal = await req('PUT', '/api/admin/outbound-callbacks', { token: T, json: { enabled: true } });
     const badLimit = await req('PUT', '/api/admin/outbound-callbacks', { token: T, json: { daily_limit: 99 } });
@@ -3240,7 +3251,7 @@ async function startServer(env, dataDir) {
     const today1 = await inT('today');
     const moved = await req('POST', `/api/admin/tasks/${tid}/work`, { token: T, json: { due_date: '2099-03-01', assigned_to: 'office@brightclean.net' } });
     const sched = await inT('scheduled'), notToday = (await inT('today')) === 0;
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     await req('POST', '/api/admin/users', { token: T, json: { name: 'Ivy Inspector', email: 'insp.wq@roles.test', password: 'role-test-password-2', role: 'inspector' } });
     await req('POST', '/api/admin/users', { token: T, json: { name: 'Sam Staff', email: 'staff.wq@roles.test', password: 'role-test-password-3', role: 'staff' } });
     const inspector = await req('GET', '/api/admin/work-queue?dept=tasks', { token: mint('insp.wq@roles.test') });
@@ -3299,7 +3310,7 @@ async function startServer(env, dataDir) {
   });
 
   await check('Work queue', 'Permissions: owner, manager, staff, sales and supervisor can read the queue; inspectors and signed-out users cannot; sales and staff can act on emails; inspectors cannot write', async () => {
-    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0 }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const users = [['mgr.wq2@roles.test', 'manager'], ['sup.wq2@roles.test', 'supervisor'], ['sales.wq2@roles.test', 'sales'], ['staff.wq2@roles.test', 'staff'], ['insp.wq2@roles.test', 'inspector']];
     for (const [email, role] of users) await req('POST', '/api/admin/users', { token: T, json: { name: role, email, password: 'role-test-password-9', role } });
     const getAs = em => req('GET', '/api/admin/work-queue?dept=emails', { token: mint(em) });

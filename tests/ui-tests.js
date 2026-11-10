@@ -24,7 +24,8 @@ async function check(area, name, fn) {
   const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: 'ignore' });
   for (let i = 0; i < 50; i++) { try { if ((await fetch(B + '/health')).ok) break; } catch { } await sleep(150); }
   const api = async (m, u, j, t) => (await fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: j ? JSON.stringify(j) : undefined })).json();
-  const T = (await api('POST', '/api/admin/login', { email: OWNER, password: PW })).token;
+  const signIn = require('./mfa-helper')((p, b, t) => api('POST', p, b, t).then(res => ({ data: res })));
+  const T = await signIn(OWNER, PW);
   await api('PUT', '/api/admin/approval-rules', { min_margin_pct: 0, max_total: 0, flag_pre_pricing: false, approve_all: false }, T); // approvals tested separately below
   // seed
   await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ name: '<img src=x onerror=window.__xss=1>', email: 'xss@test.test', message: '<script>window.__xss=1</script>' }) });
@@ -142,15 +143,28 @@ async function check(area, name, fn) {
     $('#backupNow').click(); await sleep(900);
     assert(/Backup created/.test(txt('#backupMsg')) && d.querySelectorAll('[data-backup]').length >= 1, txt('#backupMsg')); return txt('#backupMsg');
   });
-  await check('Security UI', 'Two-step sign-in card: shows Off, set-up shows a key, cancelling turns nothing on', async () => {
+  await check('Security UI', 'Two-step sign-in card: the owner is enrolled and required, so the turn-off button is hidden and the status says so', async () => {
     await nav('settings'); await sleep(300);
-    const off = /Off\./.test(txt('#mfaStatus'));
-    $('#mfaStart').click(); await sleep(700);
-    const key = txt('#mfaSecret'), shown = !$('#mfaSetup').hidden;
-    $('#mfaCancel').click(); await sleep(200);
     const mfa = await api('GET', '/api/admin/mfa', null, T);
-    assert(off && shown && key.length >= 16 && !mfa.enabled && /Nothing was turned on/.test(txt('#mfaStatus')), JSON.stringify({ off, shown, keyLen: key.length, enabled: mfa.enabled }));
-    return `status "Off"; key shown (${key.length} characters); cancel leaves it off`;
+    const req = /required for your role/i.test(txt('#mfaStatus'));
+    assert(mfa.enabled && mfa.required && req && $('#mfaDisable').hidden && $('#mfaStartBar').hidden, JSON.stringify({ enabled: mfa.enabled, required: mfa.required, status: txt('#mfaStatus'), disableHidden: $('#mfaDisable').hidden }));
+    return `status: "${txt('#mfaStatus')}"; turn-off button hidden`;
+  });
+  await check('Security UI', 'Set-up key appears for a manager who has not enrolled, and cancelling turns nothing on', async () => {
+    const em = 'mfa.setup.ui@brightclean.test', pw = 'Temp-password-2026!!';
+    await api('POST', '/api/admin/users', { email: em, name: 'Setup UI', password: pw, role: 'manager' }, T);
+    const l1 = await api('POST', '/api/admin/login', { email: em, password: pw });
+    const w3 = await open('/admin/', l1.token), q3 = s => w3.document.querySelector(s);
+    await sleep(600);
+    const onSecurity = !!q3('#mfaCard');
+    // A restricted session is sent to Security by the app itself.
+    const routed = /Set up two-step sign-in/.test(q3('#toast') ? q3('#toast').textContent : '') || !q3('#mfaSetup').hidden || !q3('#mfaStartBar').hidden;
+    q3('#mfaStart').click(); await sleep(700);
+    const key = q3('#mfaSecret').textContent.replace(/\s+/g, '');
+    q3('#mfaCancel').click(); await sleep(200);
+    const after = await api('GET', '/api/admin/mfa', null, l1.token);
+    assert(onSecurity && routed && key.length >= 16 && !after.enabled && /Nothing was turned on/.test(q3('#mfaStatus').textContent), JSON.stringify({ onSecurity, routed, keyLen: key.length, enabled: after.enabled }));
+    return `manager routed to Security; key shown (${key.length} characters); cancel leaves it off`;
   });
   await check('Security UI', 'Sign-in asks for the app code when two-step sign-in is on; a wrong code does not sign in; the right code does', async () => {
     const totp = require('../totp');

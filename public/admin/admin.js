@@ -186,6 +186,7 @@
     const r = await fetch(url, opts);
     let j = {};
     try { j = await r.json(); } catch { /* no body */ }
+    if (r.status === 403 && j.mfa_setup_required) routeToMfaSetup();
     if (r.status === 401 && !url.startsWith('/api/admin/login')) {
       signOut('Your session ended. Please sign in again.');
       throw new Error('Signed out');
@@ -269,6 +270,19 @@
   });
   $('#logout').addEventListener('click', () => signOut());
 
+  // Owners and managers must set up two-step sign-in before using the app: send them straight to the Security card.
+  // Restricted session: only Settings stays open, and the redirect runs at most once every few seconds, so a
+  // refused request can never start a loop of refused requests.
+  let mfaRouteUntil = 0;
+  function routeToMfaSetup() {
+    if (Date.now() < mfaRouteUntil) return;
+    mfaRouteUntil = Date.now() + 4000;
+    $$('#nav [data-view]').forEach(b => { b.hidden = b.dataset.view !== 'settings'; });
+    const nav = document.querySelector('#nav [data-view="settings"]');
+    if (nav) nav.click();
+    try { setSettingsTab('security'); } catch { /* settings not built yet */ }
+    if (typeof toast === 'function') toast('Set up two-step sign-in to continue (Settings → Security).', true);
+  }
   // Settings → Security: turn two-step sign-in on or off for the signed-in account.
   const mfaMsg = (text, bad) => { const s = $('#mfaStatus'); s.className = bad ? 'msg err' : 'msg'; s.textContent = text; };
   async function loadMfa() {
@@ -276,7 +290,8 @@
     try {
       const x = await api('/api/admin/mfa');
       $('#mfaOn').hidden = !x.enabled; $('#mfaStartBar').hidden = !!x.enabled; $('#mfaSetup').hidden = true;
-      mfaMsg(x.enabled ? 'On. Signing in asks for a code from your app.' : 'Off. Your password alone signs you in.');
+      $('#mfaDisable').hidden = !!x.required;
+      mfaMsg(x.enabled ? (x.required ? 'On, and required for your role. Signing in asks for a code from your app.' : 'On. Signing in asks for a code from your app.') : (x.required ? 'Required for your role. Set it up now to use Bright Clean.' : 'Off. Your password alone signs you in.'));
     } catch (err) { mfaMsg(err.message, true); }
   }
   function wireMfa() {
@@ -292,9 +307,11 @@
     $('#mfaCancel').addEventListener('click', () => { $('#mfaSetup').hidden = true; $('#mfaStartBar').hidden = false; mfaMsg('Set-up cancelled. Nothing was turned on.'); });
     $('#mfaEnable').addEventListener('click', async () => {
       try {
-        await api('/api/admin/mfa/enable', { method: 'POST', json: { code: $('#mfaConfirm').value } });
-        mfaMsg('Two-step sign-in is on.'); toast('Two-step sign-in is on');
-        loadMfa();
+        const x = await api('/api/admin/mfa/enable', { method: 'POST', json: { code: $('#mfaConfirm').value } });
+        // The server issues a session that has passed the code check; keep it and reload into the full app.
+        token = x.token; localStorage.setItem(TOKEN_KEY, token);
+        mfaMsg('Two-step sign-in is on. Reloading…'); toast('Two-step sign-in is on');
+        setTimeout(() => location.reload(), 700);
       } catch (err) { mfaMsg(err.message, true); }
     });
     $('#mfaDisable').addEventListener('click', async () => {
@@ -311,6 +328,7 @@
     try {
       const me = await api('/api/admin/me'); state.me = me;
       loadMfa();
+      if (me.mfa_setup_required) routeToMfaSetup();
       state.people = {}; try { for (const x of ((await api('/api/admin/people')).people || [])) state.people[String(x.email).toLowerCase()] = x; } catch { /* names fall back to email */ }
       $('#whoEmail').textContent = me.email || ''; loadTopbar();
       { const lbl = document.querySelector('#whoRole') || (() => { const x = document.createElement('small'); x.id = 'whoRole'; x.style.cssText = 'display:block;opacity:.75'; $('#whoEmail').after(x); return x; })(); lbl.textContent = [me.name, me.label].filter(Boolean).join(' · '); }

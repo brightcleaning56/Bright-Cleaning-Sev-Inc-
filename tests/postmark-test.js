@@ -27,7 +27,8 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
   let log = ''; child.stdout.on('data', d => log += d); child.stderr.on('data', d => log += d);
   for (let i = 0; i < 60; i++) { try { if ((await fetch(B + '/health')).ok) break; } catch { } await sleep(150); }
   const api = async (m, u, j, t) => { const r = await fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: j ? JSON.stringify(j) : undefined }); return { status: r.status, data: await r.json().catch(() => ({})) }; };
-  const T = (await api('POST', '/api/admin/login', { email: OWNER, password: PW })).data.token;
+  const signIn = require('./mfa-helper')((p, b, t) => api('POST', p, b, t));
+  const T = await signIn(OWNER, PW);
 
   await check('Settings and Command Center report email as set up via Postmark', async () => {
     const s = (await api('GET', '/api/admin/settings', null, T)).data;

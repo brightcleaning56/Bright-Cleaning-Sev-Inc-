@@ -1,6 +1,7 @@
 // Two-step sign-in (authenticator app codes) for admin accounts.
 // Each person turns it on for their own account from Settings → Security. Once on, signing in needs the password
-// and a current 6-digit code. Owners and managers should turn it on; the server does not force it yet.
+// and a current 6-digit code. Owners and managers must have it on: until they do, the server only lets them use
+// the set-up routes (see MFA_OPEN in server.js), and they cannot turn it off. Staff may turn it on or off.
 // Enrollment is per account, stored in mfa_factors. The shared secret is never returned after setup is confirmed.
 const totp = require('./totp');
 
@@ -16,8 +17,8 @@ function mountMfa(app, ctx) {
 
   // Signed-in user: see status, set up, confirm, turn off.
   app.get('/api/admin/mfa', auth, (req, res) => {
-    const f = factor(who(req));
-    res.json({ enabled: !!(f && f.enabled), setup_pending: !!(f && !f.enabled), enabled_at: f && f.enabled ? f.enabled_at : null });
+    const email = who(req), f = factor(email);
+    res.json({ enabled: !!(f && f.enabled), setup_pending: !!(f && !f.enabled), enabled_at: f && f.enabled ? f.enabled_at : null, required: !!(ctx.required && ctx.required(email)) });
   });
   app.post('/api/admin/mfa/setup', auth, (req, res) => {
     const email = who(req), f = factor(email);
@@ -33,10 +34,12 @@ function mountMfa(app, ctx) {
     if (!totp.verify(f.secret, (req.body || {}).code)) return res.status(400).json({ error: 'That code is not right. Check the time on your phone and try again.' });
     db.prepare('UPDATE mfa_factors SET enabled=1, enabled_at=? WHERE email=?').run(new Date().toISOString(), email);
     audit(email, 'two-step sign-in turned on', '');
-    res.json({ ok: true });
+    // A fresh token that has passed the code check, so the session can use the whole app now.
+    res.json({ ok: true, token: signToken(email, true) });
   });
   app.post('/api/admin/mfa/disable', auth, (req, res) => {
     const email = who(req), f = factor(email);
+    if (ctx.required && ctx.required(email)) return res.status(409).json({ error: 'Two-step sign-in is required for your role, so it cannot be turned off.' });
     if (!f || !f.enabled) return res.status(409).json({ error: 'Two-step sign-in is not on.' });
     if (!totp.verify(f.secret, (req.body || {}).code)) return res.status(400).json({ error: 'Enter a current code from your app to turn two-step sign-in off.' });
     db.prepare('DELETE FROM mfa_factors WHERE email=?').run(email);
@@ -56,7 +59,7 @@ function mountMfa(app, ctx) {
     const email = lower(p.email), row = db.prepare('SELECT * FROM admin_users WHERE email=?').get(email), now = new Date().toISOString();
     if (row) db.prepare('UPDATE admin_users SET last_login_at=? WHERE id=?').run(now, row.id);
     audit(email, 'signed in', 'with two-step code');
-    res.json({ token: signToken(email), email });
+    res.json({ token: signToken(email, true), email });
   });
 }
 

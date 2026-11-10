@@ -20,7 +20,8 @@ const VIEWS = ['overview', 'leads', 'customers', 'issues', 'calls', 'emails', 'p
   const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: 'ignore' });
   for (let i = 0; i < 60; i++) { try { if ((await fetch(B + '/health')).ok) break; } catch { } await sleep(150); }
   const api = async (m, u, j, t) => { const r = await fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: j ? JSON.stringify(j) : undefined }); return r.json().catch(() => ({})); };
-  const T = (await api('POST', '/api/admin/login', { email: OWNER, password: PW })).token;
+  const signIn = require('./mfa-helper')((p, b, t) => api('POST', p, b, t).then(res => ({ data: res })));
+  const T = await signIn(OWNER, PW);
   await api('PUT', '/api/admin/approval-rules', { min_margin_pct: 0, max_total: 0, flag_pre_pricing: false, approve_all: false }, T);
   // ---- seed one realistic record on every page ----
   const cu = (await api('POST', '/api/admin/customers', { company: 'Seed Co', name: 'Sam Seed', email: 'sam@seed.test', phone: '515-555-0100' }, T)).id;
