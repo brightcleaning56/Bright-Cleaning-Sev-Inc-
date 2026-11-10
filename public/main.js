@@ -68,9 +68,19 @@ function loginView() {
 }
 
 function contractTable(cs, partyKey, partyLabel) {
-  return `<div class="scroll"><table><tr><th>Project</th><th>${partyLabel}</th><th class="num">Amount</th><th>Signed</th><th></th></tr>${cs.map(c => `<tr><td>${esc(c.title)}<br><small>${esc(c.address)}</small></td><td>${esc(c[partyKey])}</td><td class="num">${money(c.total)}${c.recurring?'/mo':''}</td><td>${esc(c.signerName)}<br><small>${esc(c.signedAt.replace('T',' ').slice(0,16))} UTC</small></td><td><button data-doc="${c.id}">Open signed record</button></td></tr>`).join('')}</table></div>`;
+  const status = c => c.countersigned ? '<span class="pill green">Fully signed</span>' : '<span class="pill amber">Awaiting countersignature</span>';
+  const rows = cs.map(c => `<tr><td>${esc(c.title)}<br><small>${esc(c.address)}</small></td><td>${esc(c[partyKey])}</td><td class="num">${money(c.total)}${c.recurring?'/mo':''}</td><td>${esc(c.signerName)}<br><small>${esc(c.signedAt.replace('T',' ').slice(0,16))} UTC</small><br>${status(c)}</td><td>${c.canCountersign ? `<button data-csign="${esc(c.id)}">Countersign</button>` : ''} <button data-doc="${esc(c.id)}">Record</button></td></tr>`).join('');
+  const panels = cs.filter(c => c.canCountersign).map(c => `<form class="countersign" data-csform="${esc(c.id)}" hidden>
+    <p class="cs-title"><strong>Countersign: ${esc(c.title)}</strong><br><small>You sign the same proposal the customer accepted. The record keeps your name, the time and your consent.</small></p>
+    <label>Your full name<input name="signerName" required minlength="3" maxlength="120"></label>
+    <label><input type="checkbox" name="consent" required> I agree to conduct this transaction electronically and to use electronic records and signatures.</label>
+    <div class="err" role="alert"></div><div><button class="primary" type="submit">Countersign</button></div></form>`).join('');
+  return `<div class="scroll"><table><tr><th>Project</th><th>${partyLabel}</th><th class="num">Amount</th><th>Signed</th><th></th></tr>${rows}</table></div>${panels}`;
 }
 function bindDocs() {
+  document.querySelectorAll('[data-csign]').forEach(b => b.onclick = () => { const f = document.querySelector(`[data-csform="${b.dataset.csign}"]`); if (f) f.hidden = !f.hidden; });
+  document.querySelectorAll('[data-csform]').forEach(f => f.onsubmit = async ev => { ev.preventDefault(); const err = f.querySelector('.err'); err.textContent = '';
+    try { await api('POST', `/api/contracts/${f.dataset.csform}/countersign`, { signerName: f.signerName.value, consent: f.consent.checked }); render(); } catch (e) { err.textContent = e.message; } });
   document.querySelectorAll('[data-doc]').forEach(b => b.onclick = async () => { const r = await fetch(`/api/contracts/${b.dataset.doc}/document`, {headers: {Authorization: 'Bearer ' + token}}); const w = window.open(); w.document.write(await r.text()); });
 }
 

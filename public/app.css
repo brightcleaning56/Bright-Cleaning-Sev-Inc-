@@ -350,3 +350,9 @@ body{font-size:13px}h2{font-size:20px}h3{font-size:14.5px;margin-bottom:8px}
 .buyer-tiles b{font:800 20px 'Manrope',sans-serif;color:#0b1d35}
 .buyer-tiles small{color:#62748b;font-size:12px}
 @media (max-width:900px){.buyer-tiles{grid-template-columns:repeat(2,1fr)}}
+
+/* Countersignature form on the contract list */
+.countersign{display:grid;gap:8px;margin:8px 0;padding:12px;border:1px solid #dfe7f0;border-radius:10px;background:#fff}
+.countersign[hidden]{display:none}
+.countersign label{display:grid;gap:4px;font-size:14px}
+.countersign .cs-title{margin:0}

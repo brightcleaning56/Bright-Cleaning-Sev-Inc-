@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**230 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**233 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -108,6 +108,11 @@
 - contacts: no invented recipients; unverified and suppressed are excluded; personal data refused
 - sources: nothing collects until terms are reviewed; scraping refused
 - csv parser handles quotes, commas and CRLF
+
+## countersign.test.js (3)
+- the awarded company countersigns and the contract becomes fully signed
+- only the provider can countersign, once, with its own consent
+- before countersignature the document says it is awaiting the provider
 
 ## enrichment.test.js (10)
 - license sync: looks up only names on permits, in one batched query, prefers the active license, records misses

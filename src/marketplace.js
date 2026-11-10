@@ -239,6 +239,23 @@ export function awardRequest(store, buyerOrg, user, requestId, submissionId, acc
   return { request: r, contractId: contract.id, winner: { sellerName: winner.sellerName, sellerEmail: winner.sellerEmail, total: winner.total } };
 }
 
+// The awarded company countersigns the same contract. Its signature is kept separately from the buyer's,
+// with its own consent and time, and the contract becomes fully signed once both have signed.
+export function countersignContract(store, sellerOrg, user, contractId, acceptance = {}) {
+  const c = store.get('contracts', contractId);
+  if (!c || c.sellerOrgId !== sellerOrg.id) throw Object.assign(new Error('not found'), { code: 404 });
+  if (c.countersignature) throw Object.assign(new Error('this contract is already countersigned'), { code: 409 });
+  if (!acceptance.signerName || String(acceptance.signerName).trim().length < 3) throw Object.assign(new Error('type your full name to countersign'), { code: 400 });
+  if (acceptance.consent !== true) throw Object.assign(new Error('consent to electronic records and signatures is required'), { code: 400 });
+  c.countersignature = { signerName: String(acceptance.signerName).trim().slice(0, 120), signerEmail: user.email, signerUserId: user.id,
+    onBehalfOf: sellerOrg.name, consentText: consentText(sellerOrg.name), consentVersion: CONSENT_VERSION,
+    ip: acceptance.ip || null, userAgent: String(acceptance.userAgent || '').slice(0, 300), at: now() };
+  c.status = 'fully_signed';
+  store.put('contracts', c);
+  store.audit({ actor: user.email, orgId: sellerOrg.id, action: 'contract.countersign', target: c.id, detail: { requestId: c.requestId } });
+  return { ok: true, contract: c };
+}
+
 export function closeRequest(store, buyerOrg, user, requestId) {
   const r = store.get('bidRequests', requestId);
   if (!r || r.buyerOrgId !== buyerOrg.id) throw Object.assign(new Error('not found'), { code: 404 });
@@ -266,6 +283,7 @@ export function contractDocument(c) {
     ['Project', `${esc(c.title)} — ${esc(c.address)}`], ['Amount', `$${Number(c.total).toLocaleString('en-US', { minimumFractionDigits: 2 })}${c.recurring ? ' per month' : ''}`],
     ['Signed at (UTC)', esc(a.at)], ['IP address', esc(a.ip || 'not recorded')], ['Browser', esc(a.userAgent || 'not recorded')],
     ['Consent', esc(a.consentText) + ` (v${esc(a.consentVersion)})`],
+    ...(c.countersignature ? [['Countersigned by', `${esc(c.countersignature.signerName)} (${esc(c.countersignature.signerEmail)}) for ${esc(c.countersignature.onBehalfOf)}`], ['Countersigned at (UTC)', esc(c.countersignature.at)], ['Countersignature consent', esc(c.countersignature.consentText) + ` (v${esc(c.countersignature.consentVersion)})`]] : [['Countersignature', 'awaiting the provider']]),
     ['Document SHA-256', `<code>${c.documentSha256}</code>`], ['Integrity check', intact ? 'Document unchanged since signing' : '<strong>DOCUMENT DOES NOT MATCH SIGNED HASH</strong>'],
   ].map(([k, v]) => `<tr><td style="padding:6px 12px 6px 0;vertical-align:top;color:#555;white-space:nowrap">${k}</td><td style="padding:6px 0">${v}</td></tr>`).join('')}</table></section>`;
   return c.proposalHtml.replace('</body>', cert + '</body>');

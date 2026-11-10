@@ -15,7 +15,7 @@ import { runCycleGuarded, cycleStatus, handleEmailEvent } from './autopilot.js';
 import { readiness } from './readiness.js';
 import { createBackup, restoreTest, backupDocuments, verifyDocumentVault, syncOffsite } from './backup.js';
 import { createCheckout, applyStripeEvent, PLANS } from './billing.js';
-import { BUYER_KINDS, createRequest, awardRequest, closeRequest, contractDocument, consentText, TRADES, setIntent, submitBid } from './marketplace.js';
+import { BUYER_KINDS, createRequest, awardRequest, closeRequest, contractDocument, consentText, countersignContract, TRADES, setIntent, submitBid } from './marketplace.js';
 import { contactFromProject } from './outreach.js';
 import { prequalProfile, setPrequal, leveling } from './prequal.js';
 import { SCALES, saveMeasurement, listMeasurements, deleteMeasurement } from './measure.js';
@@ -465,7 +465,14 @@ export function createServer(store, deps = {}) {
   });
   const canSeeContract = (c, user) => c && (c.buyerOrgId === user.orgId || c.sellerOrgId === user.orgId);
   route('GET', '/api/contracts', 'user', ({ user }) => store.list('contracts', c => canSeeContract(c, user))
-    .map(c => ({ id: c.id, title: c.title, address: c.address, buyerName: c.buyerName, sellerName: c.sellerName, total: c.total, recurring: c.recurring, signedAt: c.acceptance.at, signerName: c.acceptance.signerName, status: c.status })));
+    .map(c => ({ id: c.id, title: c.title, address: c.address, buyerName: c.buyerName, sellerName: c.sellerName, total: c.total, recurring: c.recurring, signedAt: c.acceptance.at, signerName: c.acceptance.signerName, status: c.status,
+      countersigned: !!c.countersignature, countersignedAt: c.countersignature?.at || null, countersignerName: c.countersignature?.signerName || null,
+      canCountersign: c.sellerOrgId === user.orgId && !c.countersignature })));
+  route('POST', '/api/contracts/:id/countersign', 'user', ({ params, body, user, req, ip }) => {
+    const org = store.get('orgs', user.orgId);
+    const r = countersignContract(store, org, user, params.id, { ...body, ip, userAgent: req.headers['user-agent'] }); need(r.ok, r.code || 400, r.error);
+    return { ok: true, status: r.contract.status, countersignedAt: r.contract.countersignature.at };
+  });
   route('GET', '/api/contracts/:id/document', 'user', ({ params, user }) => {
     const c = store.get('contracts', params.id); need(canSeeContract(c, user), 404, 'not found'); return { __html: contractDocument(c) };
   });
