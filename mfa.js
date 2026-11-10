@@ -29,6 +29,12 @@ function mountMfa(app, ctx) {
     db.prepare('INSERT INTO mfa_factors(email,secret,enabled,created_at) VALUES(?,?,0,?) ON CONFLICT(email) DO UPDATE SET secret=excluded.secret, enabled=0, created_at=excluded.created_at, enabled_at=NULL').run(email, secret, now);
     res.json({ secret, otpauth_uri: totp.otpauthUri(secret, email) });
   });
+  // Cancelling a set-up that is not yet on throws its key away, so the next Start gives a fresh key.
+  app.post('/api/admin/mfa/cancel', auth, (req, res) => {
+    const email = who(req), f = factor(email);
+    if (f && !f.enabled) db.prepare('DELETE FROM mfa_factors WHERE email=?').run(email);
+    res.json({ ok: true });
+  });
   app.post('/api/admin/mfa/enable', auth, (req, res) => {
     const email = who(req), f = factor(email);
     if (!f) return res.status(409).json({ error: 'Start the set-up first.' });

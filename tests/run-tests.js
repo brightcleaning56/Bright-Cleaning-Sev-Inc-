@@ -312,6 +312,8 @@ async function startServer(env, dataDir) {
     const wrong = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: '000000' } });
     const right = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000)) } });
     const me = await req('GET', '/api/admin/me', { token: right.data.token });
+    const cancelOn = await req('POST', '/api/admin/mfa/cancel', { token: l1.data.token });
+    assert(cancelOn.status === 200 && (await req('GET', '/api/admin/mfa', { token: l1.data.token })).data.enabled === true, 'cancel does not turn off a set-up that is on');
     assert(mk.status === 201 && l1.status === 200 && l1.data.token && setup.status === 200 && en.status === 200 && l2.status === 200 && l2.data.mfa_required === true && !l2.data.token && wrong.status === 401 && right.status === 200 && right.data.token && me.status === 200,
       JSON.stringify({ mk: mk.status, l1: l1.status, en: en.status, l2: [l2.status, l2.data.mfa_required], wrong: wrong.status, right: right.status }));
     return 'enrolled; sign-in asks for a code; 000000 refused (401); current code signs in';

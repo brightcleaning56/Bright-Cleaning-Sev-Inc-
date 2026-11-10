@@ -31,7 +31,7 @@ const bumpTv=email=>{const e=String(email||'').toLowerCase();const r=db.prepare(
 // to use any admin route, except the few needed to set two-step sign-in up.
 const signToken=(email,mfa=false)=>jwt.sign({role:'admin',email,tv:tvFor(email),mfa:!!mfa},process.env.JWT_SECRET,{expiresIn:'8h'});
 const mfaRequired=email=>['owner','manager'].includes(roleFor(email));
-const MFA_OPEN=new Set(['/api/admin/me','/api/admin/mfa','/api/admin/mfa/setup','/api/admin/mfa/enable']);
+const MFA_OPEN=new Set(['/api/admin/me','/api/admin/mfa','/api/admin/mfa/setup','/api/admin/mfa/enable','/api/admin/mfa/cancel']);
 for(const [table,col,type] of [['leads','notes','TEXT'],['leads','updated_at','TEXT'],['invoices','notes','TEXT'],['invoices','issue_date','TEXT'],['contracts','notes','TEXT']]){const cols=db.prepare(`PRAGMA table_info(${table})`).all().map(c=>c.name);if(!cols.includes(col))db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`)}
 const storage=multer.diskStorage({destination:(req,file,cb)=>cb(null,uploadDir),filename:(req,file,cb)=>{const ext=path.extname(file.originalname).slice(0,10).toLowerCase();cb(null,crypto.randomUUID()+ext)}});
 const upload=require('./filecheck').guard(multer({storage,limits:{fileSize:30*1024*1024,files:8},fileFilter:(req,file,cb)=>{const ok=/\.(pdf|doc|docx|xls|xlsx|png|jpe?g|zip)$/i.test(file.originalname);cb(ok?null:new Error('Unsupported file type'),ok)}}));

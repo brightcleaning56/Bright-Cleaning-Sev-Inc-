@@ -304,7 +304,10 @@
         $('#mfaConfirm').focus();
       } catch (err) { mfaMsg(err.message, true); }
     });
-    $('#mfaCancel').addEventListener('click', () => { $('#mfaSetup').hidden = true; $('#mfaStartBar').hidden = false; mfaMsg('Set-up cancelled. Nothing was turned on.'); });
+    $('#mfaCancel').addEventListener('click', async () => {
+      try { await api('/api/admin/mfa/cancel', { method: 'POST' }); } catch (err) { mfaMsg(err.message, true); return; }
+      $('#mfaSetup').hidden = true; $('#mfaStartBar').hidden = false; mfaMsg('Set-up cancelled. Nothing was turned on. Start again for a new key.');
+    });
     $('#mfaEnable').addEventListener('click', async () => {
       try {
         const x = await api('/api/admin/mfa/enable', { method: 'POST', json: { code: $('#mfaConfirm').value } });
