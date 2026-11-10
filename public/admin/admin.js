@@ -186,7 +186,7 @@
     const r = await fetch(url, opts);
     let j = {};
     try { j = await r.json(); } catch { /* no body */ }
-    if (r.status === 401 && url !== '/api/admin/login') {
+    if (r.status === 401 && !url.startsWith('/api/admin/login')) {
       signOut('Your session ended. Please sign in again.');
       throw new Error('Signed out');
     }
@@ -238,24 +238,79 @@
     $('#loginStatus').className = 'msg' + (message ? ' err' : '');
   }
 
+  // Second sign-in step: when two-step sign-in is on, the password step returns a short-lived challenge and asks for the app code.
+  let mfaToken = null;
+  function showMfaStep(on) {
+    mfaToken = on ? mfaToken : null;
+    $('#lpField').hidden = !!on; $('#lp').required = !on;
+    $('#mfaField').hidden = !on; $('#mfaCode').required = !!on;
+    $('#loginBtn').textContent = on ? 'Confirm' : 'Sign in';
+    if (on) { $('#mfaCode').value = ''; $('#mfaCode').focus(); }
+  }
   $('#loginForm').addEventListener('submit', async e => {
     e.preventDefault();
     const st = $('#loginStatus');
     st.className = 'msg'; st.textContent = 'Signing in…';
     try {
-      const x = await api('/api/admin/login', { method: 'POST', json: formObj(e.target) });
+      let x;
+      if (mfaToken) {
+        x = await api('/api/admin/login/mfa', { method: 'POST', json: { mfa_token: mfaToken, code: $('#mfaCode').value } });
+      } else {
+        x = await api('/api/admin/login', { method: 'POST', json: formObj(e.target) });
+        if (x.mfa_required) { mfaToken = x.mfa_token; showMfaStep(true); st.textContent = 'Enter the 6-digit code from your authenticator app.'; return; }
+      }
       token = x.token;
       localStorage.setItem(TOKEN_KEY, token);
       e.target.reset();
+      showMfaStep(false);
       st.textContent = '';
       loadPrefs().finally(() => { start(); setTimeout(connectLive, 800); setTimeout(() => { if (token) initPhone(); }, 1500); });
-    } catch (err) { st.className = 'msg err'; st.textContent = err.message; }
+    } catch (err) { st.className = 'msg err'; st.textContent = err.message; if (mfaToken && /Start again/.test(err.message)) showMfaStep(false); }
   });
   $('#logout').addEventListener('click', () => signOut());
+
+  // Settings → Security: turn two-step sign-in on or off for the signed-in account.
+  const mfaMsg = (text, bad) => { const s = $('#mfaStatus'); s.className = bad ? 'msg err' : 'msg'; s.textContent = text; };
+  async function loadMfa() {
+    if (!$('#mfaCard')) return;
+    try {
+      const x = await api('/api/admin/mfa');
+      $('#mfaOn').hidden = !x.enabled; $('#mfaStartBar').hidden = !!x.enabled; $('#mfaSetup').hidden = true;
+      mfaMsg(x.enabled ? 'On. Signing in asks for a code from your app.' : 'Off. Your password alone signs you in.');
+    } catch (err) { mfaMsg(err.message, true); }
+  }
+  function wireMfa() {
+    if (!$('#mfaCard')) return;
+    $('#mfaStart').addEventListener('click', async () => {
+      try {
+        const x = await api('/api/admin/mfa/setup', { method: 'POST' });
+        $('#mfaSecret').textContent = x.secret; $('#mfaSetup').hidden = false; $('#mfaStartBar').hidden = true; $('#mfaConfirm').value = '';
+        mfaMsg('Add this key to your app, then enter the 6-digit code it shows.');
+        $('#mfaConfirm').focus();
+      } catch (err) { mfaMsg(err.message, true); }
+    });
+    $('#mfaCancel').addEventListener('click', () => { $('#mfaSetup').hidden = true; $('#mfaStartBar').hidden = false; mfaMsg('Set-up cancelled. Nothing was turned on.'); });
+    $('#mfaEnable').addEventListener('click', async () => {
+      try {
+        await api('/api/admin/mfa/enable', { method: 'POST', json: { code: $('#mfaConfirm').value } });
+        mfaMsg('Two-step sign-in is on.'); toast('Two-step sign-in is on');
+        loadMfa();
+      } catch (err) { mfaMsg(err.message, true); }
+    });
+    $('#mfaDisable').addEventListener('click', async () => {
+      try {
+        await api('/api/admin/mfa/disable', { method: 'POST', json: { code: $('#mfaOffCode').value } });
+        $('#mfaOffCode').value = ''; toast('Two-step sign-in is off');
+        loadMfa();
+      } catch (err) { mfaMsg(err.message, true); }
+    });
+  }
+  wireMfa();
 
   async function start() {
     try {
       const me = await api('/api/admin/me'); state.me = me;
+      loadMfa();
       state.people = {}; try { for (const x of ((await api('/api/admin/people')).people || [])) state.people[String(x.email).toLowerCase()] = x; } catch { /* names fall back to email */ }
       $('#whoEmail').textContent = me.email || ''; loadTopbar();
       { const lbl = document.querySelector('#whoRole') || (() => { const x = document.createElement('small'); x.id = 'whoRole'; x.style.cssText = 'display:block;opacity:.75'; $('#whoEmail').after(x); return x; })(); lbl.textContent = [me.name, me.label].filter(Boolean).join(' · '); }
@@ -1970,7 +2025,7 @@
     initSettingsTabs(); bindSettingsForms();
     // Only owners and managers manage company settings. Everyone else sees just their own password and name.
     const own = state.me && !['owner', 'manager'].includes(state.me.role);
-    if (own) { $$('#v-settings .card').forEach(c => { if (c.id !== 'pwForm') c.hidden = true; }); document.querySelectorAll('#sTabs .stab').forEach(b => { b.hidden = b.dataset.stab !== 'security'; }); setSettingsTab('security'); return; }
+    if (own) { $$('#v-settings .card').forEach(c => { if (!['pwForm', 'mfaCard'].includes(c.id)) c.hidden = true; }); document.querySelectorAll('#sTabs .stab').forEach(b => { b.hidden = b.dataset.stab !== 'security'; }); setSettingsTab('security'); return; }
     await Promise.all([loadUsers(), loadAutomation(), loadBackups(), loadApprovalRules(), loadAISettings(), loadPhoneSettings(), loadApiKeys(), loadCallbackSettings(), loadSettingsOverview()]);
   }
   async function loadCallbackSettings() {

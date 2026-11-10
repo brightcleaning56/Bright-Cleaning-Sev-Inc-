@@ -165,7 +165,9 @@ module.exports = function mountOps(app, ctx) {
   // ---------------- Backups ----------------
   const backupDir = path.join(dataDir, 'backups');
   fs.mkdirSync(backupDir, { recursive: true });
-  const listBackups = () => fs.readdirSync(backupDir).filter(f => /^brightclean-\d{8}-\d{6}\.db$/.test(f)).sort().reverse()
+  const BACKUP_NAME = /^brightclean-\d{8}-\d{6}\.db(\.enc)?$/;
+  const bcrypto = require('./backupcrypto');
+  const listBackups = () => fs.readdirSync(backupDir).filter(f => BACKUP_NAME.test(f)).sort().reverse()
     .map(f => { const st = fs.statSync(path.join(backupDir, f)); return { name: f, size: st.size, created_at: st.mtime.toISOString() }; });
   let backupRunning = false;
   async function runBackup(reason) {
@@ -175,17 +177,25 @@ module.exports = function mountOps(app, ctx) {
       const d = new Date(), p = n => String(n).padStart(2, '0');
       const name = `brightclean-${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}.db`;
       await db.backup(path.join(backupDir, name));
+      let saved = name;
+      const key = bcrypto.keyFromEnv();
+      if (key) {
+        // With BACKUP_KEY set, the copy on disk is encrypted and the plain copy is removed.
+        bcrypto.encryptFile(path.join(backupDir, name), path.join(backupDir, name + '.enc'), key);
+        fs.unlinkSync(path.join(backupDir, name));
+        saved = name + '.enc';
+      }
       const all = listBackups();
       for (const old of all.slice(14)) { try { fs.unlinkSync(path.join(backupDir, old.name)); } catch { /* ignore */ } }
-      db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup', null, reason, null, 'ok', name, now());
-      return name;
+      db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup', null, reason, null, 'ok', saved, now());
+      return saved;
     } catch (e) {
       db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup', null, reason, null, 'failed', clean(e.message, 500), now());
       console.error('Backup failed:', e.message);
       return null;
     } finally { backupRunning = false; }
   }
-  app.get('/api/admin/backups', auth, (req, res) => res.json({ backups: listBackups(), retention: 14, folder: 'data/backups' }));
+  app.get('/api/admin/backups', auth, (req, res) => res.json({ backups: listBackups(), retention: 14, folder: 'data/backups', encrypted: !!bcrypto.keyFromEnv() }));
   app.post('/api/admin/backups', auth, async (req, res) => {
     const name = await runBackup('manual');
     if (!name) return res.status(500).json({ error: 'Backup failed. Check the server log.' });
@@ -194,7 +204,7 @@ module.exports = function mountOps(app, ctx) {
   });
   app.get('/api/admin/backups/:name', auth, (req, res) => {
     const name = path.basename(req.params.name);
-    if (!/^brightclean-\d{8}-\d{6}\.db$/.test(name)) return res.status(400).json({ error: 'Invalid backup name' });
+    if (!BACKUP_NAME.test(name)) return res.status(400).json({ error: 'Invalid backup name' });
     const p = path.join(backupDir, name);
     if (!fs.existsSync(p)) return res.status(404).json({ error: 'Not found' });
     logAction(req, 'downloaded', 'backup', 0, name);

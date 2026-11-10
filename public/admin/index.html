@@ -507,8 +507,9 @@
   <h1>Sign in</h1>
   <form id="loginForm">
     <div class="field"><label for="le">Email</label><input id="le" name="email" type="email" autocomplete="username" required></div>
-    <div class="field"><label for="lp">Password</label><input id="lp" name="password" type="password" autocomplete="current-password" required></div>
-    <button class="btn" style="width:100%">Sign in</button>
+    <div class="field" id="lpField"><label for="lp">Password</label><input id="lp" name="password" type="password" autocomplete="current-password" required></div>
+    <div class="field" id="mfaField" hidden><label for="mfaCode">Code from your authenticator app</label><input id="mfaCode" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code"><span class="hint">Open the app on your phone and enter the code for Bright Clean.</span></div>
+    <button class="btn" id="loginBtn" style="width:100%">Sign in</button>
     <p id="loginStatus" class="msg" role="status"></p>
   </form>
 </div>
@@ -947,6 +948,22 @@
             <div class="f" style="margin-top:12px"><label for="s3">Type it again</label><input id="s3" name="confirm" type="password" autocomplete="new-password" required></div>
             <div class="formbar"><button class="btn">Change password</button><span class="msg" id="pwMsg" role="status"></span></div>
           </form>
+          <section class="card" id="mfaCard" aria-labelledby="mfaTitle">
+            <h2 id="mfaTitle">Two-step sign-in</h2>
+            <p class="hint">Adds a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator or 1Password) to your password. We recommend it for owners and managers.</p>
+            <div id="mfaStatus" class="msg" role="status"></div>
+            <div id="mfaSetup" hidden>
+              <p class="hint">In your app, add an account and enter this setup key:</p>
+              <p><code id="mfaSecret" style="word-break:break-all;user-select:all"></code></p>
+              <div class="f"><label for="mfaConfirm">Code from the app</label><input id="mfaConfirm" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
+              <div class="formbar"><button class="btn" id="mfaEnable" type="button">Turn on</button><button class="btn ghost" id="mfaCancel" type="button">Cancel</button></div>
+            </div>
+            <div id="mfaOn" hidden>
+              <div class="f"><label for="mfaOffCode">Code from the app, to turn off</label><input id="mfaOffCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
+              <div class="formbar"><button class="btn ghost" id="mfaDisable" type="button">Turn off two-step sign-in</button></div>
+            </div>
+            <div class="formbar" id="mfaStartBar" hidden><button class="btn" id="mfaStart" type="button">Set up two-step sign-in</button></div>
+          </section>
         </div>
         <div class="sp" data-panels="general users" id="spUsers">
           <div class="card">

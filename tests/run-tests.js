@@ -298,6 +298,21 @@ async function startServer(env, dataDir) {
     assert(lead && lead.contact_name.includes('<img'), 'not stored');
     return 'nosniff, frame protection, no x-powered-by; payload stored verbatim (admin UI escapes it, see UI test)';
   });
+  await check('Security', 'Two-step sign-in: set up and confirm with an app code; sign-in then needs a code; wrong code refused; right code signs in', async () => {
+    const totp = require('../totp');
+    const email = 'mfa.tester@brightclean.test', pw = 'Temp-password-2026!!';
+    const mk = await req('POST', '/api/admin/users', { token: T, json: { email, name: 'MFA Tester', password: pw, role: 'manager' } });
+    const l1 = await req('POST', '/api/admin/login', { json: { email, password: pw } });
+    const setup = await req('POST', '/api/admin/mfa/setup', { token: l1.data.token });
+    const en = await req('POST', '/api/admin/mfa/enable', { token: l1.data.token, json: { code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000)) } });
+    const l2 = await req('POST', '/api/admin/login', { json: { email, password: pw } });
+    const wrong = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: '000000' } });
+    const right = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000)) } });
+    const me = await req('GET', '/api/admin/me', { token: right.data.token });
+    assert(mk.status === 201 && l1.status === 200 && l1.data.token && setup.status === 200 && en.status === 200 && l2.status === 200 && l2.data.mfa_required === true && !l2.data.token && wrong.status === 401 && right.status === 200 && right.data.token && me.status === 200,
+      JSON.stringify({ mk: mk.status, l1: l1.status, en: en.status, l2: [l2.status, l2.data.mfa_required], wrong: wrong.status, right: right.status }));
+    return 'enrolled; sign-in asks for a code; 000000 refused (401); current code signs in';
+  });
   await check('Security', 'Login is rate limited (brute-force protection)', async () => {
     let s = []; for (let i = 0; i < 9; i++) s.push((await req('POST', '/api/admin/login', { json: { email: 'x@y.test', password: 'wrong-password-123' } })).status);
     assert(s.includes(429), s.join(',')); return 'statuses ' + s.join(',');
@@ -677,6 +692,27 @@ async function startServer(env, dataDir) {
     backupFile = path.join(work, 'restored.db'); fs.writeFileSync(backupFile, dl.data);
     assert(r.status === 201 && list.some(b => b.name === backupName) && dl.status === 200 && dl.data.length > 10000 && anon.status === 401 && bad.status === 400, `${r.status} ${dl.status} ${anon.status} ${bad.status}`);
     return `${backupName} (${dl.data.length} bytes); anonymous 401; bad name 400`;
+  });
+  await check('Backup', 'Encrypted backups: the copy is unreadable without the key, opens with it, and a wrong key or a changed file is refused', async () => {
+    const bc = require('../backupcrypto'), crypto = require('crypto');
+    const src = path.join(work, 'enc-src.db'), dest = path.join(work, 'enc-out.db.enc');
+    fs.writeFileSync(src, Buffer.from('SQLite format 3\0 pretend database contents for the encryption test'));
+    const key = crypto.createHash('sha256').update('test-backup-key').digest();
+    bc.encryptFile(src, dest, key);
+    const enc = fs.readFileSync(dest);
+    const plain = bc.decryptBuffer(enc, key);
+    let wrongKey = false, tampered = false;
+    try { bc.decryptBuffer(enc, crypto.createHash('sha256').update('other').digest()); } catch { wrongKey = true; }
+    const bad = Buffer.from(enc); bad[bad.length - 1] ^= 1;
+    try { bc.decryptBuffer(bad, key); } catch { tampered = true; }
+    assert(plain.equals(fs.readFileSync(src)) && !enc.includes('SQLite format') && wrongKey && tampered, JSON.stringify({ wrongKey, tampered }));
+    return 'ciphertext contains no plain text; decrypts with the key; wrong key and changed file refused';
+  });
+  await check('Backup', 'Data integrity report: owner only; orphaned links, duplicate customer keys and payment mismatches are counted', async () => {
+    const r = await req('GET', '/api/admin/integrity', { token: T });
+    const bad = (r.data.checks || []).filter(c => c.ok === false);
+    assert(r.status === 200 && r.data.checks.length >= 13 && r.data.failing === 0, JSON.stringify({ status: r.status, failing: r.data.failing, bad }));
+    return `${r.data.checks.length} checks, ${r.data.failing} failing, ${r.data.unchecked} not checked`;
   });
   await check('Backup', 'Restore drill: backup opens in a separate server instance with identical data', async () => {
     const live = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true });
@@ -2153,6 +2189,11 @@ async function startServer(env, dataDir) {
     return `${steps.length}/${steps.length} steps PASS`;
   });
 
+  await check('Permissions', 'Data integrity report is refused to staff and managers (owner only)', async () => {
+    const s = await req('GET', '/api/admin/integrity', { token: globalThis.__st });
+    assert(s.status === 403, 'staff got ' + s.status);
+    return 'staff refused (403); owner allowed (checked in Backup)';
+  });
   await check('Permissions', 'D-08: staff are refused on every owner/manager action (enforced on the server, denial logged); owner still allowed', async () => {
     const st = globalThis.__st, out = {};
     const deny = [['POST', '/api/admin/users', { email: 'x@y.test', password: 'a-long-password-123' }], ['DELETE', '/api/admin/users/999', null], ['PUT', '/api/admin/settings', { auto_handoff: true }], ['PUT', '/api/admin/ai/settings', { auto_triage: true }],

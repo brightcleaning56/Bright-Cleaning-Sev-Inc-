@@ -142,6 +142,35 @@ async function check(area, name, fn) {
     $('#backupNow').click(); await sleep(900);
     assert(/Backup created/.test(txt('#backupMsg')) && d.querySelectorAll('[data-backup]').length >= 1, txt('#backupMsg')); return txt('#backupMsg');
   });
+  await check('Security UI', 'Two-step sign-in card: shows Off, set-up shows a key, cancelling turns nothing on', async () => {
+    await nav('settings'); await sleep(300);
+    const off = /Off\./.test(txt('#mfaStatus'));
+    $('#mfaStart').click(); await sleep(700);
+    const key = txt('#mfaSecret'), shown = !$('#mfaSetup').hidden;
+    $('#mfaCancel').click(); await sleep(200);
+    const mfa = await api('GET', '/api/admin/mfa', null, T);
+    assert(off && shown && key.length >= 16 && !mfa.enabled && /Nothing was turned on/.test(txt('#mfaStatus')), JSON.stringify({ off, shown, keyLen: key.length, enabled: mfa.enabled }));
+    return `status "Off"; key shown (${key.length} characters); cancel leaves it off`;
+  });
+  await check('Security UI', 'Sign-in asks for the app code when two-step sign-in is on; a wrong code does not sign in; the right code does', async () => {
+    const totp = require('../totp');
+    const em = 'mfa.ui@brightclean.test', pw = 'Temp-password-2026!!';
+    await api('POST', '/api/admin/users', { email: em, name: 'MFA UI', password: pw, role: 'manager' }, T);
+    const l1 = await api('POST', '/api/admin/login', { email: em, password: pw });
+    const su = await api('POST', '/api/admin/mfa/setup', null, l1.token);
+    await api('POST', '/api/admin/mfa/enable', { code: totp.codeAt(su.secret, Math.floor(Date.now() / 30000)) }, l1.token);
+    const w2 = await open('/admin/', null), q = s => w2.document.querySelector(s);
+    const submit = () => q('#loginForm').dispatchEvent(new w2.Event('submit', { cancelable: true, bubbles: true }));
+    q('#le').value = em; q('#lp').value = pw; submit(); await sleep(900);
+    const step = !q('#mfaField').hidden && q('#lpField').hidden;
+    q('#mfaCode').value = '000000'; submit(); await sleep(700);
+    const wrongIn = !!w2.localStorage.getItem('bc_admin_token');
+    const wrongMsg = /not right/.test(q('#loginStatus').textContent);
+    q('#mfaCode').value = totp.codeAt(su.secret, Math.floor(Date.now() / 30000)); submit(); await sleep(1200);
+    const rightIn = !!w2.localStorage.getItem('bc_admin_token');
+    assert(step && !wrongIn && wrongMsg && rightIn, JSON.stringify({ step, wrongIn, wrongMsg, rightIn, msg: q('#loginStatus').textContent }));
+    return 'password step → code step; wrong code refused with message; right code signs in';
+  });
   await check('Proposal page', 'Customer page renders; decided proposal shows decision and disables buttons', async () => {
     const pw = await open('/proposal/' + est.public_token, null);
     const t = pw.document.body.textContent;
