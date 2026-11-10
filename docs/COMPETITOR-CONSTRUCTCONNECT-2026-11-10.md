@@ -33,4 +33,5 @@ Source page: https://www.constructconnect.com/industry-trusted-preconstruction-s
 6. **Pricing clarity.** Competitors price per market and per seat with annual contracts. Our plans should state the territory and user limits in one table, monthly, no annual lock-in in the trial (this is already the trial model); confirm final prices before any charge.
 
 ## Status
-- Item 1 is the highest-value build: the invitation email already exists, so the new part is a signed bid link and a bid form reached without login. Not built yet; say the word and I will build it next.
+- Item 1 is built: each invitation email now carries a signed bid link (`/bid/<token>`). The link names one invitation, expires two days after bids are due, and lets the company see that request and send one bid (revisable) without signing in. Addenda must be acknowledged in the app first. Code: `src/bidlink.js`, `public/bid.html`, `public/bid.js`; tests: `test/bidlink.test.js`.
+- Still to do: a 'copy bid link' button in the app's invitations list (the API route `/api/invitations/:id/bid-link` already exists), and a short sign-in-free check that the link works on phones.

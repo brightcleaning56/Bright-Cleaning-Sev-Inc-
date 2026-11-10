@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**225 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**230 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -81,6 +81,13 @@
 - off-site signing matches the AWS published Signature V4 example
 - off-site sync: uploads the newest database backup and new document blobs only, signed
 - database TLS: verified by default over the internet; opt-out is explicit; private network has no TLS
+
+## bidlink.test.js (5)
+- an invited company bids from its emailed link, with no sign-in
+- a second link bid revises the first, and the GC sees one bid
+- the link is refused when it is wrong, tampered with, expired, or for another purpose
+- a link bid is refused until addenda are acknowledged, and needs a name and work email
+- the bid page is served and the invitation email carries the link
 
 ## core-reads.test.js (8)
 - switch off: unchanged (permit ids, address grouping); switch on: same projects, permanent ids, anchor permits

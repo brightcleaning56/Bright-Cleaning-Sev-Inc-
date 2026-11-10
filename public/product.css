@@ -178,3 +178,22 @@ a.pg-card:hover{border-color:#b9cde8}
 
 /* Generated page styles moved to classes. */
 .st-33fcd4c3{gap:8px!important}
+
+/* Bid without signing in (public bid page) */
+.bid-page{padding:40px 0 64px;background:#f4f7fb;min-height:70vh}
+.bid-wrap{max-width:760px}
+.bid-summary{background:#fff;border:1px solid #dfe7f0;border-radius:14px;padding:22px 24px;margin-bottom:18px}
+.bid-summary h1{font:800 26px/1.2 'Manrope',sans-serif;color:#0b1d35;margin:0 0 8px}
+.bid-meta{margin:4px 0;color:#62748b;font-size:14.5px}
+.bid-desc{margin:12px 0 0;color:#14263c;white-space:pre-wrap}
+.bid-h2{font:800 20px 'Manrope',sans-serif;color:#0b1d35;margin:22px 0 10px}
+.bid-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.bid-field{display:grid;gap:6px;font-size:14px;font-weight:600;color:#0b1d35}
+.bid-check{display:flex;gap:8px;align-items:center;font-size:14px;font-weight:400}
+.bid-actions{align-items:center}
+.bid-note{margin:0;color:#62748b;font-size:13px}
+.bid-done{background:#fff;border:1px solid #cfe9db;border-left:4px solid #1d9a68;border-radius:14px;padding:22px 24px}
+.bid-done h2{font:800 22px 'Manrope',sans-serif;color:#0b1d35;margin:0 0 6px}
+.bid-loading{color:#62748b}
+@media (max-width:760px){.bid-form .row2{grid-template-columns:1fr}}
+.err{color:#c0392b;font-weight:600}

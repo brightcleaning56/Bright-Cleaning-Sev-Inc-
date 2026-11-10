@@ -8,6 +8,7 @@ import { readiness } from './readiness.js';
 import { sendEmail } from './outbound.js';
 import { collectAlerts } from './leads.js';
 import { leadAccess } from './billing.js';
+import { bidLinkToken } from './bidlink.js';
 
 const DAY = 864e5;
 const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -173,7 +174,8 @@ export async function sendInvitationNotices(store, { fetchImpl } = {}) {
     if (!gate.send) { out.push({ org: org.slug, invitations: items.length, deferred: gate.reason }); continue; }
     const owners = store.list('users', u => u.orgId === orgId && ['owner', 'platform_owner', 'member'].includes(u.role) && !u.disabled);
     const lines = [`You've been invited to bid on ${items.length} project(s):`, ''];
-    for (const { r } of items) lines.push(`• ${r.title} — ${r.address}, ${r.city}, ${r.state}`, `  From ${r.buyerName} · bids due ${String(r.dueDate).slice(0, 10)}`, `  ${config.baseUrl}/app#invitations`);
+    for (const { i: inv, r } of items) lines.push(`• ${r.title} — ${r.address}, ${r.city}, ${r.state}`, `  From ${r.buyerName} · bids due ${String(r.dueDate).slice(0, 10)}`,
+      `  Bid without signing in (this link expires two days after bids are due): ${config.baseUrl}/bid/${bidLinkToken(inv, r)}`, `  Or sign in to see all your invitations: ${config.baseUrl}/app#invitations`);
     const from = config.platformFrom || org.senderEmail;
     for (const u of owners) {
       const r = from ? await sendEmail({ From: from, To: u.email, Subject: `BUILDINTEL: ${items.length} invitation(s) to bid`, TextBody: lines.join('\n'), MessageStream: config.postmarkStream }, { fetchImpl })

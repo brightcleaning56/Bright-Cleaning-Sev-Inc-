@@ -43,6 +43,29 @@ with sync_playwright() as p:
             if 'Project status' not in d.inner_text('#analytics'): problems.append('owner: project status card missing')
             if d.locator('#analytics .buyer-tiles > div').count() != 4: problems.append('owner: project status tiles wrong')
         ctx.close()
+    # Bid without signing in: the subcontractor's link opens the bid page, a bid is sent with no account sign-in.
+    ctx, d = fresh(b, '/app', '#e')
+    d.fill('#e', 'trade@elec.test'); d.fill('#p', 'demo password 123'); d.click('button.primary'); d.wait_for_selector('.role-banner', timeout=15000)
+    link = d.evaluate("""async () => { const tok = sessionStorage.getItem('bi_token');
+      const inv = await (await fetch('/api/invitations', { headers: { authorization: 'Bearer ' + tok } })).json();
+      const first = inv.find(i => i.request.title === 'Electrical rough-in, Seattle office') || inv[0];
+      return (await (await fetch('/api/invitations/' + first.id + '/bid-link', { headers: { authorization: 'Bearer ' + tok } })).json()).url; }""")
+    ctx.close()
+    ctx2 = b.new_context(viewport={'width': 1280, 'height': 900}); pg = ctx2.new_page(); pg.set_default_timeout(15000)
+    from urllib.parse import urlparse
+    pg.goto(BASE + urlparse(link).path, wait_until='commit')
+    try:
+        pg.wait_for_selector('.bid-form, .empty, .err', timeout=15000)
+    except Exception:
+        problems.append('bid link: page did not load')
+    else:
+        if pg.locator('.bid-form').count() != 1 and 'addenda' not in pg.inner_text('#bid') and 'already' not in pg.inner_text('#bid'):
+            problems.append('bid link: bid form missing')
+        if pg.locator('.bid-form').count() == 1:
+            pg.fill('#contactName', 'QA Estimator'); pg.fill('#contactEmail', 'trade@elec.test'); pg.fill('#amount', '12,500'); pg.fill('#scope', 'Rough-in and trim for the office floors.')
+            pg.click('.bid-form button[type=submit]'); pg.wait_for_selector('.bid-done', timeout=15000)
+            if 'Bid received' not in pg.inner_text('#bid'): problems.append('bid link: no confirmation')
+    ctx2.close()
     # Each subscriber role has its own menu
     menus = {}
     for email in ['trade@elec.test', 'svc@clean.test', 'sub@em.test']:

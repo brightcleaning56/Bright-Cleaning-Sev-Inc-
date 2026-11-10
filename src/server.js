@@ -9,6 +9,7 @@ import { seedSources, canCollect, sourceComplianceIssues } from './sources/regis
 import { csvImport } from './sources/adapters.js';
 import { ingestPermits } from './permits.js';
 import { draftRateCard, approveRateCard, CATEGORIES } from './estimate.js';
+import { bidLinkView, submitBidLink, bidLinkToken } from './bidlink.js';
 import { validateContact, normName, transition } from './domain.js';
 import { runCycleGuarded, cycleStatus, handleEmailEvent } from './autopilot.js';
 import { readiness } from './readiness.js';
@@ -143,6 +144,19 @@ export function createServer(store, deps = {}) {
 
   // ---- public ----
   route('GET', '/health', null, () => ({ ok: !store.lastFlushError, at: now(), storage: store.kind || 'memory', lastFlushAt: store.lastFlushAt || null, storageError: store.lastFlushError ? 'write failed — see logs' : null }));
+  // The company's own bid link for one of its invitations (for the "copy bid link" button in the app).
+  route('GET', '/api/invitations/:id/bid-link', 'user', ({ params, user }) => {
+    const inv = store.get('invitations', params.id); need(inv && inv.sellerOrgId === user.orgId, 404, 'not found');
+    const r = store.get('bidRequests', inv.requestId); need(r, 404, 'not found');
+    return { url: `${config.baseUrl}/bid/${bidLinkToken(inv, r)}` };
+  });
+  // Bid without signing in: the link in an invitation email. See src/bidlink.js.
+  route('GET', '/api/bid-link/:token', null, ({ params }) => { const r = bidLinkView(store, params.token); need(r.ok, r.code || 404, r.error); return r; });
+  route('POST', '/api/bid-link/:token', null, ({ params, body, ip }) => {
+    need(rateLimit('bidlink:' + ip, 20, 3600e3), 429, 'too many attempts from this address, try again later');
+    const r = submitBidLink(store, params.token, body); need(r.ok, r.code || 400, r.error);
+    return { ok: true, message: 'Bid received. Your bid is recorded with a receipt; the GC will be in touch by email.', submission: { id: r.submission.id, total: r.submission.total, submittedAt: r.submission.submittedAt } };
+  });
   // Public contact form on the website. Stored for the Super Admin team to answer; no account needed.
   const INQUIRY_TYPES = ['Book a demo', 'Subscribe to projects', 'Publish projects', 'Support', 'Partnership', 'Other'];
   route('POST', '/api/inquiries', null, ({ body, ip }) => {
@@ -856,6 +870,8 @@ export function createServer(store, deps = {}) {
       if (req.method === 'GET' && url.pathname === '/site.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/site.css')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/site.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/site.js')).pipe(res); }
       if (req.method === 'GET' && (url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico')) { res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/favicon.svg')).pipe(res); }
+      if (req.method === 'GET' && url.pathname.startsWith('/bid/') && url.pathname.length > 5) return sendFramable(res, 200, fs.readFileSync(path.join(ROOT, 'public/bid.html'), 'utf8'));
+      if (req.method === 'GET' && url.pathname === '/bid.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/bid.js')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/product.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/product.css')).pipe(res); }
       if (req.method === 'GET' && url.pathname === '/ui-screens') return sendFramable(res, 200, fs.readFileSync(path.join(ROOT, 'public/ui-screens/index.html'), 'utf8'));
       if (req.method === 'GET' && url.pathname === '/home.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...SEC_HEADERS }); return fs.createReadStream(path.join(ROOT, 'public/home.css')).pipe(res); }
