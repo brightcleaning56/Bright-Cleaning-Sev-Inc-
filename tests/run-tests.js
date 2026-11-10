@@ -2615,6 +2615,21 @@ async function startServer(env, dataDir) {
     return `${map.handlers} handlers, ${map.rows.reduce((s2, r) => s2 + r.calls.length, 0)} server calls, 0 dangling; staff blocked from financial-summary and run-reminders`;
   });
 
+  await check('Calls', 'Automatic callback: the press-1 prompt has a real keypress address; pressing 1 rings the team phones; any other key ends politely', async () => {
+    const crypto = require('crypto'), base = 'https://brightclean.net';
+    const sign = (path, params) => crypto.createHmac('sha1', 'tw-test-token').update(base + path + Object.keys(params).sort().map(k => k + params[k]).join('')).digest('base64');
+    const post = (path, params) => fetch(B + path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': sign(path, params) }, body: new URLSearchParams(params) });
+    const ring = await req('PUT', '/api/admin/phone/settings', { token: T, json: { ring_phones: '515-555-0166' } });
+    const p = { CallSid: 'CAob' + 'c'.repeat(28), From: '+15155550166', To: '+15153033024', Direction: 'outbound-api', AccountSid: 'AC' + 'a'.repeat(32) };
+    const prompt = await (await post('/api/webhooks/twilio/outbound?lead=7', p)).text();
+    const press = await (await post('/api/webhooks/twilio/outbound-press?lead=7', { ...p, Digits: '1' })).text();
+    const other = await (await post('/api/webhooks/twilio/outbound-press?lead=7', { ...p, Digits: '9' })).text();
+    assert(ring.status === 200 && prompt.includes(`action="${base}/api/webhooks/twilio/outbound-press?lead=7"`) && !/\$\{/.test(prompt) && /<Gather numDigits="1"/.test(prompt), 'prompt: ' + prompt);
+    assert(/<Dial[^>]*>[\s\S]*<Number>\+15155550166<\/Number>/.test(press) && !/<Hangup/.test(press), 'press 1 should ring the team: ' + press);
+    assert(!/<Dial/.test(other) && /Goodbye/.test(other), 'other key should end politely: ' + other);
+    return 'prompt keypress address is real; press 1 rings the team phone; other keys end politely';
+  });
+
   await check('Calls', 'Health check exercises Twilio sign-in and the number routing (not just "a key exists") and reports each part; voicemails create one assigned callback task; only owner/manager can change the callback owner', async () => {
     const crypto = require('crypto'), base = 'https://brightclean.net';
     const sign = (path, params) => crypto.createHmac('sha1', 'tw-test-token').update(base + path + Object.keys(params).sort().map(k => k + params[k]).join('')).digest('base64');
