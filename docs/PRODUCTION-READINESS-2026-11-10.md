@@ -26,7 +26,7 @@ The PDF plan-room tests that the reviewer saw failing pass here (`pdfjs-dist` an
 | Item | Status | Notes |
 |---|---|---|
 | Database-backed reads for all screens | FAIL | Search is in PostgreSQL. About 25 readers (map, Command Center, profiles) still load records in memory. |
-| Background job queue and transactional outbox | FAIL | Not built. Notifications are sent from request handlers. |
+| Background job queue and transactional outbox | PARTIAL | Transactional email now goes through an outbox (`src/outbox.js`): a message is saved with the data, sent at once, and retried at 1, 2, 4 and 8 minutes; after five failures it is marked failed with the reason. A once-a-minute drain sends anything due. Covers award, regret, amendment and question-answer notices (`test/outbox.test.js`). Not yet: a general job queue for the other background work, and the database-level outbox guarantee across several instances. |
 | Multi-instance scaling | BLOCKED until the two items above | `render.yaml` deliberately runs one instance. |
 | Database size | FAIL (config) | `render.yaml` provisions `basic-256mb`; the production spec calls for 1 GB. Choose one and align them. |
 

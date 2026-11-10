@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**248 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**252 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -221,6 +221,12 @@
 - the daily cap stops emails once reached, and resets the next day
 - over HTTP: only a company owner can read or change the setting, and bad values are refused
 - every match states the trades it shares and the territory, in plain language
+
+## outbox.test.js (4)
+- a queued message is sent once and logged; a second drain does not resend it
+- a failed send is kept and retried later, with a growing wait, and succeeds when mail recovers
+- after the last attempt the message is marked failed and the reason is in the log
+- in dry-run mode the message is logged with its preview and nothing is sent
 
 ## plan-comparison.test.js (4)
 - each subscriber plan is described in plain terms that match its real limits

@@ -1,10 +1,9 @@
 // Questions about a bid package (requests for information). An invited company asks; the GC answers; every invited
 // company sees the question and answer (the asker's name is not shown to other bidders). Questions close when the
 // package closes. The GC is told of new questions; invited companies are told of answers.
-import { sendEmail } from './outbound.js';
 import { config } from './config.js';
+import { enqueueEmail, drainOutbox } from './outbox.js';
 
-const fromAddress = () => config.platformFrom || 'no-reply@' + new URL(config.baseUrl).hostname;
 const invitedOrgs = (store, requestId) => store.list('invitations', i => i.requestId === requestId).map(i => i.sellerOrgId);
 
 export function askQuestion(store, org, user, requestId, question) {
@@ -44,10 +43,8 @@ export async function notifyRfiAnswer(store, request, rfi, { fetchImpl = fetch }
   const text = `A question was answered on ${request.title} (${request.address}, ${request.city}, ${request.state}).\n\nQ: ${rfi.question}\nA: ${rfi.answer}\n\nSee it in BUILDINTEL: ${config.baseUrl}/app#invitations`;
   for (const orgId of invitedOrgs(store, request.id)) {
     for (const u of store.list('users', x => x.orgId === orgId && !x.disabled && ['owner', 'platform_owner', 'member'].includes(x.role))) {
-      try {
-        const r = await sendEmail({ From: fromAddress(), To: u.email, Subject: `BUILDINTEL: question answered on ${request.title}`, TextBody: text, MessageStream: config.postmarkStream }, { fetchImpl });
-        store.put('messages', { orgId, kind: 'rfi_answer', to: u.email, dryRun: !!r.dryRun, preview: r.dryRun ? text : undefined, error: r.ok === false ? r.error : null });
-      } catch (e) { store.put('messages', { orgId, kind: 'rfi_answer', to: u.email, error: e.message }); }
+      enqueueEmail(store, { orgId, kind: 'rfi_answer', to: u.email, subject: `BUILDINTEL: question answered on ${request.title}`, text });
     }
   }
+  await drainOutbox(store, { fetchImpl });
 }

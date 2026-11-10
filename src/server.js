@@ -43,6 +43,7 @@ import { addCredential, verifyCredential, expiringSoon } from './credentials.js'
 import { handleInbound, analytics, importDirectory, directoryGaps, requeueNeedsContact } from './engagement.js';
 import { sendEmail } from './outbound.js';
 import { sendAwardNotices, notifyOrg } from './notices.js';
+import { drainOutbox, outboxCounts } from './outbox.js';
 import { proposeAmendment, acceptAmendment, declineAmendment, withdrawAmendment, amendmentView } from './amendments.js';
 import { askQuestion, answerQuestion, questionsFor, notifyRfiAnswer } from './rfi.js';
 const invitedToRequest = (store, orgId, requestId) => store.list('invitations', i => i.requestId === requestId && i.sellerOrgId === orgId).length > 0;
@@ -1059,6 +1060,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     };
     const cycle = async () => { try { publishDue(store); await runCycleGuarded(store); } catch (e) { console.error('cycle failed', e); } };
     timers.push(setInterval(cycle, config.cycleMinutes * 60e3), setTimeout(cycle, 10e3));
+    // Retries and sends queued transactional email (see src/outbox.js). Cheap when nothing is due.
+    timers.push(setInterval(() => drainOutbox(store, { fetchImpl: (deps && deps.fetchImpl) || fetch }).catch(e => console.error('outbox failed', e)), 60e3));
     const daily = guarded('daily', async () => {
       const r = await store.withLock('daily', async () => {
         if (config.backupKey) await backupAndVerify(store);
