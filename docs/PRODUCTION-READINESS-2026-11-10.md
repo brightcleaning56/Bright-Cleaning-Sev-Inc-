@@ -39,7 +39,8 @@ The PDF plan-room tests that the reviewer saw failing pass here (`pdfjs-dist` an
 | Bid without sign-in (signed link) | PASS | `test/bidlink.test.js`, browser check. |
 | Bid revisions with preserved receipts | PASS | Each revision creates a new submission record with a revision number. |
 | Package Q&A / requests for information | PASS | Invited companies ask; the GC answers; every invited company sees the answer, not the asker (`test/rfi.test.js`, browser check). Questions close with the package. |
-| Scheduled publication | PASS | A draft can be scheduled for a future time (within a year) and publishes from the periodic job as the person who scheduled it; a publish that cannot happen is cleared and the reason kept (`test/scheduled.test.js`). Deadline-change notices are still not built. |
+| Scheduled publication | PASS | A draft can be scheduled for a future time (within a year) from the publisher screen and publishes from the periodic job as the person who scheduled it; a publish that cannot happen is cleared and the reason shown on the draft (`test/scheduled.test.js`). |
+| Bid due-date changes | PASS | A published package's deadline is changed as a numbered addendum with the old and new date and a required reason; every invited bidder is emailed and must acknowledge it before bidding (`test/deadline.test.js`). The publisher-screen control has no browser check yet. |
 | Award and regret notifications | PASS | The winner is emailed to countersign; each other bidder is told it was not selected. A failed email never undoes the award (`test/notices.test.js`). |
 | Award to contract lifecycle | PARTIAL | The award generates the contract from the winning bid (proposal, hash, buyer's signature). The provider now countersigns the same proposal with its own consent; the contract is 'fully signed' when both have signed (`test/countersign.test.js`). Amendments are not built. |
 | Plan room storage, scanning, document-level permissions | FAIL / BLOCKED | Local encrypted vault only. Cloudflare R2, malware scanning and per-document permissions are not built. R2 needs an account (BLOCKED). |
@@ -59,7 +60,7 @@ The PDF plan-room tests that the reviewer saw failing pass here (`pdfjs-dist` an
 ## What I would do next, in order
 1. Keep the evidence current: regenerate the release evidence after every change that is going to be deployed.
 2. Build the package Q&A/RFI, scheduled publication and award-notice features, which are product gaps we can close now.
-3. Add deadline-change notices, contract amendments, and browser tests for award to fully signed and for answering questions as the GC.
+3. Add contract amendments, and browser tests for award to fully signed and for answering questions as the GC.
 4. Move the remaining in-memory readers to the database, then add the job queue and outbox. Only then consider more than one instance.
 5. Decide the database size, then align `render.yaml` with it.
 

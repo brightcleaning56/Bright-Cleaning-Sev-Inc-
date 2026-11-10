@@ -158,7 +158,7 @@ export async function sendInvitationNotices(store, { fetchImpl } = {}) {
       const text = `Addendum ${r.addendumCount} was posted for "${r.title}" (${r.address}, ${r.city}).${last?.note ? '\n\n' + last.note : ''}\n\nReview and acknowledge it before bidding: ${config.baseUrl}/app#invitations`;
       const from = config.platformFrom || org?.senderEmail;
       for (const u of store.list('users', u => u.orgId === i.sellerOrgId && !u.disabled)) {
-        const res = from ? await sendEmail({ From: from, To: u.email, Subject: `Addendum ${r.addendumCount}: ${r.title}`, TextBody: text, MessageStream: config.postmarkStream }, { fetchImpl }) : { ok: false, error: 'no PLATFORM_FROM configured' };
+        const res = from ? await sendEmail({ From: from, To: u.email, Subject: last?.kind === 'deadline' ? `Bid due date changed: ${r.title}` : `Addendum ${r.addendumCount}: ${r.title}`, TextBody: text, MessageStream: config.postmarkStream }, { fetchImpl }) : { ok: false, error: 'no PLATFORM_FROM configured' };
         store.put('messages', { orgId: i.sellerOrgId, kind: 'addendum_notice', to: u.email, dryRun: !!res.dryRun, messageId: res.messageId || null, error: res.ok ? null : res.error, preview: res.dryRun ? text : undefined });
       }
       i.addendumNotified = r.addendumCount; store.put('invitations', i);

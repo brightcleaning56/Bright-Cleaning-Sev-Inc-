@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**241 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**243 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -113,6 +113,10 @@
 - the awarded company countersigns and the contract becomes fully signed
 - only the provider can countersign, once, with its own consent
 - before countersignature the document says it is awaiting the provider
+
+## deadline.test.js (2)
+- a deadline change is recorded as a numbered addendum with the old and new date and the reason
+- refuses a past date, the same date, a missing reason, a draft, and a request of another company
 
 ## enrichment.test.js (10)
 - license sync: looks up only names on permits, in one batched query, prefers the active license, records misses

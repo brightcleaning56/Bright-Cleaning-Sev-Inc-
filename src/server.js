@@ -32,6 +32,7 @@ import * as adminSupport from './admin/support.js';
 import * as adminPhase5 from './admin/phase5.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
+import { changeDeadline } from './deadline.js';
 import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
 import { CATALOG, PRICE_STATUS, entitlementsFor, seatCheck, usage } from './entitlements.js';
 import { syncDocument, indexDocument, syncPlanRoom, listSets, searchDocuments, compareRevisions } from './planroom.js';
@@ -711,6 +712,7 @@ export function createServer(store, deps = {}) {
     if (body.authorizationEvidence !== undefined) p.authority = { ...p.authority, evidence: String(body.authorizationEvidence).slice(0, 2000) };
     store.put('publications', p); return p; });
   route('POST', '/api/publications/:id/packages', 'user', ({ params, body, user }) => R(addPackage(store, pubOrg(user), user, params.id, body), 'package'));
+  route('POST', '/api/packages/:id/deadline', 'user', ({ params, body, user }) => { const r = changeDeadline(store, pubOrg(user), user, params.id, body); need(r.ok, r.code || 400, r.error); return { dueDate: r.request.dueDate, addendum: r.addendum }; });
   route('PATCH', '/api/packages/:id', 'user', ({ params, body, user }) => {
     const o = pubOrg(user), r = store.get('bidRequests', params.id); need(r && r.buyerOrgId === o.id && r.publicationId, 404, 'not found'); need(can(user, 'publish') || can(user, 'invite'), 403, 'no permission');
     if (r.status !== 'draft') { need(Object.keys(body).every(k => k === 'invitees'), 409, 'published packages: change dates or scope with an addendum; you can still invite more bidders'); }
