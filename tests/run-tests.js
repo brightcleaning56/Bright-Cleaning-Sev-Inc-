@@ -3057,7 +3057,7 @@ async function startServer(env, dataDir) {
     const matches = customers.filter(c => (c.email || '').toLowerCase() === 'convert.test@example.com');
     const chk = {
       supervisorRefused: supRefused.status === 403,
-      converted: first.status === 200 && !!first.data.customer_id && l.customer_id === first.data.customer_id && l.stage === 'converted',
+      converted: first.status === 200 && !!first.data.customer_id && l.customer_id === first.data.customer_id && l.stage === 'converted' && l.status === 'Won',
       noDuplicate: second.status === 200 && second.data.customer_id === first.data.customer_id && matches.length === 1
     };
     const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);

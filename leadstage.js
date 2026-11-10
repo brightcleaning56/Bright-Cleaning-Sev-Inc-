@@ -47,8 +47,9 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
 
   // Recalculates a lead's stage from its state (used after notes, status, bulk or follow-up changes).
   const recompute = id => db.prepare(`UPDATE leads SET stage = CASE
-      WHEN status IN ('Won','Lost','Archived') THEN 'done'
+      WHEN status IN ('Lost','Archived') THEN 'done'
       WHEN customer_id IS NOT NULL THEN 'converted'
+      WHEN status = 'Won' THEN 'done'
       WHEN follow_up_date IS NOT NULL AND follow_up_date <> '' THEN 'followup'
       WHEN stage = 'waiting' THEN 'waiting'
       ELSE 'worked' END WHERE id=?`).run(Number(id));
@@ -105,7 +106,8 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
     if (!ops || !ops.upsertCustomer) return res.status(500).json({ error: 'Customer records are not available right now.' });
     const cid = ops.upsertCustomer({ name: lead.contact_name, company: lead.company, email: lead.email, phone: lead.phone, address: lead.address }, 'converted lead #' + lead.id);
     if (!cid) return res.status(400).json({ error: 'Add a name, company, email or phone to the lead before converting it.' });
-    db.prepare('UPDATE leads SET customer_id=?, updated_at=? WHERE id=?').run(cid, new Date().toISOString(), lead.id);
+    // Converting an open lead means the business is now a customer, so the lead is marked Won. Lost and Archived leads keep their status.
+    db.prepare("UPDATE leads SET customer_id=?, status=CASE WHEN status IN ('New','In Review','Site Walkthrough','Proposal in Progress','Proposal Sent') THEN 'Won' ELSE status END, updated_at=? WHERE id=?").run(cid, new Date().toISOString(), lead.id);
     recompute(lead.id);
     logAction(req, 'converted lead to customer', 'lead', lead.id, `customer #${cid}`);
     res.json({ ok: true, customer_id: cid });
