@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**243 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**248 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -58,6 +58,13 @@
 - AI analyzer: only printed areas survive, every item keeps its sheet, starts unverified, can be confirmed
 - AI analyzer: no access to plan rooms you are not invited to; daily limit; bad model output handled
 - accuracy scoring: recall, exact printed areas, and invented areas counted against the model
+
+## amendments.test.js (5)
+- a buyer proposal changes nothing until the provider accepts it with its own signature
+- the provider can decline, with a reason; the amount stays and the buyer may propose again
+- the buyer can withdraw a pending change; only one may be pending at a time
+- refusals: no change, bad price, short reason, missing signature, unsigned contract, other company
+- the signed record lists every amendment and keeps the original proposal
 
 ## audit-security.test.js (3)
 - a spoofed X-Forwarded-For cannot reset the sign-in rate limit when no proxy is trusted

@@ -42,7 +42,8 @@ import { startFromAnalysis, startManual, startForProject, startFromMeasurements,
 import { addCredential, verifyCredential, expiringSoon } from './credentials.js';
 import { handleInbound, analytics, importDirectory, directoryGaps, requeueNeedsContact } from './engagement.js';
 import { sendEmail } from './outbound.js';
-import { sendAwardNotices } from './notices.js';
+import { sendAwardNotices, notifyOrg } from './notices.js';
+import { proposeAmendment, acceptAmendment, declineAmendment, withdrawAmendment, amendmentView } from './amendments.js';
 import { askQuestion, answerQuestion, questionsFor, notifyRfiAnswer } from './rfi.js';
 const invitedToRequest = (store, orgId, requestId) => store.list('invitations', i => i.requestId === requestId && i.sellerOrgId === orgId).length > 0;
 import { searchProjects, projectDetail, trackProject, saveSearch, exportCsv, collectAlerts, contractors, contractorDetail, planningSignals, commandCenter, mapPoints, marketActivity } from './leads.js';
@@ -487,11 +488,34 @@ export function createServer(store, deps = {}) {
   route('GET', '/api/contracts', 'user', ({ user }) => store.list('contracts', c => canSeeContract(c, user))
     .map(c => ({ id: c.id, title: c.title, address: c.address, buyerName: c.buyerName, sellerName: c.sellerName, total: c.total, recurring: c.recurring, signedAt: c.acceptance.at, signerName: c.acceptance.signerName, status: c.status,
       countersigned: !!c.countersignature, countersignedAt: c.countersignature?.at || null, countersignerName: c.countersignature?.signerName || null,
-      canCountersign: c.sellerOrgId === user.orgId && !c.countersignature })));
+      canCountersign: c.sellerOrgId === user.orgId && !c.countersignature,
+      amendments: (c.amendments || []).map(amendmentView), canAmend: c.buyerOrgId === user.orgId && can(user, 'award') && c.status === 'fully_signed' && !(c.amendments || []).some(a => a.status === 'pending'),
+      canDecideAmendment: c.sellerOrgId === user.orgId, canWithdrawAmendment: c.buyerOrgId === user.orgId && can(user, 'award') })));
   route('POST', '/api/contracts/:id/countersign', 'user', ({ params, body, user, req, ip }) => {
     const org = store.get('orgs', user.orgId);
     const r = countersignContract(store, org, user, params.id, { ...body, ip, userAgent: req.headers['user-agent'] }); need(r.ok, r.code || 400, r.error);
     return { ok: true, status: r.contract.status, countersignedAt: r.contract.countersignature.at };
+  });
+  const amendCtx = (req, ip) => ({ ip, userAgent: req.headers['user-agent'] });
+  const amendNotice = (orgId, subject, text) => notifyOrg(store, orgId, subject, text, 'amendment_notice', { fetchImpl: (deps && deps.fetchImpl) || fetch }).catch(() => {});
+  route('POST', '/api/contracts/:id/amendments', 'user', ({ params, body, user, req, ip }) => {
+    const r = proposeAmendment(store, orgFor(user), user, params.id, body, amendCtx(req, ip)); need(r.ok, 400, 'not proposed');
+    amendNotice(r.contract.sellerOrgId, `BUILDINTEL: change proposed to ${r.contract.title}`, `${r.contract.buyerName} has proposed a change to the contract for ${r.contract.title}.\n\nReason: ${r.amendment.reason}\n\nReview it and accept or decline in BUILDINTEL: ${config.baseUrl}/app#contracts`);
+    return { amendment: amendmentView(r.amendment) };
+  });
+  route('POST', '/api/contracts/:id/amendments/:aid/accept', 'user', ({ params, body, user, req, ip }) => {
+    const r = acceptAmendment(store, orgFor(user), user, params.id, params.aid, body, amendCtx(req, ip));
+    amendNotice(r.contract.buyerOrgId, `BUILDINTEL: change ${r.amendment.number} accepted for ${r.contract.title}`, `${r.amendment.acceptance.signerName} accepted the change to the contract for ${r.contract.title}. The amount due is now $${Number(r.contract.total).toLocaleString('en-US')}.`);
+    return { amendment: amendmentView(r.amendment), total: r.contract.total };
+  });
+  route('POST', '/api/contracts/:id/amendments/:aid/decline', 'user', ({ params, body, user }) => {
+    const r = declineAmendment(store, orgFor(user), user, params.id, params.aid, body);
+    amendNotice(r.contract.buyerOrgId, `BUILDINTEL: change ${r.amendment.number} was declined for ${r.contract.title}`, `The provider declined the proposed change to ${r.contract.title}.\n\nReason: ${r.amendment.decline.reason}`);
+    return { amendment: amendmentView(r.amendment) };
+  });
+  route('POST', '/api/contracts/:id/amendments/:aid/withdraw', 'user', ({ params, user }) => {
+    const r = withdrawAmendment(store, orgFor(user), user, params.id, params.aid);
+    return { amendment: amendmentView(r.amendment) };
   });
   route('GET', '/api/contracts/:id/document', 'user', ({ params, user }) => {
     const c = store.get('contracts', params.id); need(canSeeContract(c, user), 404, 'not found'); return { __html: contractDocument(c) };
@@ -727,8 +751,8 @@ export function createServer(store, deps = {}) {
     store.put('bidRequests', r); return r; });
   route('DELETE', '/api/packages/:id', 'user', ({ params, user }) => { const o = pubOrg(user), r = store.get('bidRequests', params.id); need(r && r.buyerOrgId === o.id && r.publicationId, 404, 'not found'); need(r.status === 'draft', 409, 'only draft packages can be removed'); need(can(user, 'publish'), 403, 'no permission'); store.remove('bidRequests', r.id); return { ok: true }; });
   route('POST', '/api/publications/:id/publish', 'user', ({ params, user }) => R(publish(store, pubOrg(user), user, params.id)));
-  route('POST', '/api/publications/:id/schedule', 'user', ({ params, body, user }) => R(schedulePublication(store, pubOrg(user), user, params.id, body.publishAt), 'publication'));
-  route('POST', '/api/publications/:id/unschedule', 'user', ({ params, user }) => R(unschedulePublication(store, pubOrg(user), user, params.id), 'publication'));
+  route('POST', '/api/publications/:id/schedule', 'user', ({ params, body, user }) => { const r = schedulePublication(store, pubOrg(user), user, params.id, body.publishAt); need(r.ok, r.code || 400, r.error); return { scheduledFor: r.scheduledFor }; });
+  route('POST', '/api/publications/:id/unschedule', 'user', ({ params, user }) => { const r = unschedulePublication(store, pubOrg(user), user, params.id); need(r.ok, r.code || 400, r.error); return { ok: true }; });
   route('POST', '/api/publications/:id/status', 'user', ({ params, body, user }) => R(setStatus(store, pubOrg(user), user, params.id, body.status), 'publication'));
   route('GET', '/api/bidders', 'user', ({ user, query }) => { pubOrg(user); return searchBidders(store, { q: query.get('q'), trade: query.get('trade'), state: query.get('state') }); });
   route('GET', '/api/subscription', 'user', ({ user }) => { const o = store.get('orgs', user.orgId); const e = entitlementsFor(o);

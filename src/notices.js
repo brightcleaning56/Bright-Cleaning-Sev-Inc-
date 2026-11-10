@@ -28,3 +28,13 @@ export async function sendAwardNotices(store, request, winner, others, { fetchIm
   }
   return sent;
 }
+
+// One email to every active owner or member of an organization, recorded in the message log. Never throws.
+export async function notifyOrg(store, orgId, subject, text, kind, { fetchImpl = fetch } = {}) {
+  for (const to of recipients(store, orgId)) {
+    try {
+      const r = await sendEmail({ From: fromAddress(), To: to, Subject: subject, TextBody: text, MessageStream: config.postmarkStream }, { fetchImpl });
+      store.put('messages', { orgId, kind, to, dryRun: !!r.dryRun, messageId: r.messageId || null, error: r.ok === false ? r.error : null, preview: r.dryRun ? text : undefined });
+    } catch (e) { store.put('messages', { orgId, kind, to, error: e.message }); }
+  }
+}

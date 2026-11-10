@@ -7,7 +7,7 @@ Status key: **PASS** = evidence in the repo or the release log. **FAIL** = a gap
 |---|---|---|
 | Clean install from lockfile | PASS | `release-evidence/Clean_install_(npm_ci,_lockfile).log` |
 | Full automated tests, no skips | PASS | 230/230, `release-evidence/All_automated_tests_(no_failures,_no_skips).log` |
-| Browser QA, core reads off and on | PASS | 16/16 each, `release-evidence/Browser_QA,_CORE_READS=*.log` |
+| Browser QA, core reads off and on | PASS | 18/18 each (commit 638f9e6), `release-evidence/Browser_QA,_CORE_READS=*.log` |
 | Dependency audit (production) | PASS | 0 vulnerabilities, `release-evidence/Dependency_security_audit.log` |
 | Release evidence matches the source | PASS | `docs/RELEASE-VERIFICATION.md` (commit 2c90e9e) |
 | Old evidence (Nov 5, 174 tests, from a zip) | Superseded | replaced by the evidence above |
@@ -38,11 +38,11 @@ The PDF plan-room tests that the reviewer saw failing pass here (`pdfjs-dist` an
 | Trade packages, invitations, plan room access | PASS | QA plan-room and invitation flows. |
 | Bid without sign-in (signed link) | PASS | `test/bidlink.test.js`, browser check. |
 | Bid revisions with preserved receipts | PASS | Each revision creates a new submission record with a revision number. |
-| Package Q&A / requests for information | PASS | Invited companies ask; the GC answers; every invited company sees the answer, not the asker (`test/rfi.test.js`, browser check). Questions close with the package. |
+| Package Q&A / requests for information | PASS | Invited companies ask; the GC answers; every invited company sees the answer, not the asker (`test/rfi.test.js`, browser check `qa/questions_flow.py`). Questions close with the package. |
 | Scheduled publication | PASS | A draft can be scheduled for a future time (within a year) from the publisher screen and publishes from the periodic job as the person who scheduled it; a publish that cannot happen is cleared and the reason shown on the draft (`test/scheduled.test.js`). |
 | Bid due-date changes | PASS | A published package's deadline is changed as a numbered addendum with the old and new date and a required reason; every invited bidder is emailed and must acknowledge it before bidding (`test/deadline.test.js`). The publisher-screen control has no browser check yet. |
 | Award and regret notifications | PASS | The winner is emailed to countersign; each other bidder is told it was not selected. A failed email never undoes the award (`test/notices.test.js`). |
-| Award to contract lifecycle | PARTIAL | The award generates the contract from the winning bid (proposal, hash, buyer's signature). The provider now countersigns the same proposal with its own consent; the contract is 'fully signed' when both have signed (`test/countersign.test.js`). Amendments are not built. |
+| Award to contract lifecycle | PASS | Award generates the contract from the winning bid; the provider countersigns the same proposal; the contract is fully signed when both have signed. Changes after signing are amendments: the buyer proposes a price and/or scope change with a reason and its signature; nothing changes until the provider accepts with its own signature; either side can decline or the buyer can withdraw; the signed record lists every amendment and the original proposal is never rewritten (`test/amendments.test.js`, browser check `qa/contract_flow.py`). |
 | Plan room storage, scanning, document-level permissions | FAIL / BLOCKED | Local encrypted vault only. Cloudflare R2, malware scanning and per-document permissions are not built. R2 needs an account (BLOCKED). |
 | Takeoff accuracy on real sheets | BLOCKED | Needs real construction sheets and an AI provider key to test against 100 sheets. |
 
@@ -60,7 +60,7 @@ The PDF plan-room tests that the reviewer saw failing pass here (`pdfjs-dist` an
 ## What I would do next, in order
 1. Keep the evidence current: regenerate the release evidence after every change that is going to be deployed.
 2. Build the package Q&A/RFI, scheduled publication and award-notice features, which are product gaps we can close now.
-3. Add contract amendments, and browser tests for award to fully signed and for answering questions as the GC.
+3. Keep the browser checks in `qa/run.sh` current as screens change; the scheduling and deadline controls are covered in `qa/publishing_flow.py`.
 4. Move the remaining in-memory readers to the database, then add the job queue and outbox. Only then consider more than one instance.
 5. Decide the database size, then align `render.yaml` with it.
 

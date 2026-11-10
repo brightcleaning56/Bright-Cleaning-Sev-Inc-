@@ -69,18 +69,45 @@ function loginView() {
 
 function contractTable(cs, partyKey, partyLabel) {
   const status = c => c.countersigned ? '<span class="pill green">Fully signed</span>' : '<span class="pill amber">Awaiting countersignature</span>';
-  const rows = cs.map(c => `<tr><td>${esc(c.title)}<br><small>${esc(c.address)}</small></td><td>${esc(c[partyKey])}</td><td class="num">${money(c.total)}${c.recurring?'/mo':''}</td><td>${esc(c.signerName)}<br><small>${esc(c.signedAt.replace('T',' ').slice(0,16))} UTC</small><br>${status(c)}</td><td>${c.canCountersign ? `<button data-csign="${esc(c.id)}">Countersign</button>` : ''} <button data-doc="${esc(c.id)}">Record</button></td></tr>`).join('');
+  const pendingOf = c => (c.amendments || []).find(a => a.status === 'pending');
+  const amendLog = c => (c.amendments || []).length ? `<small><strong>Changes:</strong> ${(c.amendments || []).map(a => `#${a.number} ${esc(a.status)}`).join(' · ')}</small>` : '';
+  const rows = cs.map(c => { const pend = pendingOf(c); return `<tr><td>${esc(c.title)}<br><small>${esc(c.address)}</small><br>${amendLog(c)}</td><td>${esc(c[partyKey])}</td><td class="num">${money(c.total)}${c.recurring?'/mo':''}</td><td>${esc(c.signerName)}<br><small>${esc(c.signedAt.replace('T',' ').slice(0,16))} UTC</small><br>${status(c)}</td><td>${c.canCountersign ? `<button data-csign="${esc(c.id)}">Countersign</button>` : ''} ${c.canAmend ? `<button data-amopen="${esc(c.id)}">Propose change</button>` : ''} ${pend && c.canDecideAmendment ? `<button data-amdec="${esc(c.id)}" data-am="${esc(pend.id)}">Review proposed change</button>` : ''} ${pend && c.canWithdrawAmendment ? `<button data-amwd="${esc(c.id)}" data-am="${esc(pend.id)}">Withdraw change</button>` : ''} <button data-doc="${esc(c.id)}">Record</button></td></tr>`; }).join('');
+  const amendPanels = cs.filter(c => c.canAmend).map(c => `<form class="countersign" data-amform="${esc(c.id)}" hidden>
+    <p class="cs-title"><strong>Propose a change: ${esc(c.title)}</strong><br><small>Nothing changes until the provider accepts it with its own signature. The original proposal is kept unchanged.</small></p>
+    <label>New price (USD, leave blank to keep ${money(c.total)})<input name="total" type="number" min="1" step="0.01"></label>
+    <label>Scope change (optional)<textarea name="scope" rows="2" maxlength="4000"></textarea></label>
+    <label>Reason for the provider (at least 10 characters)<textarea name="reason" rows="2" required minlength="10" maxlength="1000"></textarea></label>
+    <label>Your full name<input name="signerName" required minlength="3" maxlength="120"></label>
+    <label><input type="checkbox" name="consent" required> I agree to conduct this transaction electronically and to use electronic records and signatures.</label>
+    <div class="err" role="alert"></div><div><button class="primary" type="submit">Send proposed change</button></div></form>`).join('');
+  const decidePanels = cs.filter(c => pendingOf(c) && c.canDecideAmendment).map(c => { const a = pendingOf(c); return `<form class="countersign" data-amdform="${esc(c.id)}" data-am="${esc(a.id)}" hidden>
+    <p class="cs-title"><strong>Proposed change ${a.number}: ${esc(c.title)}</strong></p>
+    <ul>${a.changes.map(ch => `<li>${ch.field === 'total' ? `Price ${money(ch.from)} to <strong>${money(ch.to)}</strong>` : `Scope: ${esc(ch.to)}`}</li>`).join('')}</ul>
+    <p><small>Reason: ${esc(a.reason)}</small></p>
+    <label>Your full name (to accept)<input name="signerName" minlength="3" maxlength="120"></label>
+    <label><input type="checkbox" name="consent"> I agree to conduct this transaction electronically and to use electronic records and signatures.</label>
+    <label>Reason, only if you decline<textarea name="reason" rows="2" maxlength="1000"></textarea></label>
+    <div class="err" role="alert"></div><div class="row"><button class="primary" type="submit" name="act" value="accept">Accept change</button><button type="submit" name="act" value="decline">Decline change</button></div></form>`; }).join('');
   const panels = cs.filter(c => c.canCountersign).map(c => `<form class="countersign" data-csform="${esc(c.id)}" hidden>
     <p class="cs-title"><strong>Countersign: ${esc(c.title)}</strong><br><small>You sign the same proposal the customer accepted. The record keeps your name, the time and your consent.</small></p>
     <label>Your full name<input name="signerName" required minlength="3" maxlength="120"></label>
     <label><input type="checkbox" name="consent" required> I agree to conduct this transaction electronically and to use electronic records and signatures.</label>
     <div class="err" role="alert"></div><div><button class="primary" type="submit">Countersign</button></div></form>`).join('');
-  return `<div class="scroll"><table><tr><th>Project</th><th>${partyLabel}</th><th class="num">Amount</th><th>Signed</th><th></th></tr>${rows}</table></div>${panels}`;
+  return `<div class="scroll"><table><tr><th>Project</th><th>${partyLabel}</th><th class="num">Amount</th><th>Signed</th><th></th></tr>${rows}</table></div>${panels}${amendPanels}${decidePanels}`;
 }
 function bindDocs() {
   document.querySelectorAll('[data-csign]').forEach(b => b.onclick = () => { const f = document.querySelector(`[data-csform="${b.dataset.csign}"]`); if (f) f.hidden = !f.hidden; });
   document.querySelectorAll('[data-csform]').forEach(f => f.onsubmit = async ev => { ev.preventDefault(); const err = f.querySelector('.err'); err.textContent = '';
     try { await api('POST', `/api/contracts/${f.dataset.csform}/countersign`, { signerName: f.signerName.value, consent: f.consent.checked }); render(); } catch (e) { err.textContent = e.message; } });
+  document.querySelectorAll('[data-amopen]').forEach(b => b.onclick = () => { const f = document.querySelector(`[data-amform="${b.dataset.amopen}"]`); if (f) f.hidden = !f.hidden; });
+  document.querySelectorAll('[data-amform]').forEach(f => f.onsubmit = async ev => { ev.preventDefault(); const err = f.querySelector('.err'); err.textContent = '';
+    const body = { total: f.total.value, scope: f.scope.value, reason: f.reason.value, signerName: f.signerName.value, consent: f.consent.checked };
+    try { await api('POST', `/api/contracts/${f.dataset.amform}/amendments`, body); render(); } catch (e) { err.textContent = e.message; } });
+  document.querySelectorAll('[data-amdec]').forEach(b => b.onclick = () => { const f = document.querySelector(`[data-amdform="${b.dataset.amdec}"]`); if (f) f.hidden = !f.hidden; });
+  document.querySelectorAll('[data-amdform]').forEach(f => f.onsubmit = async ev => { ev.preventDefault(); const err = f.querySelector('.err'); err.textContent = '';
+    const act = ev.submitter?.value || 'accept'; const base = `/api/contracts/${f.dataset.amdform}/amendments/${f.dataset.am}`;
+    try { if (act === 'accept') await api('POST', base + '/accept', { signerName: f.signerName.value, consent: f.consent.checked }); else await api('POST', base + '/decline', { reason: f.reason.value }); render(); } catch (e) { err.textContent = e.message; } });
+  document.querySelectorAll('[data-amwd]').forEach(b => b.onclick = async () => { try { await api('POST', `/api/contracts/${b.dataset.amwd}/amendments/${b.dataset.am}/withdraw`); render(); } catch (e) { alertBox(esc(e.message)); } });
   document.querySelectorAll('[data-doc]').forEach(b => b.onclick = async () => { const r = await fetch(`/api/contracts/${b.dataset.doc}/document`, {headers: {Authorization: 'Bearer ' + token}}); const w = window.open(); w.document.write(await r.text()); });
 }
 
