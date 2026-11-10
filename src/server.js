@@ -32,7 +32,7 @@ import * as adminSupport from './admin/support.js';
 import * as adminPhase5 from './admin/phase5.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
-import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher } from './publishing.js';
+import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
 import { CATALOG, PRICE_STATUS, entitlementsFor, seatCheck, usage } from './entitlements.js';
 import { syncDocument, indexDocument, syncPlanRoom, listSets, searchDocuments, compareRevisions } from './planroom.js';
 import { saveDocument, listDocuments, viewLink, openFromLink, acknowledgeAddenda, planholders } from './documents.js';
@@ -41,6 +41,9 @@ import { startFromAnalysis, startManual, startForProject, startFromMeasurements,
 import { addCredential, verifyCredential, expiringSoon } from './credentials.js';
 import { handleInbound, analytics, importDirectory, directoryGaps, requeueNeedsContact } from './engagement.js';
 import { sendEmail } from './outbound.js';
+import { sendAwardNotices } from './notices.js';
+import { askQuestion, answerQuestion, questionsFor, notifyRfiAnswer } from './rfi.js';
+const invitedToRequest = (store, orgId, requestId) => store.list('invitations', i => i.requestId === requestId && i.sellerOrgId === orgId).length > 0;
 import { searchProjects, projectDetail, trackProject, saveSearch, exportCsv, collectAlerts, contractors, contractorDetail, planningSignals, commandCenter, mapPoints, marketActivity } from './leads.js';
 import { LEAD_PLANS, ALL_STATES, leadAccess } from './billing.js';
 import { notificationPrefs } from './digest.js';
@@ -447,6 +450,20 @@ export function createServer(store, deps = {}) {
       return { ...r.request, invited: r.invited, projectId: l.projectId || null, publicationId: r.publicationId }; }
     catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(400, e.message); }
   });
+  // Questions about a package (requests for information). See src/rfi.js.
+  route('GET', '/api/requests/:id/questions', 'user', ({ params, user }) => {
+    const org = store.get('orgs', user.orgId); const r = store.get('bidRequests', params.id); need(r, 404, 'not found');
+    const isGc = r.buyerOrgId === org.id; need(isGc || invitedToRequest(store, org.id, r.id), 404, 'not found');
+    return questionsFor(store, org, r.id, { gc: isGc });
+  });
+  route('POST', '/api/requests/:id/questions', 'user', ({ params, body, user }) => {
+    const r = askQuestion(store, store.get('orgs', user.orgId), user, params.id, body.question); need(r.ok, r.code || 400, r.error); return r.rfi;
+  });
+  route('POST', '/api/requests/:id/questions/:qid/answer', 'owner', ({ params, body, user }) => {
+    const r = answerQuestion(store, store.get('orgs', user.orgId), user, params.id, params.qid, body.answer); need(r.ok, r.code || 400, r.error);
+    notifyRfiAnswer(store, store.get('bidRequests', params.id), r.rfi, { fetchImpl: (deps && deps.fetchImpl) || fetch }).catch(() => {});
+    return r.rfi;
+  });
   route('GET', '/api/requests/:id/submissions', 'user', ({ params, user }) => {
     const o = buyerOrg(user); const r = store.get('bidRequests', params.id); need(r && r.buyerOrgId === o.id, 404, 'not found');
     return store.list('submissions', s => s.requestId === r.id).map(s => pick(s, ['id', 'sellerName', 'sellerEmail', 'total', 'recurring', 'submittedAt', 'status']));
@@ -460,6 +477,8 @@ export function createServer(store, deps = {}) {
     need(can(user, 'award'), 403, 'your company has not given you permission to award work');
     try { const r = awardRequest(store, buyerOrg(user), user, params.id, body.submissionId, { signerName: body.signerName, consent: body.consent, ip, userAgent: req.headers['user-agent'] });
       const c = r?.contractId && store.get('contracts', r.contractId); if (c) { const pid = linkAward(store, c); if (pid) recomputePhase(store, pid); }
+      const all = store.list('submissions', x => x.requestId === params.id); const winnerSub = all.find(x => x.id === body.submissionId);
+      sendAwardNotices(store, store.get('bidRequests', params.id), winnerSub, all.filter(x => x.id !== body.submissionId), { fetchImpl: (deps && deps.fetchImpl) || fetch }).catch(() => {});
       return r; }
     catch (e) { throw new HttpError(e.code || 400, e.message); }
   });
@@ -706,6 +725,8 @@ export function createServer(store, deps = {}) {
     store.put('bidRequests', r); return r; });
   route('DELETE', '/api/packages/:id', 'user', ({ params, user }) => { const o = pubOrg(user), r = store.get('bidRequests', params.id); need(r && r.buyerOrgId === o.id && r.publicationId, 404, 'not found'); need(r.status === 'draft', 409, 'only draft packages can be removed'); need(can(user, 'publish'), 403, 'no permission'); store.remove('bidRequests', r.id); return { ok: true }; });
   route('POST', '/api/publications/:id/publish', 'user', ({ params, user }) => R(publish(store, pubOrg(user), user, params.id)));
+  route('POST', '/api/publications/:id/schedule', 'user', ({ params, body, user }) => R(schedulePublication(store, pubOrg(user), user, params.id, body.publishAt), 'publication'));
+  route('POST', '/api/publications/:id/unschedule', 'user', ({ params, user }) => R(unschedulePublication(store, pubOrg(user), user, params.id), 'publication'));
   route('POST', '/api/publications/:id/status', 'user', ({ params, body, user }) => R(setStatus(store, pubOrg(user), user, params.id, body.status), 'publication'));
   route('GET', '/api/bidders', 'user', ({ user, query }) => { pubOrg(user); return searchBidders(store, { q: query.get('q'), trade: query.get('trade'), state: query.get('state') }); });
   route('GET', '/api/subscription', 'user', ({ user }) => { const o = store.get('orgs', user.orgId); const e = entitlementsFor(o);
@@ -1010,7 +1031,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       try { await fn(); } catch (e) { console.error(name + ' failed', e); store.put('jobs', { type: name, status: 'failed', error: e.message }); store.save(); }
       finally { running = false; }
     };
-    const cycle = async () => { try { await runCycleGuarded(store); } catch (e) { console.error('cycle failed', e); } };
+    const cycle = async () => { try { publishDue(store); await runCycleGuarded(store); } catch (e) { console.error('cycle failed', e); } };
     timers.push(setInterval(cycle, config.cycleMinutes * 60e3), setTimeout(cycle, 10e3));
     const daily = guarded('daily', async () => {
       const r = await store.withLock('daily', async () => {

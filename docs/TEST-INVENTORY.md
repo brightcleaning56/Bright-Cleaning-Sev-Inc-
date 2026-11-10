@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**233 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**241 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -200,6 +200,10 @@
 - one server saving the same record many times in a row never conflicts with itself; stale deletes are refused
 - a large save (2,000 records with long ids) succeeds and every change reaches the other server
 
+## notices.test.js (2)
+- the awarded company is told to countersign, and the others are told they were not selected
+- a failed email does not undo the award
+
 ## notifications.test.js (5)
 - defaults are immediate with a cap of 3 emails a day, and out-of-range values are clamped
 - a daily digest sends at most one batch per 24 hours; immediate mode sends each batch
@@ -260,6 +264,11 @@
 - AI credits come from the plan (never above the platform cap); Free has none
 - coverage states the document situation explicitly: uploaded (with revision), intentionally none, or missing — plus blockers
 
+## rfi.test.js (3)
+- an invited company asks; the GC answers; every invited company sees the answer, not the asker
+- companies that are not invited cannot ask or read questions; empty and short questions are refused
+- questions close with the package, and the answer must be given by the GC for this package
+
 ## role-flows.test.js (4)
 - subcontractor: signs up, confirms, signs in, and is invited to a matching request only
 - service provider: signs up with services, confirms, and is invited to cleaning work from an owner
@@ -277,6 +286,11 @@
 - e-signature: award records signer, consent, IP and document hash; tampering is detected
 - digest: approvals, gaps, expiring insurance; sent once per week; platform owner also sees gates
 - store change tracking marks every write path, including cross-tenant suppression
+
+## scheduled.test.js (3)
+- a draft can be scheduled, not in the past, and unscheduled
+- a scheduled draft publishes when its time comes, and stays a draft until then
+- a scheduled publish that cannot happen is cleared, with the reason kept on the draft
 
 ## schema-fresh.test.js (1)
 - the store initializes on an empty database and the phases table has its seq column

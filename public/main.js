@@ -649,7 +649,7 @@ async function leadTab(t, body) {
         <div class="row x-fe7b4979" >${['will_bid', 'wont_bid', 'undecided'].map(x => `<button data-intent="${x}" data-id="${i.id}" ${i.intent === x ? 'class="primary"' : ''} ${open ? '' : 'disabled'}>${{ will_bid: 'Will bid', wont_bid: "Won't bid", undecided: 'Undecided' }[x]}</button>`).join('')}
           ${open ? `<button data-bidform="${i.id}" data-due="${esc(r.dueDate)}">${i.myBid ? 'Revise bid' : 'Submit bid'}</button> <button type="button" data-copylink="${i.id}">Copy bid link</button>` : ''}</div>
         ${i.myBid ? `<small>Your bid: <strong>${money(i.myBid.total)}${i.myBid.recurring ? '/mo' : ''}</strong> · ${esc(i.myBid.status.replace('_', ' '))} · revision ${i.myBid.revision} · ${ago(i.myBid.submittedAt)}${i.myBid.receiptId ? ` · receipt <b>${esc(i.myBid.receiptId)}</b> <span title="SHA-256 fingerprint of the exact bid document">(${esc(i.myBid.sha256.slice(0, 12))}…)</span>` : ''}</small>` : ''}
-        <div id="bf-${i.id}"></div></div></div>`; }))).join('')
+        <div id="bf-${i.id}"></div><div><button type="button" data-qa="${r.id}" data-open="${open ? 1 : 0}">Questions</button><div class="qa-panel" id="qa-${r.id}" hidden></div></div></div></div>`; }))).join('')
       : (me.org?.trades || []).length ? `<div class="empty">No open invitations right now. You're set up for ${esc((me.org.trades || []).map(k => (TRADES_LIST.find(t => t.key === k) || {}).label || k).join(', '))}, so a GC or property manager in your territory will invite you when work matches.</div>` : '<div class="empty">No invitations yet. Set your trades in Plan & profile, and you\'ll be invited automatically when a GC or property manager in your territory posts work you do.</div>';
     bindDocOpen(body);
     for (const i of inv) { const prior = await api('GET', '/api/estimates?invitationId=' + i.id).catch(() => []); if (prior.length) openEstimate(i.id, prior[0]); }
@@ -661,6 +661,7 @@ async function leadTab(t, body) {
         if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url); else window.prompt('Copy this bid link:', url);
         b.textContent = 'Link copied'; setTimeout(() => { b.textContent = label; }, 2000);
       } catch (e) { b.textContent = 'Link unavailable'; setTimeout(() => { b.textContent = label; }, 2500); } });
+    bindQuestions(body);
     body.querySelectorAll('[data-intent]').forEach(b => b.onclick = async () => { await api('POST', `/api/invitations/${b.dataset.id}/intent`, { intent: b.dataset.intent }); render(); });
     body.querySelectorAll('[data-bidform]').forEach(b => b.onclick = () => {
       const id = b.dataset.bidform, due = b.dataset.due ? new Date(b.dataset.due) : null;
@@ -993,6 +994,48 @@ async function showCompare(fromId, toId, box) {
   } catch (e) { box.innerHTML = `<small class="x-ce711e4f" >${esc(e.message)}</small>`; }
 }
 function bindCompare(root) { root.querySelectorAll('[data-cmp]').forEach(a => a.onclick = ev => { ev.preventDefault(); const [f, t2] = a.dataset.cmp.split('|'); showCompare(f, t2, document.getElementById('cmp-' + t2)); }); }
+// Questions about a package. Bidders ask; the GC answers; each panel is loaded when opened.
+async function bindQuestions(root) {
+  root.querySelectorAll('[data-qa]').forEach(b => b.onclick = () => {
+    const panel = document.getElementById('qa-' + b.dataset.qa); if (!panel) return;
+    panel.hidden = !panel.hidden; if (!panel.hidden) loadQuestions(b.dataset.qa, panel, b.dataset.open !== '0');
+  });
+}
+async function loadQuestions(requestId, panel, open = true) {
+  const isGc = me.org?.kind === 'buyer';
+  const list = await api('GET', `/api/requests/${requestId}/questions`).catch(() => []);
+  panel.replaceChildren();
+  if (!list.length) { const e = document.createElement('small'); e.textContent = 'No questions yet.'; panel.append(e); }
+  for (const q of list) {
+    const row = document.createElement('div'); row.className = 'qa-row';
+    const ask = document.createElement('div'); ask.textContent = `Q (${q.askedByName}): ${q.question}`;
+    row.append(ask);
+    if (q.answer) { const a = document.createElement('div'); a.className = 'qa-answer'; a.textContent = `A: ${q.answer}`; row.append(a); }
+    else if (isGc) {
+      const f = document.createElement('form'); f.className = 'qa-form';
+      const t = document.createElement('input'); t.name = 'answer'; t.placeholder = 'Answer (everyone invited will see it)'; t.required = true;
+      const btn = document.createElement('button'); btn.type = 'submit'; btn.textContent = 'Answer';
+      const err = document.createElement('small'); err.className = 'err';
+      f.append(t, btn, err);
+      f.onsubmit = async e => { e.preventDefault(); err.textContent = '';
+        try { await api('POST', `/api/requests/${requestId}/questions/${q.id}/answer`, { answer: t.value }); loadQuestions(requestId, panel, open); }
+        catch (ex) { err.textContent = ex.message; } };
+      row.append(f);
+    }
+    panel.append(row);
+  }
+  if (!isGc && open) {
+    const f = document.createElement('form'); f.className = 'qa-form';
+    const t = document.createElement('input'); t.name = 'question'; t.placeholder = 'Ask about this package (at least 10 characters)'; t.required = true;
+    const btn = document.createElement('button'); btn.type = 'submit'; btn.textContent = 'Ask';
+    const err = document.createElement('small'); err.className = 'err';
+    f.append(t, btn, err);
+    f.onsubmit = async e => { e.preventDefault(); err.textContent = '';
+      try { await api('POST', `/api/requests/${requestId}/questions`, { question: t.value }); loadQuestions(requestId, panel, open); }
+      catch (ex) { err.textContent = ex.message; } };
+    panel.append(f);
+  }
+}
 function bindDocOpen(root) {
   bindAi(root);
   root.querySelectorAll('[data-measure]').forEach(a => a.onclick = ev => { ev.preventDefault(); openTakeoff(a.dataset.measure, { permitId: tab === 'command' && CC.p ? CC.p.id : null }); });
@@ -1180,11 +1223,13 @@ async function buyerView() {
     return `<div class="gate x-6384e367" ><div><strong>${esc(r.title)}</strong> <small>${esc(r.address)}, ${esc(r.city)}${r.squareFeet ? ' · ' + r.squareFeet.toLocaleString() + ' SF' : ''} · due ${esc(String(r.dueDate).slice(0,10))} · ${esc(r.status)}</small>
     <small>${(r.trades || []).map(k => esc((TRADES_LIST.find(t => t.key === k) || {}).label || k)).join(' · ')} · <strong>${r.invited ?? 0} invited</strong>, ${r.willBid ?? 0} will bid, ${r.wontBid ?? 0} won't bid${r.documentsUrl ? ` · <a href="${safeUrl(r.documentsUrl)}" target="_blank" rel="noopener">plans</a>` : ''}</small>
     ${room}${upload}${phHtml}
+    <div><button type="button" data-qa="${r.id}" data-open="${r.status === 'open' ? 1 : 0}">Questions</button><div class="qa-panel" id="qa-${r.id}" hidden></div></div>
     ${r.submissions ? `<div class="row x-fe7b4979" ><button data-level="${r.id}">Compare bids (leveling & prequalification)</button></div><div id="lv-${r.id}"></div>` : ''}
     ${subs.length ? `<div class="scroll"><table><tr><th>Company</th><th class="num">Price</th><th>Status</th><th></th></tr>${subs.map(x => `<tr><td>${esc(x.sellerName)}<br><small>${esc(x.sellerEmail||'')}</small></td><td class="num">${money(x.total)}${x.recurring?'/mo':''}</td><td>${esc(x.status.replace('_',' '))}</td>
       <td><div class="row"><button data-sub="${x.id}">View proposal</button>${r.status==='open'?`<button class="primary" data-award="${x.id}" data-req="${r.id}">Award</button>`:''}</div></td></tr>`).join('')}</table></div>` : '<small>No bids yet. Invited companies are notified and can bid until the due date.</small>'}</div></div>`; }));
   $('#body').innerHTML = blocks.join('');
   bindDocOpen($('#body'));
+  bindQuestions($('#body'));
   const ins = i => i.onFile ? `${i.current ? '' : '<span class="pill red">expired</span> '}${usd(i.limit)}${i.verified ? ' <span class="pill green">verified</span>' : ' <small>on file</small>'}` : '<span class="pill red">none</span>';
   const drawLevel = async id => {
     const L = await api('GET', `/api/requests/${id}/leveling`); const box = $('#lv-' + id);

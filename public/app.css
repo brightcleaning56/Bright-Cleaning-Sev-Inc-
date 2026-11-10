@@ -356,3 +356,11 @@ body{font-size:13px}h2{font-size:20px}h3{font-size:14.5px;margin-bottom:8px}
 .countersign[hidden]{display:none}
 .countersign label{display:grid;gap:4px;font-size:14px}
 .countersign .cs-title{margin:0}
+
+/* Questions about a bid package */
+.qa-panel{display:grid;gap:8px;margin-top:8px;padding:10px;border:1px solid #dfe7f0;border-radius:10px;background:#fff}
+.qa-panel[hidden]{display:none}
+.qa-row{display:grid;gap:4px;font-size:14px}
+.qa-answer{color:#166534;font-weight:600}
+.qa-form{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.qa-form input{flex:1;min-width:200px}

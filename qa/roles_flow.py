@@ -66,6 +66,15 @@ with sync_playwright() as p:
             pg.click('.bid-form button[type=submit]'); pg.wait_for_selector('.bid-done', timeout=15000)
             if 'Bid received' not in pg.inner_text('#bid'): problems.append('bid link: no confirmation')
     ctx2.close()
+    # Questions about a package: the subcontractor opens Questions on its invitation and asks one.
+    ctx, d = fresh(b, '/app', '#e')
+    d.fill('#e', 'trade@elec.test'); d.fill('#p', 'demo password 123'); d.click('button.primary'); d.wait_for_selector('.role-banner', timeout=15000)
+    d.goto(BASE + '/app#invitations', wait_until='commit'); d.wait_for_selector('[data-qa]', timeout=15000)
+    d.locator('[data-qa]').first.click(); d.wait_for_selector('.qa-panel:not([hidden]) .qa-form input[name=question]', timeout=15000)
+    d.fill('.qa-panel:not([hidden]) .qa-form input[name=question]', 'Is the lighting fixture schedule in addendum 2 or the base set?')
+    d.click('.qa-panel:not([hidden]) .qa-form button[type=submit]'); d.wait_for_timeout(1500)
+    if 'Is the lighting fixture schedule' not in d.inner_text('.qa-panel:not([hidden])'): problems.append('questions: the question was not listed after asking')
+    ctx.close()
     # Each subscriber role has its own menu
     menus = {}
     for email in ['trade@elec.test', 'svc@clean.test', 'sub@em.test']:

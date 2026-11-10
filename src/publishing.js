@@ -192,3 +192,42 @@ export function quickPublish(store, org, user, b) {
   if (!out.ok) { for (const x of store.list('bidRequests', x => x.publicationId === pub.publication.id)) store.remove('bidRequests', x.id); store.remove('publications', pub.publication.id); return out; }
   return { ok: true, request: store.get('bidRequests', pk.package.id), publicationId: pub.publication.id, invited: out.invited };
 }
+
+// ---------- scheduled publication ----------
+// A draft can be set to publish at a future time. The periodic job publishes it as the person who scheduled it.
+// If the publish cannot happen (for example the checklist is no longer complete), the schedule is cleared and the
+// reason is kept on the draft, so the job does not retry every cycle.
+export function schedulePublication(store, org, user, pubId, publishAt) {
+  const p = own(store, org, pubId); if (!p) return { ok: false, code: 404, error: 'not found' };
+  if (!can(user, 'publish')) return { ok: false, code: 403, error: 'no permission to publish' };
+  if (p.status !== 'draft') return { ok: false, code: 409, error: 'only a draft can be scheduled' };
+  const at = Date.parse(publishAt);
+  if (!(at > Date.now())) return { ok: false, code: 400, error: 'choose a time in the future' };
+  if (at > Date.now() + 365 * 864e5) return { ok: false, code: 400, error: 'schedule within a year' };
+  p.scheduledFor = new Date(at).toISOString(); p.scheduledBy = user.email; p.scheduleError = null;
+  store.put('publications', p);
+  store.audit({ actor: user.email, orgId: org.id, action: 'publication.schedule', target: p.id, detail: { publishAt: p.scheduledFor } });
+  return { ok: true, scheduledFor: p.scheduledFor };
+}
+
+export function unschedulePublication(store, org, user, pubId) {
+  const p = own(store, org, pubId); if (!p) return { ok: false, code: 404, error: 'not found' };
+  if (!p.scheduledFor) return { ok: false, code: 409, error: 'this draft is not scheduled' };
+  p.scheduledFor = null; p.scheduledBy = null; store.put('publications', p);
+  store.audit({ actor: user.email, orgId: org.id, action: 'publication.unschedule', target: p.id });
+  return { ok: true };
+}
+
+export function publishDue(store, { at = Date.now() } = {}) {
+  const due = store.list('publications', p => p.status === 'draft' && p.scheduledFor && Date.parse(p.scheduledFor) <= at);
+  const out = [];
+  for (const p of due) {
+    const org = store.get('orgs', p.publisherOrgId);
+    const user = store.list('users', u => u.email === p.scheduledBy && u.orgId === p.publisherOrgId && !u.disabled)[0];
+    const r = !org || !user ? { ok: false, error: 'the person who scheduled this can no longer publish' } : publish(store, org, user, p.id);
+    const fresh = store.get('publications', p.id);
+    if (fresh) { fresh.scheduledFor = null; fresh.scheduleError = r.ok ? null : r.error; store.put('publications', fresh); }
+    out.push({ id: p.id, ok: !!r.ok, error: r.ok ? null : r.error });
+  }
+  return out;
+}
