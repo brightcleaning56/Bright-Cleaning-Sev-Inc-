@@ -637,7 +637,7 @@ async function leadTab(t, body) {
         <div data-inv="${i.id}">${r.documentCount ? await planRoomHtml(r.id) : ''}<div id="est-${i.id}"></div>${open ? `<button class="x-fe7b4979" data-est-manual="${i.id}" >Build estimate manually</button>` : ''}</div>
         ${r.addendumCount > i.acknowledgedThrough ? `<div class="x-c5c11f3d" ><small><strong>Addendum ${r.addendumCount} posted.</strong> ${esc(r.addenda.at(-1)?.note || '')} Review the plan room, then acknowledge before bidding.</small> <button data-ack="${i.id}">Acknowledge addenda 1–${r.addendumCount}</button></div>` : (r.addendumCount ? `<small>Addenda 1–${r.addendumCount} acknowledged.</small>` : '')}
         <div class="row x-fe7b4979" >${['will_bid', 'wont_bid', 'undecided'].map(x => `<button data-intent="${x}" data-id="${i.id}" ${i.intent === x ? 'class="primary"' : ''} ${open ? '' : 'disabled'}>${{ will_bid: 'Will bid', wont_bid: "Won't bid", undecided: 'Undecided' }[x]}</button>`).join('')}
-          ${open ? `<button data-bidform="${i.id}" data-due="${esc(r.dueDate)}">${i.myBid ? 'Revise bid' : 'Submit bid'}</button>` : ''}</div>
+          ${open ? `<button data-bidform="${i.id}" data-due="${esc(r.dueDate)}">${i.myBid ? 'Revise bid' : 'Submit bid'}</button> <button type="button" data-copylink="${i.id}">Copy bid link</button>` : ''}</div>
         ${i.myBid ? `<small>Your bid: <strong>${money(i.myBid.total)}${i.myBid.recurring ? '/mo' : ''}</strong> · ${esc(i.myBid.status.replace('_', ' '))} · revision ${i.myBid.revision} · ${ago(i.myBid.submittedAt)}${i.myBid.receiptId ? ` · receipt <b>${esc(i.myBid.receiptId)}</b> <span title="SHA-256 fingerprint of the exact bid document">(${esc(i.myBid.sha256.slice(0, 12))}…)</span>` : ''}</small>` : ''}
         <div id="bf-${i.id}"></div></div></div>`; }))).join('')
       : (me.org?.trades || []).length ? `<div class="empty">No open invitations right now. You're set up for ${esc((me.org.trades || []).map(k => (TRADES_LIST.find(t => t.key === k) || {}).label || k).join(', '))}, so a GC or property manager in your territory will invite you when work matches.</div>` : '<div class="empty">No invitations yet. Set your trades in Plan & profile, and you\'ll be invited automatically when a GC or property manager in your territory posts work you do.</div>';
@@ -645,6 +645,12 @@ async function leadTab(t, body) {
     for (const i of inv) { const prior = await api('GET', '/api/estimates?invitationId=' + i.id).catch(() => []); if (prior.length) openEstimate(i.id, prior[0]); }
     body.querySelectorAll('[data-est-manual]').forEach(b => b.onclick = () => openEstimate(b.dataset.estManual, null));
     body.querySelectorAll('[data-ack]').forEach(b => b.onclick = async () => { await api('POST', `/api/invitations/${b.dataset.ack}/acknowledge`); render(); });
+    body.querySelectorAll('[data-copylink]').forEach(b => b.onclick = async () => {
+      const label = b.textContent;
+      try { const { url } = await api('GET', `/api/invitations/${b.dataset.copylink}/bid-link`);
+        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url); else window.prompt('Copy this bid link:', url);
+        b.textContent = 'Link copied'; setTimeout(() => { b.textContent = label; }, 2000);
+      } catch (e) { b.textContent = 'Link unavailable'; setTimeout(() => { b.textContent = label; }, 2500); } });
     body.querySelectorAll('[data-intent]').forEach(b => b.onclick = async () => { await api('POST', `/api/invitations/${b.dataset.id}/intent`, { intent: b.dataset.intent }); render(); });
     body.querySelectorAll('[data-bidform]').forEach(b => b.onclick = () => {
       const id = b.dataset.bidform, due = b.dataset.due ? new Date(b.dataset.due) : null;

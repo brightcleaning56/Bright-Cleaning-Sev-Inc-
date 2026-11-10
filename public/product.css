@@ -197,3 +197,4 @@ a.pg-card:hover{border-color:#b9cde8}
 .bid-loading{color:#62748b}
 @media (max-width:760px){.bid-form .row2{grid-template-columns:1fr}}
 .err{color:#c0392b;font-weight:600}
+.pg-form label.bid-check{display:flex;flex-direction:row;align-items:center;gap:8px;font-weight:400}
