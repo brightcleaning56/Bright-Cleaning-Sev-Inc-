@@ -23,6 +23,8 @@ function mountMfa(app, ctx) {
   app.post('/api/admin/mfa/setup', auth, (req, res) => {
     const email = who(req), f = factor(email);
     if (f && f.enabled) return res.status(409).json({ error: 'Two-step sign-in is already on. Turn it off first to set up a new device.' });
+    // A set-up already in progress keeps its key, so a key the person has already added to their app stays valid.
+    if (f && f.secret) return res.json({ secret: f.secret, otpauth_uri: totp.otpauthUri(f.secret, email) });
     const secret = totp.newSecret(), now = new Date().toISOString();
     db.prepare('INSERT INTO mfa_factors(email,secret,enabled,created_at) VALUES(?,?,0,?) ON CONFLICT(email) DO UPDATE SET secret=excluded.secret, enabled=0, created_at=excluded.created_at, enabled_at=NULL').run(email, secret, now);
     res.json({ secret, otpauth_uri: totp.otpauthUri(secret, email) });

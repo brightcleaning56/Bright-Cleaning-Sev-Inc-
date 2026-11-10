@@ -305,6 +305,8 @@ async function startServer(env, dataDir) {
     const mk = await req('POST', '/api/admin/users', { token: T, json: { email, name: 'MFA Tester', password: pw, role: 'manager' } });
     const l1 = await req('POST', '/api/admin/login', { json: { email, password: pw } });
     const setup = await req('POST', '/api/admin/mfa/setup', { token: l1.data.token });
+    const again = await req('POST', '/api/admin/mfa/setup', { token: l1.data.token });
+    assert(again.status === 200 && again.data.secret === setup.data.secret, 'a set-up in progress keeps its key: ' + JSON.stringify(again.data));
     const en = await req('POST', '/api/admin/mfa/enable', { token: l1.data.token, json: { code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000)) } });
     const l2 = await req('POST', '/api/admin/login', { json: { email, password: pw } });
     const wrong = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: '000000' } });
