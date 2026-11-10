@@ -483,7 +483,13 @@ async function startServer(env, dataDir) {
     const b = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'In Progress', progress: 50, manager: 'Eric', due_date: '2026-11-15' } });
     const noSign = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'Completed', progress: 100 } });
     await req('POST', `/api/admin/pm/projects/${projectId}/signoff`, { token: T, json: { name: 'Dana Builder', title: 'Owner rep' } });
+    const noInsp = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'Completed', progress: 100 } });
+    const tplI = (await req('GET', '/api/admin/qc/templates', { token: T })).data.templates[0];
+    const insP = (await req('POST', '/api/admin/qc/inspections', { token: T, json: { template_id: tplI.id, area: 'Whole building', date: require('../bizdate').today(), project_id: projectId, crew: 'A', itype: 'Internal' } })).data.inspection;
+    await req('PATCH', `/api/admin/qc/inspections/${insP.id}`, { token: T, json: { items: insP.items.map(i => ({ ...i, result: 'Pass' })) } });
+    await req('POST', `/api/admin/qc/inspections/${insP.id}/sign`, { token: T, json: { name: 'Eric Moore' } });
     const d = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'Completed', progress: 100 } });
+    if (noInsp.status !== 409 || !/inspection/.test(noInsp.data.error || '')) throw new Error('Completion without an inspection should be refused: ' + JSON.stringify(noInsp.data));
     const p2 = (await req('GET', '/api/admin/projects', { token: T })).data.projects.find(x => x.id === projectId);
     assert(a.status === 200 && early.status === 409 && /readiness/.test(early.data.error) && ap.status === 200 && b.status === 200 && noSign.status === 409 && /sign-off/.test(noSign.data.error) && d.status === 200 && p2.status === 'Completed' && p2.progress === 100, JSON.stringify([early.data, ap.data, noSign.data, p2.status]));
     return `contract #${contractId} signed; project #${projectId}: In Progress before readiness 409; 6 readiness checks + dispatch approval; In Progress; Completed without sign-off 409; signed off; Completed 100%`;
@@ -1473,7 +1479,13 @@ async function startServer(env, dataDir) {
     let det = (await req('GET', '/api/admin/pm/projects/' + id, { token: T })).data;
     for (const t of det.tasks) { await req('PATCH', '/api/admin/pm/tasks/' + t.id, { token: T, json: { status: 'Done' } }); }
     const certEarly = await fetch(B + `/api/admin/pm/projects/${id}/certificate`, { headers: { Authorization: 'Bearer ' + T } });
+    const noInspP = await req('POST', `/api/admin/pm/projects/${id}/status`, { token: T, json: { status: 'Completed' } });
+    const tplP = (await req('GET', '/api/admin/qc/templates', { token: T })).data.templates[0];
+    const insPr = (await req('POST', '/api/admin/qc/inspections', { token: T, json: { template_id: tplP.id, area: 'Office', date: require('../bizdate').today(), project_id: id, crew: 'A', itype: 'Internal' } })).data.inspection;
+    await req('PATCH', `/api/admin/qc/inspections/${insPr.id}`, { token: T, json: { items: insPr.items.map(i => ({ ...i, result: 'Pass' })) } });
+    await req('POST', `/api/admin/qc/inspections/${insPr.id}/sign`, { token: T, json: { name: 'Eric Moore' } });
     const comp = await req('POST', `/api/admin/pm/projects/${id}/status`, { token: T, json: { status: 'Completed' } });
+    if (noInspP.status !== 409 || !/inspection/.test(noInspP.data.error || '')) throw new Error('Completion without an inspection should be refused: ' + JSON.stringify(noInspP.data));
     const cert = await fetch(B + `/api/admin/pm/projects/${id}/certificate`, { headers: { Authorization: 'Bearer ' + T } }); const ctext = Buffer.from(await cert.arrayBuffer()).toString('latin1');
     const h1 = await req('POST', `/api/admin/pm/projects/${id}/billing-handoff`, { token: T });
     const h2 = await req('POST', `/api/admin/pm/projects/${id}/billing-handoff`, { token: T });
@@ -2079,10 +2091,13 @@ async function startServer(env, dataDir) {
       ok('1 Contract ($5,000) and project exist for billing', k && k.value === 5000 && p, k && k.value);
       const i1 = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'WFG-1', project_id: p.id, customer_name: 'Cora Lect', company: 'Collect Co', amount: 3000, due_date: addD(bdate, -2), status: 'Draft' } })).data;
       const id1 = i1.id || (i1.invoice && i1.invoice.id);
-      const noMail = await req('POST', `/api/admin/invoices/${id1}/send`, { token: T, json: { to: 'not-an-email' } });
+      const payDraft = await req('POST', `/api/admin/invoices/${id1}/payment`, { token: T, json: { amount: 100 } });
+      const unsignedSend = await req('POST', `/api/admin/invoices/${id1}/send`, { token: T, json: { to: 'ap@collect.test' } });
+      await req('PATCH', '/api/admin/contracts/' + k.id, { token: T, json: { signature_status: 'Signed', signer_name: 'Cora Lect', signed_on: bdate } });
+      const noMail =await req('POST', `/api/admin/invoices/${id1}/send`, { token: T, json: { to: 'not-an-email' } });
       const m0 = mail.length; const s1 = await req('POST', `/api/admin/invoices/${id1}/send`, { token: T, json: { to: 'ap@collect.test' } }); await sleep(300);
       const sm = mail.slice(m0).find(m => m.to.includes('ap@collect.test'));
-      ok('2 Invoice sent by email with the PDF attached; bad address refused', noMail.status === 400 && s1.status === 200 && sm && /WFG-1/.test(sm.subject) && /application\/pdf/.test(sm.raw), JSON.stringify({ bad: noMail.status, s1: [s1.status, s1.data.error] }));
+      ok('2 Invoice sent by email with the PDF attached; bad address refused; no payment on a Draft and no send before the contract is signed', payDraft.status === 409 && unsignedSend.status === 409 && /not signed/.test(unsignedSend.data.error || '') && noMail.status === 400 && s1.status === 200 && sm && /WFG-1/.test(sm.subject) && /application\/pdf/.test(sm.raw), JSON.stringify({ bad: noMail.status, s1: [s1.status, s1.data.error] }));
       const inv1 = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === id1);
       ok('3 Sending marks it Sent (with date + recipient) — NOT paid', inv1.status === 'Sent' && inv1.paid_amount === 0 && inv1.sent_to === 'ap@collect.test' && inv1.sent_at, JSON.stringify([inv1.status, inv1.paid_amount, inv1.sent_to]));
       const pdf = await fetch(B + `/api/admin/invoices/${id1}/pdf`, { headers: { Authorization: 'Bearer ' + T } }); const pt = Buffer.from(await pdf.arrayBuffer()).toString('latin1');
@@ -2110,6 +2125,12 @@ async function startServer(env, dataDir) {
       const ag = (await req('GET', '/api/admin/reports/aging', { token: T })).data;
       const open2 = (ag.invoices || []).find(x => x.number === 'WFG-2'), paid1 = (ag.invoices || []).find(x => x.number === 'WFG-1');
       ok('8 A/R aging shows the open invoice and not the paid one', open2 && open2.balance === 2500 && !paid1, JSON.stringify({ open2: open2 && open2.balance, paid1: !!paid1 }));
+      const dash0 = (await req('GET', '/api/admin/dashboard', { token: T })).data.finance;
+      const cust0 = (await req('GET', '/api/admin/customers', { token: T })).data.customers.find(c => c.company === 'Collect Co');
+      await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'WFG-D', project_id: p.id, customer_name: 'Cora Lect', company: 'Collect Co', email: 'ap@collect.test', amount: 777, due_date: addD(bdate, 30), status: 'Draft' } });
+      const dash1 = (await req('GET', '/api/admin/dashboard', { token: T })).data.finance;
+      const cust1 = (await req('GET', '/api/admin/customers', { token: T })).data.customers.find(c => c.company === 'Collect Co');
+      ok('10 A Draft invoice is not billed: dashboard billed and the customer balance ignore it, matching Reports and Command', dash1.billed === dash0.billed && cust1.billed === cust0.billed && cust0.billed > 0, JSON.stringify({ dash: [dash0.billed, dash1.billed], cust: [cust0.billed, cust1.billed] }));
       const audit = (await req('GET', '/api/admin/audit-log', { token: T })).data.events.filter(a => a.entity === 'invoice' && [id1, id2].includes(Number(a.entity_id)));
       ok('9 Sends, the over-contract reason and payments are in the activity log', audit.some(a => /sent invoice/.test(a.action)) && audit.some(a => /above contract value/.test(a.details || '')), audit.map(a => a.action).join(', '));
     } catch (err) { steps.push({ step: '(stopped)', result: 'FAIL', evidence: err.stack.split('\n').slice(0, 2).join(' ') }); }

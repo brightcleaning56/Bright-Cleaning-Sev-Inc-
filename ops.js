@@ -101,7 +101,8 @@ module.exports = function mountOps(app, ctx) {
     const cids = new Set(contracts.map(x => x.id));
     const projects = db.prepare('SELECT id,contract_id,customer_name,company,name,status,progress,due_date,created_at FROM projects').all().filter(x => cids.has(x.contract_id) || (company && (x.company || '').toLowerCase() === company));
     const invoices = db.prepare('SELECT id,customer_name,company,email,invoice_number,amount,paid_amount,status,due_date,created_at FROM invoices').all().filter(x => m(x.email, x.company));
-    const live = invoices.filter(i => i.status !== 'Void');
+    // Billed = invoices sent to the customer (drafts are not owed yet; void ones never count).
+    const live = invoices.filter(i => !['Void', 'Draft'].includes(i.status));
     return { leads, proposals, contracts, projects, invoices, billed: live.reduce((s, i) => s + Number(i.amount || 0), 0), paid: live.reduce((s, i) => s + Number(i.paid_amount || 0), 0) };
   };
 

@@ -14,7 +14,8 @@ module.exports = function mountAdminExt(app, ctx) {
     const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
     const in14 = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
     const leadCounts = db.prepare(`SELECT kind, COUNT(*) n, SUM(status='New') fresh, SUM(created_at>=?) week FROM leads GROUP BY kind`).all(weekAgo);
-    const fin = db.prepare(`SELECT COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) collected FROM invoices WHERE status<>'Void'`).get();
+    // Billed = invoices actually sent (Draft and Void are not owed by the customer). Same rule as Reports and Command.
+    const fin = db.prepare(`SELECT COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) collected FROM invoices WHERE status NOT IN ('Draft','Void')`).get();
     res.json({
       leads: leadCounts,
       newLeads: db.prepare(`SELECT id,kind,contact_name,company,project_name,created_at FROM leads WHERE status='New' ORDER BY created_at DESC LIMIT 8`).all(),
@@ -134,6 +135,7 @@ module.exports = function mountAdminExt(app, ctx) {
     const amt = num(req.body && req.body.amount);
     if (!amt) return res.status(400).json({ error: 'Enter a payment amount greater than zero.' });
     if (inv.status === 'Void') return res.status(409).json({ error: 'This invoice is void. Payments cannot be recorded on it.' });
+    if (inv.status === 'Draft') return res.status(409).json({ error: 'Send this invoice before recording a payment on it.' });
     const balance = Math.round((Number(inv.amount || 0) - Number(inv.paid_amount || 0)) * 100) / 100;
     if (balance <= 0) return res.status(409).json({ error: 'This invoice is already paid in full.' });
     if (amt > balance + 0.005) return res.status(400).json({ error: `That is more than the balance due ($${balance.toFixed(2)}). Record the exact amount, or record the extra as a separate credit.` });

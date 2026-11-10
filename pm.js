@@ -68,6 +68,10 @@ module.exports = function mountPM(app, ctx) {
     const why = [];
     if (open) why.push(`${open} task(s) are still open`);
     if (!p.signoff_name && !p.signoff_waiver) why.push('customer sign-off (or a recorded reason it is not needed) is missing');
+    const openCorrective = db.prepare("SELECT COUNT(*) n FROM inspections WHERE project_id=? AND status='Corrective action'").get(p.id).n;
+    if (openCorrective) why.push(`${openCorrective} inspection(s) still have corrective work open`);
+    const passed = db.prepare("SELECT COUNT(*) n FROM inspections WHERE project_id=? AND signed_at IS NOT NULL AND ((passed=1 AND status IN ('Completed','Closed','Customer accepted')) OR status='Accepted with exceptions')").get(p.id).n;
+    if (!passed) why.push('a signed, passing quality inspection is required');
     return why.length ? why.join('; ') : null;
   }
   app.locals.projectHasTasks = id => !!db.prepare('SELECT 1 FROM project_tasks WHERE project_id=? AND approved=1').get(id);
@@ -77,7 +81,7 @@ module.exports = function mountPM(app, ctx) {
     const k = contractOf(p), c = costs(p.id), r = readinessOf(p);
     const behind = ['In Progress', 'Mobilization', 'Ready to mobilize'].includes(p.status) && ((p.due_date && p.due_date < today() && (p.progress || 0) < 100) || !!db.prepare("SELECT 1 FROM project_tasks WHERE project_id=? AND status='Open' AND due_date IS NOT NULL AND due_date<>'' AND due_date<?").get(p.id, today()));
     return { ...p, number: number(p), service_label: (SERVICES[p.service] || {}).label || null, contract: k ? { id: k.id, title: k.title, value: k.value, signature_status: k.signature_status, status: k.status } : null,
-      contract_value: k ? Number(k.value) || 0 : 0, actual_cost: c.total, cost_by: c.by, readiness_complete: r.complete, readiness_missing: r.missing, behind,
+      contract_value: k ? Number(k.value) || 0 : 0, contract_signed: executed(k), actual_cost: c.total, cost_by: c.by, readiness_complete: r.complete, readiness_missing: r.missing, behind,
       awaiting_approval: ['Planning', 'Contracted'].includes(p.status) && r.complete && (executed(k) || !!p.contract_waiver) && !p.dispatch_approved_by,
       tasks_open: db.prepare("SELECT COUNT(*) n FROM project_tasks WHERE project_id=? AND approved=1 AND status='Open'").get(p.id).n,
       tasks_review: db.prepare('SELECT COUNT(*) n FROM project_tasks WHERE project_id=? AND approved=0').get(p.id).n };
@@ -99,8 +103,8 @@ module.exports = function mountPM(app, ctx) {
       kpis: { active: live.filter(p => ['In Progress', 'Mobilization', 'Ready to mobilize', 'Quality Review'].includes(p.status)).length, kickoff: live.filter(p => p.status === 'Planning').length,
         awaiting_approval: live.filter(p => p.awaiting_approval).length, behind: live.filter(p => p.behind).length, on_hold: live.filter(p => p.status === 'On Hold').length,
         completed_month: live.filter(p => p.status === 'Completed' && String(p.actual_end || p.updated_at || '').slice(0, 7) === month).length,
-        contracted: sum(live, p => p.contract_value), budget: sum(live, p => p.budget), actual_cost: sum(live, p => p.actual_cost),
-        gross_profit: sum(live.filter(p => p.actual_cost > 0), p => p.contract_value - p.actual_cost) } });
+        contracted: sum(live.filter(p => p.contract_signed), p => p.contract_value), budget: sum(live, p => p.budget), actual_cost: sum(live, p => p.actual_cost),
+        gross_profit: sum(live.filter(p => p.contract_signed && p.actual_cost > 0), p => p.contract_value - p.actual_cost) } });
   });
 
   app.get('/api/admin/pm/projects/:id', auth, (req, res) => {

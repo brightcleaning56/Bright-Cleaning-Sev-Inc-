@@ -50,6 +50,9 @@ module.exports = function mountInvoices(app, ctx) {
     if (inv.status === 'Paid') return res.status(409).json({ error: 'This invoice is already paid.' });
     if (!(Number(inv.amount) > 0)) return res.status(400).json({ error: 'The invoice amount must be greater than $0.' });
     if (!inv.due_date) return res.status(400).json({ error: 'Set a due date before sending.' });
+    const k0 = contractFor(inv);
+    const waived = !!(inv.project_id && (db.prepare('SELECT contract_waiver FROM projects WHERE id=?').get(inv.project_id) || {}).contract_waiver);
+    if (k0 && !waived && !['Signed', 'Executed', 'Fully signed'].includes(k0.signature_status)) return res.status(409).json({ error: `Contract "${k0.title || '#' + k0.id}" is not signed yet, so this invoice cannot be sent. Get the signed agreement first.` });
     const to = clean(b.to, 254) || inv.email || (inv.customer_id && (db.prepare('SELECT email FROM customers WHERE id=?').get(inv.customer_id) || {}).email) || '';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: 'Add the customer’s billing email before sending.' });
     const chk = contractCheck(inv);
