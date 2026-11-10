@@ -2,7 +2,8 @@
 // the customer until the owner approves it. Approval is tied to a fingerprint of the price, scope, lines and
 // terms, so any later edit voids it automatically.
 const crypto = require('crypto');
-const DEFAULTS = { min_margin_pct: 15, max_total: 25000, flag_pre_pricing: true, approve_all: false };
+// 30% minimum margin per the production readiness assessment (7.6). A margin saved from the approval-rules form overrides this.
+const DEFAULTS = { min_margin_pct: 30, max_total: 25000, flag_pre_pricing: true, approve_all: false };
 
 let DB = null;
 function rules() {

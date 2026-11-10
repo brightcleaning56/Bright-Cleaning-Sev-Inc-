@@ -1936,6 +1936,7 @@ async function startServer(env, dataDir) {
     const ans = { ...v, CallSid: 'CA444', DialCallStatus: 'completed' };
     const ar = await (await post('/api/webhooks/twilio/dial-result', ans, sign('/api/webhooks/twilio/dial-result', ans))).text();
     const intel = (await req('GET', '/api/admin/calls-intel', { token: T })).data;
+    assert(/may be recorded for quality/.test(vx), 'voicemail greeting carries the recording notice: ' + vx);
     assert(forged.status === 403 && vr.status === 200 && /<Record [^>]*transcribe="true"/.test(vx) && /transcribeCallback="https:\/\/brightclean\.net\/api\/webhooks\/twilio\/transcription"/.test(vx) && !/<Dial/.test(vx) && /<Record/.test(dx) && c.length === 1 && c[0].outcome === 'Voicemail' && c[0].follow_up_date === require('../bizdate').today() && c[0].duration_s === 40 && /<Hangup\/>/.test(ar) && intel.voice_url === 'https://brightclean.net/api/webhooks/twilio/voice' && intel.forwarding === false, JSON.stringify({ vx, dx, c, ar, intel }));
     return 'unsigned 403; no forward number → greeting + transcribed voicemail; unanswered dial → Voicemail call with today follow-up; later "completed" kept Voicemail (40 s); answered dial hangs up cleanly';
   });
@@ -2406,6 +2407,7 @@ async function startServer(env, dataDir) {
     const appCreates = globalThis.__twCalls.slice(n0).filter(c => /Applications\.json/.test(c.url)).length;
     const vin = { CallSid: 'CAin' + 'c'.repeat(28), From: '+15155550144', To: '+15153033024', Direction: 'inbound', AccountSid: 'AC' + 'a'.repeat(32) };
     const vx = await (await post('/api/webhooks/twilio/voice', vin)).text();
+    assert(/<Say[^>]*>[^<]*may be recorded for quality[^<]*<\/Say>[\s\S]*<Dial/.test(vx), 'live call hears the recording notice before ringing: ' + vx);
     const cu = (await req('POST', '/api/admin/customers', { token: T, json: { company: 'Browser Co', name: 'Bea Rowser', phone: '515-555-0155' } })).data.id;
     const st = await req('POST', '/api/admin/calls/browser-start', { token: T, json: { to: '515-555-0155', customer_id: cu } });
     const cv = { CallSid: 'CAbr' + 'd'.repeat(28), From: 'client:office', To: '', call_id: String(st.data.call_id), AccountSid: 'AC' + 'a'.repeat(32) };
