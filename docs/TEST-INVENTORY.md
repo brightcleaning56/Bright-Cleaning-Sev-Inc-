@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**252 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**253 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -136,6 +136,9 @@
 - council filter: real Seattle appointments and citywide code changes are excluded; site-specific items kept; stale items removed
 - land-use applications feed: rolling window, address required, links to the record
 - attribution: Chicago carries its required disclaimer; only enabled sources are listed publicly
+
+## entrypoint.test.js (1)
+- the server entry point keeps running after its periodic jobs fire
 
 ## http.test.js (11)
 - auth, roles and tenant scoping over HTTP
