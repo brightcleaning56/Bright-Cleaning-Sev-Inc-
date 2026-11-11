@@ -6,7 +6,9 @@ const run = (args, label) => { const r = spawnSync(process.execPath, args, { std
 run(['scripts/doctor.mjs', '--db'], 'environment check');
 run(['scripts/test-inventory.mjs'], 'test inventory guard');
 const files = fs.readdirSync('test').filter(f => f.endsWith('.test.js')).sort().map(f => 'test/' + f);
-const child = spawn(process.execPath, ['--test', ...files], { stdio: ['ignore', 'pipe', 'pipe'] });
+// One file at a time: several files share the test database, and the PostgreSQL test truncates its tables, so parallel
+// runs could block each other and hang.
+const child = spawn(process.execPath, ['--test', '--test-concurrency=1', ...files], { stdio: ['ignore', 'pipe', 'pipe'] });
 let out = '';
 child.stdout.on('data', d => { out += d; process.stdout.write(d); });
 child.stderr.on('data', d => { out += d; process.stderr.write(d); });

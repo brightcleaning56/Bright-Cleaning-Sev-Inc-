@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**253 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**256 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -95,6 +95,11 @@
 - the link is refused when it is wrong, tampered with, expired, or for another purpose
 - a link bid is refused until addenda are acknowledged, and needs a name and work email
 - the bid page is served and the invitation email carries the link
+
+## command-center.test.js (3)
+- the command center counts a publisher\
+- an unconfirmed account can ask for the confirmation email again, a limited number of times
+- a confirmed account has nothing to resend
 
 ## core-reads.test.js (8)
 - switch off: unchanged (permit ids, address grouping); switch on: same projects, permanent ids, anchor permits
