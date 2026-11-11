@@ -188,7 +188,7 @@ module.exports = function mountOps(app, ctx) {
       }
       // Off-site copy to Backblaze B2 when configured. A failure here is logged but does not fail the local backup.
       const off = await b2.uploadFile(path.join(backupDir, saved), saved);
-      if (!off.ok && !off.skipped) console.error('Off-site backup failed:', off.detail);
+      if (!off.ok && !off.skipped) { console.error('Off-site backup failed:', off.detail); alertOwner('Off-site backup failed', `The backup was saved on the server but not copied to Backblaze: ${off.detail}\n\nCheck the Backblaze key and the BACKUP_* settings in Render.`); }
       if (!off.skipped) db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup-offsite', null, reason, null, off.ok ? 'ok' : 'failed', clean(off.detail, 500), now());
       const all = listBackups();
       for (const old of all.slice(14)) { try { fs.unlinkSync(path.join(backupDir, old.name)); } catch { /* ignore */ } }
@@ -197,8 +197,17 @@ module.exports = function mountOps(app, ctx) {
     } catch (e) {
       db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup', null, reason, null, 'failed', clean(e.message, 500), now());
       console.error('Backup failed:', e.message);
+      alertOwner('Database backup failed', `The daily database backup failed: ${e.message}\n\nCheck Settings > Backups & Data and the server log.`);
       return null;
     } finally { backupRunning = false; }
+  }
+  // Emails the owner (NOTIFY_EMAIL, else ADMIN_EMAIL) when something that protects the data fails. Never throws.
+  async function alertOwner(subject, text) {
+    try {
+      const to = process.env.NOTIFY_EMAIL || process.env.ADMIN_EMAIL, m = getMailer();
+      if (!to || !m) return;
+      await m.sendMail({ from: process.env.FROM_EMAIL || to, to, subject: '[Bright Clean] ' + subject, text });
+    } catch (e) { console.error('Owner alert not sent:', e.message); }
   }
   app.get('/api/admin/backups', auth, (req, res) => res.json({ backups: listBackups(), retention: 14, folder: 'data/backups', encrypted: !!bcrypto.keyFromEnv() }));
   app.post('/api/admin/backups', auth, async (req, res) => {
