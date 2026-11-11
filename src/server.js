@@ -33,7 +33,7 @@ import * as adminPhase5 from './admin/phase5.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
 import { changeDeadline } from './deadline.js';
-import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
+import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, publisherSummary, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
 import { CATALOG, PRICE_STATUS, entitlementsFor, seatCheck, usage } from './entitlements.js';
 import { syncDocument, indexDocument, syncPlanRoom, listSets, searchDocuments, compareRevisions } from './planroom.js';
 import { saveDocument, listDocuments, viewLink, openFromLink, acknowledgeAddenda, planholders } from './documents.js';
@@ -728,6 +728,15 @@ export function createServer(store, deps = {}) {
   route('GET', '/api/admin/publishers', 'platform', () => store.list('orgs', o => o.kind === 'buyer').map(o => ({ id: o.id, name: o.name, kind: o.buyerKind, status: o.publisher?.status || 'unverified', evidence: o.publisher?.evidence || null, requestedAt: o.publisher?.requestedAt || null, note: o.publisher?.note || null, publications: store.list('publications', p => p.publisherOrgId === o.id).length }))
     .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || String(b.requestedAt).localeCompare(String(a.requestedAt))));
   route('POST', '/api/admin/publishers/:id/decide', 'platform', ({ params, body, user }) => R(decideVerification(store, user, params.id, body), 'publisher'));
+  route('GET', '/api/publisher/summary', 'user', ({ user }) => publisherSummary(store, pubOrg(user)));
+  // Resend the confirmation email to an account that has not confirmed yet. Limited to 5 an hour per user.
+  route('POST', '/api/account/resend-verification', 'user', async ({ user }) => {
+    const org = store.get('orgs', user.orgId);
+    need(org && org.status === 'pending_verification', 409, 'this account is already confirmed');
+    need(rateLimit('resend:' + user.id, 5, 60 * 60e3), 429, 'too many confirmation emails; try again within the hour');
+    await sendVerification(org, user, user.email, 'confirm your account');
+    return { ok: true, sentTo: user.email };
+  });
   route('GET', '/api/publications', 'user', ({ user }) => { const o = pubOrg(user); return store.list('publications', p => p.publisherOrgId === o.id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map(p => { const c = coverage(store, o, p.id); return { ...p, totals: c.totals, ready: c.checklist.ready }; }); });
   route('POST', '/api/publications', 'user', ({ body, user }) => R(createPublication(store, pubOrg(user), user, body), 'publication'));
   route('GET', '/api/publications/:id', 'user', ({ params, user }) => { const c = coverage(store, pubOrg(user), params.id); need(c, 404, 'not found'); return c; });

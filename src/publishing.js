@@ -231,3 +231,27 @@ export function publishDue(store, { at = Date.now() } = {}) {
   }
   return out;
 }
+
+/** Publisher Command Center: counts across every project this company publishes. Read-only. */
+export function publisherSummary(store, org, { at = Date.now() } = {}) {
+  const pubs = store.list('publications', p => p.publisherOrgId === org.id);
+  const pubIds = new Set(pubs.map(p => p.id));
+  const reqs = store.list('bidRequests', r => r.buyerOrgId === org.id && (!r.publicationId || pubIds.has(r.publicationId)));
+  const reqIds = new Set(reqs.map(r => r.id));
+  const invitations = store.list('invitations', i => i.buyerOrgId === org.id && reqIds.has(i.requestId)).length;
+  const subs = store.list('submissions', s => reqIds.has(s.requestId));
+  const open = reqs.filter(r => r.status === 'open');
+  const horizon = at + 14 * 864e5;
+  const upcoming = open.filter(r => Date.parse(r.dueDate) >= at - 864e5 && Date.parse(r.dueDate) <= horizon)
+    .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))
+    .slice(0, 5).map(r => ({ id: r.id, title: r.title, dueDate: r.dueDate, publicationId: r.publicationId || null }));
+  return {
+    projects: { total: pubs.length, draft: pubs.filter(p => p.status === 'draft').length, published: pubs.filter(p => p.status === 'published').length,
+      closed: pubs.filter(p => p.status === 'closed').length, archived: pubs.filter(p => p.status === 'archived').length },
+    activePackages: open.length,
+    invitationsSent: invitations,
+    bidsReceived: subs.length,
+    awardsPending: open.filter(r => subs.some(s => s.requestId === r.id)).length,
+    upcomingDeadlines: upcoming,
+  };
+}

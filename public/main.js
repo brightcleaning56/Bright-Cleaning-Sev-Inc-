@@ -1083,12 +1083,23 @@ async function publisherPanels() {
       ${v.status === 'pending' ? `<small>Submitted ${fmtDate(v.requestedAt)} — we'll review it.</small>` : `<form id="vf" class="grid2"><input name="website" placeholder="Company website (https://…)"><input name="licenseNumber" placeholder="Contractor license / business registration #"><input name="phone" placeholder="Office phone"><input name="notes" placeholder="Anything that helps us verify you"><div class="row"><button class="primary">Request verification</button><span class="err"></span></div></form>`}</div>`;
   $('#vf')?.addEventListener('submit', async ev => { ev.preventDefault(); const f = ev.target;
     try { await api('POST', '/api/publisher/verification', { website: f.website.value.trim(), licenseNumber: f.licenseNumber.value.trim(), phone: f.phone.value.trim(), notes: f.notes.value.trim() }); publisherPanels(); } catch (e) { f.querySelector('.err').textContent = e.message; } });
+  publisherCommand();
   const pubs = await api('GET', '/api/publications').catch(() => []);
   $('#pubc').innerHTML = `<div class="card x-87c136df" ><div class="row x-a562f4fd" ><h2>${ICON.building} Project Publishing Center</h2><button class="primary" id="newpub">${ICON.plus} New project</button></div>
     <p class="x-67fc00b7" >Publish a project with separate trade packages, plan rooms and bidder lists. Nothing is visible to bidders until you publish.</p><div id="newpubf"></div>
-    ${pubs.length ? `<div class="scroll"><table><tr><th>Project</th><th>Status</th><th class="num">Packages</th><th class="num">Invited</th><th class="num">Opened plans</th><th class="num">Will bid</th><th class="num">Bids</th><th></th></tr>${pubs.map(p => `<tr><td><b>${esc(p.title)}</b><br><small>${esc(p.address)}, ${esc(p.city)}, ${esc(p.state)}${p.projectId ? ' · ' + esc(p.projectId) : ''}</small></td><td>${pubPill(p.status)}</td>
-      <td class="num">${p.totals.packages}</td><td class="num">${p.totals.invited}</td><td class="num">${p.totals.openedPlans}</td><td class="num">${p.totals.willBid}</td><td class="num">${p.totals.bids}</td><td><button data-pubopen="${p.id}">Manage</button></td></tr>`).join('')}</table></div>` : '<div class="empty">No projects yet. Use <b>New project</b>.</div>'}
+    ${pubs.length ? `<div class="pubfilters"><input id="pubq" type="search" placeholder="Search projects by name, address or ID" aria-label="Search projects"><select id="pubf" aria-label="Filter by status"><option value="">All statuses</option><option value="draft">Draft</option><option value="published">Published</option><option value="closed">Bidding closed</option><option value="archived">Archived</option></select><small id="pubcount"></small></div>
+      <div class="scroll"><table><tr><th>Project</th><th>Status</th><th class="num">Packages</th><th class="num">Invited</th><th class="num">Opened plans</th><th class="num">Will bid</th><th class="num">Bids</th><th></th></tr><tbody id="pubrows"></tbody></table></div>` : `<div class="empty">No projects yet. Start with <b>New project</b> to build a full project with its trade packages, or post a single trade below.</div>`}
     <div id="pubm"></div></div>`;
+  const drawPubs = () => {
+    const q = ($('#pubq')?.value || '').trim().toLowerCase(), st = $('#pubf')?.value || '';
+    const list = pubs.filter(p => (!st || p.status === st) && (!q || `${p.title} ${p.address} ${p.city} ${p.id} ${p.projectId || ''}`.toLowerCase().includes(q)));
+    const rows = $('#pubrows'); if (!rows) return;
+    rows.innerHTML = list.length ? list.map(p => `<tr><td><b>${esc(p.title)}</b><br><small>${esc(p.address)}, ${esc(p.city)}, ${esc(p.state)}${p.projectId ? ' · ' + esc(p.projectId) : ''}</small></td><td>${pubPill(p.status)}</td>
+      <td class="num">${p.totals.packages}</td><td class="num">${p.totals.invited}</td><td class="num">${p.totals.openedPlans}</td><td class="num">${p.totals.willBid}</td><td class="num">${p.totals.bids}</td><td><button data-pubopen="${p.id}">Manage</button></td></tr>`).join('') : '<tr><td colspan="8"><small>No projects match these filters.</small></td></tr>';
+    $('#pubcount').textContent = `${list.length} of ${pubs.length}`;
+    rows.querySelectorAll('[data-pubopen]').forEach(b => b.onclick = () => openPublication(b.dataset.pubopen));
+  };
+  $('#pubq')?.addEventListener('input', drawPubs); $('#pubf')?.addEventListener('change', drawPubs); drawPubs();
   $('#newpub').onclick = () => {
     $('#newpubf').innerHTML = `<form id="npf" class="panel x-970f4ddb" ><b>New project</b>
       <div class="grid2"><input name="title" placeholder="Project name" required><input name="address" placeholder="Street address" required><input name="city" placeholder="City" required><input name="state" placeholder="State (2 letters)" maxlength="2" required>
@@ -1102,7 +1113,6 @@ async function publisherPanels() {
     $('#npf').onsubmit = async ev => { ev.preventDefault(); const f = ev.target; const b = Object.fromEntries(new FormData(f).entries());
       try { const p = await api('POST', '/api/publications', b); $('#newpubf').innerHTML = ''; await publisherPanels(); openPublication(p.id); } catch (e) { f.querySelector('.err').textContent = e.message; } };
   };
-  document.querySelectorAll('[data-pubopen]').forEach(b => b.onclick = () => openPublication(b.dataset.pubopen));
   // team & subscription
   const users = await api('GET', '/api/org/users').catch(() => []), sub = await api('GET', '/api/subscription').catch(() => null);
   const isOwner = me.user.role === 'owner';
@@ -1173,6 +1183,25 @@ async function openPublication(id) {
     catch (e) { f.querySelector('.err').textContent = e.message; } });
 }
 
+// Confirmation status for the account. Posting, inviting and publishing wait for it; drafts do not.
+async function emailBanner(verified) {
+  const el = $('#emailbanner'); if (!el) return;
+  if (verified) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card emailbanner"><div><b>Email not confirmed.</b> You can prepare drafts now. Posting requests, inviting bidders and publishing are blocked until you open the link we sent to <b>${esc(me.user.email)}</b>.</div>
+    <div class="row"><button id="resend">Resend confirmation email</button><small id="resendmsg" role="status"></small></div></div>`;
+  $('#resend').onclick = async () => { $('#resend').disabled = true; $('#resendmsg').textContent = '';
+    try { await api('POST', '/api/account/resend-verification'); $('#resendmsg').textContent = `Sent to ${me.user.email}. Check your spam folder too.`; }
+    catch (e) { $('#resendmsg').textContent = e.message; } finally { $('#resend').disabled = false; } };
+}
+// Publisher command center: counts across every project, and the bid deadlines in the next two weeks.
+async function publisherCommand() {
+  const el = $('#pcc'); if (!el) return;
+  const s = await api('GET', '/api/publisher/summary').catch(() => null); if (!s) { el.innerHTML = ''; return; }
+  const tiles = [['Total projects', s.projects.total], ['Drafts', s.projects.draft], ['Published', s.projects.published], ['Active bid packages', s.activePackages],
+    ['Invitations sent', s.invitationsSent], ['Bids received', s.bidsReceived], ['Awards pending', s.awardsPending], ['Deadlines in 14 days', s.upcomingDeadlines.length]];
+  el.innerHTML = `<div class="card cc"><h2>Publisher command center</h2><div class="cctiles">${tiles.map(([l, v]) => `<div class="cctile"><b>${v}</b><small>${l}</small></div>`).join('')}</div>
+    <h3>Upcoming bid deadlines</h3>${s.upcomingDeadlines.length ? `<ul class="ccdl">${s.upcomingDeadlines.map(d => `<li><b>${esc(d.title)}</b> <small>due ${fmtDate(d.dueDate)}</small></li>`).join('')}</ul>` : '<small>No bid deadlines in the next two weeks.</small>'}</div>`;
+}
 async function buyerView() {
   if (!TRADES_LIST.length) TRADES_LIST = await (await fetch('/api/trades')).json().catch(() => []);
   const verified = me.org.status === 'active';
@@ -1180,9 +1209,11 @@ async function buyerView() {
   const steps = [['Confirm your email', verified, null], ['Add your company details', !!(me.org.legal && Object.keys(me.org.legal).length), null], ['Company verified to publish', me.org.publisher?.status === 'verified', '#pubc'], ['Post your first request', myRequests.length > 0, '#rf'], ['Invite contractors to a package', myRequests.some(r => (r.invited || 0) > 0), '#rf']];
   $('#app').innerHTML = `<div class="wrap"><header><h1>BUILDINTEL</h1><span class="who">${esc(me.org.name)} · ${esc(me.user.email)} <button id="lo">Sign out</button></span></header>
   ${roleBannerHtml(me.org, steps)}
-  ${verified ? '' : '<div class="empty x-49f14f8f" >Confirm your email to post requests. Check your inbox for the link.</div>'}
-  <div id="verc"></div><div id="pubc"></div>
-  <div class="sign x-6384e367" ><div><h2>Quick post: one trade package</h2><p>For a single trade. For a full project with several trade packages and plan rooms, use <b>New project</b> above. BUILDINTEL invites every matching contractor in that area; they answer will-bid / won't-bid and submit bids here.</p>
+  <div id="emailbanner"></div>
+  <div id="pcc"></div><div id="verc"></div><div id="pubc"></div>
+  <div class="sign x-6384e367" ><div><h2>Start a request</h2><p>Choose what you are posting. Every option is saved as a permanent record and invites the matching companies in the area.</p>
+  <div class="choose"><button type="button" id="ch-full"><b>Create full project</b><small>Several trade packages, plan rooms and bidder lists, published together.</small></button><button type="button" id="ch-trade"><b>Post single trade</b><small>One trade or service. Companies answer will-bid or won't-bid and submit bids.</small></button><button type="button" id="ch-clean"><b>Create cleaning request</b><small>Post-construction, janitorial, windows, floor care and pressure washing.</small></button></div>
+  <h3 id="rfh">Single trade request</h3><p>For one trade. For a full project with several trade packages and plan rooms, use <b>Create full project</b> above.</p>
   <form class="x-fcc9f9e7" id="rf" >
    <div class="x-0edf7ec4" >
    <input id="t" placeholder="Project title" required><input id="a" placeholder="Street address" required><input id="ci" placeholder="City" required><input id="st" placeholder="State" maxlength="2" required>
@@ -1203,6 +1234,10 @@ async function buyerView() {
   publisherPanels();
   bindFocusLinks();
   $('#lo').onclick = async () => { await api('POST', '/api/logout').catch(()=>{}); token = null; me = null; sessionStorage.removeItem('bi_token'); render(); };
+  emailBanner(verified);
+  $('#ch-full').onclick = () => { $('#newpub')?.click(); $('#pubc').scrollIntoView({ behavior: 'smooth' }); };
+  $('#ch-trade').onclick = () => { $('#rf').scrollIntoView({ behavior: 'smooth' }); $('#t').focus(); };
+  $('#ch-clean').onclick = () => { const d = $('#rf details'); if (d) d.open = true; $('#rf').scrollIntoView({ behavior: 'smooth' }); $('#sv')?.focus(); };
   $('#rf').onsubmit = async ev => { ev.preventDefault();
     const trades = [...document.querySelectorAll('input[name=tr]:checked')].map(x => x.value);
     const projectId = $('#pjid').value || undefined;

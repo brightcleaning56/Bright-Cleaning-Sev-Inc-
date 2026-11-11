@@ -27,6 +27,7 @@ QA_PORT=4402 check "AI analysis → estimate → bid"     "PROBLEMS: \[\]" pytho
 QA_PORT=4401 check "role sign-up and workspace banners (GC/GM, owner, subcontractor, service provider)" "PROBLEMS: \[\]" python3 qa/roles_flow.py
 reset_main; QA_PORT=4401 check "award to fully signed, then a contract change accepted, proposed and withdrawn (two companies)" "PROBLEMS: \[\]" python3 qa/contract_flow.py
 reset_main; QA_PORT=4401 check "package questions: asked, answered by the GC, read by an invited company" "PROBLEMS: \[\]" python3 qa/questions_flow.py
+reset_main; QA_PORT=4401 check "publisher command center (tiles, project search and filters, request chooser, unconfirmed banner and resend)" "PROBLEMS: \[\]" python3 qa/command_center_flow.py
 QA_PORT=4401 check "Super Admin review screens (publisher verification, owner authority, company record)" "PROBLEMS: \[\]" python3 qa/staff_review_flow.py
 QA_PORT=4401 check "public website (homepage, every page, mobile menu, sign-in hand-off to /app, clean console)" "PROBLEMS: \[\]" python3 qa/website_flow.py
 kill "${PIDS[@]}" 2>/dev/null
