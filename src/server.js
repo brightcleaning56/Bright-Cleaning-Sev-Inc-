@@ -1061,7 +1061,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const cycle = async () => { try { publishDue(store); await runCycleGuarded(store); } catch (e) { console.error('cycle failed', e); } };
     timers.push(setInterval(cycle, config.cycleMinutes * 60e3), setTimeout(cycle, 10e3));
     // Retries and sends queued transactional email (see src/outbox.js). Cheap when nothing is due.
-    timers.push(setInterval(() => drainOutbox(store, { fetchImpl: (deps && deps.fetchImpl) || fetch }).catch(e => console.error('outbox failed', e)), 60e3));
+    timers.push(setInterval(() => drainOutbox(store).catch(e => console.error("outbox failed", e)), Number(process.env.OUTBOX_INTERVAL_MS || 60e3)));
     const daily = guarded('daily', async () => {
       const r = await store.withLock('daily', async () => {
         if (config.backupKey) await backupAndVerify(store);
