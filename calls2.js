@@ -571,9 +571,29 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       // Rings the phones to ring and the browser phone (admin open in a browser) so someone can answer.
       const num = phones.map(p => `<Number>${esc(p)}</Number>`).join('') + (softphone() ? '<Client>office</Client>' : '');
       if (lead) db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','callback connected','lead',?,?,?)").run(lead, 'caller pressed 1', new Date().toISOString());
-      return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting you now.</Say><Dial callerId="${esc(twNumber())}" timeout="25">${num}</Dial></Response>`);
+      return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting you now.</Say><Dial callerId="${esc(twNumber())}" timeout="25" action="${base()}/api/webhooks/twilio/callback-dial?lead=${lead}">${num}</Dial></Response>`);
     }
     res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Thank you. Our team will follow up. Goodbye.</Say></Response>');
+  }));
+
+  // When the team's phones are not answered, open a follow-up task for the lead so someone calls back.
+  app.post('/api/webhooks/twilio/callback-dial', hook((req, res) => {
+    const lead = Number(req.query.lead) || 0;
+    const status = String((req.body || {}).DialCallStatus || '');
+    const answered = status === 'completed';
+    res.type('text/xml').send(answered ? '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>' : '<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Sorry, nobody is free right now. Our team will call you back. Goodbye.</Say><Hangup/></Response>');
+    if (!lead || answered) return;
+    try {
+      const l = db.prepare('SELECT * FROM leads WHERE id=?').get(lead);
+      if (!l) return;
+      const t = new Date().toISOString(), day = t.slice(0, 10);
+      if (l.follow_up_issue_id) db.prepare("UPDATE customer_issues SET status='Closed', resolved_at=?, updated_at=? WHERE id=?").run(t, t, l.follow_up_issue_id);
+      const title = `Callback: ${l.contact_name || l.company || 'lead #' + l.id}`.slice(0, 200);
+      const issueId = db.prepare("INSERT INTO customer_issues(type,title,description,priority,status,due_date,customer_comms,created_by,created_at,updated_at) VALUES('follow_up',?,?,?,?,?,?,?,?,?)")
+        .run(title, `The caller asked for a call back and pressed 1, but nobody answered the team's phones (${status || 'no answer'}). Call them back.\nLead #${l.id}${l.phone ? ' · ' + l.phone : ''}`, 'High', 'Open', day, 'Not needed', 'automation', t, t).lastInsertRowid;
+      db.prepare('UPDATE leads SET follow_up_date=?, follow_up_note=?, follow_up_issue_id=?, updated_at=? WHERE id=?').run(day, 'Callback: nobody answered', issueId, t, l.id);
+      db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','callback not answered','lead',?,?,?)").run(l.id, status || 'no answer', t);
+    } catch (e) { console.error('callback follow-up failed:', e.message); }
   }));
 
   // Settings: owners only. Turning it on requires the legal-review confirmation.
