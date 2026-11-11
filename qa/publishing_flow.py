@@ -19,6 +19,7 @@ with sync_playwright() as p:
     for k, v in {'title': 'Delaware Medical Office', 'address': '1200 Pike St', 'city': 'Seattle', 'state': 'WA', 'description': 'New 120,000 SF medical office building'}.items(): gc.fill(f'#npf [name={k}]', v)
     gc.select_option('#npf [name=projectType]', 'medical'); gc.click('#npf button.primary'); gc.wait_for_timeout(1200)
     t = gc.inner_text('#pubm'); steps.append('2 draft created, checklist shown, relationship matches company type (property manager): ' + str('draft' in t and 'Checklist' in t and 'Property manager for the owner' in t))
+    steps.append('2a setup guide on a new draft: step 2 of 6 (scope and trade packages): ' + str('Step 2 of 6' in gc.inner_text('.wizard')))
     when = (datetime.date.today() + datetime.timedelta(days=3)).isoformat() + 'T09:00'
     gc.fill('#pbwhen', when); gc.click('#pbsched-go'); gc.wait_for_timeout(1000)
     steps.append('2b draft scheduled for later, shown on the draft: ' + str('Publishes automatically at' in gc.inner_text('#pbsched')))

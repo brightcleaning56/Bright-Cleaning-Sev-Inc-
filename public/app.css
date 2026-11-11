@@ -397,3 +397,12 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 .choose button:hover{border-color:var(--accent)}
 .choose small{display:block;color:var(--muted);margin-top:4px;font-weight:400}
 @media (max-width:900px){.cctiles{grid-template-columns:repeat(2,minmax(0,1fr))}.choose{grid-template-columns:minmax(0,1fr)}}
+
+/* Project setup guide: six steps, each linked to the section that does it. */
+.wizard{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--panel2)}
+.wiz-head{margin-bottom:8px}
+.wiz{list-style:none;margin:0 0 8px;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.wiz li button{width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;color:var(--muted);font-size:13px}
+.wiz li.done button{color:var(--ink);border-color:#9fd6b5}
+.wiz li.cur button{color:var(--accent);border-color:var(--accent);font-weight:700}
+@media (max-width:640px){.wiz{grid-template-columns:minmax(0,1fr)}}

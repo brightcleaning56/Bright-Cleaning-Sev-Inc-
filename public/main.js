@@ -1132,6 +1132,25 @@ function subscriptionHtml(sub) {
     <h3 class="x-d2c171b1" >Plans</h3><div class="scroll"><table><tr><th>Plan</th><th class="num">Monthly</th><th>Includes</th></tr>${sub.catalog.map(c => `<tr class="x-3b7ad657"${c.key === e.plan ? ' ' : ''}><td>${esc(c.name)}</td><td class="num">${c.monthly == null ? 'custom' : c.monthly ? usd(c.monthly) : 'free'}</td><td><small>${c.seats} seat(s)${c.activePublications != null ? ` · ${c.activePublications} active projects` : ''}${c.markets != null ? ` · ${c.markets >= 51 ? 'national' : c.markets + ' market(s)'}` : ''}${c.aiPerDay ? ` · ${c.aiPerDay} AI/day` : ''}</small></td></tr>`).join('')}</table></div>
     <small>Prices: ${esc(sub.priceStatus)}. Payments start once Stripe is connected; upgrades and billing history appear here.</small>`;
 }
+// Six-step guide for a project. It reads the project's real state and points at the section that does each step.
+const PROJECT_STEPS = ['Project information', 'Scope & trade packages', 'Plans & specifications', 'Bidder selection', 'Deadlines & requirements', 'Review & publish'];
+const PROJECT_HINTS = ['Confirm the company, location and project type in the header above.',
+  'Add each trade as its own package below. Each package has its own bidders, plans, deadline and bids.',
+  'Upload plans and specifications to each package in Your requests (its plan room).',
+  'Invite bidders to each package with Invite bidders.',
+  'Set the bid due date on each package and put any bid rules in its scope notes.',
+  'Fix any checklist items, then publish.'];
+function projectSteps(p, c) {
+  const pk = c.packages || [];
+  const done = [true, pk.length > 0, pk.length > 0 && pk.every(k => k.documentsState !== 'missing'), pk.some(k => k.invited > 0),
+    pk.length > 0 && pk.every(k => k.dueDate), p.status !== 'draft'];
+  const cur = Math.max(0, done.indexOf(false));
+  const cur2 = done.indexOf(false) === -1 ? 5 : cur;
+  return `<div class="wizard" role="navigation" aria-label="Project setup steps">
+    <div class="wiz-head"><b>Project setup</b> <small>${p.status !== 'draft' ? 'Published' : `Step ${cur2 + 1} of 6: ${esc(PROJECT_STEPS[cur2])}`}</small></div>
+    <ol class="wiz">${PROJECT_STEPS.map((l, i) => `<li class="${done[i] ? 'done' : i === cur2 ? 'cur' : ''}"><button type="button" data-step="${i + 1}">${done[i] ? '✓ ' : ''}${i + 1}. ${esc(l)}</button></li>`).join('')}</ol>
+    <small>${p.status !== 'draft' ? 'Published. Track bids, questions and awards in each package below.' : esc(PROJECT_HINTS[cur2])}</small></div>`;
+}
 async function openPublication(id) {
   const box = $('#pubm'); const c = await api('GET', '/api/publications/' + id);
   const p = c.publication, draft = p.status === 'draft';
@@ -1139,13 +1158,13 @@ async function openPublication(id) {
       ${['draft', 'published'].includes(p.status) ? `<button class="primary" id="pbpub" ${c.checklist.ready ? '' : 'title="Complete the checklist first"'}>${p.status === 'draft' ? 'Publish' : 'Publish new packages'}</button>` : ''}
       ${p.status === 'published' ? '<button data-pst="closed">Close bidding</button>' : ''}${p.status === 'closed' ? '<button data-pst="published">Reopen</button><button data-pst="archived">Archive</button>' : ''}${p.status === 'draft' ? '<button data-pst="archived">Discard draft</button>' : ''}</span></div>
     <small>${esc(REL_LABEL[p.authority?.relationship] || '')}${p.authority?.evidence ? ' · authorization: ' + esc(p.authority.evidence) : ''}${p.projectId ? ' · project ' + esc(p.projectId) : ''}</small>
-    <h3 class="x-d2c171b1" >Checklist</h3><ul class="checks">${c.checklist.items.map(i => `<li><span class="dot ${i.ok ? 'ok' : 'no'}">${i.ok ? '✓' : '–'}</span><span>${esc(i.label)} <small>${esc(i.detail || '')}</small></span></li>`).join('')}</ul><div class="err" id="pberr"></div>
+    ${projectSteps(p, c)}<div id="pubsec-6"></div>    <h3 class="x-d2c171b1" >Checklist</h3><ul class="checks">${c.checklist.items.map(i => `<li><span class="dot ${i.ok ? 'ok' : 'no'}">${i.ok ? '✓' : '–'}</span><span>${esc(i.label)} <small>${esc(i.detail || '')}</small></span></li>`).join('')}</ul><div class="err" id="pberr"></div>
     ${draft ? `<div class="panel" id="pbsched"><b>Scheduled publication</b>
       ${p.scheduledFor ? `<p><small>Publishes automatically at <b>${new Date(p.scheduledFor).toLocaleString()}</b>${p.scheduledBy ? ' (scheduled by ' + esc(p.scheduledBy) + ')' : ''}. Nothing is sent until then.</small></p><button id="pbunsched">Cancel schedule</button>` : `<p><small>Pick a date and time in the future. The checklist must be complete when it runs, or the publish is skipped and the reason is shown here.</small></p>
       <div class="row"><input type="datetime-local" id="pbwhen" aria-label="Publish at"><button id="pbsched-go">Schedule publish</button></div>`}
       ${p.scheduleError ? `<p class="err"><small>The last scheduled publish did not go out: ${esc(p.scheduleError)}</small></p>` : ''}
       <div class="err" id="pbschederr"></div></div>` : ''}
-    <h3 class="x-d2c171b1" >Trade packages & coverage</h3>
+    <div id="pubsec-2"></div>    <h3 class="x-d2c171b1" >Trade packages & coverage</h3>
     ${c.packages.length ? `<div class="scroll"><table><tr><th>Package</th><th>Status</th><th>Due</th><th>Distribution</th><th class="num">Docs</th><th class="num">Invited</th><th class="num">Opened plans</th><th class="num">Will bid</th><th class="num">Bids</th><th></th></tr>${c.packages.map(k => `<tr><td><b>${esc(k.title)}</b><br><small>${esc((k.trades || []).map(t => (TRADES_LIST.find(x => x.key === t) || {}).label || t).join(', '))}</small></td>
       <td>${pubPill(k.status)}${k.blockers ? `<br><small class="x-ce711e4f" >${esc(k.blockers)}</small>` : ''}</td><td>${fmtDate(k.dueDate)}</td>
       <td><small>${k.distribution === 'invite_only' ? `invite-only · ${k.inviteeCount} on list` : `eligible subscribers${k.inviteeCount ? ' + ' + k.inviteeCount + ' on list' : ''}`}</small></td>
@@ -1158,6 +1177,11 @@ async function openPublication(id) {
       <textarea name="description" rows="2" placeholder="Scope of work (20+ characters)"></textarea><div class="grid2"><textarea name="inclusions" rows="2" placeholder="Inclusions"></textarea><textarea name="exclusions" rows="2" placeholder="Exclusions"></textarea></div>
       <div class="row"><button class="primary">Add package</button><span class="err"></span></div></form>` : ''}</div>`;
   const reload = async () => { await publisherPanels(); openPublication(id); };
+  box.querySelectorAll('[data-step]').forEach(b => b.onclick = () => {
+    const target = { 2: '#pubsec-2', 3: '#pubsec-2', 4: '#pubsec-2', 5: '#pubsec-2', 6: '#pubsec-6' }[b.dataset.step];
+    const el = (target && box.querySelector(target)) || box;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
   $('#pbpub')?.addEventListener('click', async () => { try { const r = await api('POST', `/api/publications/${id}/publish`); alertBox(`Published: ${r.packagesOpened} package(s) opened, ${r.invited} compan(ies) invited.`); reload(); } catch (e) { $('#pberr').textContent = e.message; } });
   $('#pbsched-go')?.addEventListener('click', async () => {
     const v = $('#pbwhen').value; if (!v) { $('#pbschederr').textContent = 'Choose a date and time.'; return; }
