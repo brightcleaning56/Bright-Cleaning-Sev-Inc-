@@ -546,7 +546,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       try {
         const r = await fetch(`${api}/2010-04-01/Accounts/${acctSid()}/Calls.json`, { method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ To: to, From: twNumber(), Url: `${base()}/api/webhooks/twilio/outbound?lead=${l.id}`, StatusCallback: `${base()}/api/webhooks/twilio/status`, Timeout: '25' }) });
-        if (!r.ok) continue;
+        if (!r.ok) { console.error('Automatic callback to lead', l.id, 'failed:', r.status, (await r.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300)); continue; }
         const t = new Date().toISOString();
         db.prepare('UPDATE leads SET last_callback_at=?, callback_calls=COALESCE(callback_calls,0)+1 WHERE id=?').run(t, l.id);
         db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','outbound callback placed','lead',?,?,?)").run(l.id, to, t);
@@ -557,7 +557,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     return { placed: placed.length };
   }
   app.locals.runOutboundSweep = runOutboundSweep;
-  if (!process.env.DISABLE_SCHEDULER) setInterval(() => { runOutboundSweep().catch(() => {}); }, 5 * 60 * 1000).unref?.();
+  if (!process.env.DISABLE_SCHEDULER) setInterval(() => { runOutboundSweep().then(r => { if (r && r.skipped !== 'off') console.log('Automatic callbacks:', JSON.stringify(r)); }).catch(e => console.error('Automatic callbacks failed:', e.message)); }, 5 * 60 * 1000).unref?.();
 
   // What the caller hears when the call is answered (signed like every Twilio webhook).
   app.post('/api/webhooks/twilio/outbound', hook((req, res) => {
