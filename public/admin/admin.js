@@ -2055,6 +2055,8 @@
     const st = r.settings;
     $('#cbLegal').checked = !!st.legal_review_confirmed; $('#cbOn').checked = !!st.enabled; $('#cbLimit').value = st.daily_limit; $('#cbStart').value = st.start_hour; $('#cbEnd').value = st.end_hour;
     $('#cbSent').textContent = `Sent today: ${r.sent_today} of ${st.daily_limit}.`;
+    const live = !!(st.enabled && st.legal_review_confirmed);
+    $('#cbTitle').textContent = live ? 'Automatic callbacks (on)' : (st.legal_review_confirmed ? 'Automatic callbacks (off)' : 'Automatic callbacks (off until the legal review is done)');
     $('#callbackForm').onsubmit = async ev => {
       ev.preventDefault();
       if ($('#cbOn').checked && !st.enabled && !confirm('Turn on automatic callbacks? The system will start calling leads marked “Call back requested” within the hours and daily limit you set.')) return;
