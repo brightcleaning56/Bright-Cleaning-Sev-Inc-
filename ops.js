@@ -188,6 +188,7 @@ module.exports = function mountOps(app, ctx) {
       }
       // Off-site copy to Backblaze B2 when configured. A failure here is logged but does not fail the local backup.
       const off = await b2.uploadFile(path.join(backupDir, saved), saved);
+      if (!off.ok && !off.skipped) console.error('Off-site backup failed:', off.detail);
       if (!off.skipped) db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup-offsite', null, reason, null, off.ok ? 'ok' : 'failed', clean(off.detail, 500), now());
       const all = listBackups();
       for (const old of all.slice(14)) { try { fs.unlinkSync(path.join(backupDir, old.name)); } catch { /* ignore */ } }
