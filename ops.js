@@ -167,6 +167,7 @@ module.exports = function mountOps(app, ctx) {
   fs.mkdirSync(backupDir, { recursive: true });
   const BACKUP_NAME = /^brightclean-\d{8}-\d{6}\.db(\.enc)?$/;
   const bcrypto = require('./backupcrypto');
+  const b2 = require('./backupb2');
   const listBackups = () => fs.readdirSync(backupDir).filter(f => BACKUP_NAME.test(f)).sort().reverse()
     .map(f => { const st = fs.statSync(path.join(backupDir, f)); return { name: f, size: st.size, created_at: st.mtime.toISOString() }; });
   let backupRunning = false;
@@ -185,6 +186,9 @@ module.exports = function mountOps(app, ctx) {
         fs.unlinkSync(path.join(backupDir, name));
         saved = name + '.enc';
       }
+      // Off-site copy to Backblaze B2 when configured. A failure here is logged but does not fail the local backup.
+      const off = await b2.uploadFile(path.join(backupDir, saved), saved);
+      if (!off.skipped) db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup-offsite', null, reason, null, off.ok ? 'ok' : 'failed', clean(off.detail, 500), now());
       const all = listBackups();
       for (const old of all.slice(14)) { try { fs.unlinkSync(path.join(backupDir, old.name)); } catch { /* ignore */ } }
       db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup', null, reason, null, 'ok', saved, now());
