@@ -50,7 +50,7 @@ async function uploadFile(localPath, objectName) {
     const req = signPut({ ...c, key: objectName, body });
     const res = await fetch(req.url, { method: 'PUT', headers: { ...req.headers, 'content-length': String(body.length) }, body });
     if (!res.ok) {
-      const text = (await res.text().catch(() => '')).slice(0, 200);
+      const text = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 600);
       return { ok: false, detail: `B2 responded ${res.status} ${text}`.trim() };
     }
     return { ok: true, detail: `uploaded to ${c.bucket} as ${objectName}` };
