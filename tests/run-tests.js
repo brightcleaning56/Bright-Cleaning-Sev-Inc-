@@ -2630,6 +2630,18 @@ async function startServer(env, dataDir) {
     return 'prompt keypress address is real; press 1 rings the team phone; other keys end politely';
   });
 
+  await check('Calls', 'Automatic callback: when nobody answers after press 1 the caller hears a message and the call ends; an answered call ends quietly', async () => {
+    const crypto = require('crypto'), base = 'https://brightclean.net';
+    const sign = (path, params) => crypto.createHmac('sha1', 'tw-test-token').update(base + path + Object.keys(params).sort().map(k => k + params[k]).join('')).digest('base64');
+    const post = (path, params) => fetch(B + path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': sign(path, params) }, body: new URLSearchParams(params) });
+    const p = { CallSid: 'CAdial' + 'd'.repeat(26), From: '+15155550166', To: '+15153033024', Direction: 'outbound-api', AccountSid: 'AC' + 'a'.repeat(32) };
+    const missed = await (await post('/api/webhooks/twilio/callback-dial?lead=7', { ...p, DialCallStatus: 'no-answer' })).text();
+    const answered = await (await post('/api/webhooks/twilio/callback-dial?lead=7', { ...p, DialCallStatus: 'completed' })).text();
+    assert(/nobody is free right now/.test(missed) && /<Hangup\/>/.test(missed), 'no-answer should apologise and hang up: ' + missed);
+    assert(!/nobody is free/.test(answered) && /<Hangup\/>/.test(answered), 'answered call should end quietly: ' + answered);
+    return 'no-answer apologises and ends; answered call ends quietly';
+  });
+
   await check('Calls', 'Health check exercises Twilio sign-in and the number routing (not just "a key exists") and reports each part; voicemails create one assigned callback task; only owner/manager can change the callback owner', async () => {
     const crypto = require('crypto'), base = 'https://brightclean.net';
     const sign = (path, params) => crypto.createHmac('sha1', 'tw-test-token').update(base + path + Object.keys(params).sort().map(k => k + params[k]).join('')).digest('base64');
