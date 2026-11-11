@@ -364,3 +364,18 @@ body{font-size:13px}h2{font-size:20px}h3{font-size:14.5px;margin-bottom:8px}
 .qa-answer{color:#166534;font-weight:600}
 .qa-form{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .qa-form input{flex:1;min-width:200px}
+
+/* Owner and GC workspace shell (buyerView): page gutter, width limit and header. Without these the workspace ran
+   edge to edge with an unstyled header. Gutter is 16px on phones. */
+.wrap{max-width:1320px;margin:0 auto;padding:18px 22px 40px;box-sizing:border-box}
+.wrap>header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:6px 0 14px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.wrap>header h1{font-size:20px;font-weight:800;margin:0;letter-spacing:.2px}
+.wrap>header .who{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:13px}
+.wrap>header .who button{font-size:13px}
+@media (max-width:640px){.wrap{padding:14px 16px 32px}.wrap>header .who{margin-left:0}}
+/* Rows of controls (for example the plan-room upload) wrap on phones instead of running past the screen edge. */
+form.row,.row{flex-wrap:wrap}
+form.row input,form.row select,form.row textarea,form.row label{max-width:100%;box-sizing:border-box}
+/* Grid children (plan room blocks) may shrink to the screen width; wide tables scroll inside their own box. */
+.gate>*,.card>*{min-width:0}
+@media (max-width:640px){.gate{grid-template-columns:minmax(0,1fr)}}
