@@ -2642,6 +2642,18 @@ async function startServer(env, dataDir) {
     return 'no-answer apologises and ends; answered call ends quietly';
   });
 
+  await check('Calls', 'Browser calls: the customer hears the recording notice before the call connects', async () => {
+    const crypto = require('crypto'), base = 'https://brightclean.net';
+    const sign = (path, params) => crypto.createHmac('sha1', 'tw-test-token').update(base + path + Object.keys(params).sort().map(k => k + params[k]).join('')).digest('base64');
+    const post = (path, params) => fetch(B + path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': sign(path, params) }, body: new URLSearchParams(params) });
+    const p = { CallSid: 'CAnot' + 'e'.repeat(27), From: '+15155550166', To: '+15153033024', Direction: 'outbound-api', AccountSid: 'AC' + 'a'.repeat(32) };
+    const notice = await (await post('/api/webhooks/twilio/call-notice', p)).text();
+    const dial = await (await post('/api/webhooks/twilio/client-voice', { ...p, From: 'client:office', To: '+15155550166' })).text();
+    assert(/This call may be recorded for quality and training\./.test(notice), 'notice text: ' + notice);
+    assert(/<Number url="[^"]*\/api\/webhooks\/twilio\/call-notice">\+15155550166<\/Number>/.test(dial), 'client call should announce before connecting: ' + dial);
+    return 'customer hears the notice, then the call connects';
+  });
+
   await check('Calls', 'Health check exercises Twilio sign-in and the number routing (not just "a key exists") and reports each part; voicemails create one assigned callback task; only owner/manager can change the callback owner', async () => {
     const crypto = require('crypto'), base = 'https://brightclean.net';
     const sign = (path, params) => crypto.createHmac('sha1', 'tw-test-token').update(base + path + Object.keys(params).sort().map(k => k + params[k]).join('')).digest('base64');

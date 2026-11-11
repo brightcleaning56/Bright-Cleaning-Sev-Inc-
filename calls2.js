@@ -87,6 +87,11 @@ module.exports = function mountCalls(app, ctx) {
   const greeting = () => esc(process.env.TWILIO_GREETING || 'Thanks for calling Bright Cleaning. We are with a customer right now. Please leave your name, number and how we can help, and we will call you back shortly.');
   // Recording notice (readiness 5.10): callers hear it before they are connected or leave a message. Wording is set by TWILIO_RECORDING_NOTICE.
   const recordingNotice = () => esc(process.env.TWILIO_RECORDING_NOTICE || 'Calls and messages may be recorded for quality and training.');
+  // Said to the customer before a call the team places is connected (approved wording; set by TWILIO_CALL_NOTICE).
+  const callNotice = () => esc(process.env.TWILIO_CALL_NOTICE || 'This call may be recorded for quality and training.');
+  app.post('/api/webhooks/twilio/call-notice', hook((req, res) => {
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">${callNotice()}</Say></Response>`);
+  }));
   const voicemail = () => `<Say voice="Polly.Joanna">${greeting()} ${recordingNotice()}</Say><Record maxLength="180" playBeep="true" transcribe="true" transcribeCallback="${base()}/api/webhooks/twilio/transcription" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"/><Say voice="Polly.Joanna">We did not get a message. Goodbye.</Say>`;
   // ---- Callback ownership: every promised callback / voicemail becomes ONE assigned Follow-up task (owner, due today, High). ----
   try { if (!db.prepare('PRAGMA table_info(calls)').all().some(c => c.name === 'callback_issue_id')) db.exec('ALTER TABLE calls ADD COLUMN callback_issue_id INTEGER'); } catch { /* */ }
@@ -208,7 +213,7 @@ module.exports = function mountCalls(app, ctx) {
     if (!c || c.direction !== 'Outbound' || !e164(c.phone)) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Sorry, this call could not be connected.</Say><Hangup/></Response>');
     db.prepare("UPDATE calls SET outcome=CASE WHEN outcome='Dialing' THEN 'Connecting' ELSE outcome END WHERE id=?").run(c.id);
     const name = c.company || c.contact_name;
-    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting your call${name ? ' to ' + esc(name) : ''}.</Say>${liveTranscribe()}<Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}">${esc(e164(c.phone))}</Dial></Response>`);
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting your call${name ? ' to ' + esc(name) : ''}.</Say>${liveTranscribe()}<Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}"><Number url="${base()}/api/webhooks/twilio/call-notice">${esc(e164(c.phone))}</Number></Dial></Response>`);
   }));
   // Customer leg outcome: answered → Answered; otherwise No answer / Busy with a follow-up for today.
   app.post('/api/webhooks/twilio/bridge-result', hook((req, res) => {
@@ -255,7 +260,7 @@ module.exports = function mountCalls(app, ctx) {
     const to = e164(c ? c.phone : b.To);
     if (!to || !String(b.From || '').startsWith('client:')) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">This call could not be placed.</Say></Response>');
     if (c && b.CallSid) db.prepare('UPDATE calls SET provider_sid=COALESCE(provider_sid,?) WHERE id=?').run(clean(b.CallSid, 64), c.id);
-    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${liveTranscribe()}<Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"${c ? ` action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}"` : ''}>${esc(to)}</Dial></Response>`);
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${liveTranscribe()}<Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"${c ? ` action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}"` : ''}><Number url="${base()}/api/webhooks/twilio/call-notice">${esc(to)}</Number></Dial></Response>`);
   }));
   app.post('/api/webhooks/twilio/live-transcript', hook((req, res) => {
     const b = req.body || {}, sid = clean(b.CallSid, 64);
