@@ -16,4 +16,4 @@ PASS  award to fully signed, then a contract change accepted, proposed and withd
 PASS  package questions: asked, answered by the GC, read by an invited company
 PASS  Super Admin review screens (publisher verification, owner authority, company record)
 PASS  public website (homepage, every page, mobile menu, sign-in hand-off to /app, clean console)
-mode: CORE_READS=on · screenshots and logs: /tmp/tmp.zETtk0KGQd/logs/qa-core-on
+mode: CORE_READS=on · screenshots and logs: /tmp/tmp.oCF51zbXE1/logs/qa-core-on
