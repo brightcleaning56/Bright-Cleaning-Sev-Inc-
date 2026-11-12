@@ -1074,15 +1074,46 @@ const NEEDS_EV = ['construction_manager', 'architect_for_owner', 'agent_for_owne
 // Preselect the relationship that matches the company type (never default a property manager to "Owner").
 const KIND_REL = { owner: 'owner', public_agency: 'owner', developer: 'developer', general_contractor: 'gc_of_record', property_manager: 'property_manager', construction_manager: 'construction_manager', architect_engineer: 'architect_for_owner' };
 const pubPill = st2 => `<span class="pill ${{ published: 'green', draft: 'amber', closed: '', archived: '' }[st2] || ''}">${esc(st2)}</span>`;
+// Publisher verification: company profile, what is still needed, the current status and the review history.
+const VERIFY_REQUIREMENTS = [
+  ['Company website', e => /^https?:\/\//i.test(e.website || '')],
+  ['License or registration number', e => !!(e.licenseNumber || '').trim()],
+  ['Office phone', e => !!(e.phone || '').trim()],
+  ['Named contact and title', e => !!((e.contactName || '').trim() && (e.title || '').trim())],
+];
+const VERIFY_EVENT = { requested: 'Requested', resubmitted: 'Resubmitted', verified: 'Verified', rejected: 'Not approved' };
+function verificationCard(pinfo, v) {
+  if (pinfo.verified) return `<div class="card x-2b583d73"><span class="pill green">Verified publisher</span> <small>${esc(v.note || '')}</small>${verifyHistory(v)}</div>`;
+  const e = v.evidence || {};
+  const pending = v.status === 'pending';
+  const rejected = v.status === 'rejected';
+  const missing = VERIFY_REQUIREMENTS.filter(([, ok]) => !ok(e)).map(([label]) => label);
+  const status = pending ? '<span class="pill amber">Pending review</span>' : rejected ? '<span class="pill red">Not approved</span>' : '<span class="pill">Not requested</span>';
+  const field = (name, label, val, extra = '') => `<label class="vf-field"><span>${label}</span><input name="${name}" value="${esc(val || '')}" ${extra}></label>`;
+  return `<div class="card vcard"><div class="row"><h3>${ICON.check} Publisher verification</h3>${status}</div>
+    <p class="x-d462248a">BUILDINTEL checks that your company can publish construction projects before bidders see them. A confirmed email is not proof of authority. Drafts are allowed meanwhile; publishing waits for approval.</p>
+    ${rejected && v.note ? `<div class="vnote"><b>Reviewer note:</b> ${esc(v.note)}</div>` : ''}
+    ${pending ? `<p><small>Submitted ${fmtDate(v.requestedAt)}. We will review it and email you the result.</small></p>` : ''}
+    <div class="vgrid"><div><h4>Requirements</h4><ul class="vreq">${VERIFY_REQUIREMENTS.map(([label, ok]) => `<li class="${ok(e) ? 'ok' : 'no'}"><span class="dot ${ok(e) ? 'ok' : 'no'}">${ok(e) ? '✓' : '–'}</span> ${label}</li>`).join('')}</ul>
+      <small>${pending ? 'Waiting for our review.' : missing.length ? 'Still needed: ' + esc(missing.join(', ')) + '.' : 'All requirements are on file.'}</small>
+      <p><small>Licence and registration documents: send them to us when we ask. Document upload is not available yet.</small></p></div>
+      <div><h4>Review history</h4>${verifyHistory(v) || '<small>Nothing yet.</small>'}</div></div>
+    ${pending ? '' : `<form id="vf" class="vform"><fieldset><legend>Company</legend>${field('website', 'Company website', e.website, 'placeholder="https://"')}${field('licenseNumber', 'License or registration number', e.licenseNumber)}${field('phone', 'Office phone', e.phone)}</fieldset>
+      <fieldset><legend>Contact person</legend>${field('contactName', 'Full name', e.contactName)}${field('title', 'Title', e.title)}</fieldset>
+      <fieldset><legend>About the projects you publish</legend><label class="vf-field"><span>Notes for the reviewer (optional)</span><textarea name="notes" rows="3">${esc(e.notes || '')}</textarea></label></fieldset>
+      <div class="row"><button class="primary" type="submit">${rejected ? 'Resubmit for review' : 'Request verification'}</button><span class="err" role="alert"></span></div></form>`}</div>`;
+}
+function verifyHistory(v) {
+  const h = v.history || [];
+  if (!h.length) return '';
+  return `<ol class="vhist">${h.map(x => `<li><b>${esc(VERIFY_EVENT[x.event] || x.event)}</b> <small>${fmtDate(x.at)}${x.note ? ' · ' + esc(x.note) : ''}</small></li>`).join('')}</ol>`;
+}
 async function publisherPanels() {
   const pinfo = await api('GET', '/api/publisher').catch(() => null); if (!pinfo) return;
   const v = pinfo.publisher || {};
-  $('#verc').innerHTML = pinfo.verified ? `<div class="card x-2b583d73" ><span class="pill green">Verified publisher</span> <small>${esc(v.note || '')}</small></div>`
-    : `<div class="card x-36ec1aea" ><h3>${ICON.check} Publisher verification ${v.status === 'pending' ? '<span class="pill amber">pending review</span>' : v.status === 'rejected' ? '<span class="pill red">not approved</span>' : ''}</h3>
-      <p class="x-d462248a" >BUILDINTEL checks that your company can publish construction projects before bidders see them (a confirmed email isn't proof of authority). You can prepare drafts meanwhile.${v.note ? ' Reviewer note: ' + esc(v.note) : ''}</p>
-      ${v.status === 'pending' ? `<small>Submitted ${fmtDate(v.requestedAt)} — we'll review it.</small>` : `<form id="vf" class="grid2"><input name="website" placeholder="Company website (https://…)"><input name="licenseNumber" placeholder="Contractor license / business registration #"><input name="phone" placeholder="Office phone"><input name="notes" placeholder="Anything that helps us verify you"><div class="row"><button class="primary">Request verification</button><span class="err"></span></div></form>`}</div>`;
+  $('#verc').innerHTML = verificationCard(pinfo, v);
   $('#vf')?.addEventListener('submit', async ev => { ev.preventDefault(); const f = ev.target;
-    try { await api('POST', '/api/publisher/verification', { website: f.website.value.trim(), licenseNumber: f.licenseNumber.value.trim(), phone: f.phone.value.trim(), notes: f.notes.value.trim() }); publisherPanels(); } catch (e) { f.querySelector('.err').textContent = e.message; } });
+    try { await api('POST', '/api/publisher/verification', { website: f.website.value.trim(), licenseNumber: f.licenseNumber.value.trim(), phone: f.phone.value.trim(), contactName: f.contactName.value.trim(), title: f.title.value.trim(), notes: f.notes.value.trim() }); publisherPanels(); } catch (e) { f.querySelector('.err').textContent = e.message; } });
   publisherCommand();
   const pubs = await api('GET', '/api/publications').catch(() => []);
   $('#pubc').innerHTML = `<div class="card x-87c136df" ><div class="row x-a562f4fd" ><h2>${ICON.building} Project Publishing Center</h2><button class="primary" id="newpub">${ICON.plus} New project</button></div>

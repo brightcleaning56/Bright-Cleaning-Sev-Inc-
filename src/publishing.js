@@ -23,10 +23,12 @@ export const isVerifiedPublisher = org => org?.subscription?.plan === 'internal'
 export function requestVerification(store, org, user, b) {
   if (org.kind !== 'buyer') return { ok: false, code: 403, error: 'publisher accounts only' };
   if (org.publisher?.status === 'verified') return { ok: false, code: 409, error: 'already verified' };
-  const evidence = { website: String(b.website || '').slice(0, 300), licenseNumber: String(b.licenseNumber || '').slice(0, 80), phone: String(b.phone || '').slice(0, 40), notes: String(b.notes || '').slice(0, 2000) };
+  const evidence = { website: String(b.website || '').slice(0, 300), licenseNumber: String(b.licenseNumber || '').slice(0, 80), phone: String(b.phone || '').slice(0, 40), notes: String(b.notes || '').slice(0, 2000),
+    contactName: String(b.contactName || '').trim().slice(0, 120), title: String(b.title || '').trim().slice(0, 120) };
   if (!evidence.website && !evidence.licenseNumber) return { ok: false, code: 400, error: 'give a company website or a license/registration number we can check' };
   if (evidence.website && !/^https?:\/\//i.test(evidence.website)) return { ok: false, code: 400, error: 'website must be an http(s) link' };
-  org.publisher = { status: 'pending', evidence, requestedAt: now(), requestedBy: user.email }; store.put('orgs', org);
+  const history = [...(org.publisher?.history || []), { event: org.publisher?.status === 'rejected' ? 'resubmitted' : 'requested', at: now(), by: user.email }];
+  org.publisher = { status: 'pending', evidence, requestedAt: now(), requestedBy: user.email, history }; store.put('orgs', org);
   store.audit({ actor: user.email, orgId: org.id, action: 'publisher.request' });
   return { ok: true, publisher: org.publisher };
 }
@@ -35,7 +37,9 @@ export function decideVerification(store, admin, orgId, { status, note }) {
   if (!org || org.kind !== 'buyer') return { ok: false, code: 404, error: 'not found' };
   if (!['verified', 'rejected'].includes(status)) return { ok: false, code: 400, error: 'status must be verified or rejected' };
   if (!String(note || '').trim()) return { ok: false, code: 400, error: 'record how it was checked (e.g. "license verified on state register")' };
-  org.publisher = { ...(org.publisher || {}), status, decidedBy: admin.email, decidedAt: now(), note: String(note).slice(0, 1000) }; store.put('orgs', org);
+  const at = now(); const note2 = String(note).slice(0, 1000);
+  const history = [...(org.publisher?.history || []), { event: status, at, by: admin.email, note: note2 }];
+  org.publisher = { ...(org.publisher || {}), status, decidedBy: admin.email, decidedAt: at, note: note2, history }; store.put('orgs', org);
   store.audit({ actor: admin.email, orgId, action: 'publisher.' + status, detail: { note } });
   return { ok: true, publisher: org.publisher };
 }

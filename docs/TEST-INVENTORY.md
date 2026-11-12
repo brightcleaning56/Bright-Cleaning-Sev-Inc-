@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**256 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**259 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -278,6 +278,11 @@
 - database-style search in memory: filters, order, territory
 - postgres core: schema v2 tables, transactional dual-write, reconcile, SQL search matches, merge, re-sync
 - linking scales linearly (regression: phase recompute was quadratic — 67 s at 10,000 permits)
+
+## publisher-verification.test.js (3)
+- a verification request keeps the contact person and records each step in the review history
+- a rejected company resubmits, and the history shows the rejection, the reason and the new request
+- approval is recorded in the history with who approved it and how it was checked
 
 ## publishing.test.js (8)
 - one catalog: legacy plans map onto it; publishers publish but do not get discovery; free gets invitations only; expired trial blocks

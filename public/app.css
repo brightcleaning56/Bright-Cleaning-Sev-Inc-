@@ -406,3 +406,19 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 .wiz li.done button{color:var(--ink);border-color:#9fd6b5}
 .wiz li.cur button{color:var(--accent);border-color:var(--accent);font-weight:700}
 @media (max-width:640px){.wiz{grid-template-columns:minmax(0,1fr)}}
+
+/* Publisher verification: profile sections, requirements, status and review history. */
+.vcard .row{justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.vcard h3{margin:0}
+.vnote{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;margin:8px 0}
+.vgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin:10px 0}
+.vgrid h4{margin:0 0 6px}
+.vreq{list-style:none;margin:0 0 6px;padding:0}
+.vreq li{display:flex;gap:8px;align-items:center;padding:3px 0}
+.vhist{margin:0;padding-left:18px}
+.vform fieldset{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.vform legend{padding:0 6px;color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.vf-field{display:grid;gap:4px}
+.vf-field span{font-size:13px;color:var(--muted)}
+.vform fieldset .vf-field:last-child:nth-child(odd){grid-column:1 / -1}
+@media (max-width:640px){.vgrid,.vform fieldset{grid-template-columns:minmax(0,1fr)}}
