@@ -3077,7 +3077,7 @@
   const mailState = { emails: [] };
   $('#emailSearch').addEventListener('input', () => renderEmails()); $('#emailStatus').addEventListener('change', () => renderEmails());
   async function loadEmails() {
-    const [r, ms] = await Promise.all([api('/api/admin/emails'), api('/api/admin/m365/status').catch(() => ({}))]); mailState.emails = r.emails;
+    const [r, ms, sup] = await Promise.all([api('/api/admin/emails'), api('/api/admin/m365/status').catch(() => ({})), api('/api/admin/email-suppression').catch(() => ({ addresses: [] }))]); mailState.emails = r.emails; mailState.blocked = new Map((sup.addresses || []).map(a => [a.address, a]));
     kpiTiles('#emailsKpis', [{ label: 'Sent (30 days)', value: r.summary.sent_30d }, { label: 'Failed (30 days)', value: r.summary.failed_30d, alert: r.summary.failed_30d > 0 }, { label: 'Total (30 days)', value: r.summary.total_30d }, { label: 'Outlook inbox here', value: ms.connected ? 'Connected' : ms.configured ? 'Ready to connect' : 'Not set up', sub: ms.connected ? `${ms.account || ''} · ${ms.messages} messages${ms.last_sync ? ' · synced ' + fmtWhen(ms.last_sync) : ''}` : ms.configured ? 'click to connect' : 'click for setup steps', alert: !!ms.last_error }]);
     $('#navEmails').hidden = !r.summary.failed_30d; $('#navEmails').textContent = r.summary.failed_30d;
     { const tiles = $$('#emailsKpis > *'); const t = tiles[3]; if (t) { t.style.cursor = 'pointer'; t.onclick = () => openM365(ms); } }
@@ -3090,6 +3090,20 @@
       $$('#inboxCard [data-icust]').forEach(a => a.onclick = ev => { ev.preventDefault(); go('customers'); setTimeout(() => openCustomerPage(Number(a.dataset.icust)), 350); });
     } else if (ib) ib.remove();
     renderEmails();
+    renderBlocked();
+  }
+  function renderBlocked() {
+    let bc = document.getElementById('blockedCard');
+    if (!bc) { bc = document.createElement('div'); bc.id = 'blockedCard'; bc.className = 'card'; bc.style.cssText = 'margin:14px 0;padding:14px'; $('#emailsKpis').after(bc); }
+    const list = [...mailState.blocked.values()];
+    bc.innerHTML = `<h2 style="margin:0 0 4px;font-size:17px">Blocked from automated email (${list.length})</h2>` +
+      `<p class="muted" style="margin:0 0 10px">Reminders, bid questions and AI follow-ups skip these addresses. Emails you write by hand still go out.</p>` +
+      `<form id="blockForm" class="ig" style="margin-bottom:10px"><input id="blockEmail" type="email" placeholder="name@example.com" required>` +
+      `<select id="blockReason"><option value="opted_out">Asked not to be emailed</option><option value="declined">Declined</option><option value="replied">Replied (pause automation)</option></select>` +
+      `<button class="btn small" type="submit">Block address</button></form>` +
+      (list.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Address</th><th>Reason</th><th>Since</th><th>Source</th><th></th></tr></thead><tbody>${list.map(a => `<tr><td>${esc(a.address)}</td><td>${esc(a.label)}</td><td>${esc(fmtWhen(a.created_at))}</td><td>${esc(a.source || '')}</td><td><button class="btn small ghost" data-unblock="${esc(a.address)}">Remove</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No addresses are blocked.</p>');
+    $('#blockForm').onsubmit = async ev => { ev.preventDefault(); try { await api('/api/admin/email-suppression', { method: 'POST', json: { email: $('#blockEmail').value.trim(), reason: $('#blockReason').value, detail: 'Recorded by staff' } }); toast('Address blocked'); loadEmails(); } catch (e) { toast(e.message, true); } };
+    $$('#blockedCard [data-unblock]').forEach(b => b.onclick = async () => { if (!confirm('Allow automated email to ' + b.dataset.unblock + ' again?')) return; try { await api('/api/admin/email-suppression/' + encodeURIComponent(b.dataset.unblock), { method: 'DELETE' }); toast('Block removed'); loadEmails(); } catch (e) { toast(e.message, true); } });
   }
   function openM365(ms) {
     const steps = `<ol style="padding-left:18px;line-height:1.6"><li>Sign in to <b>portal.azure.com</b> with the Microsoft 365 admin account → <b>Microsoft Entra ID</b> → <b>App registrations</b> → <b>New registration</b>.</li>
@@ -3108,7 +3122,7 @@
   function renderEmails() {
     const q = $('#emailSearch').value.trim().toLowerCase(), st = $('#emailStatus').value;
     const rows = mailState.emails.filter(m => (!st || m.status === st) && (!q || [m.to_addr, m.subject].join(' ').toLowerCase().includes(q)));
-    $('#emailsRows').innerHTML = rows.length ? rows.map(m => `<tr class="click" data-mail="${m.id}"><td>${esc(fmtWhen(m.created_at))}</td><td>${esc(m.to_addr)}</td><td>${esc(m.subject)}</td><td>${m.status === 'sent' ? '<span class="badge green">Sent</span>' : '<span class="badge red">Failed</span>'}</td></tr>`).join('') : '<tr><td class="emptyrow" colspan="4">No emails yet.</td></tr>';
+    $('#emailsRows').innerHTML = rows.length ? rows.map(m => `<tr class="click" data-mail="${m.id}"><td>${esc(fmtWhen(m.created_at))}</td><td>${esc(m.to_addr)}${mailState.blocked && mailState.blocked.has(String(m.to_addr || '').toLowerCase()) ? ' <span class="badge red">Blocked</span>' : ''}</td><td>${esc(m.subject)}</td><td>${m.status === 'sent' ? '<span class="badge green">Sent</span>' : m.status === 'suppressed' ? '<span class="badge">Not sent (blocked)</span>' : '<span class="badge red">Failed</span>'}</td></tr>`).join('') : '<tr><td class="emptyrow" colspan="4">No emails yet.</td></tr>';
     $$('[data-mail]').forEach(r => r.onclick = () => { const m = mailState.emails.find(x => x.id === Number(r.dataset.mail)); openDrawer({ title: m.subject || '(no subject)', sub: `To ${esc(m.to_addr)} · ${esc(fmtWhen(m.created_at))} · via ${esc(m.provider || '')}`, body: `${m.error ? `<p class="msg err">${esc(m.error)}</p>` : ''}<pre style="white-space:pre-wrap;font:inherit">${esc(m.body || '')}</pre>`, footer: '' }); });
   }
 
