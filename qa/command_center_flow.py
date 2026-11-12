@@ -35,7 +35,10 @@ with sync_playwright() as p:
     steps.append('2 search and status filter work')
     labels = pg.evaluate("[...document.querySelectorAll('.choose button')].map(b => b.innerText.split('\\n')[0])")
     if labels != ['Create full project', 'Post single trade', 'Create cleaning request']: problems.append(f'request chooser is {labels}')
-    steps.append('3 request chooser lists full project, single trade and cleaning')
+    opts = pg.evaluate("[...document.querySelectorAll('#sv option')].map(o => o.value)")
+    for need in ['post_construction', 'janitorial', 'windows', 'floor_care', 'pressure_washing', 'parking_lot']:
+        if need not in opts: problems.append(f'cleaning request is missing the {need} option')
+    steps.append('3 request chooser lists full project, single trade and cleaning, with all six cleaning services')
     ctx2 = b.new_context(viewport={'width': 1280, 'height': 900}); u = ctx2.new_page(); watch(u, 'unconfirmed')
     u.goto(BASE + '/app'); u.fill('#e', email); u.fill('#p', 'long enough password'); u.click('button.primary'); u.wait_for_timeout(1500)
     banner = u.inner_text('#emailbanner') if u.query_selector('#emailbanner') else ''

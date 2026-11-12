@@ -1267,7 +1267,7 @@ async function buyerView() {
   <div id="emailbanner"></div>
   <div id="pcc"></div><div id="verc"></div><div id="pubc"></div>
   <div class="sign x-6384e367" ><div><h2>Start a request</h2><p>Choose what you are posting. Every option is saved as a permanent record and invites the matching companies in the area.</p>
-  <div class="choose"><button type="button" id="ch-full"><b>Create full project</b><small>Several trade packages, plan rooms and bidder lists, published together.</small></button><button type="button" id="ch-trade"><b>Post single trade</b><small>One trade or service. Companies answer will-bid or won't-bid and submit bids.</small></button><button type="button" id="ch-clean"><b>Create cleaning request</b><small>Post-construction, janitorial, windows, floor care and pressure washing.</small></button></div>
+  <div class="choose"><button type="button" id="ch-full"><b>Create full project</b><small>Several trade packages, plan rooms and bidder lists, published together.</small></button><button type="button" id="ch-trade"><b>Post single trade</b><small>One trade or service. Companies answer will-bid or won't-bid and submit bids.</small></button><button type="button" id="ch-clean"><b>Create cleaning request</b><small>Final construction clean, recurring janitorial, windows, floor care, pressure washing and parking lots.</small></button></div>
   <h3 id="rfh">Single trade request</h3><p>For one trade. For a full project with several trade packages and plan rooms, use <b>Create full project</b> above.</p>
   <form class="x-fcc9f9e7" id="rf" >
    <div class="x-0edf7ec4" >
@@ -1280,7 +1280,7 @@ async function buyerView() {
    <textarea class="x-3de47ccc" id="ds" rows="3" placeholder="Scope / notes for bidders" ></textarea>
    <fieldset class="x-79559915" ><legend class="x-17d902bf" >Trades needed</legend><div class="x-022c8ca4" >${TRADES_LIST.map(t => `<label class="x-54ead96c" ><input class="x-30e741d9" type="checkbox" name="tr" value="${t.key}" >${esc(t.label)}</label>`).join('')}</div></fieldset>
    <details><summary class="x-3b6a3a65" >Also get instant cleaning prices (optional)</summary><div class="x-4e33256f" >
-     <select id="sv"><option value="">No instant pricing</option><option value="post_construction">Post-construction clean</option><option value="janitorial">Recurring janitorial</option><option value="windows">Windows</option><option value="floor_care">Floor care</option><option value="pressure_washing">Pressure washing</option></select>
+     <select id="sv"><option value="">No instant pricing</option><option value="post_construction">Post-construction clean</option><option value="janitorial">Recurring janitorial</option><option value="windows">Windows</option><option value="floor_care">Floor care</option><option value="pressure_washing">Pressure washing</option><option value="parking_lot">Parking lot &amp; site care</option></select>
      <input id="sf2" type="number" min="1" placeholder="Square feet"><input id="fq" type="number" min="1" placeholder="Visits per month (janitorial)"></div></details>
    <button class="primary x-27af8985" ${verified?'':'disabled'} >Post request</button></form><div class="err" id="re"></div></div></div>
   <div id="sumstrip"></div><div class="card bidders-card" id="bidders"></div><div class="card" id="analytics"></div><h2 class="x-d1cd810f" >${OWNER_KINDS.includes(me.org.buyerKind) ? 'Your projects' : 'Your bid packages'}</h2><section id="body"></section>
