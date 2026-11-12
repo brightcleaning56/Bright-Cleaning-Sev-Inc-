@@ -24,13 +24,13 @@ Build reviewed: live `249b021fc274`; repository branch `claude/bright-cleaning-r
 | Owner alerts on backup failure | Code written and tested locally; not triggered live | Not verified live |
 | Recording notice for browser calls | Automated test checks the notice is in the call flow; not heard on a live call | Partly verified |
 | No-answer follow-up task | Automated test checks the response; a task is created in code; no live call yet | Partly verified |
-| Restore drill | Backup downloaded and header checked; decryption and data check not run | Not complete |
+| Restore drill | 2026-11-12: `brightclean-20261111-131507.db.enc` decrypted on the Render server with the production key; `integrity_check` = ok; 134 leads, 45 calls, 80 customers | Passed |
 
 ## 3. Known defects and blockers
 | ID | Severity | Item | Owner | Status |
 |---|---|---|---|---|
 | D1 | High | AI lead triage fails: Anthropic credit balance too low | Owner (billing) | Open |
-| D2 | High | Restore drill incomplete (must decrypt and check data) | Owner (has key) + dev | Open |
+| D2 | High | Restore drill (decrypt and check data) | Owner + dev | Closed 2026-11-12: passed on the server |
 | D3 | High | Live checks for recording notice and no-answer task not done | Owner (phone) | Open |
 | D4 | Medium | Owner alert emails not triggered live | Dev | Open |
 | D5 | Medium | Secrets exposed in screenshots during the Backblaze key work (old keys deleted; clipboard cleared) | Owner | Closed for keys; confirm no other exposure |
