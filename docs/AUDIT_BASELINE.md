@@ -13,7 +13,8 @@ Build reviewed: live `249b021fc274`; repository branch `claude/bright-cleaning-r
 ## 2. Verified this session (evidence, not screens)
 | Area | Evidence | Result |
 |---|---|---|
-| Server functional suite | `tests/run-tests.js` on Node 22 | 224/224 pass |
+| Server functional suite | `tests/run-tests.js` on Node 22, re-run on `eaff103` (2026-11-11) | 224/224 pass |
+| Test environment | SQLite native module restored for Node 22 after a stray `npm` install removed it | Fixed |
 | Admin UI suite | `tests/ui-tests.js` | 83/83 pass |
 | Client portal backend | `tests/portal-test.js` | 78/78 pass |
 | Payments | `tests/payments-test.js` (no real charges) | 10/10 pass |
