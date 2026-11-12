@@ -238,7 +238,7 @@ module.exports = function mountOps(app, ctx) {
   app.get('/api/health', health);
 
   // ---------------- Automation ----------------
-  const sentAlready = (kind, ref, stage) => !!db.prepare("SELECT id FROM automation_log WHERE kind=? AND ref_id=? AND stage=? AND status='sent'").get(kind, ref, stage);
+  const sentAlready = (kind, ref, stage) => !!db.prepare("SELECT id FROM automation_log WHERE kind=? AND ref_id=? AND stage=? AND status IN ('sent','suppressed')").get(kind, ref, stage);
   const log = (kind, ref, stage, to, status, detail) => db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run(kind, ref, stage, to, status, clean(detail, 1000), now());
   const days = ms => ms / 864e5;
   const money = v => '$' + Number(v || 0).toFixed(2);
@@ -248,7 +248,8 @@ module.exports = function mountOps(app, ctx) {
     const mailer = getMailer();
     if (!mailer) { log(kind, ref, stage, to, 'skipped', 'Email is not configured'); return false; }
     try {
-      await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to, subject, text });
+      const r = await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to, subject, text, automated: true });
+      if (r && r.suppressed) { log(kind, ref, stage, to, 'suppressed', 'Recipient asked not to receive automated email (' + r.reason + ')'); return false; }
       log(kind, ref, stage, to, 'sent', subject);
       return true;
     } catch (e) { log(kind, ref, stage, to, 'failed', e.message); return false; }
