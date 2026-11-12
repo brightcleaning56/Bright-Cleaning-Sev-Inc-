@@ -22,7 +22,8 @@ Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `FR
 
 ## 4. Backups and recovery
 - Application attempts a daily SQLite backup to `data/backups` and retains 14 local copies.
-- Local backups are not enough. Configure encrypted off-site backup of `data/`, `uploads/` and `.env` secrets in a managed secret store (never place `.env` in a public web directory).
+- Local backups are not enough. Current state: each backup is encrypted (`BACKUP_KEY`) and copied to Backblaze B2 (`BACKUP_BUCKET`, `BACKUP_KEY_ID`, `BACKUP_KEY_SECRET`, `BACKUP_S3_ENDPOINT`). The owner is emailed when a backup or its off-site copy fails. Still to do: off-site copy of `uploads/` and of the `.env` secrets in a managed secret store (never place `.env` in a public web directory).
+- A backup is only verified after a restore test: decrypt it with `scripts/decrypt-backup.js` and check the database opens (`PRAGMA integrity_check`).
 - Perform a restore drill into a separate staging instance at least quarterly.
 - Record RPO/RTO and assign an owner for recovery.
 - Never test restore by overwriting the live database.
@@ -74,7 +75,7 @@ Run the Node process under a production process manager such as the hosting plat
 | Node.js | `engines` in package.json: >=20 <25 (tested on Node 22) |
 | Domain | brightclean.net and www (DNS at GoDaddy: A @ 216.24.57.1, CNAME www -> brightclean-web.onrender.com) |
 | Persistent disk | 5 GB at `/opt/render/project/src/persist` (`DATA_DIR` = .../persist/data, `UPLOAD_DIR` = .../persist/uploads) |
-| Database backups | `.../persist/data/backups`, daily, 14 kept. Same disk as the database, so download a copy from Admin > Settings > Database backups at least weekly and store it off the server. |
+| Database backups | `.../persist/data/backups`, daily, 14 kept, encrypted. Each one is also uploaded to Backblaze B2 (bucket `brightclean-backups-eric`, US East 005). Owner is emailed on failure. |
 | Health check | `/api/health` (also `/health`) checks the database; Render restarts the service if it fails |
 | Email | Microsoft 365 `smtp.office365.com:587`, user info@brightclean.net. Needs `SMTP_PASS` and Authenticated SMTP enabled for the mailbox. |
 | Scheduler | Runs inside the web service every hour (reminders, daily backup). Keep one instance; set `DISABLE_SCHEDULER=1` on any extra instance. |
@@ -95,6 +96,8 @@ Run the Node process under a production process manager such as the hosting plat
 npm ci
 npm i --no-save smtp-server jsdom
 node tests/run-tests.js     # functional/API/automation/backup suite, writes tests/results.json
+# Last runs (Node 22): server 224/224, UI 83/83, portal 78/78, payments 10/10, AI 17/17.
+# On Windows, if better-sqlite3 fails to load, use the Node version in package.json engines (Node 22), not a newer one.
 node tests/ui-tests.js      # admin and proposal screens, writes tests/ui-results.json
 ```
 Both start their own server on a temporary database and never touch live data.
