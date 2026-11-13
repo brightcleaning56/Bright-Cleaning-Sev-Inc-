@@ -25,7 +25,7 @@ Status: draft for the project owner to send. Nothing in these files has been sha
 7. What records must be kept of who received which document, and under what agreement?
 
 ### Entity and IP
-8. Should DentistNow Robotics be a separate legal entity from DentistNow? Iowa-registered status is required for the Iowa program ($75K total support).
+8. Should DentistNow Robotics be a separate legal entity from DentistNow? Proposed: a Delaware corporation, matching DentistNow's existing Delaware registration. The Iowa program ($75K total support) requires an Iowa-based company, so it is only available if the company will operate in Iowa. Confirm which applies.
 9. What invention-assignment and NDA templates are needed for employees, contractors, research partners and advisors?
 10. Scope of a patentability and freedom-to-operate search before showing designs to manufacturers.
 
@@ -40,7 +40,7 @@ Status: draft for the project owner to send. Nothing in these files has been sha
 
 ## 3. Decisions the owner must make before the review
 
-- Choose the entity structure and whether to register in Iowa.
+- Confirm the entity structure (Delaware, as proposed) and whether the company will be Iowa-based.
 - Provide the business address and project email, and a privacy notice.
 - Choose the first-round instrument.
 - Choose which materials are shareable now (see the data-room index).

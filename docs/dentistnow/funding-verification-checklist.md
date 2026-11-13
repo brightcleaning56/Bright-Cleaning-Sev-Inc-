@@ -8,7 +8,7 @@ Status: **confirmed** from the IEDA program page text supplied by the project ow
 
 Confirmed:
 - Total support $75,000. Phase I $50,000 on top of a federal grant or contract. Phase II $25,000 on submission of a federal grant or contract.
-- Eligibility: Iowa-based, legally formed and registered with the Iowa Secretary of State, fewer than 500 employees, innovative, industry-agnostic.
+- Eligibility: Iowa-based, legally formed and registered with the Iowa Secretary of State, fewer than 500 employees, innovative, industry-agnostic. DentistNow Robotics is not currently Iowa-registered, and DentistNow is a Delaware company, so eligibility depends on where the company operates.
 - Applications reviewed on an ongoing basis. Contact IEDA for the current application.
 
 Still to confirm: matching requirements and the current contact route.

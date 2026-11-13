@@ -44,6 +44,6 @@ Status: outline only. Program terms, solicitation numbers, deadlines and eligibi
 
 ## 8. Before submission
 1. Confirm the solicitation text and deadline on the official site.
-2. Iowa co-funding terms are confirmed from the IEDA program page ($75K total: $50K Phase I, $25K Phase II). Confirm the company is Iowa-registered and under 500 employees before applying.
+2. Iowa co-funding terms are confirmed from the IEDA program page ($75K total: $50K Phase I, $25K Phase II). The Iowa program requires an Iowa-based, Iowa-registered company. DentistNow Robotics is not yet registered in Iowa, so confirm eligibility before using this program.
 3. Have a grant-writing advisor review the draft.
 4. Confirm the budget against quotes.
