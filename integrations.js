@@ -4,7 +4,11 @@
 // Every lead records which key sent it, so you always know where a lead came from.
 const crypto = require('crypto');
 
+const { createLeadNotifier } = require('./lead-notify');
+
 module.exports = function (app, { db, auth, logAction, clean, isEmail, notify }) {
+  // Bursts from one source send one digest instead of one email per lead. Every lead is still saved.
+  const leadNotifier = createLeadNotifier({ notify, to: process.env.NOTIFY_EMAIL });
   db.exec(`CREATE TABLE IF NOT EXISTS api_keys(
     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, prefix TEXT NOT NULL, key_hash TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL, created_by TEXT, last_used_at TEXT, revoked_at TEXT)`);
@@ -51,7 +55,7 @@ module.exports = function (app, { db, auth, logAction, clean, isEmail, notify })
       .run(name, company, email, phone, project, service, details, label, now()).lastInsertRowid;
     db.prepare('UPDATE api_keys SET last_used_at=? WHERE id=?').run(now(), key.id);
     logAction({ user: { email: 'api:' + key.name } }, 'received lead', 'lead', id, label);
-    if (notify) Promise.resolve(notify('New lead from ' + key.name, `${name || 'Unnamed'}${company ? ' · ' + company : ''}\n${email ? 'Email: ' + email + '\n' : ''}${phone ? 'Phone: ' + phone + '\n' : ''}${project ? 'Project: ' + project + '\n' : ''}${details ? '\n' + details : ''}\n\nSource: ${label}`, process.env.NOTIFY_EMAIL)).catch(() => { /* notification is best-effort */ });
+    if (notify) leadNotifier.leadArrived(key.id, key.name, `${name || 'Unnamed'}${company ? ' · ' + company : ''}\n${email ? 'Email: ' + email + '\n' : ''}${phone ? 'Phone: ' + phone + '\n' : ''}${project ? 'Project: ' + project + '\n' : ''}${details ? '\n' + details : ''}\n\nSource: ${label}`);
     res.status(201).json({ ok: true, id });
   });
 };
