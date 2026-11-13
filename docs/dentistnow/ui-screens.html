@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DentistNow AutoClean Pro 2.0 — UI Screens</title>
+<style>
+  :root { --ink:#0d2238; --muted:#4a6279; --line:#c7d5e2; --accent:#0a6fd6; --ok:#17794a; --warn:#a15c00; --bad:#b3261e; --bg:#f4f8fb; --card:#fff; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink:#e6eef6; --muted:#9db2c6; --line:#2b4057; --accent:#5cb0ff; --ok:#56c48a; --warn:#ffb257; --bad:#ff7a70; --bg:#0c1622; --card:#121f2e; } }
+  :root[data-theme="dark"] { --ink:#e6eef6; --muted:#9db2c6; --line:#2b4057; --accent:#5cb0ff; --ok:#56c48a; --warn:#ffb257; --bad:#ff7a70; --bg:#0c1622; --card:#121f2e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Segoe UI", Arial, Helvetica, sans-serif; color:var(--ink); background:var(--bg); padding:16px; font-size:14px; }
+  h1 { font-size:22px; margin:6px 0 4px; }
+  h2 { font-size:16px; margin:0 0 4px; }
+  .lede { color:var(--muted); margin:0 0 16px; max-width:900px; }
+  .banner { border:1px solid var(--warn); border-radius:8px; padding:10px 14px; color:var(--warn); background:var(--card); margin-bottom:18px; max-width:900px; font-size:13px; }
+  .group { margin:26px 0 8px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.06em; font-size:12px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:14px; }
+  .screen { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+  .bar { display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); }
+  .bar b { color:var(--ink); }
+  .body { padding:12px; display:flex; flex-direction:column; gap:10px; flex:1; }
+  .title { font-size:17px; font-weight:700; }
+  .text { color:var(--muted); font-size:13px; }
+  .btn { display:block; text-align:center; padding:10px; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; font-size:14px; margin-top:auto; }
+  .btn.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  .btn.stop { background:var(--bad); }
+  .row { display:flex; justify-content:space-between; gap:8px; align-items:center; font-size:13px; padding:6px 0; border-bottom:1px dashed var(--line); }
+  .row:last-child { border-bottom:0; }
+  .chip { display:inline-block; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid currentColor; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .muted { color:var(--muted); }
+  .field { border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:13px; color:var(--muted); background:var(--bg); }
+  .choice { border:1px solid var(--line); border-radius:8px; padding:9px; text-align:center; font-size:13px; }
+  .choice.on { border-color:var(--accent); color:var(--accent); font-weight:700; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .meter { height:8px; background:var(--line); border-radius:4px; overflow:hidden; }
+  .meter > i { display:block; height:100%; background:var(--accent); }
+  .tooth { display:grid; grid-template-columns: repeat(8, 1fr); gap:3px; }
+  .tooth span { height:22px; border-radius:4px; background:var(--line); font-size:10px; display:flex; align-items:center; justify-content:center; color:var(--muted); }
+  .tooth .p { background:#e8c85a; color:#4a3a00; } .tooth .s { background:#f0a04a; color:#4a2800; } .tooth .c { background:#d9534f; color:#fff; } .tooth .n { background:transparent; border:1px dashed var(--muted); }
+  .legend { display:flex; flex-wrap:wrap; gap:8px; font-size:11px; color:var(--muted); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+  .eStop { background:var(--bad); color:#fff; border-radius:50%; width:70px; height:70px; margin:6px auto; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11px; text-align:center; line-height:1.1; }
+  .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:6px; }
+  .list { margin:0; padding-left:18px; font-size:13px; color:var(--muted); }
+  .fine { font-size:11px; color:var(--muted); }
+  @media (min-width: 1100px) { body { padding:24px 32px; } }
+</style>
+</head>
+<body>
+
+<h1>DentistNow AutoClean Pro 2.0 — UI Screens</h1>
+<p class="lede">Static design mockups for the patient interface and the clinical operator interface. Values shown are sample data.
+Every finding is labelled <b>Observed</b>, <b>Suspected</b> or <b>Not assessable</b> — never presented as a diagnosis.
+A stop control is visible on every screen during treatment.</p>
+
+<div class="banner"><b>Design status:</b> concept mockups for planning and usability review. They are not validated software, have not been through human-factors testing, and must not be used on patients. Clinical wording and gate logic require review by a licensed dental professional and the regulatory specialist.</div>
+
+<div class="group">Patient interface · First visit (Mode 1)</div>
+<div class="grid">
+
+  <div class="screen"><div class="bar"><b>P01 · Welcome</b><span>Step 0 of 14</span></div>
+    <div class="body">
+      <div class="title">Welcome to DentistNow</div>
+      <div class="text">We will check your teeth and gums first. Nothing is cleaned until a dental professional has reviewed your visit.</div>
+      <div class="cols"><div class="choice on">English</div><div class="choice">Español</div><div class="choice">中文</div><div class="choice">Français</div></div>
+      <div class="cols"><div class="choice on">New patient</div><div class="choice">Returning</div></div>
+      <div class="btn">Start visit</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P02 · Identify</b><span>Step 1 of 14</span></div>
+    <div class="body">
+      <div class="title">Who is this visit for?</div>
+      <div class="field">Scan photo ID</div>
+      <div class="field">Or enter name and date of birth</div>
+      <div class="field">Mobile number (for reminders)</div>
+      <div class="text fine">Identity is checked against your DentistNow record. Authorization to import prior records is requested separately.</div>
+      <div class="btn">Next</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P03 · Medical screening</b><span>Step 2 of 14</span></div>
+    <div class="body">
+      <div class="title">Health questions</div>
+      <div class="row"><span>Heart condition</span><span class="chip warn">Yes — review</span></div>
+      <div class="row"><span>Blood thinners</span><span class="chip">No</span></div>
+      <div class="row"><span>Diabetes</span><span class="chip">No</span></div>
+      <div class="row"><span>Allergies</span><span class="chip">Penicillin</span></div>
+      <div class="row"><span>Pregnancy (if applicable)</span><span class="chip">—</span></div>
+      <div class="text fine">Answers are recorded. The system does not declare you medically cleared.</div>
+      <div class="btn">Next</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P04 · Symptoms</b><span>Step 3 of 14</span></div>
+    <div class="body">
+      <div class="title">How are your teeth and gums?</div>
+      <div class="cols"><div class="choice on">Gums bleed</div><div class="choice">Sensitivity</div><div class="choice">Pain</div><div class="choice">Swelling</div><div class="choice">Loose tooth</div><div class="choice">Hard to open mouth</div></div>
+      <div class="text fine">Tap a tooth area on the next screen if a symptom applies to one place.</div>
+      <div class="btn">Next</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P05 · Oral photos</b><span>Step 4 of 14</span></div>
+    <div class="body">
+      <div class="cols"><div class="field">Front ✓ 92</div><div class="field">Upper ✓ 88</div><div class="field">Lower ✓ 85</div><div class="field">Left ✓ 90</div><div class="field">Right — retake</div><div class="field">Tongue —</div></div>
+      <div class="title">Photos captured</div>
+      <div class="text">Each photo has an ID, time and quality score. Retake any photo below 70.</div>
+      <div class="btn">Retake right side</div>
+      <div class="btn ghost">Continue</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P06 · 3D scan</b><span>Step 5 of 14</span></div>
+    <div class="body">
+      <div class="title">Scanning upper arch…</div>
+      <div class="meter"><i style="width:68%"></i></div>
+      <div class="text">Please keep your mouth open and rest your head on the support. Stay still.</div>
+      <div class="row"><span><span class="pulse"></span>Head position</span><span class="ok">Stable</span></div>
+      <div class="row"><span>Camera view</span><span class="ok">Visible</span></div>
+      <div class="row"><span>Scan quality</span><span class="warn">Retake lower left</span></div>
+      <div class="btn stop">Pause</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P07 · Findings review</b><span>Step 8 of 14</span></div>
+    <div class="body">
+      <div class="title">Your findings</div>
+      <div class="legend"><span><i style="background:#17794a"></i>Observed</span><span><i style="background:#e8c85a"></i>Suspected</span><span><i style="background:#9aa5b1"></i>Not assessable</span></div>
+      <div class="row"><span>Plaque on upper front teeth</span><span class="chip ok">Observed</span></div>
+      <div class="row"><span>Possible decay, tooth 14</span><span class="chip warn">Suspected</span></div>
+      <div class="row"><span>Lower back teeth — image unclear</span><span class="chip muted">Not assessable</span></div>
+      <div class="text fine">A dental professional will confirm suspected findings before any treatment plan is finalized.</div>
+      <div class="btn">View details</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P08 · Eligibility check</b><span>Step 10 of 14</span></div>
+    <div class="body">
+      <div class="title" style="color:var(--warn)">Cleaning not started — please see a professional</div>
+      <div class="text">Your gums are swollen in one area and a finding needs a professional look before any cleaning. This is a safety stop, not a diagnosis.</div>
+      <ul class="list"><li>Swelling noted (lower right)</li><li>Possible decay, tooth 14 (suspected)</li></ul>
+      <div class="btn">Share report with my dental team</div>
+      <div class="btn ghost">Book a visit</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P09 · Proposed plan</b><span>Step 11 of 14</span></div>
+    <div class="body">
+      <div class="title">Proposed cleaning</div>
+      <div class="row"><span>Plaque removal, upper front</span><span class="chip">Approved scope</span></div>
+      <div class="row"><span>Polishing, all teeth</span><span class="chip">Approved scope</span></div>
+      <div class="row"><span>Decay, tooth 14</span><span class="chip warn">Not included</span></div>
+      <div class="row"><span>Estimated time</span><span>~25 min</span></div>
+      <div class="text fine">Limits: no treatment near sensitive gum tissue, no drilling, no extraction. You can decline or ask a question at any time.</div>
+      <div class="cols"><div class="btn ghost">Decline</div><div class="btn">Continue</div></div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P10 · Consent &amp; authorization</b><span>Step 12 of 14</span></div>
+    <div class="body">
+      <div class="title">Your consent</div>
+      <div class="text">I understand what will be cleaned, the limits, the risks (for example sensitivity or minor gum bleeding), and that I can stop at any time.</div>
+      <div class="row"><span>I agree to the cleaning plan</span><span class="chip ok">☑</span></div>
+      <div class="row"><span>Professional authorization</span><span class="chip ok">Received</span></div>
+      <div class="btn">Authorize</div>
+      <div class="btn ghost">Back</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P11 · Cleaning in progress</b><span><span class="pulse"></span>Live</span></div>
+    <div class="body">
+      <div class="title">Cleaning upper front</div>
+      <div class="meter"><i style="width:58%"></i></div>
+      <div class="row"><span>Plaque removal</span><span class="ok">Done</span></div>
+      <div class="row"><span>Polishing</span><span class="warn">In progress</span></div>
+      <div class="row"><span>Rinse &amp; suction check</span><span class="muted">Waiting</span></div>
+      <div class="row"><span>Pressure</span><span class="ok">0.35 N (limit 1.0)</span></div>
+      <div class="text fine">Hold the Stop button or say “stop”. Instruments withdraw automatically.</div>
+      <div class="btn stop">STOP — withdraw instrument</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>P12 · Results</b><span>Step 14 of 14</span></div>
+    <div class="body">
+      <div class="title">Visit complete</div>
+      <div class="cols"><div class="field">Before photo</div><div class="field">After photo</div></div>
+      <div class="row"><span>Plaque removed</span><span class="ok">Yes</span></div>
+      <div class="row"><span>Needs professional attention</span><span class="warn">2 items</span></div>
+      <div class="row"><span>Next visit</span><span>6 months</span></div>
+      <div class="btn">View full report</div>
+      <div class="btn ghost">Book next visit</div>
+    </div></div>
+
+</div>
+
+<div class="group">Clinical operator interface (dental professional)</div>
+<div class="grid">
+
+  <div class="screen"><div class="bar"><b>C01 · Review queue</b><span>Station 03</span></div>
+    <div class="body">
+      <div class="row"><span>Patient A — eligibility stop</span><span class="chip bad">Review</span></div>
+      <div class="row"><span>Patient B — findings ready</span><span class="chip warn">Confirm</span></div>
+      <div class="row"><span>Patient C — cleaning authorized</span><span class="chip ok">Ready</span></div>
+      <div class="text fine">Confirmed findings, suspected findings and not-assessable areas are separate fields in the record.</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>C02 · Oral chart</b><span>Patient B</span></div>
+    <div class="body">
+      <div class="tooth">
+        <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+        <span class="p">9</span><span class="p">10</span><span>11</span><span class="s">12</span><span>13</span><span>14</span><span class="c">15</span><span>16</span>
+        <span class="n">17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span><span>23</span><span>24</span>
+      </div>
+      <div class="legend"><span><i style="background:#e8c85a"></i>Plaque</span><span><i style="background:#f0a04a"></i>Suspected</span><span><i style="background:#d9534f"></i>Professional attention</span><span><i style="border:1px dashed #888"></i>Missing</span></div>
+      <div class="text fine">Sample quadrant only. Tooth numbering uses the Universal system.</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>C03 · Findings &amp; evidence</b><span>Tooth 14</span></div>
+    <div class="body">
+      <div class="row"><span>Visible condition</span><span class="chip warn">Suspected</span></div>
+      <div class="row"><span>Evidence</span><span>Scan + photo 3</span></div>
+      <div class="row"><span>AI confidence</span><span>0.71 (moderate)</span></div>
+      <div class="row"><span>Prior X-ray</span><span>2024-05 (linked)</span></div>
+      <div class="row"><span>Clinician decision</span><span class="muted">Pending</span></div>
+      <div class="cols"><div class="btn ghost">Mark not assessable</div><div class="btn">Confirm / reject</div></div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>C04 · Periodontal chart</b><span>Patient B</span></div>
+    <div class="body">
+      <div class="text">Probing depth values are entered by the clinician from validated instruments. The scanner does not estimate pocket depth.</div>
+      <div class="row"><span>Upper right, sites 1–6</span><span>2 · 3 · 2 · 2 · 3 · 2 mm</span></div>
+      <div class="row"><span>Bleeding on probing</span><span class="warn">2 sites</span></div>
+      <div class="row"><span>Mobility</span><span class="ok">None recorded</span></div>
+      <div class="btn">Save measurements</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>C05 · Authorization gate</b><span>Patient C</span></div>
+    <div class="body">
+      <div class="row"><span>Professional eligibility confirmed</span><span class="ok">✓</span></div>
+      <div class="row"><span>Patient consent on file</span><span class="ok">✓</span></div>
+      <div class="row"><span>Tools valid (lifecycle + sterile record)</span><span class="ok">✓</span></div>
+      <div class="row"><span>Safety checks (e-stop, camera, suction)</span><span class="ok">✓</span></div>
+      <div class="row"><span>Head-position lock</span><span class="ok">✓</span></div>
+      <div class="btn">Authorize cleaning</div>
+      <div class="text fine">Any unchecked item keeps cleaning locked. The cloud connection is not required for the safety checks.</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>C06 · Operator dashboard</b><span><span class="pulse"></span>Station 03</span></div>
+    <div class="body">
+      <div class="row"><span>Machine status</span><span class="ok">Ready</span></div>
+      <div class="row"><span>Patient eligibility</span><span class="ok">Authorized</span></div>
+      <div class="row"><span>Arm positions</span><span>A ✓ · B ✓ · C idle</span></div>
+      <div class="row"><span>Force (instrument)</span><span class="ok">0.35 N</span></div>
+      <div class="row"><span>Camera visibility</span><span class="ok">100%</span></div>
+      <div class="row"><span>Suction / water</span><span class="ok">OK / OK</span></div>
+      <div class="row"><span>Head movement</span><span class="ok">None</span></div>
+      <div class="eStop">E-STOP<br>ARMED</div>
+      <div class="text fine">Procedure history and maintenance alerts are logged for every action and interruption.</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>C07 · Safety event log</b><span>Station 03</span></div>
+    <div class="body">
+      <div class="row"><span>10:31 Cleaning started</span><span class="muted">auth A-204</span></div>
+      <div class="row"><span>10:33 Head moved 3 mm — paused</span><span class="warn">Resumed after check</span></div>
+      <div class="row"><span>10:36 Camera lost — stopped</span><span class="bad">Retracted</span></div>
+      <div class="row"><span>10:41 Cycle ended</span><span class="ok">Logged</span></div>
+      <div class="text fine">Logs are append-only and sent to the DentistNow record when the connection is available.</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>C08 · Instrument &amp; sterilization</b><span>Station 03</span></div>
+    <div class="body">
+      <div class="row"><span>Scaler (T-02)</span><span class="ok">Sterile · 41/500 uses</span></div>
+      <div class="row"><span>Polisher cup (T-05)</span><span class="warn">Expires in 3 days</span></div>
+      <div class="row"><span>Used-instrument return</span><span>Closed · 2 items</span></div>
+      <div class="row"><span>Last sterilizer cycle</span><span class="ok">Passed 09:58</span></div>
+      <div class="text fine">A tool without a valid status cannot be selected or mounted.</div>
+    </div></div>
+
+  <div class="screen"><div class="bar"><b>C09 · Maintenance</b><span>Service mode</span></div>
+    <div class="body">
+      <div class="row"><span>Water filter</span><span class="warn">Replace in 2 days</span></div>
+      <div class="row"><span>Suction filter</span><span class="ok">5 days</span></div>
+      <div class="row"><span>Lubrication</span><span class="ok">10 days</span></div>
+      <div class="row"><span>Self-test (e-stop, watchdog)</span><span class="ok">Passed</span></div>
+      <div class="btn">Run diagnostics</div>
+      <div class="btn ghost">Create service ticket</div>
+    </div></div>
+
+</div>
+
+<p class="fine" style="margin-top:24px;max-width:900px">Accessibility targets for the production UI: minimum 16 px body text on the patient screens, 44 px touch targets, WCAG 2.2 AA contrast, and a non-visual stop path (voice or physical button). These targets are to be verified in usability testing, not assumed.</p>
+
+</body>
+</html>

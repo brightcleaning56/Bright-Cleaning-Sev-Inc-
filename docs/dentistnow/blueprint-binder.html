@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DentistNow AutoClean Pro 2.0 — Engineering Planning Binder</title>
+<style>
+  @page { size: 17in 11in; margin: 0.5in; }
+  :root { --ink:#0d2238; --muted:#4a6279; --line:#9fb3c6; --accent:#0a6fd6; --warn:#a15c00; --bg:#f4f8fb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Segoe UI", Arial, Helvetica, sans-serif; color:var(--ink); background:#fff; font-size:13px; line-height:1.45; }
+  header.cover { padding:40px 48px; border-bottom:4px solid var(--accent); }
+  h1 { margin:0 0 6px; font-size:30px; }
+  h2 { font-size:20px; margin:0 0 10px; }
+  h3 { font-size:15px; margin:14px 0 6px; }
+  .sub { color:var(--muted); font-size:15px; }
+  .banner { border:2px solid var(--warn); background:#fff8ec; padding:12px 16px; margin:18px 0; border-radius:6px; font-size:13px; }
+  .banner strong { color:var(--warn); }
+  section { padding:28px 48px; page-break-before: always; }
+  table { width:100%; border-collapse:collapse; margin:8px 0 14px; }
+  th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:var(--bg); font-weight:600; }
+  .stage { display:grid; grid-template-columns: 220px 1fr; gap:16px; border-top:1px solid var(--line); padding:12px 0; }
+  .stage-name { font-weight:700; color:var(--accent); }
+  .sheets { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+  .sheet { border:1px solid var(--line); border-radius:6px; padding:10px; background:#fff; break-inside: avoid; }
+  .sheet .no { font-size:11px; color:var(--muted); letter-spacing:.06em; }
+  .sheet .t { font-weight:700; margin:2px 0 6px; }
+  .sheet ul { margin:0; padding-left:16px; }
+  .sheet .acc { margin-top:6px; font-size:11.5px; color:var(--muted); border-top:1px dashed var(--line); padding-top:6px; }
+  .flow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:10px 0; }
+  .flow span { border:1px solid var(--accent); border-radius:4px; padding:6px 9px; background:var(--bg); font-size:12px; }
+  .flow em { color:var(--accent); font-style:normal; font-weight:700; }
+  .note { color:var(--muted); font-size:12px; }
+  @media print { header.cover { padding:20px 0; } section { padding:14px 0; } }
+  @media (max-width: 900px) { .sheets { grid-template-columns: 1fr 1fr; } .stage { grid-template-columns: 1fr; } section, header.cover { padding:20px 16px; } }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="sub">DentistNow Robotics · Product division</div>
+  <h1>DentistNow AutoClean Pro 2.0 — Engineering Planning Binder</h1>
+  <div class="sub">40 planning sheets across 10 development stages · Tabloid (11×17 in) printable · Revision 0.1 (concept stage)</div>
+
+  <div class="banner">
+    <strong>Status: concept planning document, not manufacturing drawings.</strong>
+    No sheet in this binder is a dimensioned CAD drawing or an approved specification. Dimensions shown elsewhere are
+    illustrative and must be replaced by engineered values. Nothing here is FDA-cleared, and nothing here authorizes
+    clinical use. The machine is designed for examination support and validated, professionally supervised cleaning
+    only; it does not perform diagnosis, extraction, drilling, restorative work or subgingival treatment.
+  </div>
+</header>
+
+<section>
+  <h2>How to use this binder</h2>
+  <p>Each sheet defines <em>what must be drawn or specified</em>, <em>which subsystem it belongs to</em>, and
+  <em>the acceptance criterion</em> that the engineering team must meet before the sheet is marked complete.
+  Sheets are printed in order. Sheet numbers are stable identifiers used in the requirements, test plans and
+  change records.</p>
+
+  <h3>Three operating modes the machine must support</h3>
+  <div class="flow">
+    <span><em>Mode 1</em> First-visit examination</span>
+    <span><em>Mode 2</em> Authorized cleaning</span>
+    <span><em>Mode 3</em> Follow-up &amp; monitoring</span>
+  </div>
+
+  <h3>Architecture: three independent control layers</h3>
+  <table>
+    <tr><th style="width:24%">Layer</th><th>Responsibility</th><th style="width:34%">May it move the instruments?</th></tr>
+    <tr><td><strong>AI intelligence</strong></td><td>Interprets scans and images, proposes findings and permitted workflow steps, flags uncertainty.</td><td>No. It proposes; it never commands actuators directly.</td></tr>
+    <tr><td><strong>Real-time motion controller</strong></td><td>Executes approved motion inside validated physical limits (position, speed, force, workspace).</td><td>Yes, only inside limits set by the safety layer.</td></tr>
+    <tr><td><strong>Independent safety controller</strong></td><td>Hardware e-stop, watchdog, force/motion/visibility interlocks, safe retraction. Works without cloud or AI.</td><td>It can stop motion and retract at any time. It is never overridden by software.</td></tr>
+  </table>
+
+  <h3>Patient-visit workflow (Mode 1 → Mode 2)</h3>
+  <div class="flow">
+    <span>1 Arrive &amp; identify</span><span>→</span><span>2 Medical screen</span><span>→</span><span>3 Symptoms</span><span>→</span>
+    <span>4 Oral photos</span><span>→</span><span>5 3D scan</span><span>→</span><span>6 Periodontal measures</span><span>→</span>
+    <span>7 Radiographs (only if clinician-directed)</span><span>→</span><span>8 AI analysis</span><span>→</span>
+    <span>9 Professional review</span><span>→</span><span>10 Eligibility gate</span><span>→</span><span>11 Consent</span><span>→</span>
+    <span>12 Authorization gate</span><span>→</span><span>13 Approved cleaning</span><span>→</span><span>14 Report &amp; follow-up</span>
+  </div>
+  <p class="note">Any unresolved pain, swelling, bleeding pattern, suspected infection, significant periodontal finding or
+  uncertain image at steps 2–10 stops the workflow and routes the patient to a licensed professional. The machine does not
+  continue past an uncertain step.</p>
+</section>
+
+<section>
+  <h2>Sheet index — 40 sheets in 10 stages</h2>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 1 — Overall machine design</div><div class="note">Sheets 01–04</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 01</div><div class="t">System overview &amp; concept</div><ul><li>Exterior envelope, patient entry, screens, access panels</li><li>Clearance to the room and wheelchair access path</li></ul><div class="acc">Accept: every external part is assigned a subsystem ID.</div></div>
+      <div class="sheet"><div class="no">SHEET 02</div><div class="t">Dimensions &amp; layout</div><ul><li>Front, side, rear, top orthographic views</li><li>Overall footprint, service clearances, mass estimate</li></ul><div class="acc">Accept: all dimensions dimensioned to a tolerance class.</div></div>
+      <div class="sheet"><div class="no">SHEET 03</div><div class="t">Internal architecture (cutaway)</div><ul><li>Location of every assembly A–L from the architecture list</li><li>Separation of clean and contaminated zones</li></ul><div class="acc">Accept: no assembly without a located position.</div></div>
+      <div class="sheet"><div class="no">SHEET 04</div><div class="t">Visit workflow overview</div><ul><li>14-step first-visit flow with gates and stop points</li><li>Mode 1, 2, 3 transitions</li></ul><div class="acc">Accept: every step maps to a screen, sensor and log record.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 2 — Patient chair &amp; positioning</div><div class="note">Sheets 05–08</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 05</div><div class="t">Chair assembly (exploded)</div><ul><li>Base, column, seat, backrest, headrest, armrests</li><li>Fastener and bearing list</li></ul><div class="acc">Accept: static load case documented for the rated patient mass.</div></div>
+      <div class="sheet"><div class="no">SHEET 06</div><div class="t">Positioning mechanism &amp; actuators</div><ul><li>Recline, height, tilt and headrest actuator placement</li><li>Limit switches and encoders</li></ul><div class="acc">Accept: motion stops within a defined stroke at every limit.</div></div>
+      <div class="sheet"><div class="no">SHEET 07</div><div class="t">Position range &amp; safety envelope</div><ul><li>Upright, exam and cleaning reference positions</li><li>Pinch and crush point identification</li></ul><div class="acc">Accept: every pinch point guarded or force-limited.</div></div>
+      <div class="sheet"><div class="no">SHEET 08</div><div class="t">Patient access &amp; emergency release</div><ul><li>Manual release that works with power off</li><li>Patient stop control reach and placement</li></ul><div class="acc">Accept: patient can stop motion within one reach without vision.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 3 — Robotic assembly</div><div class="note">Sheets 09–13</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 09</div><div class="t">Robot arm system overview</div><ul><li>Number of arms (concept: 2–4), mounting points</li><li>Arm-to-arm collision envelope</li></ul><div class="acc">Accept: arm count and mounts justified by reach study.</div></div>
+      <div class="sheet"><div class="no">SHEET 10</div><div class="t">Joint &amp; drive system (exploded)</div><ul><li>Joint modules, motors, gearing, encoders</li><li>Torque limiter placement</li></ul><div class="acc">Accept: every joint has encoder feedback and a torque limit.</div></div>
+      <div class="sheet"><div class="no">SHEET 11</div><div class="t">Workspace &amp; motion envelope</div><ul><li>Reachable oral workspace volume</li><li>Keep-out zones around eyes, airway, tongue, throat</li></ul><div class="acc">Accept: keep-out zones enforced in software and hardware.</div></div>
+      <div class="sheet"><div class="no">SHEET 12</div><div class="t">End-effector &amp; instrument mounts</div><ul><li>Force sensor at mount, instrument presence sensor</li><li>Mount geometry for approved tools only</li></ul><div class="acc">Accept: unrecognized tool cannot be mounted or powered.</div></div>
+      <div class="sheet"><div class="no">SHEET 13</div><div class="t">Tool cartridge &amp; quick-swap</div><ul><li>Lock, unlock and identification interface</li><li>Lifecycle counter per tool</li></ul><div class="acc">Accept: expired or unidentified tool is blocked from use.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 4 — Examination &amp; imaging</div><div class="note">Sheets 14–17</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 14</div><div class="t">Imaging array layout</div><ul><li>Positions of cameras, scanner, structured-light sensors</li><li>Optical coverage cones for each view</li></ul><div class="acc">Accept: every tooth surface covered by at least one view.</div></div>
+      <div class="sheet"><div class="no">SHEET 15</div><div class="t">Intraoral 3D scanner</div><ul><li>Scanner head on a positioning arm</li><li>Calibration target and procedure</li></ul><div class="acc">Accept: calibration accuracy verified on a reference model.</div></div>
+      <div class="sheet"><div class="no">SHEET 16</div><div class="t">Intraoral &amp; extraoral cameras</div><ul><li>Photo sets: front, upper, lower, left, right, tongue, cheeks</li><li>Image-quality scoring rules</li></ul><div class="acc">Accept: every image stamped with patient ID, time and quality score.</div></div>
+      <div class="sheet"><div class="no">SHEET 17</div><div class="t">Periodontal measurement &amp; radiography (conditional)</div><ul><li>Probe interface, if clinically validated</li><li>Digital sensor on positioner, only when a clinician orders it</li></ul><div class="acc">Accept: radiography cannot run without a clinician order record.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 5 — Automated cleaning</div><div class="note">Sheets 18–21</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 18</div><div class="t">Cleaning tool kit</div><ul><li>Approved tools only: validated ultrasonic scaler, polisher, prophylaxis cup, air/water syringe, suction tip</li></ul><div class="acc">Accept: each tool tied to its clinical validation record.</div></div>
+      <div class="sheet"><div class="no">SHEET 19</div><div class="t">Tool exchange carousel</div><ul><li>Carousel with clean and used compartments</li><li>Index sensor and lock</li></ul><div class="acc">Accept: used tools never return to the clean compartment.</div></div>
+      <div class="sheet"><div class="no">SHEET 20</div><div class="t">Cleaning head &amp; irrigation</div><ul><li>Water nozzle, suction port, light and visibility path</li><li>Flow sensor and temperature sensor</li></ul><div class="acc">Accept: water stops automatically on flow or suction fault.</div></div>
+      <div class="sheet"><div class="no">SHEET 21</div><div class="t">Polishing &amp; rinse subsystem</div><ul><li>Polishing paste dosing (single-use cartridge)</li><li>Rinse cycle timing</li></ul><div class="acc">Accept: dosing volume validated per cleaning protocol.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 6 — Fluid &amp; sanitation</div><div class="note">Sheets 22–25</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 22</div><div class="t">Fluid system diagram</div><ul><li>Clean water supply, reservoir, pump, suction pump, waste tank</li><li>Level and leak sensors</li></ul><div class="acc">Accept: waste and clean lines never cross without a valve.</div></div>
+      <div class="sheet"><div class="no">SHEET 23</div><div class="t">Filtration &amp; waste</div><ul><li>Debris filter, waste canister (sealed), biomedical waste compartment</li></ul><div class="acc">Accept: waste handling follows the facility biomedical-waste procedure.</div></div>
+      <div class="sheet"><div class="no">SHEET 24</div><div class="t">Instrument reprocessing interface</div><ul><li>Hand-off to validated sterilizer (heat-based for handpieces and attachments)</li><li>Cycle record linkage</li></ul><div class="acc">Accept: no instrument reused without a passed cycle record.</div></div>
+      <div class="sheet"><div class="no">SHEET 25</div><div class="t">Clean / contaminated pathways</div><ul><li>Dual-path flow: sterile storage vs. closed used-instrument return</li><li>Physical interlock preventing path mix-up</li></ul><div class="acc">Accept: a single failure cannot send a used tool to the clean side.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 7 — Electrical &amp; safety</div><div class="note">Sheets 26–29</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 26</div><div class="t">Electrical schematic</div><ul><li>AC input, medical isolation, DC rails, motor drives</li></ul><div class="acc">Accept: IEC 60601 leakage and isolation targets identified.</div></div>
+      <div class="sheet"><div class="no">SHEET 27</div><div class="t">Control cabinet layout</div><ul><li>Motion controller, safety controller, computer, UPS</li></ul><div class="acc">Accept: thermal analysis for worst-case duty.</div></div>
+      <div class="sheet"><div class="no">SHEET 28</div><div class="t">Sensor network</div><ul><li>Force, proximity, temperature, movement, fluid, visibility</li><li>Bus topology and sensor redundancy</li></ul><div class="acc">Accept: every safety-relevant sensor has a diagnostic check.</div></div>
+      <div class="sheet"><div class="no">SHEET 29</div><div class="t">Emergency stop &amp; safety circuit</div><ul><li>Hard-wired e-stop chain independent of software</li><li>Safe-retraction sequence on stop</li></ul><div class="acc">Accept: e-stop removes motion power without software involvement.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 8 — Software &amp; AI integration</div><div class="note">Sheets 30–33</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 30</div><div class="t">Software architecture</div><ul><li>Patient UI, operator UI, AI engine, motion controller, safety controller</li></ul><div class="acc">Accept: safety controller has no dependency on AI or cloud.</div></div>
+      <div class="sheet"><div class="no">SHEET 31</div><div class="t">AI analysis pipeline</div><ul><li>Segmentation → detection → quality check → rule validation → report</li><li>Confidence and evidence on every finding</li></ul><div class="acc">Accept: AI emits “not assessable” when quality is insufficient.</div></div>
+      <div class="sheet"><div class="no">SHEET 32</div><div class="t">Data security &amp; records</div><ul><li>Encryption at rest and in transit, access control, audit log</li><li>HIPAA alignment where applicable</li></ul><div class="acc">Accept: pen test and threat model complete before clinical use.</div></div>
+      <div class="sheet"><div class="no">SHEET 33</div><div class="t">Cloud integration</div><ul><li>Patient records, scheduling, billing, reports, remote review</li><li>Offline behaviour: local safe state</li></ul><div class="acc">Accept: internet loss tested; machine enters safe state.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 9 — Assembly &amp; manufacturing</div><div class="note">Sheets 34–37</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 34</div><div class="t">Exploded full assembly</div><ul><li>Assembly order and fastener schedule</li></ul><div class="acc">Accept: every part number appears in the BOM.</div></div>
+      <div class="sheet"><div class="no">SHEET 35</div><div class="t">Bill of materials</div><ul><li>Part number, supplier, qty, unit cost, lead time, regulatory status</li></ul><div class="acc">Accept: single-source risks flagged.</div></div>
+      <div class="sheet"><div class="no">SHEET 36</div><div class="t">Manufacturing process</div><ul><li>Machining, electronics, calibration, burn-in, packaging</li></ul><div class="acc">Accept: process controls defined for each critical dimension.</div></div>
+      <div class="sheet"><div class="no">SHEET 37</div><div class="t">Quality &amp; inspection</div><ul><li>Incoming inspection, in-process checks, final release tests</li></ul><div class="acc">Accept: each release test traces to a requirement.</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div><div class="stage-name">Stage 10 — Testing, validation &amp; launch</div><div class="note">Sheets 38–40</div></div>
+    <div class="sheets">
+      <div class="sheet"><div class="no">SHEET 38</div><div class="t">Verification test plan &amp; fixtures</div><ul><li>Positioning accuracy on dental models, force limits, e-stop timing</li><li>Cleaning efficacy on validated models</li></ul><div class="acc">Accept: every requirement has a test ID.</div></div>
+      <div class="sheet"><div class="no">SHEET 39</div><div class="t">Clinical validation &amp; regulatory path</div><ul><li>Study design, ethics approval, FDA pathway decision, Q-Submission</li></ul><div class="acc">Accept: intended use and classification confirmed before design freeze.</div></div>
+      <div class="sheet"><div class="no">SHEET 40</div><div class="t">Pilot production &amp; deployment</div><ul><li>Pilot units, installation, operator training, service procedures</li></ul><div class="acc">Accept: deployment only after the applicable authorization is in place.</div></div>
+      <div class="sheet"><div class="no">—</div><div class="t">Gates</div><ul><li>Decision gate at the end of every stage</li><li>No gate is skipped to save schedule</li></ul><div class="acc">Owner: Product Director with regulatory specialist sign-off.</div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Development roadmap (concept planning)</h2>
+  <table>
+    <tr><th>Phase</th><th>Months (illustrative)</th><th>Milestone</th></tr>
+    <tr><td>1 Product definition</td><td>1–2</td><td>Approved product requirements</td></tr>
+    <tr><td>2 Engineering architecture</td><td>2–4</td><td>Complete engineering blueprint (sheets 01–04, 09, 22, 26, 30)</td></tr>
+    <tr><td>3 AI &amp; software</td><td>3–7</td><td>Working software on simulated hardware</td></tr>
+    <tr><td>4 Robotic engineering</td><td>5–10</td><td>Robot demonstrator on dental models</td></tr>
+    <tr><td>5 Cleaning technology</td><td>8–12</td><td>Validated laboratory cleaning subsystem</td></tr>
+    <tr><td>6 Alpha prototype</td><td>11–16</td><td>Integrated engineering prototype</td></tr>
+    <tr><td>7 Beta prototype</td><td>15–21</td><td>Design ready for formal verification</td></tr>
+    <tr><td>8 Verification &amp; safety</td><td>19–25</td><td>Documented engineering verification</td></tr>
+    <tr><td>9 Clinical development</td><td>23–32</td><td>Clinical evidence package</td></tr>
+    <tr><td>10 Regulatory submission</td><td>28–36+</td><td>Required authorization or clearance</td></tr>
+    <tr><td>11 Manufacturing preparation</td><td>32–42</td><td>Controlled pilot production</td></tr>
+    <tr><td>12 Commercial launch</td><td>40–48+</td><td>Commercial operation, subject to authorization</td></tr>
+  </table>
+  <p class="note">Timelines are planning estimates. Regulatory review and clinical studies may extend them.</p>
+</section>
+
+</body>
+</html>
