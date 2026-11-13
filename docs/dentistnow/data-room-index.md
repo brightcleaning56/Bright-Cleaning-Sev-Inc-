@@ -24,6 +24,16 @@ Purpose: which materials can be shared, with whom, and at what gate. Nothing lea
 | Grant application outline | `docs/dentistnow/grant-application-outline.md` | G0 | Placeholders for unverified facts |
 | Landing page draft | `docs/dentistnow/index.html` | G4 once approved | Marked DRAFT; contact and privacy placeholders |
 
+## Private review links (owner-only until shared from the Share menu)
+
+| Item | Link |
+|---|---|
+| Investor deck draft | https://claude.ai/artifact/NVuwaMVYEWRZr5Cbv6eb3K |
+| Business and funding plan | https://claude.ai/artifact/HBDbv9J8TpzUa3CacvCZ6E |
+| UI prototype | https://claude.ai/artifact/7gRWjQGaCkWSETwxG7kKFy |
+
+These links are for internal review only. Do not share them outside G0 until the gate checks above are complete.
+
 ## Not to share
 
 - Anything containing patient data (none exists yet; keep it that way for the prototype stage).
