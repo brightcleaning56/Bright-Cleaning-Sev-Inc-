@@ -4,190 +4,182 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DentistNow Robotics — AutoClean Pro 2.0</title>
-<meta name="description" content="DentistNow Robotics is developing AutoClean Pro 2.0, an AI-assisted dental examination and robotic preventive-cleaning platform. Partner and funding information.">
+<meta name="description" content="DentistNow Robotics is developing AutoClean Pro 2.0, an AI-assisted dental examination and robotic preventive-cleaning platform. Concept stage. Seeking feasibility funding.">
 <style>
-  :root { --ink:#0d2238; --muted:#4a6279; --line:#c7d5e2; --accent:#0a6fd6; --accent-2:#063f7d; --bg:#f4f8fb; --card:#ffffff; --warn:#a15c00; --warnbg:#fff8ec; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink:#e6eef6; --muted:#9db2c6; --line:#2b4057; --accent:#5cb0ff; --accent-2:#2c7fd0; --bg:#0c1622; --card:#121f2e; --warn:#ffb257; --warnbg:#2a200f; } }
-  :root[data-theme="dark"] { --ink:#e6eef6; --muted:#9db2c6; --line:#2b4057; --accent:#5cb0ff; --accent-2:#2c7fd0; --bg:#0c1622; --card:#121f2e; --warn:#ffb257; --warnbg:#2a200f; }
+  :root { --bg:#0b0f16; --panel:#131a24; --card:#1a2331; --line:#263247; --text:#eef3f8; --muted:#9fb0c3; --accent:#2f9bff; --accent2:#18c3c9; --ok:#3ccf91; --warn:#f0b35a; }
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
-  body { margin:0; font-family:"Segoe UI",Arial,Helvetica,sans-serif; color:var(--ink); background:var(--bg); line-height:1.55; font-size:16px; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Segoe UI",Arial,Helvetica,sans-serif; font-size:16px; line-height:1.55; }
   a { color:var(--accent); }
-  .wrap { max-width:1040px; margin:0 auto; padding:0 16px; }
-  header.top { background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
-  header.top .wrap { display:flex; justify-content:space-between; align-items:center; min-height:58px; gap:12px; flex-wrap:wrap; padding-top:8px; padding-bottom:8px; }
-  .brand { font-weight:800; letter-spacing:.02em; }
-  nav a { color:var(--muted); text-decoration:none; margin-left:14px; font-size:14px; }
-  nav a:hover { color:var(--accent); }
-  .draft { background:var(--warnbg); color:var(--warn); border-bottom:1px solid var(--warn); font-size:13px; padding:8px 0; text-align:center; }
-  .hero { padding:56px 0 40px; }
-  .hero h1 { font-size:clamp(28px, 5vw, 44px); line-height:1.15; margin:0 0 14px; }
-  .hero p.lead { font-size:18px; color:var(--muted); max-width:720px; margin:0 0 22px; }
-  .btns { display:flex; gap:10px; flex-wrap:wrap; }
-  .btn { display:inline-block; padding:12px 18px; border-radius:8px; background:var(--accent); color:#fff; text-decoration:none; font-weight:600; border:1px solid var(--accent); }
-  .btn.ghost { background:transparent; color:var(--accent); }
-  section { padding:36px 0; }
-  section h2 { font-size:26px; margin:0 0 10px; }
-  section .intro { color:var(--muted); max-width:760px; margin:0 0 22px; }
-  .grid { display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
-  .card h3 { margin:0 0 6px; font-size:17px; }
+  .wrap { max-width:1140px; margin:0 auto; padding:0 20px; }
+  .draft { background:#2a2110; color:var(--warn); text-align:center; font-size:13px; padding:8px 12px; border-bottom:1px solid #4a3a1a; }
+  header.top { position:sticky; top:0; z-index:10; background:linear-gradient(180deg, #0b0f16 60%, rgba(11,15,22,0)); }
+  header.top .wrap { display:flex; align-items:center; justify-content:space-between; gap:16px; padding-top:16px; padding-bottom:12px; flex-wrap:wrap; }
+  .brand { font-weight:800; font-size:20px; letter-spacing:.02em; }
+  .brand span { color:var(--accent); }
+  nav a { color:var(--muted); text-decoration:none; margin-left:18px; font-size:14px; }
+  nav a:hover { color:var(--text); }
+  .hero { position:relative; min-height:520px; display:flex; align-items:flex-end; padding:80px 0 56px; background:linear-gradient(90deg, rgba(11,15,22,.97) 30%, rgba(11,15,22,.55) 70%, rgba(11,15,22,.85)), radial-gradient(1200px 500px at 85% 20%, #1c4f78 0%, rgba(28,79,120,0) 60%), #0f1622; }
+  .hero h1 { font-size:clamp(30px, 5vw, 52px); line-height:1.1; margin:0 0 14px; max-width:720px; }
+  .hero p.lead { font-size:clamp(16px, 2vw, 20px); color:var(--muted); max-width:640px; margin:0 0 24px; }
+  .badge { display:inline-block; background:rgba(47,155,255,.15); color:var(--accent); border:1px solid rgba(47,155,255,.4); border-radius:999px; font-size:12px; padding:4px 12px; margin-bottom:16px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+  .btns { display:flex; gap:12px; flex-wrap:wrap; }
+  .btn { display:inline-block; padding:13px 22px; border-radius:6px; text-decoration:none; font-weight:700; border:1px solid transparent; }
+  .btn.primary { background:var(--accent); color:#06121f; }
+  .btn.primary:hover { background:#5aaeff; }
+  .btn.ghost { background:rgba(255,255,255,.08); color:var(--text); border-color:rgba(255,255,255,.2); }
+  .btn.ghost:hover { background:rgba(255,255,255,.14); }
+  section.row { padding:36px 0 8px; }
+  section.row h2 { font-size:22px; margin:0 0 6px; }
+  section.row .sub { color:var(--muted); margin:0 0 18px; font-size:15px; max-width:760px; }
+  .rail { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(260px, 1fr); gap:14px; overflow-x:auto; padding-bottom:10px; scroll-snap-type:x mandatory; }
+  .rail > * { scroll-snap-align:start; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; min-height:170px; display:flex; flex-direction:column; }
+  .card .num { color:var(--accent2); font-weight:800; font-size:13px; letter-spacing:.06em; }
+  .card h3 { margin:8px 0 8px; font-size:18px; }
   .card p { margin:0; color:var(--muted); font-size:15px; }
-  .stages { display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); }
-  .stage { border-left:4px solid var(--accent); background:var(--card); padding:16px 18px; border-radius:8px; }
-  .stage .amt { font-weight:700; color:var(--accent); }
-  .stage p { margin:6px 0 0; color:var(--muted); font-size:15px; }
-  .stage.rec { border-left-color:#17794a; }
-  .note { font-size:13px; color:var(--muted); margin-top:10px; }
-  ul.check { list-style:none; padding:0; margin:0; }
-  ul.check li { padding:6px 0 6px 26px; position:relative; color:var(--muted); }
-  ul.check li::before { content:"✓"; position:absolute; left:0; color:#17794a; font-weight:700; }
-  .split { display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); }
-  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; }
-  .panel h3 { margin:0 0 8px; }
-  .limits { background:var(--warnbg); border:1px solid var(--warn); color:var(--ink); border-radius:12px; padding:18px; font-size:15px; }
-  .limits strong { color:var(--warn); }
-  .contact { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; }
-  .placeholder { color:var(--warn); font-weight:600; }
-  footer { border-top:1px solid var(--line); padding:24px 0 40px; color:var(--muted); font-size:13px; }
-  @media (max-width:600px){ nav a { margin-left:10px; font-size:13px; } }
+  .stage { border-top:3px solid var(--accent); }
+  .stage.first { border-top-color:var(--ok); }
+  .stage .amt { font-size:20px; font-weight:800; margin:4px 0 8px; }
+  .stage .tag { font-size:12px; color:var(--ok); font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+  .stage.later .tag { color:var(--muted); }
+  .status { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:14px; }
+  .status .card h3 { font-size:16px; }
+  .pill { display:inline-block; font-size:11px; padding:3px 9px; border-radius:999px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+  .pill.done { background:rgba(60,207,145,.15); color:var(--ok); }
+  .pill.todo { background:rgba(240,179,90,.15); color:var(--warn); }
+  .pill.later { background:rgba(159,176,195,.15); color:var(--muted); }
+  .take { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:14px; }
+  .notice { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:22px; color:var(--muted); font-size:14px; }
+  .notice strong { color:var(--text); }
+  .contact { background:linear-gradient(120deg, #13304a, #0f1f30); border:1px solid #234a6b; border-radius:12px; padding:28px; }
+  .contact h2 { margin:0 0 8px; font-size:24px; }
+  .contact p { color:var(--muted); margin:6px 0; }
+  .ph { color:var(--warn); font-weight:600; }
+  .faq details { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin-bottom:10px; }
+  .faq summary { cursor:pointer; font-weight:700; }
+  .faq details p { color:var(--muted); margin:10px 0 0; font-size:15px; }
+  footer { padding:34px 0 50px; color:var(--muted); font-size:13px; border-top:1px solid var(--line); margin-top:40px; }
+  @media (max-width:640px){ nav a { margin-left:12px; font-size:13px; } .hero { min-height:460px; padding:60px 0 40px; } }
 </style>
 </head>
 <body>
 
-<div class="draft">DRAFT — do not publish until securities counsel and the privacy notice are in place. Contact details and figures are placeholders.</div>
+<div class="draft">DRAFT — not for publication until securities counsel reviews it and the contact details and privacy notice are in place.</div>
 
 <header class="top"><div class="wrap">
-  <div class="brand">DentistNow Robotics</div>
+  <div class="brand">DentistNow <span>Robotics</span></div>
   <nav aria-label="Main">
-    <a href="#product">Product</a>
+    <a href="#what">What it is</a>
     <a href="#how">How it works</a>
-    <a href="#stages">Funding stages</a>
-    <a href="#partners">Partners</a>
+    <a href="#funding">Funding</a>
+    <a href="#status">Status</a>
+    <a href="#faq">FAQ</a>
     <a href="#contact">Contact</a>
   </nav>
 </div></header>
 
 <main>
-  <div class="wrap hero">
-    <p class="muted" style="color:var(--accent);font-weight:600;margin:0 0 8px">AI-ASSISTED DENTAL EXAMINATION AND ROBOTIC PREVENTIVE CLEANING</p>
-    <h1>AutoClean Pro 2.0: a dental examination station that finds problems first, then cleans only what is approved.</h1>
-    <p class="lead">DentistNow Robotics is developing a platform that completes intake, screening, oral imaging and assessment, routes findings to a licensed dental professional, and performs validated cleaning only after clearance. We are raising feasibility funding to prove the core technology before committing to a full prototype.</p>
+
+<section class="hero">
+  <div class="wrap">
+    <span class="badge">Concept stage · Seeking feasibility funding</span>
+    <h1>AutoClean Pro 2.0: examine first, clean only what is cleared.</h1>
+    <p class="lead">An AI-assisted dental examination station. It completes intake, screening and oral imaging, routes findings to a licensed dental professional, and performs validated cleaning only after clearance.</p>
     <div class="btns">
-      <a class="btn" href="#stages">See the funding plan</a>
+      <a class="btn primary" href="#funding">See the funding stages</a>
       <a class="btn ghost" href="#contact">Get in touch</a>
     </div>
   </div>
+</section>
 
-  <section id="product" style="background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
-    <div class="wrap">
-      <h2>What we are building</h2>
-      <p class="intro">A patient sits in a motorized chair, completes digital check-in, and is examined before any cleaning begins. The machine is designed to stop rather than continue when it is uncertain.</p>
-      <div class="grid">
-        <div class="card"><h3>Intelligent chair</h3><p>Motorized positioning, head stabilization, emergency release and patient stop control.</p></div>
-        <div class="card"><h3>3D oral scanning</h3><p>Digital model of teeth and visible gumline, with each tooth recorded individually.</p></div>
-        <div class="card"><h3>AI findings with evidence</h3><p>Every finding is labelled Observed, Suspected or Not assessable, with the evidence behind it.</p></div>
-        <div class="card"><h3>Robotic cleaning arms</h3><p>Force-monitored instrument positioning for approved polishing and plaque removal.</p></div>
-        <div class="card"><h3>Independent safety</h3><p>A hardware safety controller that works without the cloud or AI and retracts instruments on any fault.</p></div>
-        <div class="card"><h3>Infection control</h3><p>Separate clean and used-instrument pathways, with validated reprocessing and cycle records.</p></div>
-      </div>
+<section class="row" id="what">
+  <div class="wrap">
+    <h2>What it is</h2>
+    <p class="sub">A dental station that checks first and cleans second. It is designed to stop, not continue, when a step is uncertain.</p>
+    <div class="rail">
+      <div class="card"><div class="num">01</div><h3>Intelligent chair</h3><p>Motorized positioning, head support, emergency release and a patient stop control.</p></div>
+      <div class="card"><div class="num">02</div><h3>3D oral scan</h3><p>A digital model of the teeth and visible gumline, recorded tooth by tooth.</p></div>
+      <div class="card"><div class="num">03</div><h3>Findings with evidence</h3><p>Each finding is labelled Observed, Suspected or Not assessable, with the evidence behind it.</p></div>
+      <div class="card"><div class="num">04</div><h3>Robotic cleaning</h3><p>Force-monitored instruments for approved polishing and plaque removal, after authorization.</p></div>
+      <div class="card"><div class="num">05</div><h3>Independent safety</h3><p>A hardware safety controller that works without the cloud or AI, and retracts instruments on any fault.</p></div>
+      <div class="card"><div class="num">06</div><h3>Infection control</h3><p>Separate clean and used-instrument pathways, with validated reprocessing and cycle records.</p></div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section id="how">
-    <div class="wrap">
-      <h2>How a first visit works</h2>
-      <p class="intro">Examination comes before cleaning. A patient who has unresolved pain, swelling or an uncertain finding is referred to a professional and is not cleaned by the machine.</p>
-      <div class="split">
-        <div class="panel">
-          <h3>1 · Check in and screen</h3>
-          <ul class="check">
-            <li>Identity verification and consent to import records</li>
-            <li>Medical history, medications and allergies</li>
-            <li>Symptom questions recorded per tooth or region</li>
-          </ul>
-        </div>
-        <div class="panel">
-          <h3>2 · Examine and assess</h3>
-          <ul class="check">
-            <li>Oral photographs and a 3D scan</li>
-            <li>AI-assisted findings for professional review</li>
-            <li>Periodontal measurements by validated instruments</li>
-          </ul>
-        </div>
-        <div class="panel">
-          <h3>3 · Authorize and clean</h3>
-          <ul class="check">
-            <li>Eligibility gate and professional authorization</li>
-            <li>Patient consent and the ability to stop at any time</li>
-            <li>Approved cleaning, with a full report and follow-up</li>
-          </ul>
-        </div>
-      </div>
+<section class="row" id="how">
+  <div class="wrap">
+    <h2>How a first visit works</h2>
+    <p class="sub">Examination comes before any cleaning. A patient with pain, swelling or an uncertain finding is referred to a professional and is not cleaned by the machine.</p>
+    <div class="rail">
+      <div class="card"><div class="num">STEP 1</div><h3>Check in and screen</h3><p>Identity, medical history, medications and symptoms, recorded per tooth or region.</p></div>
+      <div class="card"><div class="num">STEP 2</div><h3>Examine and assess</h3><p>Oral photos, a 3D scan, AI-assisted findings and periodontal measurements by validated instruments.</p></div>
+      <div class="card"><div class="num">STEP 3</div><h3>Clinician review</h3><p>A licensed professional confirms or rejects each finding. The AI does not make the decision.</p></div>
+      <div class="card"><div class="num">STEP 4</div><h3>Eligibility gate</h3><p>Any stop rule ends the cleaning path and refers the patient. The system never declares anyone cleared.</p></div>
+      <div class="card"><div class="num">STEP 5</div><h3>Consent and authorization</h3><p>The patient agrees to the plan and can stop at any time. A professional must authorize the procedure.</p></div>
+      <div class="card"><div class="num">STEP 6</div><h3>Cleaning and report</h3><p>Approved cleaning under supervision, a full report, and a follow-up plan.</p></div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section id="stages" style="background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
-    <div class="wrap">
-      <h2>Staged funding plan</h2>
-      <p class="intro">We will not spend millions before the core technology is proven. Each stage ends with a review gate.</p>
-      <div class="stages">
-        <div class="stage rec">
-          <div class="amt">Stage A · $150K–$300K</div>
-          <strong>Technology feasibility</strong>
-          <p>Laboratory demonstrator on dental models: positioning accuracy, scanning, emergency stop and the first software interface. This is not a patient-ready device.</p>
-        </div>
-        <div class="stage">
-          <div class="amt">Stage B · $750K–$1.8M</div>
-          <strong>Functional prototype</strong>
-          <p>Integrated chair, robotic assembly, scanning, controlled cleaning mechanism and safety controller, tested in the lab.</p>
-        </div>
-        <div class="stage">
-          <div class="amt">Stage C · $3.5M–$9.5M</div>
-          <strong>Commercial development</strong>
-          <p>Product engineering, clinical validation, quality systems, regulatory submission and manufacturing preparation.</p>
-        </div>
-      </div>
-      <p class="note">Ranges are planning estimates, not quotations. Full details are in the business and funding plan.</p>
+<section class="row" id="funding">
+  <div class="wrap">
+    <h2>Funding, in stages</h2>
+    <p class="sub">We prove the core technology first, then decide on the next stage. Each stage ends with a review. Figures are planning estimates, not quotations.</p>
+    <div class="rail">
+      <div class="card stage first"><div class="tag">Next</div><div class="amt">$150K – $300K</div><h3>Stage A · Feasibility</h3><p>A laboratory demonstrator on dental models: positioning accuracy, scanning, emergency stop and the first software interface. Not a patient-ready device.</p></div>
+      <div class="card stage later"><div class="tag">After Stage A review</div><div class="amt">$0.75M – $1.8M</div><h3>Stage B · Functional prototype</h3><p>An integrated chair, robotic assembly, scanning, cleaning mechanism and safety controller, tested in the lab.</p></div>
+      <div class="card stage later"><div class="tag">After Stage B review</div><div class="amt">$3.5M – $9.5M</div><h3>Stage C · Commercial development</h3><p>Clinical validation, quality systems, regulatory submission and manufacturing preparation.</p></div>
     </div>
-  </section>
+    <p class="sub" style="margin-top:16px">Non-dilutive public programs may also support the work. Program terms are confirmed directly with each program before use.</p>
+  </div>
+</section>
 
-  <section id="partners">
-    <div class="wrap">
-      <h2>Ways to take part</h2>
-      <p class="intro">We are speaking with people who can help us build and validate this safely. The right route depends on who you are.</p>
-      <div class="grid">
-        <div class="card"><h3>Investors</h3><p>Angel and medtech investors. Any investment is subject to documents prepared with securities counsel.</p></div>
-        <div class="card"><h3>Dental professionals</h3><p>Clinical advisors who can shape eligibility rules, workflow and validation.</p></div>
-        <div class="card"><h3>Research partners</h3><p>Dental schools and robotics labs for laboratory access, testing and co-funded studies.</p></div>
-        <div class="card"><h3>Strategic partners</h3><p>Dental equipment manufacturers and service organizations for development, distribution or manufacturing.</p></div>
-      </div>
+<section class="row" id="status">
+  <div class="wrap">
+    <h2>Where we are today</h2>
+    <p class="sub">Honest status, updated as the project moves.</p>
+    <div class="status">
+      <div class="card"><span class="pill done">Done</span><h3>Engineering planning</h3><p>A 40-sheet planning binder with acceptance criteria for each sheet. Concept planning, not CAD.</p></div>
+      <div class="card"><span class="pill done">Done</span><h3>Interface prototype</h3><p>A clickable prototype of the patient and clinical screens. Simulated data only; no hardware connected.</p></div>
+      <div class="card"><span class="pill done">Done</span><h3>Business and funding plan</h3><p>Stages, budgets, funding sources, risks and a 90-day plan.</p></div>
+      <div class="card"><span class="pill todo">Not started</span><h3>Legal and entity setup</h3><p>Company registration, counsel review of the materials and the investment structure are the next steps.</p></div>
+      <div class="card"><span class="pill todo">Next</span><h3>Feasibility demonstrator</h3><p>The Stage A laboratory demonstration on dental models.</p></div>
+      <div class="card"><span class="pill later">Later</span><h3>Clinical validation and regulatory</h3><p>Only after the prototype is proven. Not started. No regulatory clearance has been obtained.</p></div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section style="padding-top:0">
-    <div class="wrap">
-      <div class="limits">
-        <strong>Important notice.</strong> AutoClean Pro 2.0 is in concept and development. It has not been cleared or approved by the U.S. Food and Drug Administration or any other regulator, and it is not available for clinical use. The machine is designed for examination support and validated, professionally supervised cleaning only. Nothing on this page is an offer to sell or a solicitation to buy any security. Any future offering will be made only through documents that comply with applicable securities law. Funding amounts shown are planning estimates. Public-program amounts and eligibility change and must be confirmed with the program.
-      </div>
+<section class="row" id="faq">
+  <div class="wrap">
+    <h2>Questions</h2>
+    <div class="faq" style="margin-top:14px">
+      <details><summary>Is this a dental machine that can be used on patients today?</summary><p>No. AutoClean Pro 2.0 is in concept and development. It has not been cleared or approved by the FDA or any other regulator, and it is not available for clinical use.</p></details>
+      <details><summary>Will it replace a dentist?</summary><p>No. The design keeps licensed professionals responsible for clinical decisions, authorization and any procedure beyond the validated scope. Version 1 does not drill, extract, do restorative work or treat below the gumline.</p></details>
+      <details><summary>What does the first stage deliver?</summary><p>A laboratory demonstrator on dental models that shows positioning accuracy, scanning, emergency stop and an operator interface. It is not a patient-treatment device.</p></details>
+      <details><summary>Can I invest?</summary><p>This page is not an offer to sell or a solicitation to buy any security. Any future investment will be offered only through documents prepared with securities counsel, and only to people who qualify. Contact us to express interest; we will reply with the materials that are appropriate for you.</p></details>
+      <details><summary>How is my information handled?</summary><p>We do not collect personal information through this page. If you email us, we keep your message and contact details to reply. See the privacy notice (to be published before this page goes live).</p></details>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section id="contact" style="padding-top:0">
-    <div class="wrap">
-      <div class="contact">
-        <h2 style="margin-top:0">Contact</h2>
-        <p class="intro">Send a short note about your interest. We will reply with the materials that are appropriate for your role. We do not collect personal information through this page.</p>
-        <p><strong>Email:</strong> <span class="placeholder">[project email address — to be set up]</span></p>
-        <p><strong>Mailing address:</strong> <span class="placeholder">[business address — to be set up]</span></p>
-        <p class="note">Privacy notice: <span class="placeholder">[link to privacy notice — to be written before publication]</span></p>
-      </div>
+<section class="row" id="contact" style="padding-bottom:40px">
+  <div class="wrap">
+    <div class="contact">
+      <h2>Get in touch</h2>
+      <p>Tell us briefly who you are and why you are interested: investor, dental professional, research partner, or strategic partner. We will reply with the right materials.</p>
+      <p><strong>Email:</strong> <span class="ph">[project email — to be set up]</span></p>
+      <p><strong>Mailing address:</strong> <span class="ph">[business address — to be set up]</span></p>
+      <p><strong>Privacy notice:</strong> <span class="ph">[link — to be published before launch]</span></p>
     </div>
-  </section>
+  </div>
+</section>
+
 </main>
 
 <footer><div class="wrap">
-  © DentistNow Robotics. Concept-stage materials. Not for distribution beyond the intended recipient.
+  © DentistNow Robotics. Concept-stage materials. Not an offer of securities. Figures are planning estimates. Program terms are confirmed with each program before use.
 </div></footer>
 
 </body>
