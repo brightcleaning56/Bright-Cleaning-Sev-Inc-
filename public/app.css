@@ -428,3 +428,10 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 .bdir-filters input{max-width:200px}
 .bdir-filters select{max-width:240px}
 .bdir-filters input[id=bst]{max-width:120px}
+
+/* Verification documents and activity. */
+.vdocs{margin-top:10px}
+.vdocform{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:end;margin-top:8px}
+.vdocform .row{grid-column:1 / -1}
+.linkish{all:unset;cursor:pointer;color:var(--accent);font-weight:600;text-decoration:underline}
+@media (max-width:640px){.vdocform{grid-template-columns:minmax(0,1fr)}}

@@ -33,7 +33,7 @@ import * as adminPhase5 from './admin/phase5.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
 import { changeDeadline } from './deadline.js';
-import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, publisherSummary, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
+import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, publisherSummary, publisherActivity, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
 import { CATALOG, PRICE_STATUS, entitlementsFor, seatCheck, usage } from './entitlements.js';
 import { syncDocument, indexDocument, syncPlanRoom, listSets, searchDocuments, compareRevisions } from './planroom.js';
 import { saveDocument, listDocuments, viewLink, openFromLink, acknowledgeAddenda, planholders } from './documents.js';
@@ -43,6 +43,7 @@ import { addCredential, verifyCredential, expiringSoon } from './credentials.js'
 import { handleInbound, analytics, importDirectory, directoryGaps, requeueNeedsContact } from './engagement.js';
 import { sendEmail } from './outbound.js';
 import { sendAwardNotices, notifyOrg } from './notices.js';
+import { saveVerificationDoc, verificationDocPath } from './verifydocs.js';
 import { drainOutbox, outboxCounts } from './outbox.js';
 import { proposeAmendment, acceptAmendment, declineAmendment, withdrawAmendment, amendmentView } from './amendments.js';
 import { askQuestion, answerQuestion, questionsFor, notifyRfiAnswer } from './rfi.js';
@@ -728,6 +729,7 @@ export function createServer(store, deps = {}) {
   route('GET', '/api/admin/publishers', 'platform', () => store.list('orgs', o => o.kind === 'buyer').map(o => ({ id: o.id, name: o.name, kind: o.buyerKind, status: o.publisher?.status || 'unverified', evidence: o.publisher?.evidence || null, requestedAt: o.publisher?.requestedAt || null, note: o.publisher?.note || null, publications: store.list('publications', p => p.publisherOrgId === o.id).length }))
     .sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || String(b.requestedAt).localeCompare(String(a.requestedAt))));
   route('POST', '/api/admin/publishers/:id/decide', 'platform', ({ params, body, user }) => R(decideVerification(store, user, params.id, body), 'publisher'));
+  route('GET', '/api/publisher/activity', 'user', ({ user, query }) => publisherActivity(store, pubOrg(user), { limit: query.get('limit') }));
   route('GET', '/api/publisher/summary', 'user', ({ user }) => publisherSummary(store, pubOrg(user)));
   // Resend the confirmation email to an account that has not confirmed yet. Limited to 5 an hour per user.
   route('POST', '/api/account/resend-verification', 'user', async ({ user }) => {
@@ -953,6 +955,28 @@ export function createServer(store, deps = {}) {
         return send(res, 200, fs.readFileSync(f, 'utf8'), 'text/plain; charset=utf-8');
       }
       if (url.pathname.startsWith('/u/')) return unsubscribe(req, res, url, store);
+      // Verification documents (raw PDF body). Only the company that uploaded them can download them.
+      if (req.method === 'POST' && url.pathname === '/api/publisher/documents') {
+        const user = sessionUser(store, (req.headers.authorization || '').replace(/^Bearer /, ''));
+        if (!user) return send(res, 401, { error: 'sign in required' });
+        const org = store.get('orgs', user.orgId);
+        const chunks = []; let size = 0, tooBig = false;
+        await new Promise((resolve, reject) => { req.on('data', c => { size += c.length; if (size > config.maxDocBytes) tooBig = true; else chunks.push(c); }); req.on('end', resolve); req.on('error', reject); });
+        if (tooBig) return send(res, 413, { error: `file is larger than ${Math.round(config.maxDocBytes / 1048576)} MB` });
+        const r = saveVerificationDoc(store, org, user, { name: url.searchParams.get('name'), kind: url.searchParams.get('kind'), buffer: Buffer.concat(chunks) });
+        return send(res, r.ok ? 200 : (r.code || 400), r.ok ? { document: r.document } : { error: r.error });
+      }
+      const vdl = req.method === 'GET' && url.pathname.match(/^\/api\/publisher\/documents\/([^/]+)$/);
+      if (vdl) {
+        const user = sessionUser(store, (req.headers.authorization || '').replace(/^Bearer /, ''));
+        if (!user) return send(res, 401, { error: 'sign in required' });
+        const org = store.get('orgs', user.orgId);
+        const found = org && verificationDocPath(org, vdl[1]);
+        if (!found || !fs.existsSync(found.file)) return send(res, 404, { error: 'not found' });
+        const buf = fs.readFileSync(found.file);
+        res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${found.doc.name.replace(/"/g, '')}"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Content-Length': buf.length });
+        return res.end(buf);
+      }
       const up = req.method === 'POST' && url.pathname.match(/^\/api\/requests\/([^/]+)\/documents$/);
       if (up) {
         const user = sessionUser(store, (req.headers.authorization || '').replace(/^Bearer /, ''));

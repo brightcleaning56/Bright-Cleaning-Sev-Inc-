@@ -60,6 +60,8 @@ export function createPublication(store, org, user, b) {
   if (!RELATIONSHIPS[relationship]) e.push('choose your relationship to the project');
   if (NEEDS_EVIDENCE.has(relationship) && !String(b.authorizationEvidence || '').trim()) e.push('publishing on the owner\'s behalf: describe or link the authorization (e.g. owner letter, contract reference)');
   if (b.projectId && !resolveProjectId(store, b.projectId)) e.push('linked project not found');
+  if (b.scheduleStart && b.scheduleCompletion && String(b.scheduleCompletion) < String(b.scheduleStart)) e.push('completion date is before the start date');
+  if ((b.scheduleStart && !/^\d{4}-\d{2}-\d{2}$/.test(b.scheduleStart)) || (b.scheduleCompletion && !/^\d{4}-\d{2}-\d{2}$/.test(b.scheduleCompletion))) e.push('schedule dates must be dates');
   if (e.length) return { ok: false, code: 400, error: e.join('; ') };
   const p = store.put('publications', { publisherOrgId: org.id, publisherName: org.name, title: String(b.title).slice(0, 200), address: b.address, city: b.city, state: String(b.state).toUpperCase(),
     projectType: b.projectType, description: String(b.description || '').slice(0, 4000), estValue: Number(b.estValue) || null, buildingSf: Number(b.buildingSf) || null,
@@ -277,4 +279,17 @@ export function publisherSummary(store, org, { at = Date.now() } = {}) {
     awardsPending: open.filter(r => subs.some(s => s.requestId === r.id)).length,
     upcomingDeadlines: upcoming,
   };
+}
+
+const ACTIVITY_LABELS = { 'publisher.request': 'Requested publisher verification', 'publisher.verified': 'Publisher verification approved', 'publisher.rejected': 'Publisher verification not approved',
+  'publication.schedule': 'Scheduled a project for publication', 'publication.unschedule': 'Cancelled a scheduled publication', 'publication.publish': 'Published a project',
+  'publication.closed': 'Closed bidding', 'publication.archived': 'Archived a project', 'publication.draft': 'Created a project', 'request.award': 'Awarded a bid',
+  'request.deadline': 'Changed a bid due date', 'request.close': 'Closed a package', 'document.upload': 'Uploaded a document', 'contract.countersign': 'Countersigned a contract',
+  'contract.amend.propose': 'Proposed a contract change', 'contract.amend.accept': 'Accepted a contract change', 'contract.amend.decline': 'Declined a contract change',
+  'contract.amend.withdraw': 'Withdrew a contract change', 'auth.login': 'Signed in' };
+
+/** Publisher activity: what people in this company did, most recent first. Read-only. */
+export function publisherActivity(store, org, { limit = 100 } = {}) {
+  return store.data.audit.filter(e => e.orgId === org.id).slice(-Math.min(Math.max(1, Number(limit) || 100), 500)).reverse()
+    .map(e => ({ at: e.at, actor: e.actor, action: e.action, label: ACTIVITY_LABELS[e.action] || e.action.replace(/[._]/g, ' '), target: e.target || null }));
 }

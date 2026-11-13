@@ -42,3 +42,15 @@ test('approval is recorded in the history with who approved it and how it was ch
   assert.deepEqual(p.history.map(h => h.event), ['requested', 'verified']);
   assert.equal(p.history[1].note, 'license verified on state register');
 });
+
+test('a project keeps its owner, developer, architect, general contractor and schedule; the dates must make sense', async () => {
+  const { createPublication } = await import('../src/publishing.js');
+  const { store, org, user } = setup();
+  const base = { title: 'Clinic', address: '1 Main St', city: 'Ankeny', state: 'IA', projectType: 'medical', owner: 'Harbor Health', developer: 'ABC Development', architect: 'Stone Arch', gc: 'Ryan Companies', scheduleStart: '2027-03-01', scheduleCompletion: '2027-11-30' };
+  const ok = createPublication(store, org, user, base);
+  assert.equal(ok.ok, true, ok.error);
+  assert.deepEqual(ok.publication.team, { owner: 'Harbor Health', developer: 'ABC Development', architect: 'Stone Arch', gc: 'Ryan Companies' });
+  assert.deepEqual(ok.publication.schedule, { start: '2027-03-01', completion: '2027-11-30' });
+  assert.equal(createPublication(store, org, user, { ...base, scheduleCompletion: '2026-01-01' }).ok, false, 'completion before start is refused');
+  assert.equal(createPublication(store, org, user, { ...base, scheduleStart: 'next spring' }).ok, false, 'dates must be dates');
+});

@@ -1096,7 +1096,10 @@ function verificationCard(pinfo, v) {
     ${pending ? `<p><small>Submitted ${fmtDate(v.requestedAt)}. We will review it and email you the result.</small></p>` : ''}
     <div class="vgrid"><div><h4>Requirements</h4><ul class="vreq">${VERIFY_REQUIREMENTS.map(([label, ok]) => `<li class="${ok(e) ? 'ok' : 'no'}"><span class="dot ${ok(e) ? 'ok' : 'no'}">${ok(e) ? '✓' : '–'}</span> ${label}</li>`).join('')}</ul>
       <small>${pending ? 'Waiting for our review.' : missing.length ? 'Still needed: ' + esc(missing.join(', ')) + '.' : 'All requirements are on file.'}</small>
-      <p><small>Licence and registration documents: send them to us when we ask. Document upload is not available yet.</small></p></div>
+      <div class="vdocs"><h4>Documents</h4>${(v.documents || []).length ? `<ul class="vreq">${v.documents.map(d => `<li><button type="button" class="linkish" data-vdl="${esc(d.id)}">${esc(d.name)}</button> <small>${esc(d.kind)} · ${fmtDate(d.uploadedAt)}</small></li>`).join('')}</ul>` : '<small>No documents yet.</small>'}
+        <form id="vdocf" class="vdocform"><label class="vf-field"><span>PDF file (up to 10)</span><input type="file" name="file" accept="application/pdf,.pdf" required></label>
+          <label class="vf-field"><span>What is it</span><select name="kind"><option value="license">License</option><option value="registration">Registration</option><option value="insurance">Insurance certificate</option><option value="other">Other</option></select></label>
+          <div class="row"><button type="submit">Upload</button><span class="err" role="alert"></span></div></form></div></div>
       <div><h4>Review history</h4>${verifyHistory(v) || '<small>Nothing yet.</small>'}</div></div>
     ${pending ? '' : `<form id="vf" class="vform"><fieldset><legend>Company</legend>${field('website', 'Company website', e.website, 'placeholder="https://"')}${field('licenseNumber', 'License or registration number', e.licenseNumber)}${field('phone', 'Office phone', e.phone)}</fieldset>
       <fieldset><legend>Contact person</legend>${field('contactName', 'Full name', e.contactName)}${field('title', 'Title', e.title)}</fieldset>
@@ -1145,10 +1148,29 @@ async function bidderDirectory() {
   ['#btrade', '#bpkg'].forEach(sel => $(sel).addEventListener('change', draw));
   draw();
 }
+// Publisher activity: who did what in this company, most recent first.
+async function publisherActivityList() {
+  const el = $('#pact'); if (!el) return;
+  const rows = await api('GET', '/api/publisher/activity?limit=50').catch(() => null); if (!rows) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card pact"><h2>Activity</h2><p class="x-67fc00b7">Who did what in your company. Use this to see what was published, awarded and changed, and when.</p>
+    ${rows.length ? `<div class="scroll"><table><tr><th>When</th><th>Who</th><th>What</th><th>Reference</th></tr>${rows.map(r => `<tr><td><small>${fmtDate(r.at)} ${new Date(r.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small></td><td><small>${esc(r.actor || '')}</small></td><td>${esc(r.label)}</td><td><small>${esc(r.target || '')}</small></td></tr>`).join('')}</table></div>` : '<small>No activity yet.</small>'}</div>`;
+}
+// Plan and billing for the publisher: the same subscription view the other screens use.
+async function publisherBilling() {
+  const el = $('#pbill'); if (!el) return;
+  const sub = await api('GET', '/api/subscription').catch(() => null); if (!sub) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card pbill">${subscriptionHtml(sub)}</div>`;
+}
 async function publisherPanels() {
   const pinfo = await api('GET', '/api/publisher').catch(() => null); if (!pinfo) return;
   const v = pinfo.publisher || {};
   $('#verc').innerHTML = verificationCard(pinfo, v);
+  $('#vdocf')?.addEventListener('submit', async ev => { ev.preventDefault(); const f = ev.target; const err = f.querySelector('.err'); err.textContent = '';
+    const file = f.file.files[0]; if (!file) { err.textContent = 'Choose a PDF file.'; return; }
+    try { const r = await fetch(`/api/publisher/documents?name=${encodeURIComponent(file.name)}&kind=${encodeURIComponent(f.kind.value)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/pdf' }, body: file });
+      const body = await r.json().catch(() => ({})); if (!r.ok) throw new Error(body.error || 'upload failed'); publisherPanels(); }
+    catch (e) { err.textContent = e.message; } });
+  document.querySelectorAll('[data-vdl]').forEach(b => b.onclick = async () => { const r = await fetch(`/api/publisher/documents/${b.dataset.vdl}`, { headers: { Authorization: 'Bearer ' + token } }); if (!r.ok) { alertBox('This document could not be opened.'); return; } const u = URL.createObjectURL(await r.blob()); window.open(u, '_blank', 'noopener'); });
   $('#vf')?.addEventListener('submit', async ev => { ev.preventDefault(); const f = ev.target;
     try { await api('POST', '/api/publisher/verification', { website: f.website.value.trim(), licenseNumber: f.licenseNumber.value.trim(), phone: f.phone.value.trim(), contactName: f.contactName.value.trim(), title: f.title.value.trim(), notes: f.notes.value.trim() }); publisherPanels(); } catch (e) { f.querySelector('.err').textContent = e.message; } });
   publisherCommand();
@@ -1169,12 +1191,15 @@ async function publisherPanels() {
   };
   $('#pubq')?.addEventListener('input', drawPubs); $('#pubf')?.addEventListener('change', drawPubs); drawPubs();
   bidderDirectory();
+  publisherActivityList();
+  publisherBilling();
   $('#newpub').onclick = () => {
     $('#newpubf').innerHTML = `<form id="npf" class="panel x-970f4ddb" ><b>New project</b>
       <div class="grid2"><input name="title" placeholder="Project name" required><input name="address" placeholder="Street address" required><input name="city" placeholder="City" required><input name="state" placeholder="State (2 letters)" maxlength="2" required>
       <select name="projectType">${['office','retail','warehouse','industrial','multifamily','medical','education','hospitality','restaurant','institutional','mixed_use','other_commercial'].map(x => `<option>${x}</option>`).join('')}</select>
       <input name="estValue" type="number" placeholder="Estimated value ($, optional)"><input name="buildingSf" type="number" placeholder="Building size (SF, optional)">
-      <input name="owner" placeholder="Owner (optional)"><input name="architect" placeholder="Architect (optional)"></div>
+      <input name="owner" placeholder="Owner (optional)"><input name="developer" placeholder="Developer (optional)"><input name="architect" placeholder="Architect (optional)"><input name="gc" placeholder="General contractor (optional)"></div>
+      <div class="grid2"><label><small>Estimated start</small><input name="scheduleStart" type="date"></label><label><small>Estimated completion</small><input name="scheduleCompletion" type="date"></label></div>
       <textarea name="description" rows="2" placeholder="Project description"></textarea>
       <label><small>Your company's relationship to this project</small><select name="relationship">${Object.entries(REL_LABEL).map(([k, l]) => `<option value="${k}" ${k === KIND_REL[pinfo.kind] ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <input name="authorizationEvidence" placeholder="Authorization from the owner (required for CM / architect / other agent): letter, contract reference or link">
@@ -1226,6 +1251,7 @@ async function openPublication(id) {
   box.innerHTML = `<div class="panel x-56f43562" ><div class="row x-a562f4fd" ><h3 class="x-11696618" >${esc(p.title)} ${pubPill(p.status)}</h3><span class="row">
       ${['draft', 'published'].includes(p.status) ? `<button class="primary" id="pbpub" ${c.checklist.ready ? '' : 'title="Complete the checklist first"'}>${p.status === 'draft' ? 'Publish' : 'Publish new packages'}</button>` : ''}
       ${p.status === 'published' ? '<button data-pst="closed">Close bidding</button>' : ''}${p.status === 'closed' ? '<button data-pst="published">Reopen</button><button data-pst="archived">Archive</button>' : ''}${p.status === 'draft' ? '<button data-pst="archived">Discard draft</button>' : ''}</span></div>
+    ${(p.team && Object.values(p.team).some(Boolean)) || (p.schedule && (p.schedule.start || p.schedule.completion)) ? `<small class="x-67fc00b7">${[p.team?.owner && 'Owner: ' + esc(p.team.owner), p.team?.developer && 'Developer: ' + esc(p.team.developer), p.team?.architect && 'Architect: ' + esc(p.team.architect), p.team?.gc && 'General contractor: ' + esc(p.team.gc), p.schedule?.start && 'Start ' + esc(p.schedule.start), p.schedule?.completion && 'Completion ' + esc(p.schedule.completion)].filter(Boolean).join(' · ')}</small><br>` : ''}
     <small>${esc(REL_LABEL[p.authority?.relationship] || '')}${p.authority?.evidence ? ' · authorization: ' + esc(p.authority.evidence) : ''}${p.projectId ? ' · project ' + esc(p.projectId) : ''}</small>
     ${projectSteps(p, c)}<div id="pubsec-6"></div>    <h3 class="x-d2c171b1" >Checklist</h3><ul class="checks">${c.checklist.items.map(i => `<li><span class="dot ${i.ok ? 'ok' : 'no'}">${i.ok ? '✓' : '–'}</span><span>${esc(i.label)} <small>${esc(i.detail || '')}</small></span></li>`).join('')}</ul><div class="err" id="pberr"></div>
     ${draft ? `<div class="panel" id="pbsched"><b>Scheduled publication</b>
@@ -1303,7 +1329,7 @@ async function buyerView() {
   $('#app').innerHTML = `<div class="wrap"><header><h1>BUILDINTEL</h1><span class="who">${esc(me.org.name)} · ${esc(me.user.email)} <button id="lo">Sign out</button></span></header>
   ${roleBannerHtml(me.org, steps)}
   <div id="emailbanner"></div>
-  <div id="pcc"></div><div id="verc"></div><div id="pubc"></div><div id="bdir"></div>
+  <div id="pcc"></div><div id="verc"></div><div id="pubc"></div><div id="bdir"></div><div id="pact"></div><div id="pbill"></div>
   <div class="sign x-6384e367" ><div><h2>Start a request</h2><p>Choose what you are posting. Every option is saved as a permanent record and invites the matching companies in the area.</p>
   <div class="choose"><button type="button" id="ch-full"><b>Create full project</b><small>Several trade packages, plan rooms and bidder lists, published together.</small></button><button type="button" id="ch-trade"><b>Post single trade</b><small>One trade or service. Companies answer will-bid or won't-bid and submit bids.</small></button><button type="button" id="ch-clean"><b>Create cleaning request</b><small>Final construction clean, recurring janitorial, windows, floor care, pressure washing and parking lots.</small></button></div>
   <h3 id="rfh">Single trade request</h3><p>For one trade. For a full project with several trade packages and plan rooms, use <b>Create full project</b> above.</p>
