@@ -1271,7 +1271,7 @@
   // Estimator form
   const ef = $('#estimateForm');
   const DEFAULTS = { area_sqft: 0, production_rate: 0, labor_hours: 0, labor_rate: 0, supplies_cost: 0, equipment_cost: 0, other_cost: 0, overhead_pct: 10, margin_pct: 25, tax_pct: 0, visits: 1, crew_size: 1, shift_hours: 8, travel_cost: 0, mobilization_cost: 0, subcontractor_cost: 0, disposal_cost: 0, insurance_pct: 0, contingency_pct: 0, minimum_charge: 0 };
-  const EXTRA_KEYS = ['visits', 'crew_size', 'shift_hours', 'travel_cost', 'mobilization_cost', 'subcontractor_cost', 'disposal_cost', 'insurance_pct', 'contingency_pct', 'minimum_charge', 'template_key'];
+  const EXTRA_KEYS = ['visits', 'crew_size', 'shift_hours', 'travel_cost', 'mobilization_cost', 'subcontractor_cost', 'disposal_cost', 'insurance_pct', 'contingency_pct', 'minimum_charge', 'template_key', 'windows_interior_panes', 'windows_interior_rate', 'windows_exterior_panes', 'windows_exterior_rate', 'windows_cost'];
   let templates = [];
   async function loadTemplates() {
     if (templates.length) return;
@@ -1418,7 +1418,8 @@
     const perVisit = n('labor_hours') || (n('area_sqft') && n('production_rate') ? n('area_sqft') / n('production_rate') : 0) || scopeHours;
     const hours = perVisit * visits;
     const labor = hours * n('labor_rate');
-    const direct = labor + n('supplies_cost') + n('equipment_cost') + n('other_cost') + n('travel_cost') * visits + n('mobilization_cost') + n('subcontractor_cost') + n('disposal_cost');
+    const windowsTotal = n('windows_interior_panes') * n('windows_interior_rate') + n('windows_exterior_panes') * n('windows_exterior_rate');
+    const direct = labor + n('supplies_cost') + n('equipment_cost') + n('other_cost') + n('travel_cost') * visits + n('mobilization_cost') + n('subcontractor_cost') + n('disposal_cost') + n('windows_cost');
     const insurance = direct * n('insurance_pct') / 100;
     const contingency = (direct + insurance) * n('contingency_pct') / 100;
     const overhead = (direct + insurance + contingency) * n('overhead_pct') / 100;
@@ -1428,6 +1429,7 @@
     const itemsTotal = items.reduce((s, i) => s + i.amount, 0);
     const useItems = !!v.use_line_items && itemsTotal > 0;
     if (useItems) price = itemsTotal;
+    price += windowsTotal; // windows are always added, even when line items are the price
     const minApplied = !useItems && n('minimum_charge') > 0 && price < n('minimum_charge');
     if (minApplied) price = n('minimum_charge');
     const total = price * (1 + n('tax_pct') / 100);
@@ -1478,6 +1480,8 @@
     if (!b.customer_name.trim() || !b.scope.trim()) { msg.className = 'msg err'; msg.textContent = 'Contact name and scope of work are required.'; return; }
     b.line_items = [...scopeLines.map(l => ({ scope_id: l.scope_id, quantity: l.quantity, description: l.description, amount: l.amount })), ...parseLines(b.line_items_text)];
     delete b.line_items_text;
+    // A blank typed total means "use the calculated price"; don't send an empty total.
+    if (b.proposal_total === '') delete b.proposal_total;
     const id = b.id; delete b.id;
     msg.className = 'msg'; msg.textContent = 'Saving…';
     $('#estSave').disabled = true;

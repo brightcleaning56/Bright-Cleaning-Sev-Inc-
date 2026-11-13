@@ -788,6 +788,12 @@
           <div class="f"><label for="e12">Supplies &amp; consumables ($)</label><input id="e12" name="supplies_cost" type="number" min="0" step="any" value="0"></div>
           <div class="f"><label for="e13">Equipment / rentals ($)</label><input id="e13" name="equipment_cost" type="number" min="0" step="any" value="0"></div>
           <div class="f"><label for="e14">Other direct costs ($)</label><input id="e14" name="other_cost" type="number" min="0" step="any" value="0"></div>
+          <div class="f wide" style="grid-column:1/-1"><label style="font-weight:600">Window cleaning (priced per pane, added to the calculated price)</label><span class="hint">Leave at 0 if this job has no windows. Each pane group is panes × price per pane.</span></div>
+          <div class="f"><label for="e32">Interior panes (count)</label><input id="e32" name="windows_interior_panes" type="number" min="0" step="1" value="0"></div>
+          <div class="f"><label for="e33">Price per interior pane ($)</label><input id="e33" name="windows_interior_rate" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e34">Exterior panes (count)</label><input id="e34" name="windows_exterior_panes" type="number" min="0" step="1" value="0"></div>
+          <div class="f"><label for="e35">Price per exterior pane ($)</label><input id="e35" name="windows_exterior_rate" type="number" min="0" step="any" value="0"></div>
+          <div class="f"><label for="e36">Window labor &amp; supplies cost ($)</label><input id="e36" name="windows_cost" type="number" min="0" step="any" value="0"><span class="hint">Your cost for the window work. It counts against margin.</span></div>
           <div class="f"><label for="e24">Travel per visit ($)</label><input id="e24" name="travel_cost" type="number" min="0" step="any" value="0"></div>
           <div class="f"><label for="e25">Mobilization ($)</label><input id="e25" name="mobilization_cost" type="number" min="0" step="any" value="0"><span class="hint">One-time setup cost.</span></div>
           <div class="f"><label for="e26">Subcontractor ($)</label><input id="e26" name="subcontractor_cost" type="number" min="0" step="any" value="0"></div>

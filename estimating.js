@@ -24,7 +24,9 @@ const EXTRA_COLUMNS = [
   ['minimum_charge', 'REAL DEFAULT 0'], ['use_line_items', 'INTEGER DEFAULT 0'], ['crew_days', 'REAL DEFAULT 0'],
   ['line_items_total', 'REAL DEFAULT 0'], ['template_key', 'TEXT'], ['scope_category', 'TEXT'],
   ['sent_at', 'TEXT'], ['viewed_at', 'TEXT'], ['last_viewed_at', 'TEXT'], ['view_count', 'INTEGER DEFAULT 0'],
-  ['decided_at', 'TEXT'], ['decision_ip', 'TEXT'], ['decision_agent', 'TEXT'], ['unit_condition', 'TEXT']
+  ['decided_at', 'TEXT'], ['decision_ip', 'TEXT'], ['decision_agent', 'TEXT'], ['unit_condition', 'TEXT'],
+  ['windows_interior_panes', 'REAL DEFAULT 0'], ['windows_interior_rate', 'REAL DEFAULT 0'],
+  ['windows_exterior_panes', 'REAL DEFAULT 0'], ['windows_exterior_rate', 'REAL DEFAULT 0'], ['windows_cost', 'REAL DEFAULT 0']
 ];
 
 // Unit condition charge added on top of every deep clean line (price book: Light $40, Moderate $60, Heavy $80).
@@ -55,8 +57,10 @@ function estimateMath(b) {
   const perVisit = num(b.labor_hours) || (sqft && rate ? sqft / rate : 0) || scopeHours;
   const hours = perVisit * visits;
   const labor = hours * num(b.labor_rate);
+  const windowsTotal = windowsCharge(b);
   const direct = labor + num(b.supplies_cost) + num(b.equipment_cost) + num(b.other_cost)
-    + num(b.travel_cost) * visits + num(b.mobilization_cost) + num(b.subcontractor_cost) + num(b.disposal_cost);
+    + num(b.travel_cost) * visits + num(b.mobilization_cost) + num(b.subcontractor_cost) + num(b.disposal_cost)
+    + num(b.windows_cost);
   const insurance = direct * num(b.insurance_pct) / 100;
   const contingency = (direct + insurance) * num(b.contingency_pct) / 100;
   const overhead = (direct + insurance + contingency) * num(b.overhead_pct) / 100;
@@ -67,6 +71,7 @@ function estimateMath(b) {
   const itemsTotal = items.reduce((s, i) => s + i.amount, 0);
   const useItems = !!(b.use_line_items && b.use_line_items !== '0' && b.use_line_items !== 'false') && itemsTotal > 0;
   if (useItems) price = itemsTotal;
+  price += windowsTotal; // windows are always added, even when line items are the price
   const minimum = num(b.minimum_charge);
   const minimumApplied = !useItems && minimum > 0 && price < minimum;
   if (minimumApplied) price = minimum;
@@ -76,8 +81,16 @@ function estimateMath(b) {
     labor_hours: round2(hours), labor_cost: round2(labor), total_cost: round2(cost),
     proposal_total: round2(total), crew_days: round2(hours / crewHoursPerDay),
     line_items_total: round2(itemsTotal), minimum_applied: minimumApplied, used_line_items: useItems,
+    windows_total: round2(windowsTotal),
     breakdown: { direct: round2(direct), insurance: round2(insurance), contingency: round2(contingency), overhead: round2(overhead), price: round2(price) }
   };
+}
+
+// Window cleaning, priced per pane and added to the calculated price.
+// Interior and exterior panes each have their own price per pane. Labor and supplies for the
+// windows go in windows_cost, which counts as a direct cost so the margin is calculated correctly.
+function windowsCharge(b) {
+  return num(b.windows_interior_panes) * num(b.windows_interior_rate) + num(b.windows_exterior_panes) * num(b.windows_exterior_rate);
 }
 
 // Values for the V5 columns, ready for an UPDATE.
@@ -89,7 +102,10 @@ function extraValues(b, m) {
     minimum_charge: num(b.minimum_charge), use_line_items: m.used_line_items ? 1 : 0, crew_days: m.crew_days,
     line_items_total: m.line_items_total, template_key: String(b.template_key || '').slice(0, 60) || null,
     scope_category: ['construction', 'multifamily', 'janitorial', 'specialty'].includes(b.scope_category) ? b.scope_category : null,
-    unit_condition: ['Light', 'Moderate', 'Heavy'].includes(b.unit_condition) ? b.unit_condition : null
+    unit_condition: ['Light', 'Moderate', 'Heavy'].includes(b.unit_condition) ? b.unit_condition : null,
+    windows_interior_panes: num(b.windows_interior_panes), windows_interior_rate: num(b.windows_interior_rate),
+    windows_exterior_panes: num(b.windows_exterior_panes), windows_exterior_rate: num(b.windows_exterior_rate),
+    windows_cost: num(b.windows_cost)
   };
 }
 
