@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DentistNow Robotics — Business and Funding Plan (AutoClean Pro 2.0)</title>
+<style>
+  @page { size: letter; margin: 0.7in; }
+  :root { --ink:#0d2238; --muted:#4a6279; --line:#c7d5e2; --accent:#0a6fd6; --warn:#a15c00; --bg:#f4f8fb; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Segoe UI",Arial,Helvetica,sans-serif; color:var(--ink); font-size:13.5px; line-height:1.5; background:#fff; }
+  main { max-width:880px; margin:0 auto; padding:32px 24px 60px; }
+  h1 { font-size:28px; margin:0 0 6px; }
+  h2 { font-size:19px; margin:30px 0 8px; border-bottom:2px solid var(--accent); padding-bottom:4px; page-break-after:avoid; }
+  h3 { font-size:15px; margin:18px 0 6px; page-break-after:avoid; }
+  p, li { color:var(--ink); }
+  .muted { color:var(--muted); }
+  .banner { border:2px solid var(--warn); background:#fff8ec; border-radius:6px; padding:12px 16px; margin:16px 0; font-size:13px; }
+  .banner strong { color:var(--warn); }
+  table { width:100%; border-collapse:collapse; margin:8px 0 14px; font-size:13px; page-break-inside:auto; }
+  tr { page-break-inside:avoid; }
+  th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:var(--bg); }
+  td.n, th.n { text-align:right; white-space:nowrap; }
+  .tag { display:inline-block; font-size:11px; border:1px solid var(--accent); color:var(--accent); border-radius:4px; padding:1px 6px; margin-left:4px; }
+  .tag.v { border-color:#17794a; color:#17794a; }
+  .tag.a { border-color:var(--warn); color:var(--warn); }
+  .toc { background:var(--bg); border-radius:8px; padding:12px 18px; font-size:13px; }
+  .toc a { color:var(--accent); text-decoration:none; }
+  .toc li { margin:2px 0; }
+  .fine { font-size:11.5px; color:var(--muted); }
+  .sources li { font-size:12px; color:var(--muted); margin:3px 0; }
+  a { color:var(--accent); }
+  @media (max-width:600px){ main { padding:20px 16px 40px; } table { font-size:12px; } }
+</style>
+</head>
+<body>
+<main>
+
+<div class="muted" style="font-size:12px">DentistNow Robotics · Confidential planning draft · Version 0.1</div>
+<h1>DentistNow AutoClean Pro 2.0 — Business and Funding Plan</h1>
+<p class="muted">From concept to commercial launch, and how each stage is funded.</p>
+
+<div class="banner"><strong>Not an offer of securities.</strong> This plan is a planning document for discussion. It is not a solicitation to buy or invest in anything. Any investor offering, including a crowdfunding campaign, requires review by qualified securities counsel before it is shared or published. All financial figures are planning estimates from prior analysis and are not quotations, forecasts or validated market data. Items marked <span class="tag a">verify</span> must be checked against current sources before use.</div>
+
+<div class="toc"><strong>Contents</strong>
+<ol>
+  <li><a href="#s1">Executive summary</a></li>
+  <li><a href="#s2">Product and intended use</a></li>
+  <li><a href="#s3">Market and customers</a></li>
+  <li><a href="#s4">Business model and unit economics</a></li>
+  <li><a href="#s5">Development stages and budgets</a></li>
+  <li><a href="#s6">Funding strategy, source by source</a></li>
+  <li><a href="#s7">Use of funds: first $150K–$300K</a></li>
+  <li><a href="#s8">Regulatory and clinical path</a></li>
+  <li><a href="#s9">Intellectual property</a></li>
+  <li><a href="#s10">Team and governance</a></li>
+  <li><a href="#s11">Risks and mitigations</a></li>
+  <li><a href="#s12">First 90 days</a></li>
+  <li><a href="#s13">Funding timeline, start to close</a></li>
+  <li><a href="#s14">Open decisions and checklist</a></li>
+  <li><a href="#s15">Sources</a></li>
+</ol></div>
+
+<h2 id="s1">1. Executive summary</h2>
+<p>DentistNow Robotics will develop AutoClean Pro 2.0, an AI-assisted dental examination and robotic preventive-cleaning station. The machine performs intake, medical screening, oral photography, 3D scanning and assessment, then routes findings to a licensed dental professional. Approved polishing and plaque removal happen only after eligibility checks, consent and professional authorization. Subgingival calculus removal, drilling, extraction and restorative work are out of scope for the first generation.</p>
+<p>The strategy is staged. Prove the core technology with a small first raise, then commit to a functional prototype, then to full commercial development. Each stage ends with a decision gate. Non-dilutive funding and strategic partners run in parallel with equity.</p>
+<table>
+  <tr><th>Stage</th><th class="n">Planning range</th><th>Deliverable</th></tr>
+  <tr><td>A. Technology feasibility</td><td class="n">$150K–$300K</td><td>Laboratory demonstrator on dental models; not patient-ready</td></tr>
+  <tr><td>B. Functional prototype</td><td class="n">$750K–$1.8M</td><td>Integrated prototype with safety controller, tested in the lab</td></tr>
+  <tr><td>C. Commercial development</td><td class="n">$3.5M–$9.5M</td><td>Clinically validated, regulated product ready for launch</td></tr>
+</table>
+<p>Recommendation: raise Stage A first. Do not promise a finished autonomous machine until the technology has been shown to work.</p>
+
+<h2 id="s2">2. Product and intended use</h2>
+<p>Intended use (draft, for regulatory review): an automated dental examination-support and cleaning system for adult patients, used in a clinic under the supervision of a licensed dental professional, to acquire oral images and scans, record medical and symptom information, flag findings for professional review, and perform validated polishing and plaque removal after authorization.</p>
+<ul>
+  <li><strong>Version 1:</strong> scanning, imaging, screening, guided cleaning and polishing within validated limits.</li>
+  <li><strong>Version 2:</strong> additional cleaning capability, subject to clinical validation.</li>
+  <li><strong>Version 3:</strong> advanced procedures, only after safety and regulatory requirements are met.</li>
+</ul>
+<p>Operating modes: First-Visit Examination, Approved Cleaning, and Follow-Up and Monitoring.</p>
+
+<h2 id="s3">3. Market and customers</h2>
+<p>Initial customers are dental clinics and dental groups, with hospitals and dedicated automated centers as later channels. Consumer-accessible facilities are a long-term option that depends on regulation.</p>
+<p class="muted">No market size has been validated yet. A first task in Stage A is to interview at least 20 dental practice owners, office managers and hygienists, and to record their willingness to pay. Replace the assumptions below with those findings.</p>
+<table>
+  <tr><th>Buyer</th><th>What they need</th><th>Open question</th></tr>
+  <tr><td>Independent dental clinics</td><td>Hygienist capacity, consistent prevention visits</td><td>Will they accept a machine on the hygiene schedule?</td></tr>
+  <tr><td>Dental service organizations</td><td>Standardized workflow across many sites</td><td>Procurement cycle and capital budget</td></tr>
+  <tr><td>Hospitals and medical facilities</td><td>Access for patients with limited mobility or dental access</td><td>Scope of clinical governance required</td></tr>
+  <tr><td>Automated dental centers</td><td>Low-staff operating model</td><td>Regulatory acceptability of unattended visits</td></tr>
+</table>
+
+<h2 id="s4">4. Business model and unit economics</h2>
+<p>Revenue comes from several streams, not hardware sales alone. All figures are illustrative targets, not established prices.</p>
+<table>
+  <tr><th>Revenue stream</th><th>Proposed model</th><th>Illustrative range</th></tr>
+  <tr><td>Machine sale</td><td>One-time purchase</td><td class="n">$95K–$160K</td></tr>
+  <tr><td>Machine leasing</td><td>Monthly lease</td><td class="n">$2,500–$4,500/mo</td></tr>
+  <tr><td>Software subscription</td><td>Per station, per month</td><td class="n">$500–$1,500/mo</td></tr>
+  <tr><td>Maintenance agreement</td><td>Monthly service</td><td class="n">$500–$1,200/mo</td></tr>
+  <tr><td>Approved consumables</td><td>Per-visit disposable kit (validated only)</td><td class="n">$10–$40/visit</td></tr>
+  <tr><td>Enterprise and fleet analytics</td><td>Multi-site subscription</td><td>Negotiated</td></tr>
+</table>
+<h3>Example arithmetic (hypothetical)</h3>
+<p>A machine made for $60,000 and sold for $120,000 gives a $60,000 gross hardware contribution, or 50% gross margin. That figure is before commissions, warranty, installation, service, overhead, financing and regulatory costs. A hypothetical customer with 10 stations at $1,000 per station per month generates $10,000 per month in software revenue. That is an illustration only and not a market forecast.</p>
+<p class="muted">Production cost of $45K–$85K per unit is an estimate. It must be replaced with supplier quotes during Stage B.</p>
+
+<h2 id="s5">5. Development stages and budgets</h2>
+<p>Budget lines from the planning estimate for the full commercial program. They are allowances, not minimums or maximums, and spending can move between phases.</p>
+<table>
+  <tr><th>Development area</th><th class="n">Allowance</th></tr>
+  <tr><td>Product research and feasibility</td><td class="n">$100K–$200K</td></tr>
+  <tr><td>Industrial and mechanical engineering</td><td class="n">$250K–$500K</td></tr>
+  <tr><td>Robotic hardware development</td><td class="n">$400K–$900K</td></tr>
+  <tr><td>AI vision and scanning</td><td class="n">$250K–$600K</td></tr>
+  <tr><td>Software and cloud platform</td><td class="n">$200K–$450K</td></tr>
+  <tr><td>Alpha and beta prototypes</td><td class="n">$400K–$800K</td></tr>
+  <tr><td>Clinical engineering and validation</td><td class="n">$400K–$1M</td></tr>
+  <tr><td>Regulatory and quality systems</td><td class="n">$250K–$650K</td></tr>
+  <tr><td>Testing and clinical studies</td><td class="n">$500K–$1.5M</td></tr>
+  <tr><td>Manufacturing engineering</td><td class="n">$250K–$600K</td></tr>
+  <tr><td>Tooling and production preparation</td><td class="n">$300K–$800K</td></tr>
+  <tr><td>Project management and contingency</td><td class="n">$200K–$1.5M</td></tr>
+  <tr><th>Total planning range</th><th class="n">$3.5M–$9.5M</th></tr>
+</table>
+
+<h3>Phase-to-gate map</h3>
+<table>
+  <tr><th>Phase</th><th>Months (illustrative)</th><th>Gate to pass before next phase</th></tr>
+  <tr><td>1 Product definition</td><td>1–2</td><td>Approved product requirements; intended use drafted</td></tr>
+  <tr><td>2 Engineering architecture</td><td>2–4</td><td>Engineering blueprint reviewed by regulatory and clinical advisors</td></tr>
+  <tr><td>3 AI and software</td><td>3–7</td><td>Software running on simulated hardware</td></tr>
+  <tr><td>4 Robotic engineering</td><td>5–10</td><td>Positioning and emergency stop demonstrated on dental models</td></tr>
+  <tr><td>5 Cleaning technology</td><td>8–12</td><td>Laboratory cleaning efficacy shown on validated models</td></tr>
+  <tr><td>6 Alpha prototype</td><td>11–16</td><td>Integrated system runs simulated patient workflows</td></tr>
+  <tr><td>7 Beta prototype</td><td>15–21</td><td>Design frozen for verification</td></tr>
+  <tr><td>8 Verification and safety</td><td>19–25</td><td>Electrical, software, cybersecurity and cleaning validation documented</td></tr>
+  <tr><td>9 Clinical development</td><td>23–32</td><td>Clinical evidence package</td></tr>
+  <tr><td>10 Regulatory submission</td><td>28–36+</td><td>Authorization or clearance, as applicable</td></tr>
+  <tr><td>11 Manufacturing preparation</td><td>32–42</td><td>Controlled pilot production</td></tr>
+  <tr><td>12 Commercial launch</td><td>40–48+</td><td>Commercial operation under the applicable authorization</td></tr>
+</table>
+
+<h2 id="s6">6. Funding strategy, source by source</h2>
+<p>No single source is expected to fund the program. The plan combines equity, non-dilutive grants and partnerships, with each step gated.</p>
+
+<h3>6.1 Private investors (equity)</h3>
+<ul>
+  <li><strong>Who:</strong> founders, angels, dental-practice owners, medtech investors and family offices.</li>
+  <li><strong>Vehicle:</strong> priced equity or SAFE, selected with securities counsel.</li>
+  <li><strong>Pitch material:</strong> the investor deck (to be built), this plan and the engineering binder. Share the binder only with counsel-approved recipients.</li>
+  <li><strong>Target for Stage A:</strong> $150K–$300K, in a round of about 10–20 investors if sized at the low end.</li>
+</ul>
+
+<h3>6.2 Iowa: America's Seed Fund — Iowa Program <span class="tag a">verify</span></h3>
+<p>The Iowa Economic Development Authority delegates delivery of this program to BioConnect Iowa. It supports small businesses pursuing federal SBIR/STTR funding. Sources report up to $75,000 in total support. One source describes the split as $50,000 after a federal Phase I award and $25,000 at Phase II submission. An older SBA-referenced figure says $50,000. Confirm current terms with the program before planning around them.</p>
+<ul>
+  <li><strong>Next step:</strong> contact BioConnect Iowa to confirm eligibility, matching requirements and timing.</li>
+  <li><strong>Dependency:</strong> needs a federal SBIR/STTR award or application in progress.</li>
+</ul>
+
+<h3>6.3 Federal grants: NIH/NIDCR SBIR/STTR <span class="tag a">verify</span></h3>
+<ul>
+  <li>NIDCR's SBIR page lists focus areas that include clinical decision support and workflow integration, and advanced dental materials and digital manufacturing. Those match parts of this product.</li>
+  <li>No 2026-specific NIDCR solicitation for this topic was confirmed in our search. Check the NIH Guide and the SBIR/STTR funding page before applying.</li>
+  <li><strong>Important constraint:</strong> NIDCR does not accept clinical trials through its SBIR or STTR programs. Clinical validation must be funded separately (equity, partner, or other grant mechanisms).</li>
+  <li>A Phase I application typically needs a feasibility plan and a principal investigator eligible under SBIR rules. Engage a grant-writing advisor.</li>
+</ul>
+
+<h3>6.4 Crowdfunding: Regulation Crowdfunding</h3>
+<ul>
+  <li>Regulation Crowdfunding allows an issuer to raise up to $5,000,000 in a rolling 12-month period through a registered intermediary (SEC guidance). Amounts raised in other exempt offerings within the prior 12 months do not count toward the limit.</li>
+  <li>Accredited investors have no investment limit. Non-accredited investors are subject to per-investor limits. One secondary source gives $124,000 per 12 months; verify against the current rule text.</li>
+  <li>Disclosure requirements, including financial statements and ongoing reporting, are significant. Use this route only after counsel has advised on it.</li>
+  <li><strong>Recommended timing:</strong> after Stage A demonstrator results, not before. Crowdfunding for a pre-prototype medical device needs careful risk disclosure.</li>
+</ul>
+
+<h3>6.5 Research partners</h3>
+<p>Dental schools and robotics institutes can provide laboratory access, students, validated test fixtures and co-funded studies. Agree on IP ownership in writing before sharing designs.</p>
+
+<h3>6.6 Strategic partners</h3>
+<p>Dental equipment manufacturers, dental service organizations and dental supply companies can provide capital, distribution, manufacturing or validation resources in exchange for a license, joint development agreement or equity. Keep control of core IP.</p>
+
+<h3>6.7 Funding summary</h3>
+<table>
+  <tr><th>Source</th><th>Type</th><th>Role in the plan</th><th>Status</th></tr>
+  <tr><td>Private angels and medtech investors</td><td>Equity</td><td>Primary source for Stage A</td><td>To pursue</td></tr>
+  <tr><td>Iowa Seed Fund program</td><td>Non-dilutive, linked to SBIR</td><td>Supplement after federal application</td><td><span class="tag a">verify terms</span></td></tr>
+  <tr><td>NIDCR SBIR/STTR</td><td>Non-dilutive grant</td><td>Phase I feasibility, if an eligible solicitation is open</td><td><span class="tag a">verify solicitation</span></td></tr>
+  <tr><td>Research partners</td><td>In-kind and co-funding</td><td>Lab and validation support</td><td>To pursue</td></tr>
+  <tr><td>Strategic partners</td><td>Equity, license or JDA</td><td>Stage B and C funding and manufacturing</td><td>Later</td></tr>
+  <tr><td>Regulation Crowdfunding</td><td>Equity, public</td><td>Optional, after demonstrator</td><td>Requires counsel</td></tr>
+</table>
+
+<h2 id="s7">7. Use of funds: first $150K–$300K (Stage A)</h2>
+<p>Planning allocation. Figures are estimates for discussion and should be replaced with vendor quotes.</p>
+<table>
+  <tr><th>Category</th><th class="n">Low</th><th class="n">High</th><th>Purpose</th></tr>
+  <tr><td>Engineering services and fixtures</td><td class="n">$60K</td><td class="n">$120K</td><td>Dental-model fixtures, positioning tests, CAD for the demonstrator</td></tr>
+  <tr><td>Software and AI prototype</td><td class="n">$35K</td><td class="n">$70K</td><td>Patient UI, operator UI, oral-scan proof of concept</td></tr>
+  <tr><td>Robotic platform and hardware</td><td class="n">$20K</td><td class="n">$40K</td><td>Off-the-shelf arm or platform, sensors, emergency stop circuit</td></tr>
+  <tr><td>Regulatory consulting and Q-Submission preparation</td><td class="n">$15K</td><td class="n">$30K</td><td>Intended use, classification assessment, FDA pre-submission</td></tr>
+  <tr><td>Legal, entity and securities counsel</td><td class="n">$10K</td><td class="n">$20K</td><td>Business entity, investment documents, IP assignment</td></tr>
+  <tr><td>Patent search and freedom-to-operate</td><td class="n">$5K</td><td class="n">$10K</td><td>Preliminary search; full opinion later</td></tr>
+  <tr><td>Project management and contingency</td><td class="n">$5K</td><td class="n">$10K</td><td>Admin, travel, unplanned costs</td></tr>
+  <tr><th>Total</th><th class="n">$150K</th><th class="n">$300K</th><td></td></tr>
+</table>
+<p class="muted">Stage A is a laboratory demonstration. It is not a patient-ready device, and it must not be presented as one.</p>
+
+<h2 id="s8">8. Regulatory and clinical path</h2>
+<ul>
+  <li><strong>Classification:</strong> an ultrasonic dental scaler falls under 21 CFR 872.4850 as Class II. That does not determine the classification of the complete integrated machine. The combined system needs its own assessment.</li>
+  <li><strong>Early engagement:</strong> submit an FDA Q-Submission before major Stage B spending, to get written feedback on intended use and pathway.</li>
+  <li><strong>Quality system:</strong> the FDA Quality Management System Regulation (QMSR) took effect February 2, 2026 and incorporates ISO 13485:2016. Build the quality system from the start.</li>
+  <li><strong>Standards:</strong> ISO 14971 (risk), IEC 60601 series (electrical), IEC 80601-2-60 (dental equipment), IEC 62304 (software, if applicable), ISO 7405 (biocompatibility considerations), cybersecurity guidance.</li>
+  <li><strong>AI:</strong> follow the FDA Good Machine Learning Practice principles; test on diverse populations, imaging devices and conditions.</li>
+  <li><strong>Infection control:</strong> follow CDC guidance on instrument reprocessing and dental-unit water quality. Ultraviolet light alone does not count as sterilization.</li>
+  <li><strong>Clinical study:</strong> NIDCR SBIR cannot fund clinical trials. Budget and approvals (ethics, IRB) are needed separately.</li>
+  <li><strong>Professional oversight:</strong> confirm with state dental boards and counsel who may authorize, supervise and bill for each step.</li>
+</ul>
+
+<h2 id="s9">9. Intellectual property</h2>
+<ul>
+  <li>Register the DentistNow Robotics business entity before sharing designs with manufacturers.</li>
+  <li>Commission a patentability and freedom-to-operate search. The general concept of an automated dental cleaning machine is not assumed to be patentable; specific mechanisms and methods are what to investigate.</li>
+  <li>Use confidentiality (NDA) and invention-assignment agreements for all contributors, including contractors and research partners.</li>
+  <li>Keep CAD files, source code and datasets in company-owned repositories with access logs.</li>
+  <li>Watch for trade-secret handling of AI training data; record provenance and consent for any patient images.</li>
+</ul>
+
+<h2 id="s10">10. Team and governance</h2>
+<table>
+  <tr><th>Role</th><th>Responsibility</th><th>Stage A</th></tr>
+  <tr><td>Product Director</td><td>Owns the product and gates</td><td>Yes</td></tr>
+  <tr><td>Mechanical Engineer</td><td>Chair and machine construction</td><td>Yes</td></tr>
+  <tr><td>Robotics Engineer</td><td>Arms and motion control</td><td>Yes</td></tr>
+  <tr><td>Electrical Engineer</td><td>Sensors, wiring, safety circuit</td><td>Contract</td></tr>
+  <tr><td>AI / Computer Vision Engineer</td><td>Oral scanning and recognition</td><td>Yes</td></tr>
+  <tr><td>Software Engineer</td><td>Patient UI and operator dashboard</td><td>Yes</td></tr>
+  <tr><td>Dental Clinical Advisor</td><td>Clinical requirements and safety</td><td>Advisor</td></tr>
+  <tr><td>Regulatory Specialist</td><td>FDA and quality compliance</td><td>Advisor</td></tr>
+  <tr><td>Industrial Designer</td><td>Form and ergonomics</td><td>Contract</td></tr>
+  <tr><td>Manufacturing Engineer</td><td>Production and assembly</td><td>Later</td></tr>
+</table>
+<p>Governance: a board or advisory council with at least one dental clinical advisor and one regulatory specialist. Decision gates are signed by the Product Director and the regulatory specialist. No gate is skipped to hit a schedule.</p>
+
+<h2 id="s11">11. Risks and mitigations</h2>
+<table>
+  <tr><th>Risk</th><th>Mitigation</th></tr>
+  <tr><td>Technology does not perform on real teeth</td><td>Stage A is a feasibility test before large spending</td></tr>
+  <tr><td>Regulatory pathway is harder than planned</td><td>Early Q-Submission; regulatory specialist from the start</td></tr>
+  <tr><td>Patient safety incident</td><td>Independent safety controller; conservative eligibility rules; adverse-event process</td></tr>
+  <tr><td>Clinicians or patients reject unattended care</td><td>Professional oversight built in; human-factors testing; pilot with partner clinics</td></tr>
+  <tr><td>Funding gap between stages</td><td>Parallel non-dilutive sources; stage-gated budgets</td></tr>
+  <tr><td>Securities non-compliance in fundraising</td><td>Counsel review before any solicitation; use only permitted exemptions</td></tr>
+  <tr><td>Cybersecurity or patient-data breach</td><td>Security by design; threat model; penetration testing; HIPAA review where applicable</td></tr>
+  <tr><td>Supplier or component obsolescence</td><td>Second-source critical parts; BOM risk review</td></tr>
+  <tr><td>Reimbursement uncertainty</td><td>Model the direct-pay and subscription options; engage payers later</td></tr>
+  <tr><td>Overstated claims</td><td>Marketing reviewed by regulatory counsel; claims limited to validated performance</td></tr>
+</table>
+
+<h2 id="s12">12. First 90 days</h2>
+<table>
+  <tr><th>Days</th><th>Focus</th><th>Key outputs</th></tr>
+  <tr><td>1–30</td><td>Define and design</td><td>Product requirements; intended-use draft; chair dimensions; arm configuration; preliminary BOM; clinical workflow; initial regulatory assessment; entity formation started; 20 buyer interviews begun</td></tr>
+  <tr><td>31–60</td><td>Prove the technology</td><td>Robotic platform selected; oral scanning test on models; positioning accuracy test; touchscreen prototype; safety architecture document; BioConnect Iowa and NIDCR eligibility confirmed</td></tr>
+  <tr><td>61–90</td><td>Build the demonstrator</td><td>Robotic test platform; scan visualization; controlled movement; emergency stop demo; operator dashboard connected; engineering results presented to investors</td></tr>
+</table>
+<p class="muted">At day 90 the deliverable is an engineering demonstrator. It is not a patient-treatment device.</p>
+
+<h2 id="s13">13. Funding timeline, start to close</h2>
+<p>Illustrative sequence. Timing depends on investor response, grant calendars and counsel review.</p>
+<table>
+  <tr><th>Step</th><th>Timing</th><th>Action</th></tr>
+  <tr><td>1. Prepare</td><td>Weeks 1–4</td><td>Counsel engagement; entity formation; investor deck; data room with non-confidential materials only</td></tr>
+  <tr><td>2. Founder and angel round</td><td>Weeks 4–12</td><td>Warm introductions; term sheet with lead investor; close first tranche</td></tr>
+  <tr><td>3. Non-dilutive applications</td><td>Weeks 4–20</td><td>BioConnect Iowa inquiry; federal SBIR eligibility and solicitation check</td></tr>
+  <tr><td>4. Stage A execution</td><td>Months 3–6</td><td>Deliver demonstrator; gate review</td></tr>
+  <tr><td>5. Stage B raise</td><td>Months 6–9</td><td>Lead investor or strategic partner; prototype investor pack</td></tr>
+  <tr><td>6. Public offering (optional)</td><td>After Stage A results</td><td>Regulation Crowdfunding only if counsel advises, through a registered intermediary</td></tr>
+  <tr><td>7. Stage C</td><td>After Stage B gate</td><td>Institutional or strategic capital for clinical study and regulatory submission</td></tr>
+</table>
+
+<h2 id="s14">14. Open decisions and checklist</h2>
+<h3>Decisions for the founders</h3>
+<ol>
+  <li>Automation level for the first commercial product: professional-oversight model (recommended) or greater autonomy later.</li>
+  <li>Initial funding target: $150K–$300K (recommended) or a larger round.</li>
+  <li>Initial market: dental clinics and groups (recommended first).</li>
+  <li>Whether DentistNow Robotics is a separate legal entity from DentistNow.</li>
+</ol>
+<h3>Before any external sharing</h3>
+<ul>
+  <li>Securities counsel reviews the investor materials and the landing page.</li>
+  <li>Privacy notice and contact address in place; no personal data collected without a process.</li>
+  <li>Patent search completed for claims in the deck.</li>
+  <li>All <span class="tag a">verify</span> items confirmed against current sources.</li>
+  <li>No statements of FDA clearance, approval or validated clinical performance.</li>
+</ul>
+
+<h2 id="s15">15. Sources</h2>
+<ul class="sources">
+  <li>Iowa program terms: <a href="https://opportunityiowa.gov/business/small-business-entrepreneurs/small-business-resources/americas-seed-fund-iowa-program">Iowa Economic Development Authority — America's Seed Fund: Iowa Program</a>; <a href="https://www.iowaeda.com/small-business/sbir-sttr/">IEDA SBIR/STTR page</a>; <a href="https://bioconnectiowa.org/sbir-sttr-outreach/">BioConnect Iowa SBIR/STTR outreach</a>. Sources disagree on the amount; confirm.</li>
+  <li>Regulation Crowdfunding limits: <a href="https://www.sec.gov/resources-small-businesses/regulation-crowdfunding-guidance-issuers">SEC — Regulation Crowdfunding: Guidance for Issuers</a>; <a href="https://www.sec.gov/smallbusiness/RegCrowdfunding">SEC — Regulation Crowdfunding</a>.</li>
+  <li>NIDCR SBIR/STTR priorities and clinical-trial restriction: <a href="https://www.nidcr.nih.gov/grants-funding/grant-programs/small-business-innovation-research-small-business-technology-transfer-research-sbir-sttr">NIDCR — SBIR/STTR</a>. Search for current solicitations at the NIH Guide for Grants and Contracts.</li>
+  <li>Dental radiography selection and infection control: FDA, ADA, American Academy of Periodontology and CDC pages cited in the engineering research notes. Confirm current versions before external use.</li>
+  <li>FDA Quality Management System Regulation, Good Machine Learning Practice and the ultrasonic scaler classification (21 CFR 872.4850): FDA.gov. Confirm current text with the regulatory specialist.</li>
+</ul>
+
+</main>
+</body>
+</html>

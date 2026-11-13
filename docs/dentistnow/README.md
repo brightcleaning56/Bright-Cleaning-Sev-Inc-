@@ -9,6 +9,8 @@ and not regulatory submissions. Nothing here is FDA-cleared, and nothing here au
 |---|---|
 | `blueprint-binder.html` | 40-sheet planning index in 10 stages, architecture, workflow and roadmap. Print at 11×17 in (tabloid). |
 | `ui-screens.html` | Patient interface (first-visit screens) and clinical operator interface mockups. Open in a browser. |
+| `business-funding-plan.html` | Business and funding plan: intended use, unit economics, staged budgets, funding sources, first $150K–$300K use of funds, regulatory path, risks, 90-day plan, funding timeline. |
+| `index.html` | Investor and partner landing page draft. No data-collecting form. Placeholders for contact details. Marked DRAFT until securities counsel review. |
 
 ## Scope rules the package follows
 
@@ -23,7 +25,7 @@ and not regulatory submissions. Nothing here is FDA-cleared, and nothing here au
 ## Not yet included
 
 - Dimensioned mechanical drawings, CAD models and tolerances.
-- Business plan, funding plan and investor landing page (planned as the next stage).
+- Investor deck and data room (planned; do not share before counsel review).
 - Printable PDF export of the binder (print from a browser for now).
 - Source citations for the FDA, CDC, ADA and AAP guidance. These must be checked against current documents
   before any external use.
