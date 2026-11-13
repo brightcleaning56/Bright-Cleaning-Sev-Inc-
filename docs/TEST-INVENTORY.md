@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**259 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**265 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -89,6 +89,15 @@
 - off-site sync: uploads the newest database backup and new document blobs only, signed
 - database TLS: verified by default over the internet; opt-out is explicit; private network has no TLS
 
+## bid-revisions.test.js (2)
+- a revised bid keeps the original amount, scope and receipt, and the comparison shows both
+- a company that never revises shows one revision and no history
+
+## bidder-directory.test.js (3)
+- the directory lists only active companies, and filters by trade and state
+- with a package, each company shows whether it is eligible, why, and whether it is already invited
+- the limit is respected and capped
+
 ## bidlink.test.js (5)
 - an invited company bids from its emailed link, with no sign-in
 - a second link bid revises the first, and the GC sees one bid
@@ -157,6 +166,9 @@
 - test email: explains exactly what is missing, sends when live
 - sign-in brute-force limit: 10 attempts per 15 minutes by default
 - release identifier (owner only) and honest coverage
+
+## invite-by-name.test.js (1)
+- a publisher can invite a company by name to an open package, and the invitation is recorded
 
 ## itb.test.js (6)
 - GC request for any trade: validation no longer cleaning-only; square footage optional; links must be http(s)

@@ -5,1531 +5,1609 @@
 
 doctor: environment ready.
 11 need PostgreSQL: audit search runs in PostgreSQL: filters by action | two servers edit the same record: the second write | change notifications keep the other server current | one server saving the same record many times in a  | a large save (2,000 records with long ids) succeed | postgres: full cycle persists, reloads identically | postgres: a failed write is retried, not lost | two servers (deploy overlap): a scheduled job runs | postgres core: schema v2 tables, transactional dua | the store initializes on an empty database and the | SQL search returns exactly the in-memory results: 
-252 tests listed
+265 tests listed
 TAP version 13
 # Subtest: the window is twelve consecutive UTC months ending at the as-of month
 ok 1 - the window is twelve consecutive UTC months ending at the as-of month
   ---
-  duration_ms: 0.919081
+  duration_ms: 1.588866
   type: 'test'
   ...
 # Subtest: analytics count stored records by month, show zeros honestly, and exclude the platform company
 ok 2 - analytics count stored records by month, show zeros honestly, and exclude the platform company
   ---
-  duration_ms: 0.779935
+  duration_ms: 0.970773
   type: 'test'
   ...
 # Subtest: analytics report sources with their last success and last error, never invented numbers
 ok 3 - analytics report sources with their last success and last error, never invented numbers
   ---
-  duration_ms: 5.370432
+  duration_ms: 7.531233
   type: 'test'
   ...
 # Subtest: the action queue lists only items that need a decision, oldest first
 ok 4 - the action queue lists only items that need a decision, oldest first
   ---
-  duration_ms: 0.793491
+  duration_ms: 0.915527
   type: 'test'
   ...
 # Subtest: over HTTP: the admin pages are permission-gated
 ok 5 - over HTTP: the admin pages are permission-gated
   ---
-  duration_ms: 202.279018
+  duration_ms: 231.682802
   type: 'test'
   ...
 # Subtest: phase 3 permission matrix: every new route × every platform role; company users always denied
 ok 6 - phase 3 permission matrix: every new route × every platform role; company users always denied
   ---
-  duration_ms: 734.306236
+  duration_ms: 736.899924
   type: 'test'
   ...
 # Subtest: workflow 7: likely duplicates found; merge preview; merge needs step-up; package and bid untouched; old id resolves
 ok 7 - workflow 7: likely duplicates found; merge preview; merge needs step-up; package and bid untouched; old id resolves
   ---
-  duration_ms: 255.532806
+  duration_ms: 227.997268
   type: 'test'
   ...
 # Subtest: workflow 8: corrections keep the original value and never touch source permits; status changes need a reason
 ok 8 - workflow 8: corrections keep the original value and never touch source permits; status changes need a reason
   ---
-  duration_ms: 190.485563
+  duration_ms: 192.243679
   type: 'test'
   ...
 # Subtest: workflow 9: bid oversight shows originals (amount, time, receipt) and has no way to change them
 ok 9 - workflow 9: bid oversight shows originals (amount, time, receipt) and has no way to change them
   ---
-  duration_ms: 181.435475
+  duration_ms: 188.541524
   type: 'test'
   ...
 # Subtest: workflow 10: revoking access kills a link issued earlier; restore works; quarantine blocks everyone
 ok 10 - workflow 10: revoking access kills a link issued earlier; restore works; quarantine blocks everyone
   ---
-  duration_ms: 210.59798
+  duration_ms: 245.411387
   type: 'test'
   ...
 # Subtest: phase 4 permission matrix: every new route × every platform role; company users denied
 ok 11 - phase 4 permission matrix: every new route × every platform role; company users denied
   ---
-  duration_ms: 688.078076
+  duration_ms: 676.498314
   type: 'test'
   ...
 # Subtest: workflow 11: manual plan changes grant access but never a payment state; revenue stays unavailable
 ok 12 - workflow 11: manual plan changes grant access but never a payment state; revenue stays unavailable
   ---
-  duration_ms: 227.632211
+  duration_ms: 184.814421
   type: 'test'
   ...
 # Subtest: data sources: unreviewed terms cannot run; resume → retry pulls real records → import history → resync archives
 ok 13 - data sources: unreviewed terms cannot run; resume → retry pulls real records → import history → resync archives
   ---
-  duration_ms: 6250.993546
+  duration_ms: 6195.885341
   type: 'test'
   ...
 # Subtest: workflow 13 (partial): AI limits can only lower the plan allowance, and the analyzer enforces them; cost/accuracy stay unavailable
 ok 14 - workflow 13 (partial): AI limits can only lower the plan allowance, and the analyzer enforces them; cost/accuracy stay unavailable
   ---
-  duration_ms: 157.802337
+  duration_ms: 156.606934
   type: 'test'
   ...
 # Subtest: MFA: enroll with a real code; sign-in and step-up need it; wrong and reused codes refused; reset signs the user out
 ok 15 - MFA: enroll with a real code; sign-in and step-up need it; wrong and reused codes refused; reset signs the user out
   ---
-  duration_ms: 469.913692
+  duration_ms: 481.691395
   type: 'test'
   ...
 # Subtest: incidents open with a severity and move only along allowed steps, each step recorded
 ok 16 - incidents open with a severity and move only along allowed steps, each step recorded
   ---
-  duration_ms: 2.270626
+  duration_ms: 2.313168
   type: 'test'
   ...
 # Subtest: an export needs the dataset permission and a reason; a support agent cannot export the audit log
 ok 17 - an export needs the dataset permission and a reason; a support agent cannot export the audit log
   ---
-  duration_ms: 0.901722
+  duration_ms: 0.891473
   type: 'test'
   ...
 # Subtest: downloads need the creator, the right token, and a live export; expired ones are refused
 ok 18 - downloads need the creator, the right token, and a live export; expired ones are refused
   ---
-  duration_ms: 0.386533
+  duration_ms: 0.407583
   type: 'test'
   ...
 # Subtest: CSV cells are escaped and spreadsheet formulas are neutralised
 ok 19 - CSV cells are escaped and spreadsheet formulas are neutralised
   ---
-  duration_ms: 0.277976
+  duration_ms: 0.239214
   type: 'test'
   ...
 # Subtest: the health center labels what is not connected or not measured instead of calling it healthy
 ok 20 - the health center labels what is not connected or not measured instead of calling it healthy
   ---
-  duration_ms: 0.451446
+  duration_ms: 0.423553
   type: 'test'
   ...
 # Subtest: jobs overview reports counts and the last backup, or says none has run
 ok 21 - jobs overview reports counts and the last backup, or says none has run
   ---
-  duration_ms: 0.422284
+  duration_ms: 0.398845
   type: 'test'
   ...
 # Subtest: over HTTP: export creation and download are permission-gated end to end
 ok 22 - over HTTP: export creation and download are permission-gated end to end
   ---
-  duration_ms: 133.389467
+  duration_ms: 132.945338
   type: 'test'
   ...
 # Subtest: a case needs a real company, a subject of 5+ characters, and a known priority
 ok 23 - a case needs a real company, a subject of 5+ characters, and a known priority
   ---
-  duration_ms: 1.978817
+  duration_ms: 3.011995
   type: 'test'
   ...
 # Subtest: internal notes never reach the company; customer notes do
 ok 24 - internal notes never reach the company; customer notes do
   ---
-  duration_ms: 1.097127
+  duration_ms: 1.882963
   type: 'test'
   ...
 # Subtest: a company cannot open another company’s case
 ok 25 - a company cannot open another company’s case
   ---
-  duration_ms: 0.29732
+  duration_ms: 0.505883
   type: 'test'
   ...
 # Subtest: status moves follow the transition rules and need a reason
 ok 26 - status moves follow the transition rules and need a reason
   ---
-  duration_ms: 0.467677
+  duration_ms: 0.825375
   type: 'test'
   ...
 # Subtest: every change is audited with actor, target and outcome
 ok 27 - every change is audited with actor, target and outcome
   ---
-  duration_ms: 0.375957
+  duration_ms: 0.73747
   type: 'test'
   ...
 # Subtest: the list filters by status and the detail shows history
 ok 28 - the list filters by status and the detail shows history
   ---
-  duration_ms: 0.517617
+  duration_ms: 0.787548
   type: 'test'
   ...
 # Subtest: over HTTP: only support staff can manage cases; a company sees only its own, customer-visible view
 ok 29 - over HTTP: only support staff can manage cases; a company sees only its own, customer-visible view
   ---
-  duration_ms: 234.980059
+  duration_ms: 229.425191
   type: 'test'
   ...
 # Subtest: permission matrix: every admin route × every platform role, plus company users; deny by default, denials audited
 ok 30 - permission matrix: every admin route × every platform role, plus company users; deny by default, denials audited
   ---
-  duration_ms: 753.714057
+  duration_ms: 771.77673
   type: 'test'
   ...
 # Subtest: workflow 1: role grants need step-up; reviewers cannot grant roles; only an owner grants platform owner
 ok 31 - workflow 1: role grants need step-up; reviewers cannot grant roles; only an owner grants platform owner
   ---
-  duration_ms: 335.427204
+  duration_ms: 386.104506
   type: 'test'
   ...
 # Subtest: workflow 2: request more information → company resubmits → approve; status and audit history persist
 ok 32 - workflow 2: request more information → company resubmits → approve; status and audit history persist
   ---
-  duration_ms: 242.473117
+  duration_ms: 269.557772
   type: 'test'
   ...
 # Subtest: workflows 3 + 5: suspension revokes sessions and blocks the company; reactivation restores it; session revocation works
 ok 33 - workflows 3 + 5: suspension revokes sessions and blocks the company; reactivation restores it; session revocation works
   ---
-  duration_ms: 444.397619
+  duration_ms: 457.999907
   type: 'test'
   ...
 # Subtest: workflow 6: project-specific authority is approved separately from company verification
 ok 34 - workflow 6: project-specific authority is approved separately from company verification
   ---
-  duration_ms: 223.531352
+  duration_ms: 232.742067
   type: 'test'
   ...
 # Subtest: workflow 15 + redaction: auditors search but cannot change the audit log; no password ever lands in it
 ok 35 - workflow 15 + redaction: auditors search but cannot change the audit log; no password ever lands in it
   ---
-  duration_ms: 253.042568
+  duration_ms: 321.174998
   type: 'test'
   ...
 # Subtest: pagination and dashboard: limit capped, sort allow-listed, numbers match records, unavailable metrics say why
 ok 36 - pagination and dashboard: limit capped, sort allow-listed, numbers match records, unavailable metrics say why
   ---
-  duration_ms: 224.079938
+  duration_ms: 243.188786
   type: 'test'
   ...
 # Subtest: audit search runs in PostgreSQL: filters by action, actor, target, request id; paginates; newest first
 ok 37 - audit search runs in PostgreSQL: filters by action, actor, target, request id; paginates; newest first
   ---
-  duration_ms: 66.598655
+  duration_ms: 99.986825
   type: 'test'
   ...
 # Subtest: coordinates: negative longitudes are kept (regression: every US longitude was dropped)
 ok 38 - coordinates: negative longitudes are kept (regression: every US longitude was dropped)
   ---
-  duration_ms: 2.401246
+  duration_ms: 3.171628
   type: 'test'
   ...
 # Subtest: command center: real counts only, territory-scoped; map returns one point per located site
 ok 39 - command center: real counts only, territory-scoped; map returns one point per located site
   ---
-  duration_ms: 2.982942
+  duration_ms: 3.604619
   type: 'test'
   ...
 # Subtest: AI analyzer: off without a key, says exactly what to do
 ok 40 - AI analyzer: off without a key, says exactly what to do
   ---
-  duration_ms: 2.158103
+  duration_ms: 1.911237
   type: 'test'
   ...
 # Subtest: AI analyzer: only printed areas survive, every item keeps its sheet, starts unverified, can be confirmed
 ok 41 - AI analyzer: only printed areas survive, every item keeps its sheet, starts unverified, can be confirmed
   ---
-  duration_ms: 1.544238
+  duration_ms: 1.844548
   type: 'test'
   ...
 # Subtest: AI analyzer: no access to plan rooms you are not invited to; daily limit; bad model output handled
 ok 42 - AI analyzer: no access to plan rooms you are not invited to; daily limit; bad model output handled
   ---
-  duration_ms: 0.833006
+  duration_ms: 0.950149
   type: 'test'
   ...
 # Subtest: accuracy scoring: recall, exact printed areas, and invented areas counted against the model
 ok 43 - accuracy scoring: recall, exact printed areas, and invented areas counted against the model
   ---
-  duration_ms: 0.336827
+  duration_ms: 0.369345
   type: 'test'
   ...
 # Subtest: a buyer proposal changes nothing until the provider accepts it with its own signature
 ok 44 - a buyer proposal changes nothing until the provider accepts it with its own signature
   ---
-  duration_ms: 1.949822
+  duration_ms: 2.850804
   type: 'test'
   ...
 # Subtest: the provider can decline, with a reason; the amount stays and the buyer may propose again
 ok 45 - the provider can decline, with a reason; the amount stays and the buyer may propose again
   ---
-  duration_ms: 0.397373
+  duration_ms: 0.492846
   type: 'test'
   ...
 # Subtest: the buyer can withdraw a pending change; only one may be pending at a time
 ok 46 - the buyer can withdraw a pending change; only one may be pending at a time
   ---
-  duration_ms: 0.735992
+  duration_ms: 1.584965
   type: 'test'
   ...
 # Subtest: refusals: no change, bad price, short reason, missing signature, unsigned contract, other company
 ok 47 - refusals: no change, bad price, short reason, missing signature, unsigned contract, other company
   ---
-  duration_ms: 1.053268
+  duration_ms: 0.451686
   type: 'test'
   ...
 # Subtest: the signed record lists every amendment and keeps the original proposal
 ok 48 - the signed record lists every amendment and keeps the original proposal
   ---
-  duration_ms: 10.135037
+  duration_ms: 12.165216
   type: 'test'
   ...
 # Subtest: a spoofed X-Forwarded-For cannot reset the sign-in rate limit when no proxy is trusted
 ok 49 - a spoofed X-Forwarded-For cannot reset the sign-in rate limit when no proxy is trusted
   ---
-  duration_ms: 37.1651
+  duration_ms: 38.594235
   type: 'test'
   ...
 # Subtest: behind a trusted proxy, X-Forwarded-For identifies the real client
 ok 50 - behind a trusted proxy, X-Forwarded-For identifies the real client
   ---
-  duration_ms: 15.254687
+  duration_ms: 14.419939
   type: 'test'
   ...
 # Subtest: Postmark webhooks accept only HTTP Basic credentials; the secret is not accepted in the URL
 ok 51 - Postmark webhooks accept only HTTP Basic credentials; the secret is not accepted in the URL
   ---
-  duration_ms: 12.292753
+  duration_ms: 12.408582
   type: 'test'
   ...
 # Subtest: full cycle in dry-run: collect → qualify → estimate → draft → approve → preview, never marked sent
 ok 52 - full cycle in dry-run: collect → qualify → estimate → draft → approve → preview, never marked sent
   ---
-  duration_ms: 2006.336741
+  duration_ms: 2008.894442
   type: 'test'
   ...
 # Subtest: auto-approve rule approves only within owner limits
 ok 53 - auto-approve rule approves only within owner limits
   ---
-  duration_ms: 4.63539
+  duration_ms: 8.059157
   type: 'test'
   ...
 # Subtest: live sending: sent only with a provider MessageID; webhooks drive delivery, bounce and suppression
 ok 54 - live sending: sent only with a provider MessageID; webhooks drive delivery, bounce and suppression
   ---
-  duration_ms: 4.40541
+  duration_ms: 7.30041
   type: 'test'
   ...
 # Subtest: live sending: provider error marks bid failed, not sent; missing postal address blocks sending
 ok 55 - live sending: provider error marks bid failed, not sent; missing postal address blocks sending
   ---
-  duration_ms: 3.913026
+  duration_ms: 6.904233
   type: 'test'
   ...
 # Subtest: source failures are recorded, not swallowed
 ok 56 - source failures are recorded, not swallowed
   ---
-  duration_ms: 0.987235
+  duration_ms: 1.870331
   type: 'test'
   ...
 # Subtest: SAM.gov adapter maps federal solicitations with deadlines and source links
 ok 57 - SAM.gov adapter maps federal solicitations with deadlines and source links
   ---
-  duration_ms: 0.937261
+  duration_ms: 1.669301
   type: 'test'
   ...
 # Subtest: backup: encrypted, restorable with matching checksum; tampering detected
 ok 58 - backup: encrypted, restorable with matching checksum; tampering detected
   ---
-  duration_ms: 4.846115
+  duration_ms: 8.964978
   type: 'test'
   ...
 # Subtest: readiness: fresh deployment is NO-GO and every gate carries evidence + an owner
 ok 59 - readiness: fresh deployment is NO-GO and every gate carries evidence + an owner
   ---
-  duration_ms: 1.34793
+  duration_ms: 2.224981
   type: 'test'
   ...
 # Subtest: document vault: encrypted at rest, incremental, detects corrupted and missing files
 ok 60 - document vault: encrypted at rest, incremental, detects corrupted and missing files
   ---
-  duration_ms: 6.141684
+  duration_ms: 7.856198
   type: 'test'
   ...
 # Subtest: vault verification: every record needs its file; files must decrypt to a PDF with the recorded fingerprint
 ok 61 - vault verification: every record needs its file; files must decrypt to a PDF with the recorded fingerprint
   ---
-  duration_ms: 1.812702
+  duration_ms: 3.645912
   type: 'test'
   ...
 # Subtest: disaster drill: lose the server disk, restore database + drawings, every drawing byte-identical
 ok 62 - disaster drill: lose the server disk, restore database + drawings, every drawing byte-identical
   ---
-  duration_ms: 4.703464
+  duration_ms: 5.67833
   type: 'test'
   ...
 # Subtest: off-site signing matches the AWS published Signature V4 example
 ok 63 - off-site signing matches the AWS published Signature V4 example
   ---
-  duration_ms: 0.463144
+  duration_ms: 0.585645
   type: 'test'
   ...
 # Subtest: off-site sync: uploads the newest database backup and new document blobs only, signed
 ok 64 - off-site sync: uploads the newest database backup and new document blobs only, signed
   ---
-  duration_ms: 2.69944
+  duration_ms: 3.376329
   type: 'test'
   ...
 # Subtest: database TLS: verified by default over the internet; opt-out is explicit; private network has no TLS
 ok 65 - database TLS: verified by default over the internet; opt-out is explicit; private network has no TLS
   ---
-  duration_ms: 0.271122
+  duration_ms: 0.369353
+  type: 'test'
+  ...
+# Subtest: a revised bid keeps the original amount, scope and receipt, and the comparison shows both
+ok 66 - a revised bid keeps the original amount, scope and receipt, and the comparison shows both
+  ---
+  duration_ms: 15.731904
+  type: 'test'
+  ...
+# Subtest: a company that never revises shows one revision and no history
+ok 67 - a company that never revises shows one revision and no history
+  ---
+  duration_ms: 0.785898
+  type: 'test'
+  ...
+# Subtest: the directory lists only active companies, and filters by trade and state
+ok 68 - the directory lists only active companies, and filters by trade and state
+  ---
+  duration_ms: 7.636844
+  type: 'test'
+  ...
+# Subtest: with a package, each company shows whether it is eligible, why, and whether it is already invited
+ok 69 - with a package, each company shows whether it is eligible, why, and whether it is already invited
+  ---
+  duration_ms: 0.517272
+  type: 'test'
+  ...
+# Subtest: the limit is respected and capped
+ok 70 - the limit is respected and capped
+  ---
+  duration_ms: 0.226405
   type: 'test'
   ...
 # Subtest: an invited company bids from its emailed link, with no sign-in
-ok 66 - an invited company bids from its emailed link, with no sign-in
+ok 71 - an invited company bids from its emailed link, with no sign-in
   ---
-  duration_ms: 254.550461
+  duration_ms: 302.905349
   type: 'test'
   ...
 # Subtest: a second link bid revises the first, and the GC sees one bid
-ok 67 - a second link bid revises the first, and the GC sees one bid
+ok 72 - a second link bid revises the first, and the GC sees one bid
   ---
-  duration_ms: 235.979956
+  duration_ms: 221.122319
   type: 'test'
   ...
 # Subtest: the link is refused when it is wrong, tampered with, expired, or for another purpose
-ok 68 - the link is refused when it is wrong, tampered with, expired, or for another purpose
+ok 73 - the link is refused when it is wrong, tampered with, expired, or for another purpose
   ---
-  duration_ms: 245.552409
+  duration_ms: 203.014979
   type: 'test'
   ...
 # Subtest: a link bid is refused until addenda are acknowledged, and needs a name and work email
-ok 69 - a link bid is refused until addenda are acknowledged, and needs a name and work email
+ok 74 - a link bid is refused until addenda are acknowledged, and needs a name and work email
   ---
-  duration_ms: 233.097482
+  duration_ms: 208.01226
   type: 'test'
   ...
 # Subtest: the bid page is served and the invitation email carries the link
-ok 70 - the bid page is served and the invitation email carries the link
+ok 75 - the bid page is served and the invitation email carries the link
   ---
-  duration_ms: 200.513804
+  duration_ms: 290.953535
+  type: 'test'
+  ...
+# Subtest: the command center counts a publisher's projects and packages, and lists the next deadlines
+ok 76 - the command center counts a publisher's projects and packages, and lists the next deadlines
+  ---
+  duration_ms: 4.403753
+  type: 'test'
+  ...
+# Subtest: an unconfirmed account can ask for the confirmation email again, a limited number of times
+ok 77 - an unconfirmed account can ask for the confirmation email again, a limited number of times
+  ---
+  duration_ms: 149.664101
+  type: 'test'
+  ...
+# Subtest: a confirmed account has nothing to resend
+ok 78 - a confirmed account has nothing to resend
+  ---
+  duration_ms: 87.734446
   type: 'test'
   ...
 # Subtest: switch off: unchanged (permit ids, address grouping); switch on: same projects, permanent ids, anchor permits
-ok 71 - switch off: unchanged (permit ids, address grouping); switch on: same projects, permanent ids, anchor permits
+ok 79 - switch off: unchanged (permit ids, address grouping); switch on: same projects, permanent ids, anchor permits
   ---
-  duration_ms: 12.799572
+  duration_ms: 12.460342
   type: 'test'
   ...
 # Subtest: profile by project id: permits of the project (not just the address), core phases, anchor; old permit links still work
-ok 72 - profile by project id: permits of the project (not just the address), core phases, anchor; old permit links still work
+ok 80 - profile by project id: permits of the project (not just the address), core phases, anchor; old permit links still work
   ---
-  duration_ms: 10.516422
+  duration_ms: 11.301031
   type: 'test'
   ...
 # Subtest: parity detects splits; still OK because no permit is lost
-ok 73 - parity detects splits; still OK because no permit is lost
+ok 81 - parity detects splits; still OK because no permit is lost
   ---
-  duration_ms: 2.284948
+  duration_ms: 2.054485
   type: 'test'
   ...
 # Subtest: anchor permit is stable: a larger permit joining later does not move tracking or estimates
-ok 74 - anchor permit is stable: a larger permit joining later does not move tracking or estimates
+ok 82 - anchor permit is stable: a larger permit joining later does not move tracking or estimates
   ---
-  duration_ms: 1.87539
+  duration_ms: 1.767926
   type: 'test'
   ...
 # Subtest: planning-only project: profile from the core record; following needs a permit (clear message)
-ok 75 - planning-only project: profile from the core record; following needs a permit (clear message)
+ok 83 - planning-only project: profile from the core record; following needs a permit (clear message)
   ---
-  duration_ms: 1.30244
+  duration_ms: 1.281362
   type: 'test'
   ...
 # Subtest: map and command center count projects when on, sites when off
-ok 76 - map and command center count projects when on, sites when off
+ok 84 - map and command center count projects when on, sites when off
   ---
-  duration_ms: 1.204956
+  duration_ms: 1.088161
   type: 'test'
   ...
 # Subtest: GC picks the project: confirmed link even when the address differs; state and existence checked
-ok 77 - GC picks the project: confirmed link even when the address differs; state and existence checked
+ok 85 - GC picks the project: confirmed link even when the address differs; state and existence checked
   ---
-  duration_ms: 127.303974
+  duration_ms: 127.297687
   type: 'test'
   ...
 # Subtest: anchor order does not depend on the clock: links made in the same millisecond keep creation order
-ok 78 - anchor order does not depend on the clock: links made in the same millisecond keep creation order
+ok 86 - anchor order does not depend on the clock: links made in the same millisecond keep creation order
   ---
-  duration_ms: 3.232439
+  duration_ms: 3.409656
   type: 'test'
   ...
 # Subtest: tenant isolation: tenant collections require orgId and block cross-org access
-ok 79 - tenant isolation: tenant collections require orgId and block cross-org access
+ok 87 - tenant isolation: tenant collections require orgId and block cross-org access
   ---
-  duration_ms: 1.800527
+  duration_ms: 2.805368
   type: 'test'
   ...
 # Subtest: permits: normalize never invents values; residential skipped; dedupe updates
-ok 80 - permits: normalize never invents values; residential skipped; dedupe updates
+ok 88 - permits: normalize never invents values; residential skipped; dedupe updates
   ---
-  duration_ms: 2.212773
+  duration_ms: 3.303115
   type: 'test'
   ...
 # Subtest: estimating: hand-checked numbers, minimum price, refusal without quantity or approval
-ok 81 - estimating: hand-checked numbers, minimum price, refusal without quantity or approval
+ok 89 - estimating: hand-checked numbers, minimum price, refusal without quantity or approval
   ---
-  duration_ms: 1.566776
+  duration_ms: 2.603178
   type: 'test'
   ...
 # Subtest: rate cards: members cannot approve; new approval retires prior version
-ok 82 - rate cards: members cannot approve; new approval retires prior version
+ok 90 - rate cards: members cannot approve; new approval retires prior version
   ---
-  duration_ms: 0.699579
+  duration_ms: 0.827426
   type: 'test'
   ...
 # Subtest: bid state machine rejects illegal transitions and records history
-ok 83 - bid state machine rejects illegal transitions and records history
+ok 91 - bid state machine rejects illegal transitions and records history
   ---
-  duration_ms: 0.385631
+  duration_ms: 0.537726
   type: 'test'
   ...
 # Subtest: contacts: no invented recipients; unverified and suppressed are excluded; personal data refused
-ok 84 - contacts: no invented recipients; unverified and suppressed are excluded; personal data refused
+ok 92 - contacts: no invented recipients; unverified and suppressed are excluded; personal data refused
   ---
-  duration_ms: 0.863351
+  duration_ms: 1.11846
   type: 'test'
   ...
 # Subtest: sources: nothing collects until terms are reviewed; scraping refused
-ok 85 - sources: nothing collects until terms are reviewed; scraping refused
+ok 93 - sources: nothing collects until terms are reviewed; scraping refused
   ---
-  duration_ms: 0.55077
+  duration_ms: 0.726764
   type: 'test'
   ...
 # Subtest: csv parser handles quotes, commas and CRLF
-ok 86 - csv parser handles quotes, commas and CRLF
+ok 94 - csv parser handles quotes, commas and CRLF
   ---
-  duration_ms: 0.251123
+  duration_ms: 0.294686
   type: 'test'
   ...
 # Subtest: the awarded company countersigns and the contract becomes fully signed
-ok 87 - the awarded company countersigns and the contract becomes fully signed
+ok 95 - the awarded company countersigns and the contract becomes fully signed
   ---
-  duration_ms: 379.216567
+  duration_ms: 394.553289
   type: 'test'
   ...
 # Subtest: only the provider can countersign, once, with its own consent
-ok 88 - only the provider can countersign, once, with its own consent
+ok 96 - only the provider can countersign, once, with its own consent
   ---
-  duration_ms: 312.73891
+  duration_ms: 324.025695
   type: 'test'
   ...
 # Subtest: before countersignature the document says it is awaiting the provider
-ok 89 - before countersignature the document says it is awaiting the provider
+ok 97 - before countersignature the document says it is awaiting the provider
   ---
-  duration_ms: 285.831166
+  duration_ms: 314.496385
   type: 'test'
   ...
 # Subtest: a deadline change is recorded as a numbered addendum with the old and new date and the reason
-ok 90 - a deadline change is recorded as a numbered addendum with the old and new date and the reason
+ok 98 - a deadline change is recorded as a numbered addendum with the old and new date and the reason
   ---
-  duration_ms: 1.538977
+  duration_ms: 1.85642
   type: 'test'
   ...
 # Subtest: refuses a past date, the same date, a missing reason, a draft, and a request of another company
-ok 91 - refuses a past date, the same date, a missing reason, a draft, and a request of another company
+ok 99 - refuses a past date, the same date, a missing reason, a draft, and a request of another company
   ---
-  duration_ms: 0.353473
+  duration_ms: 0.444214
   type: 'test'
   ...
 # Subtest: license sync: looks up only names on permits, in one batched query, prefers the active license, records misses
-ok 92 - license sync: looks up only names on permits, in one batched query, prefers the active license, records misses
+ok 100 - license sync: looks up only names on permits, in one batched query, prefers the active license, records misses
   ---
-  duration_ms: 5.226033
+  duration_ms: 6.111887
   type: 'test'
   ...
 # Subtest: license shows on project contacts and contractor pages; phone only with contact access
-ok 93 - license shows on project contacts and contractor pages; phone only with contact access
+ok 101 - license shows on project contacts and contractor pages; phone only with contact access
   ---
-  duration_ms: 2015.535421
+  duration_ms: 2012.211008
   type: 'test'
   ...
 # Subtest: Legistar: keeps land-use items only, links to the official record
-ok 94 - Legistar: keeps land-use items only, links to the official record
+ok 102 - Legistar: keeps land-use items only, links to the official record
   ---
-  duration_ms: 2.557781
+  duration_ms: 2.059672
   type: 'test'
   ...
 # Subtest: stage changes: alert wording shows from → to; tracked projects notify once per change
-ok 95 - stage changes: alert wording shows from → to; tracked projects notify once per change
+ok 103 - stage changes: alert wording shows from → to; tracked projects notify once per change
   ---
-  duration_ms: 22.558863
+  duration_ms: 18.971922
   type: 'test'
   ...
 # Subtest: freshness: every result carries when it was last checked against the city record
-ok 96 - freshness: every result carries when it was last checked against the city record
+ok 104 - freshness: every result carries when it was last checked against the city record
   ---
-  duration_ms: 0.973152
+  duration_ms: 0.760455
   type: 'test'
   ...
 # Subtest: license matching: short names, punctuation and suffixes match; two different active companies do not; blanket permits ignored
-ok 97 - license matching: short names, punctuation and suffixes match; two different active companies do not; blanket permits ignored
+ok 105 - license matching: short names, punctuation and suffixes match; two different active companies do not; blanket permits ignored
   ---
-  duration_ms: 1961.805014
+  duration_ms: 1970.13328
   type: 'test'
   ...
 # Subtest: pulls: one at a time; run-now answers immediately; a stuck pull is overridden by the watchdog
-ok 98 - pulls: one at a time; run-now answers immediately; a stuck pull is overridden by the watchdog
+ok 106 - pulls: one at a time; run-now answers immediately; a stuck pull is overridden by the watchdog
   ---
-  duration_ms: 28.602691
+  duration_ms: 28.329256
   type: 'test'
   ...
 # Subtest: council filter: real Seattle appointments and citywide code changes are excluded; site-specific items kept; stale items removed
-ok 99 - council filter: real Seattle appointments and citywide code changes are excluded; site-specific items kept; stale items removed
+ok 107 - council filter: real Seattle appointments and citywide code changes are excluded; site-specific items kept; stale items removed
   ---
-  duration_ms: 986.042436
+  duration_ms: 982.228955
   type: 'test'
   ...
 # Subtest: land-use applications feed: rolling window, address required, links to the record
-ok 100 - land-use applications feed: rolling window, address required, links to the record
+ok 108 - land-use applications feed: rolling window, address required, links to the record
   ---
-  duration_ms: 1.388272
+  duration_ms: 2.424198
   type: 'test'
   ...
 # Subtest: attribution: Chicago carries its required disclaimer; only enabled sources are listed publicly
-ok 101 - attribution: Chicago carries its required disclaimer; only enabled sources are listed publicly
+ok 109 - attribution: Chicago carries its required disclaimer; only enabled sources are listed publicly
   ---
-  duration_ms: 65.19122
+  duration_ms: 74.960153
+  type: 'test'
+  ...
+# Subtest: the server entry point keeps running after its periodic jobs fire
+ok 110 - the server entry point keeps running after its periodic jobs fire
+  ---
+  duration_ms: 1351.124687
   type: 'test'
   ...
 # Subtest: auth, roles and tenant scoping over HTTP
-ok 102 - auth, roles and tenant scoping over HTTP
+ok 111 - auth, roles and tenant scoping over HTTP
   ---
-  duration_ms: 316.869997
+  duration_ms: 352.74967
   type: 'test'
   ...
 # Subtest: login is rate limited
-ok 103 - login is rate limited
+ok 112 - login is rate limited
   ---
-  duration_ms: 146.917337
+  duration_ms: 133.669246
   type: 'test'
   ...
 # Subtest: unsubscribe link suppresses across all tenants; forged links rejected
-ok 104 - unsubscribe link suppresses across all tenants; forged links rejected
+ok 113 - unsubscribe link suppresses across all tenants; forged links rejected
   ---
-  duration_ms: 135.146133
+  duration_ms: 113.980362
   type: 'test'
   ...
 # Subtest: stripe webhook: valid signature updates subscription, invalid rejected
-ok 105 - stripe webhook: valid signature updates subscription, invalid rejected
+ok 114 - stripe webhook: valid signature updates subscription, invalid rejected
   ---
-  duration_ms: 104.529396
+  duration_ms: 112.735766
   type: 'test'
   ...
 # Subtest: privacy requests: opt-out suppresses immediately; deletion removes contact records
-ok 106 - privacy requests: opt-out suppresses immediately; deletion removes contact records
+ok 115 - privacy requests: opt-out suppresses immediately; deletion removes contact records
   ---
-  duration_ms: 138.615523
+  duration_ms: 158.299608
   type: 'test'
   ...
 # Subtest: contacts API refuses invented or personal data
-ok 107 - contacts API refuses invented or personal data
+ok 116 - contacts API refuses invented or personal data
   ---
-  duration_ms: 134.562592
+  duration_ms: 152.075442
   type: 'test'
   ...
 # Subtest: run-now answers immediately and reports status
-ok 108 - run-now answers immediately and reports status
+ok 117 - run-now answers immediately and reports status
   ---
-  duration_ms: 138.433655
+  duration_ms: 138.949456
   type: 'test'
   ...
 # Subtest: links: javascript: URLs are refused for directory entries and contacts
-ok 109 - links: javascript: URLs are refused for directory entries and contacts
+ok 118 - links: javascript: URLs are refused for directory entries and contacts
   ---
-  duration_ms: 156.074768
+  duration_ms: 128.81536
   type: 'test'
   ...
 # Subtest: test email: explains exactly what is missing, sends when live
-ok 110 - test email: explains exactly what is missing, sends when live
+ok 119 - test email: explains exactly what is missing, sends when live
   ---
-  duration_ms: 198.262013
+  duration_ms: 155.324153
   type: 'test'
   ...
 # Subtest: sign-in brute-force limit: 10 attempts per 15 minutes by default
-ok 111 - sign-in brute-force limit: 10 attempts per 15 minutes by default
+ok 120 - sign-in brute-force limit: 10 attempts per 15 minutes by default
   ---
-  duration_ms: 125.797627
+  duration_ms: 104.658393
   type: 'test'
   ...
 # Subtest: release identifier (owner only) and honest coverage
-ok 112 - release identifier (owner only) and honest coverage
+ok 121 - release identifier (owner only) and honest coverage
   ---
-  duration_ms: 190.694024
+  duration_ms: 190.139054
+  type: 'test'
+  ...
+# Subtest: a publisher can invite a company by name to an open package, and the invitation is recorded
+ok 122 - a publisher can invite a company by name to an open package, and the invitation is recorded
+  ---
+  duration_ms: 122.968049
   type: 'test'
   ...
 # Subtest: GC request for any trade: validation no longer cleaning-only; square footage optional; links must be http(s)
-ok 113 - GC request for any trade: validation no longer cleaning-only; square footage optional; links must be http(s)
+ok 123 - GC request for any trade: validation no longer cleaning-only; square footage optional; links must be http(s)
   ---
-  duration_ms: 1.984294
+  duration_ms: 1.411487
   type: 'test'
   ...
 # Subtest: invitations go only to matching trades in matching territory; late joiners are invited by the hourly pull
-ok 114 - invitations go only to matching trades in matching territory; late joiners are invited by the hourly pull
+ok 124 - invitations go only to matching trades in matching territory; late joiners are invited by the hourly pull
   ---
-  duration_ms: 13.199038
+  duration_ms: 9.023183
   type: 'test'
   ...
 # Subtest: subcontractor: will bid → manual bid (escaped) → revise → GC compares and awards with signature
-ok 115 - subcontractor: will bid → manual bid (escaped) → revise → GC compares and awards with signature
+ok 125 - subcontractor: will bid → manual bid (escaped) → revise → GC compares and awards with signature
   ---
-  duration_ms: 18.172475
+  duration_ms: 13.290917
   type: 'test'
   ...
 # Subtest: cleaning instant pricing still works, and only for requests that ask for it
-ok 116 - cleaning instant pricing still works, and only for requests that ask for it
+ok 126 - cleaning instant pricing still works, and only for requests that ask for it
   ---
-  duration_ms: 35.145547
+  duration_ms: 34.819229
   type: 'test'
   ...
 # Subtest: subscriber → GC outreach: needs legal identity, a verified contact tied to the project, and is logged; no duplicates
-ok 117 - subscriber → GC outreach: needs legal identity, a verified contact tied to the project, and is logged; no duplicates
+ok 127 - subscriber → GC outreach: needs legal identity, a verified contact tied to the project, and is logged; no duplicates
   ---
-  duration_ms: 5.769727
+  duration_ms: 5.747544
   type: 'test'
   ...
 # Subtest: platform company gets cleaning trades once at startup (and keeps any trades it already set)
-ok 118 - platform company gets cleaning trades once at startup (and keeps any trades it already set)
+ok 128 - platform company gets cleaning trades once at startup (and keeps any trades it already set)
   ---
-  duration_ms: 1.107569
+  duration_ms: 1.195829
   type: 'test'
   ...
 # Subtest: plans: trial works until it ends; territory list limited by plan; national sees every state
-ok 119 - plans: trial works until it ends; territory list limited by plan; national sees every state
+ok 129 - plans: trial works until it ends; territory list limited by plan; national sees every state
   ---
-  duration_ms: 5.025106
+  duration_ms: 4.956109
   type: 'test'
   ...
 # Subtest: stage tracking: status changes are recorded with timestamps
-ok 120 - stage tracking: status changes are recorded with timestamps
+ok 130 - stage tracking: status changes are recorded with timestamps
   ---
-  duration_ms: 0.901911
+  duration_ms: 0.87104
   type: 'test'
   ...
 # Subtest: timeline: labeled estimate, larger jobs run longer, final cleaning comes last
-ok 121 - timeline: labeled estimate, larger jobs run longer, final cleaning comes last
+ok 131 - timeline: labeled estimate, larger jobs run longer, final cleaning comes last
   ---
-  duration_ms: 0.660574
+  duration_ms: 0.545098
   type: 'test'
   ...
 # Subtest: search: territory gate, filters, sorting; nothing outside paid states leaks
-ok 122 - search: territory gate, filters, sorting; nothing outside paid states leaks
+ok 132 - search: territory gate, filters, sorting; nothing outside paid states leaks
   ---
-  duration_ms: 5.125626
+  duration_ms: 4.868249
   type: 'test'
   ...
 # Subtest: project detail: verified contacts with evidence, suppressed people hidden, other territories 404
-ok 123 - project detail: verified contacts with evidence, suppressed people hidden, other territories 404
+ok 133 - project detail: verified contacts with evidence, suppressed people hidden, other territories 404
   ---
-  duration_ms: 1.485602
+  duration_ms: 1.468693
   type: 'test'
   ...
 # Subtest: saved searches: plan limit, alerts only for new or changed projects, one email per day
-ok 124 - saved searches: plan limit, alerts only for new or changed projects, one email per day
+ok 134 - saved searches: plan limit, alerts only for new or changed projects, one email per day
   ---
-  duration_ms: 20.022559
+  duration_ms: 18.46358
   type: 'test'
   ...
 # Subtest: export: blocked on trial, limited and correctly escaped on paid plans
-ok 125 - export: blocked on trial, limited and correctly escaped on paid plans
+ok 135 - export: blocked on trial, limited and correctly escaped on paid plans
   ---
-  duration_ms: 1.515407
+  duration_ms: 1.500223
   type: 'test'
   ...
 # Subtest: tracking: stage + notes, only for projects in territory
-ok 126 - tracking: stage + notes, only for projects in territory
+ok 136 - tracking: stage + notes, only for projects in territory
   ---
-  duration_ms: 0.935708
+  duration_ms: 0.879139
   type: 'test'
   ...
 # Subtest: HTTP: subscriber signup → verify → search; buyers and unverified accounts blocked; probe flags bad field maps
-ok 127 - HTTP: subscriber signup → verify → search; buyers and unverified accounts blocked; probe flags bad field maps
+ok 137 - HTTP: subscriber signup → verify → search; buyers and unverified accounts blocked; probe flags bad field maps
   ---
-  duration_ms: 298.889653
+  duration_ms: 294.322815
   type: 'test'
   ...
 # Subtest: timeline: interior jobs skip site work and structure; new builds keep them
-ok 128 - timeline: interior jobs skip site work and structure; new builds keep them
+ok 138 - timeline: interior jobs skip site work and structure; new builds keep them
   ---
-  duration_ms: 0.656917
+  duration_ms: 0.710855
   type: 'test'
   ...
 # Subtest: Chicago-style contacts: roles picked by type, never by position
-ok 129 - Chicago-style contacts: roles picked by type, never by position
+ok 139 - Chicago-style contacts: roles picked by type, never by position
   ---
-  duration_ms: 0.728797
+  duration_ms: 0.769515
   type: 'test'
   ...
 # Subtest: probe reads the official schema, license and freshness; array fields checked per column
-ok 130 - probe reads the official schema, license and freshness; array fields checked per column
+ok 140 - probe reads the official schema, license and freshness; array fields checked per column
   ---
-  duration_ms: 0.484987
+  duration_ms: 0.520645
   type: 'test'
   ...
 # Subtest: catalog corrections reach disabled sources only; live sources are left alone
-ok 131 - catalog corrections reach disabled sources only; live sources are left alone
+ok 141 - catalog corrections reach disabled sources only; live sources are left alone
   ---
-  duration_ms: 0.674972
+  duration_ms: 0.692871
   type: 'test'
   ...
 # Subtest: ArcGIS adapter: commercial filter at the source, epoch dates converted, per-record source link, incremental since
-ok 132 - ArcGIS adapter: commercial filter at the source, epoch dates converted, per-record source link, incremental since
+ok 142 - ArcGIS adapter: commercial filter at the source, epoch dates converted, per-record source link, incremental since
   ---
-  duration_ms: 1.209959
+  duration_ms: 1.184958
   type: 'test'
   ...
 # Subtest: sources with no field map can never be switched on
-ok 133 - sources with no field map can never be switched on
+ok 143 - sources with no field map can never be switched on
   ---
-  duration_ms: 0.642489
+  duration_ms: 0.597265
   type: 'test'
   ...
 # Subtest: internal company plan sees every state (regression: plan limit overwrote the state list)
-ok 134 - internal company plan sees every state (regression: plan limit overwrote the state list)
+ok 144 - internal company plan sees every state (regression: plan limit overwrote the state list)
   ---
-  duration_ms: 0.773011
+  duration_ms: 0.762885
   type: 'test'
   ...
 # Subtest: occupancy classification: code groups case-sensitive, words case-insensitive, single-family excluded
-ok 135 - occupancy classification: code groups case-sensitive, words case-insensitive, single-family excluded
+ok 145 - occupancy classification: code groups case-sensitive, words case-insensitive, single-family excluded
   ---
-  duration_ms: 1.153159
+  duration_ms: 1.108143
   type: 'test'
   ...
 # Subtest: default search hides completed/expired; includeClosed or an explicit stage shows them; detail always opens
-ok 136 - default search hides completed/expired; includeClosed or an explicit stage shows them; detail always opens
+ok 146 - default search hides completed/expired; includeClosed or an explicit stage shows them; detail always opens
   ---
-  duration_ms: 1.137091
+  duration_ms: 1.111851
   type: 'test'
   ...
 # Subtest: Socrata sync: oldest change first, pages forward, source filter applied, backfill window on first run
-ok 137 - Socrata sync: oldest change first, pages forward, source filter applied, backfill window on first run
+ok 147 - Socrata sync: oldest change first, pages forward, source filter applied, backfill window on first run
   ---
-  duration_ms: 9.37595
+  duration_ms: 10.297623
   type: 'test'
   ...
 # Subtest: value/sqft take the first filled column; zeros skipped
-ok 138 - value/sqft take the first filled column; zeros skipped
+ok 148 - value/sqft take the first filled column; zeros skipped
   ---
-  duration_ms: 0.524101
+  duration_ms: 0.56894
   type: 'test'
   ...
 # Subtest: houses are filtered by Seattle wording, and stored records that turn out residential are downgraded
-ok 139 - houses are filtered by Seattle wording, and stored records that turn out residential are downgraded
+ok 149 - houses are filtered by Seattle wording, and stored records that turn out residential are downgraded
   ---
-  duration_ms: 0.641657
+  duration_ms: 0.807805
   type: 'test'
   ...
 # Subtest: resync archives a source's records (hidden from search) and they come back if re-pulled
-ok 140 - resync archives a source's records (hidden from search) and they come back if re-pulled
+ok 150 - resync archives a source's records (hidden from search) and they come back if re-pulled
   ---
-  duration_ms: 0.843518
+  duration_ms: 1.060715
   type: 'test'
   ...
 # Subtest: probe can list a column's real values, server-side
-ok 141 - probe can list a column's real values, server-side
+ok 151 - probe can list a column's real values, server-side
   ---
-  duration_ms: 1.044368
+  duration_ms: 1.023132
   type: 'test'
   ...
 # Subtest: window sync: re-pulls recently issued/applied permits, ignores portal-wide rewrites, no cursor
-ok 142 - window sync: re-pulls recently issued/applied permits, ignores portal-wide rewrites, no cursor
+ok 152 - window sync: re-pulls recently issued/applied permits, ignores portal-wide rewrites, no cursor
   ---
-  duration_ms: 0.45406
+  duration_ms: 0.442091
   type: 'test'
   ...
 # Subtest: placeholder values ($0/$1) are treated as unknown, real values kept
-ok 143 - placeholder values ($0/$1) are treated as unknown, real values kept
+ok 153 - placeholder values ($0/$1) are treated as unknown, real values kept
   ---
-  duration_ms: 0.281866
+  duration_ms: 0.337012
   type: 'test'
   ...
 # Subtest: Minneapolis occupancy codes: MFD and 3to4 are multifamily; generic "Comm" falls back to the description
-ok 144 - Minneapolis occupancy codes: MFD and 3to4 are multifamily; generic "Comm" falls back to the description
+ok 154 - Minneapolis occupancy codes: MFD and 3to4 are multifamily; generic "Comm" falls back to the description
   ---
-  duration_ms: 0.187522
+  duration_ms: 0.115731
   type: 'test'
   ...
 # Subtest: grouping: permits at one site become one lead; detail lists the others; unit numbers and street spellings normalize
-ok 145 - grouping: permits at one site become one lead; detail lists the others; unit numbers and street spellings normalize
+ok 155 - grouping: permits at one site become one lead; detail lists the others; unit numbers and street spellings normalize
   ---
-  duration_ms: 1.036678
+  duration_ms: 1.001744
   type: 'test'
   ...
 # Subtest: work-type tags from real city wording; filter and saved searches use them
-ok 146 - work-type tags from real city wording; filter and saved searches use them
+ok 156 - work-type tags from real city wording; filter and saved searches use them
   ---
-  duration_ms: 0.758058
+  duration_ms: 0.885143
   type: 'test'
   ...
 # Subtest: request validation: real quantities and future due dates required; janitorial needs frequency
-ok 147 - request validation: real quantities and future due dates required; janitorial needs frequency
+ok 157 - request validation: real quantities and future due dates required; janitorial needs frequency
   ---
-  duration_ms: 1.895338
+  duration_ms: 1.974377
   type: 'test'
   ...
 # Subtest: recurring janitorial: monthly price = per-visit price × visits
-ok 148 - recurring janitorial: monthly price = per-visit price × visits
+ok 158 - recurring janitorial: monthly price = per-visit price × visits
   ---
-  duration_ms: 2.485244
+  duration_ms: 2.514889
   type: 'test'
   ...
 # Subtest: marketplace end to end: buyer request → autopilot proposal → delivered to inbox → award; buyer never sees costs
-ok 149 - marketplace end to end: buyer request → autopilot proposal → delivered to inbox → award; buyer never sees costs
+ok 159 - marketplace end to end: buyer request → autopilot proposal → delivered to inbox → award; buyer never sees costs
   ---
-  duration_ms: 63.766064
+  duration_ms: 63.504848
   type: 'test'
   ...
 # Subtest: unverified buyers cannot post; outside service area is not bid
-ok 150 - unverified buyers cannot post; outside service area is not bid
+ok 160 - unverified buyers cannot post; outside service area is not bid
   ---
-  duration_ms: 43.345401
+  duration_ms: 45.229781
   type: 'test'
   ...
 # Subtest: inbound reply attaches to the bid, flags it, and "remove me" suppresses the sender
-ok 151 - inbound reply attaches to the bid, flags it, and "remove me" suppresses the sender
+ok 161 - inbound reply attaches to the bid, flags it, and "remove me" suppresses the sender
   ---
-  duration_ms: 1.052775
+  duration_ms: 1.092786
   type: 'test'
   ...
 # Subtest: follow-up: exactly one, only after the delay, never after a reply
-ok 152 - follow-up: exactly one, only after the delay, never after a reply
+ok 162 - follow-up: exactly one, only after the delay, never after a reply
   ---
-  duration_ms: 6.579806
+  duration_ms: 6.61857
   type: 'test'
   ...
 # Subtest: directory: bulk import validates rows, gaps rank blocked value, adding a contact requeues bids
-ok 153 - directory: bulk import validates rows, gaps rank blocked value, adding a contact requeues bids
+ok 163 - directory: bulk import validates rows, gaps rank blocked value, adding a contact requeues bids
   ---
-  duration_ms: 2003.901189
+  duration_ms: 2010.491507
   type: 'test'
   ...
 # Subtest: retention: expired sessions and old previews removed; stale contacts marked outdated
-ok 154 - retention: expired sessions and old previews removed; stale contacts marked outdated
+ok 164 - retention: expired sessions and old previews removed; stale contacts marked outdated
   ---
-  duration_ms: 1.117959
+  duration_ms: 0.855231
   type: 'test'
   ...
 # Subtest: HTTP: buyer signup → email verification link → post request; buyers blocked from seller data
-ok 155 - HTTP: buyer signup → email verification link → post request; buyers blocked from seller data
+ok 165 - HTTP: buyer signup → email verification link → post request; buyers blocked from seller data
   ---
-  duration_ms: 163.446796
+  duration_ms: 136.434934
   type: 'test'
   ...
 # Subtest: permit bids never include recurring janitorial lines
-ok 156 - permit bids never include recurring janitorial lines
+ok 166 - permit bids never include recurring janitorial lines
   ---
-  duration_ms: 2.634681
+  duration_ms: 2.473218
   type: 'test'
   ...
 # Subtest: scales and geometry, checked by hand
-ok 157 - scales and geometry, checked by hand
+ok 167 - scales and geometry, checked by hand
   ---
-  duration_ms: 1.063711
+  duration_ms: 0.965515
   type: 'test'
   ...
 # Subtest: saved measurements: server computes the value, needs a scale, only invited companies, private per company
-ok 158 - saved measurements: server computes the value, needs a scale, only invited companies, private per company
+ok 168 - saved measurements: server computes the value, needs a scale, only invited companies, private per company
   ---
-  duration_ms: 9.571354
+  duration_ms: 8.92716
   type: 'test'
   ...
 # Subtest: measurements → estimate (linked to the invitation) → bid that cites sheet, page and scale
-ok 159 - measurements → estimate (linked to the invitation) → bid that cites sheet, page and scale
+ok 169 - measurements → estimate (linked to the invitation) → bid that cites sheet, page and scale
   ---
-  duration_ms: 9.293394
+  duration_ms: 9.579502
   type: 'test'
   ...
 # write conflict on 1 record(s): database copy kept orgs/org1
 # Subtest: two servers edit the same record: the second write is rejected as a conflict, the first is kept, nothing is silent
-ok 160 - two servers edit the same record: the second write is rejected as a conflict, the first is kept, nothing is silent
+ok 170 - two servers edit the same record: the second write is rejected as a conflict, the first is kept, nothing is silent
   ---
-  duration_ms: 218.823006
+  duration_ms: 343.337761
   type: 'test'
   ...
 # Subtest: change notifications keep the other server current: create, update, delete
-ok 161 - change notifications keep the other server current: create, update, delete
+ok 171 - change notifications keep the other server current: create, update, delete
   ---
-  duration_ms: 298.220395
+  duration_ms: 306.995449
   type: 'test'
   ...
 # write conflict on 1 record(s): database copy kept orgs/o2
 # Subtest: one server saving the same record many times in a row never conflicts with itself; stale deletes are refused
-ok 162 - one server saving the same record many times in a row never conflicts with itself; stale deletes are refused
+ok 172 - one server saving the same record many times in a row never conflicts with itself; stale deletes are refused
   ---
-  duration_ms: 180.18426
+  duration_ms: 190.89418
   type: 'test'
   ...
 # Subtest: a large save (2,000 records with long ids) succeeds and every change reaches the other server
-ok 163 - a large save (2,000 records with long ids) succeeds and every change reaches the other server
+ok 173 - a large save (2,000 records with long ids) succeeds and every change reaches the other server
   ---
-  duration_ms: 513.719355
+  duration_ms: 497.475225
   type: 'test'
   ...
 # Subtest: the awarded company is told to countersign, and the others are told they were not selected
-ok 164 - the awarded company is told to countersign, and the others are told they were not selected
+ok 174 - the awarded company is told to countersign, and the others are told they were not selected
   ---
-  duration_ms: 435.062147
+  duration_ms: 449.980952
   type: 'test'
   ...
 # Subtest: a failed email does not undo the award
-ok 165 - a failed email does not undo the award
+ok 175 - a failed email does not undo the award
   ---
-  duration_ms: 346.590702
+  duration_ms: 359.313646
   type: 'test'
   ...
 # Subtest: defaults are immediate with a cap of 3 emails a day, and out-of-range values are clamped
-ok 166 - defaults are immediate with a cap of 3 emails a day, and out-of-range values are clamped
+ok 176 - defaults are immediate with a cap of 3 emails a day, and out-of-range values are clamped
   ---
-  duration_ms: 1.250218
+  duration_ms: 1.246923
   type: 'test'
   ...
 # Subtest: a daily digest sends at most one batch per 24 hours; immediate mode sends each batch
-ok 167 - a daily digest sends at most one batch per 24 hours; immediate mode sends each batch
+ok 177 - a daily digest sends at most one batch per 24 hours; immediate mode sends each batch
   ---
-  duration_ms: 0.652627
+  duration_ms: 0.566425
   type: 'test'
   ...
 # Subtest: the daily cap stops emails once reached, and resets the next day
-ok 168 - the daily cap stops emails once reached, and resets the next day
+ok 178 - the daily cap stops emails once reached, and resets the next day
   ---
-  duration_ms: 0.192354
+  duration_ms: 0.173812
   type: 'test'
   ...
 # Subtest: over HTTP: only a company owner can read or change the setting, and bad values are refused
-ok 169 - over HTTP: only a company owner can read or change the setting, and bad values are refused
+ok 179 - over HTTP: only a company owner can read or change the setting, and bad values are refused
   ---
-  duration_ms: 212.025497
+  duration_ms: 209.923739
   type: 'test'
   ...
 # Subtest: every match states the trades it shares and the territory, in plain language
-ok 170 - every match states the trades it shares and the territory, in plain language
+ok 180 - every match states the trades it shares and the territory, in plain language
   ---
-  duration_ms: 0.555604
+  duration_ms: 0.618208
   type: 'test'
   ...
 # Subtest: a queued message is sent once and logged; a second drain does not resend it
-ok 171 - a queued message is sent once and logged; a second drain does not resend it
+ok 181 - a queued message is sent once and logged; a second drain does not resend it
   ---
-  duration_ms: 1.878319
+  duration_ms: 1.974932
   type: 'test'
   ...
 # Subtest: a failed send is kept and retried later, with a growing wait, and succeeds when mail recovers
-ok 172 - a failed send is kept and retried later, with a growing wait, and succeeds when mail recovers
+ok 182 - a failed send is kept and retried later, with a growing wait, and succeeds when mail recovers
   ---
-  duration_ms: 0.686522
+  duration_ms: 0.581554
   type: 'test'
   ...
 # Subtest: after the last attempt the message is marked failed and the reason is in the log
-ok 173 - after the last attempt the message is marked failed and the reason is in the log
+ok 183 - after the last attempt the message is marked failed and the reason is in the log
   ---
-  duration_ms: 1.778365
+  duration_ms: 1.791155
   type: 'test'
   ...
 # Subtest: in dry-run mode the message is logged with its preview and nothing is sent
-ok 174 - in dry-run mode the message is logged with its preview and nothing is sent
+ok 184 - in dry-run mode the message is logged with its preview and nothing is sent
   ---
-  duration_ms: 0.325767
+  duration_ms: 0.297683
   type: 'test'
   ...
 # Subtest: each subscriber plan is described in plain terms that match its real limits
-ok 175 - each subscriber plan is described in plain terms that match its real limits
+ok 185 - each subscriber plan is described in plain terms that match its real limits
   ---
-  duration_ms: 12.043291
+  duration_ms: 12.700041
   type: 'test'
   ...
 # Subtest: the free trial and the custom enterprise plan are described honestly
-ok 176 - the free trial and the custom enterprise plan are described honestly
+ok 186 - the free trial and the custom enterprise plan are described honestly
   ---
-  duration_ms: 0.209703
+  duration_ms: 0.68012
   type: 'test'
   ...
 # Subtest: internal and free-tier plans never appear in the public comparison
-ok 177 - internal and free-tier plans never appear in the public comparison
+ok 187 - internal and free-tier plans never appear in the public comparison
   ---
-  duration_ms: 0.679343
+  duration_ms: 0.893633
   type: 'test'
   ...
 # Subtest: over HTTP the comparison is public and needs no sign-in
-ok 178 - over HTTP the comparison is public and needs no sign-in
+ok 188 - over HTTP the comparison is public and needs no sign-in
   ---
-  duration_ms: 26.379471
+  duration_ms: 30.31818
   type: 'test'
   ...
 # Subtest: text is extracted from real PDFs on the server
-ok 179 - text is extracted from real PDFs on the server
+ok 189 - text is extracted from real PDFs on the server
   ---
-  duration_ms: 144.678692
+  duration_ms: 306.931711
   type: 'test'
   ...
 # Subtest: drawing sets → sheets → revisions, linked to the project; addendum becomes the current revision
-ok 180 - drawing sets → sheets → revisions, linked to the project; addendum becomes the current revision
+ok 190 - drawing sets → sheets → revisions, linked to the project; addendum becomes the current revision
   ---
-  duration_ms: 17.443729
+  duration_ms: 23.58835
   type: 'test'
   ...
 # Subtest: search inside documents: all terms must match, best page and snippet, only entitled files
-ok 181 - search inside documents: all terms must match, best page and snippet, only entitled files
+ok 191 - search inside documents: all terms must match, best page and snippet, only entitled files
   ---
-  duration_ms: 20.255312
+  duration_ms: 15.293178
   type: 'test'
   ...
 # Subtest: revision comparison shows the changed text; same sheet only; access and indexing enforced
-ok 182 - revision comparison shows the changed text; same sheet only; access and indexing enforced
+ok 192 - revision comparison shows the changed text; same sheet only; access and indexing enforced
   ---
-  duration_ms: 14.341811
+  duration_ms: 10.823593
   type: 'test'
   ...
 # Subtest: rights model: licensed documents need an active entitlement, the territory, and an unexpired license
-ok 183 - rights model: licensed documents need an active entitlement, the territory, and an unexpired license
+ok 193 - rights model: licensed documents need an active entitlement, the territory, and an unexpired license
   ---
-  duration_ms: 0.24453
+  duration_ms: 0.294884
   type: 'test'
   ...
 # Subtest: one rule everywhere: viewing links follow the rights model
-ok 184 - one rule everywhere: viewing links follow the rights model
+ok 194 - one rule everywhere: viewing links follow the rights model
   ---
-  duration_ms: 8.24067
+  duration_ms: 12.687992
   type: 'test'
   ...
 # Subtest: line diff
-ok 185 - line diff
+ok 195 - line diff
   ---
-  duration_ms: 0.248598
+  duration_ms: 0.27294
   type: 'test'
   ...
 # Subtest: sheet index from file names: disciplines, sheet numbers, specs; never guesses beyond the name
-ok 186 - sheet index from file names: disciplines, sheet numbers, specs; never guesses beyond the name
+ok 196 - sheet index from file names: disciplines, sheet numbers, specs; never guesses beyond the name
   ---
-  duration_ms: 2.168846
+  duration_ms: 1.978735
   type: 'test'
   ...
 # Subtest: uploads: PDFs only, size limit, no duplicates, only the posting GC
-ok 187 - uploads: PDFs only, size limit, no duplicates, only the posting GC
+ok 197 - uploads: PDFs only, size limit, no duplicates, only the posting GC
   ---
-  duration_ms: 126.239494
+  duration_ms: 122.723995
   type: 'test'
   ...
 # Subtest: access: GC and invited bidders only; signed links expire; opening records a planholder
-ok 188 - access: GC and invited bidders only; signed links expire; opening records a planholder
+ok 198 - access: GC and invited bidders only; signed links expire; opening records a planholder
   ---
-  duration_ms: 115.71707
+  duration_ms: 101.399471
   type: 'test'
   ...
 # Subtest: addenda: numbered, bidders notified, bidding blocked until acknowledged, bid states the addenda
-ok 189 - addenda: numbered, bidders notified, bidding blocked until acknowledged, bid states the addenda
+ok 199 - addenda: numbered, bidders notified, bidding blocked until acknowledged, bid states the addenda
   ---
-  duration_ms: 98.910045
+  duration_ms: 109.319568
   type: 'test'
   ...
 # Subtest: HTTP: raw PDF upload, listing, signed viewing in the browser
-ok 190 - HTTP: raw PDF upload, listing, signed viewing in the browser
+ok 200 - HTTP: raw PDF upload, listing, signed viewing in the browser
   ---
-  duration_ms: 351.583991
+  duration_ms: 361.273008
   type: 'test'
   ...
 # Subtest: postgres: full cycle persists, reloads identically, deletes propagate, audit stored
-ok 191 - postgres: full cycle persists, reloads identically, deletes propagate, audit stored
+ok 201 - postgres: full cycle persists, reloads identically, deletes propagate, audit stored
   ---
-  duration_ms: 168.409504
+  duration_ms: 181.194009
   type: 'test'
   ...
 # postgres flush failed: connection reset
 # Subtest: postgres: a failed write is retried, not lost
-ok 192 - postgres: a failed write is retried, not lost
+ok 202 - postgres: a failed write is retried, not lost
   ---
-  duration_ms: 42.991364
+  duration_ms: 50.216784
   type: 'test'
   ...
 # Subtest: two servers (deploy overlap): a scheduled job runs on only one; the lock frees afterwards
-ok 193 - two servers (deploy overlap): a scheduled job runs on only one; the lock frees afterwards
+ok 203 - two servers (deploy overlap): a scheduled job runs on only one; the lock frees afterwards
   ---
-  duration_ms: 115.342514
+  duration_ms: 99.551521
   type: 'test'
   ...
 # Subtest: prequalification profile: only what was filed; "verified" only when checked with the issuer; gaps flagged
-ok 194 - prequalification profile: only what was filed; "verified" only when checked with the issuer; gaps flagged
+ok 204 - prequalification profile: only what was filed; "verified" only when checked with the issuer; gaps flagged
   ---
-  duration_ms: 3.306048
+  duration_ms: 4.280382
   type: 'test'
   ...
 # Subtest: bid leveling: latest revision per bidder, spread vs low, median, addenda acknowledged; receipts fingerprint the exact bid
-ok 195 - bid leveling: latest revision per bidder, spread vs low, median, addenda acknowledged; receipts fingerprint the exact bid
+ok 205 - bid leveling: latest revision per bidder, spread vs low, median, addenda acknowledged; receipts fingerprint the exact bid
   ---
-  duration_ms: 13.746359
+  duration_ms: 15.619779
   type: 'test'
   ...
 # Subtest: addenda show in leveling; prequal decisions are private to the GC and limited to its own bidders
-ok 196 - addenda show in leveling; prequal decisions are private to the GC and limited to its own bidders
+ok 206 - addenda show in leveling; prequal decisions are private to the GC and limited to its own bidders
   ---
-  duration_ms: 1.834731
+  duration_ms: 1.955384
   type: 'test'
   ...
 # Subtest: incremental linking only touches changed records; a full re-scan finds nothing missed
-ok 197 - incremental linking only touches changed records; a full re-scan finds nothing missed
+ok 207 - incremental linking only touches changed records; a full re-scan finds nothing missed
   ---
-  duration_ms: 6.723315
+  duration_ms: 6.57178
   type: 'test'
   ...
 # Subtest: one permanent project per development: address variants and suites join; IDs are stable and readable
-ok 198 - one permanent project per development: address variants and suites join; IDs are stable and readable
+ok 208 - one permanent project per development: address variants and suites join; IDs are stable and readable
   ---
-  duration_ms: 1.490979
+  duration_ms: 1.589248
   type: 'test'
   ...
 # Subtest: lifecycle: land-use filing creates a planning project; bid request and permits move it forward with history
-ok 199 - lifecycle: land-use filing creates a planning project; bid request and permits move it forward with history
+ok 209 - lifecycle: land-use filing creates a planning project; bid request and permits move it forward with history
   ---
-  duration_ms: 1.759776
+  duration_ms: 1.74376
   type: 'test'
   ...
 # Subtest: company relationships carry source, method, verification and dates
-ok 200 - company relationships carry source, method, verification and dates
+ok 210 - company relationships carry source, method, verification and dates
   ---
-  duration_ms: 19.025572
+  duration_ms: 19.901019
   type: 'test'
   ...
 # Subtest: ambiguous matches go to review, never guessed; merge keeps the surviving ID and old IDs still resolve; split
-ok 201 - ambiguous matches go to review, never guessed; merge keeps the surviving ID and old IDs still resolve; split
+ok 211 - ambiguous matches go to review, never guessed; merge keeps the surviving ID and old IDs still resolve; split
   ---
-  duration_ms: 1.327972
+  duration_ms: 1.508445
   type: 'test'
   ...
 # Subtest: visibility: territory for permits; bid packages and drawings only for the GC and invited companies
-ok 202 - visibility: territory for permits; bid packages and drawings only for the GC and invited companies
+ok 212 - visibility: territory for permits; bid packages and drawings only for the GC and invited companies
   ---
-  duration_ms: 1.600507
+  duration_ms: 1.784874
   type: 'test'
   ...
 # Subtest: database-style search in memory: filters, order, territory
-ok 203 - database-style search in memory: filters, order, territory
+ok 213 - database-style search in memory: filters, order, territory
   ---
-  duration_ms: 0.788367
+  duration_ms: 0.830804
   type: 'test'
   ...
 # Subtest: postgres core: schema v2 tables, transactional dual-write, reconcile, SQL search matches, merge, re-sync
-ok 204 - postgres core: schema v2 tables, transactional dual-write, reconcile, SQL search matches, merge, re-sync
+ok 214 - postgres core: schema v2 tables, transactional dual-write, reconcile, SQL search matches, merge, re-sync
   ---
-  duration_ms: 219.9344
+  duration_ms: 210.807995
   type: 'test'
   ...
 # Subtest: linking scales linearly (regression: phase recompute was quadratic — 67 s at 10,000 permits)
-ok 205 - linking scales linearly (regression: phase recompute was quadratic — 67 s at 10,000 permits)
+ok 215 - linking scales linearly (regression: phase recompute was quadratic — 67 s at 10,000 permits)
   ---
-  duration_ms: 1440.831706
+  duration_ms: 1531.850648
+  type: 'test'
+  ...
+# Subtest: a verification request keeps the contact person and records each step in the review history
+ok 216 - a verification request keeps the contact person and records each step in the review history
+  ---
+  duration_ms: 2.331358
+  type: 'test'
+  ...
+# Subtest: a rejected company resubmits, and the history shows the rejection, the reason and the new request
+ok 217 - a rejected company resubmits, and the history shows the rejection, the reason and the new request
+  ---
+  duration_ms: 0.56185
+  type: 'test'
+  ...
+# Subtest: approval is recorded in the history with who approved it and how it was checked
+ok 218 - approval is recorded in the history with who approved it and how it was checked
+  ---
+  duration_ms: 0.242266
   type: 'test'
   ...
 # Subtest: one catalog: legacy plans map onto it; publishers publish but do not get discovery; free gets invitations only; expired trial blocks
-ok 206 - one catalog: legacy plans map onto it; publishers publish but do not get discovery; free gets invitations only; expired trial blocks
+ok 219 - one catalog: legacy plans map onto it; publishers publish but do not get discovery; free gets invitations only; expired trial blocks
   ---
-  duration_ms: 1.304224
+  duration_ms: 1.59815
   type: 'test'
   ...
 # Subtest: publishing needs a verified company, permission, and evidence when acting for the owner
-ok 207 - publishing needs a verified company, permission, and evidence when acting for the owner
+ok 220 - publishing needs a verified company, permission, and evidence when acting for the owner
   ---
-  duration_ms: 1.8409
+  duration_ms: 2.219705
   type: 'test'
   ...
 # Subtest: full lifecycle: draft (invisible) → checklist → publish → invite-only vs eligible → can-bid answers → coverage → close/reopen/archive
-ok 208 - full lifecycle: draft (invisible) → checklist → publish → invite-only vs eligible → can-bid answers → coverage → close/reopen/archive
+ok 221 - full lifecycle: draft (invisible) → checklist → publish → invite-only vs eligible → can-bid answers → coverage → close/reopen/archive
   ---
-  duration_ms: 5.752544
+  duration_ms: 7.305615
   type: 'test'
   ...
 # Subtest: a discovered permit is never a bid opportunity; a draft is visible only to its publisher
-ok 209 - a discovered permit is never a bid opportunity; a draft is visible only to its publisher
+ok 222 - a discovered permit is never a bid opportunity; a draft is visible only to its publisher
   ---
-  duration_ms: 2.323369
+  duration_ms: 2.408413
   type: 'test'
   ...
 # Subtest: publisher plan limits active projects (Basic: 3); one-step post follows the same rules
-ok 210 - publisher plan limits active projects (Basic: 3); one-step post follows the same rules
+ok 223 - publisher plan limits active projects (Basic: 3); one-step post follows the same rules
   ---
-  duration_ms: 1.945244
+  duration_ms: 1.860628
   type: 'test'
   ...
 # Subtest: HTTP: seats are enforced; permissions control publish, upload and award
-ok 211 - HTTP: seats are enforced; permissions control publish, upload and award
+ok 224 - HTTP: seats are enforced; permissions control publish, upload and award
   ---
-  duration_ms: 391.756666
+  duration_ms: 416.517824
   type: 'test'
   ...
 # Subtest: AI credits come from the plan (never above the platform cap); Free has none
-ok 212 - AI credits come from the plan (never above the platform cap); Free has none
+ok 225 - AI credits come from the plan (never above the platform cap); Free has none
   ---
-  duration_ms: 0.732788
+  duration_ms: 0.965648
   type: 'test'
   ...
 # Subtest: coverage states the document situation explicitly: uploaded (with revision), intentionally none, or missing — plus blockers
-ok 213 - coverage states the document situation explicitly: uploaded (with revision), intentionally none, or missing — plus blockers
+ok 226 - coverage states the document situation explicitly: uploaded (with revision), intentionally none, or missing — plus blockers
   ---
-  duration_ms: 1.148218
+  duration_ms: 1.922316
   type: 'test'
   ...
 # Subtest: an invited company asks; the GC answers; every invited company sees the answer, not the asker
-ok 214 - an invited company asks; the GC answers; every invited company sees the answer, not the asker
+ok 227 - an invited company asks; the GC answers; every invited company sees the answer, not the asker
   ---
-  duration_ms: 457.838988
+  duration_ms: 446.901107
   type: 'test'
   ...
 # Subtest: companies that are not invited cannot ask or read questions; empty and short questions are refused
-ok 215 - companies that are not invited cannot ask or read questions; empty and short questions are refused
+ok 228 - companies that are not invited cannot ask or read questions; empty and short questions are refused
   ---
-  duration_ms: 398.282486
+  duration_ms: 421.063952
   type: 'test'
   ...
 # Subtest: questions close with the package, and the answer must be given by the GC for this package
-ok 216 - questions close with the package, and the answer must be given by the GC for this package
+ok 229 - questions close with the package, and the answer must be given by the GC for this package
   ---
-  duration_ms: 383.883711
+  duration_ms: 401.676826
   type: 'test'
   ...
 # Subtest: subcontractor: signs up, confirms, signs in, and is invited to a matching request only
-ok 217 - subcontractor: signs up, confirms, signs in, and is invited to a matching request only
+ok 230 - subcontractor: signs up, confirms, signs in, and is invited to a matching request only
   ---
-  duration_ms: 367.810612
+  duration_ms: 394.997068
   type: 'test'
   ...
 # Subtest: service provider: signs up with services, confirms, and is invited to cleaning work from an owner
-ok 218 - service provider: signs up with services, confirms, and is invited to cleaning work from an owner
+ok 231 - service provider: signs up with services, confirms, and is invited to cleaning work from an owner
   ---
-  duration_ms: 253.252912
+  duration_ms: 258.654066
   type: 'test'
   ...
 # Subtest: general contractor and owner: each sees only their own requests and can post
-ok 219 - general contractor and owner: each sees only their own requests and can post
+ok 232 - general contractor and owner: each sees only their own requests and can post
   ---
-  duration_ms: 253.224749
+  duration_ms: 257.173242
   type: 'test'
   ...
 # Subtest: a construction manager posting for an owner must show the owner authorization and see it reviewed
-ok 220 - a construction manager posting for an owner must show the owner authorization and see it reviewed
+ok 233 - a construction manager posting for an owner must show the owner authorization and see it reviewed
   ---
-  duration_ms: 157.022405
+  duration_ms: 173.643933
   type: 'test'
   ...
 # Subtest: a subcontractor signs up with the trade keys that invitations match on
-ok 221 - a subcontractor signs up with the trade keys that invitations match on
+ok 234 - a subcontractor signs up with the trade keys that invitations match on
   ---
-  duration_ms: 72.734536
+  duration_ms: 84.197832
   type: 'test'
   ...
 # Subtest: a service provider signs up with services and is matched to cleaning work
-ok 222 - a service provider signs up with services and is matched to cleaning work
+ok 235 - a service provider signs up with services and is matched to cleaning work
   ---
-  duration_ms: 44.46539
+  duration_ms: 59.175191
   type: 'test'
   ...
 # Subtest: a general contractor or owner signs up with a valid buyer type only
-ok 223 - a general contractor or owner signs up with a valid buyer type only
+ok 236 - a general contractor or owner signs up with a valid buyer type only
   ---
-  duration_ms: 37.160875
+  duration_ms: 45.747109
   type: 'test'
   ...
 # Subtest: credentials: expired insurance pauses all bidding; adding a current certificate resumes it
-ok 224 - credentials: expired insurance pauses all bidding; adding a current certificate resumes it
+ok 237 - credentials: expired insurance pauses all bidding; adding a current certificate resumes it
   ---
-  duration_ms: 2024.340086
+  duration_ms: 2020.38479
   type: 'test'
   ...
 # Subtest: credentials: proposals say "on file" until independently verified; verification needs evidence
-ok 225 - credentials: proposals say "on file" until independently verified; verification needs evidence
+ok 238 - credentials: proposals say "on file" until independently verified; verification needs evidence
   ---
-  duration_ms: 1.212098
+  duration_ms: 1.180468
   type: 'test'
   ...
 # Subtest: e-signature: award records signer, consent, IP and document hash; tampering is detected
-ok 226 - e-signature: award records signer, consent, IP and document hash; tampering is detected
+ok 239 - e-signature: award records signer, consent, IP and document hash; tampering is detected
   ---
-  duration_ms: 51.147588
+  duration_ms: 46.674229
   type: 'test'
   ...
 # Subtest: digest: approvals, gaps, expiring insurance; sent once per week; platform owner also sees gates
-ok 227 - digest: approvals, gaps, expiring insurance; sent once per week; platform owner also sees gates
+ok 240 - digest: approvals, gaps, expiring insurance; sent once per week; platform owner also sees gates
   ---
-  duration_ms: 7.70233
+  duration_ms: 6.069443
   type: 'test'
   ...
 # Subtest: store change tracking marks every write path, including cross-tenant suppression
-ok 228 - store change tracking marks every write path, including cross-tenant suppression
+ok 241 - store change tracking marks every write path, including cross-tenant suppression
   ---
-  duration_ms: 0.434021
+  duration_ms: 0.390101
   type: 'test'
   ...
 # Subtest: a draft can be scheduled, not in the past, and unscheduled
-ok 229 - a draft can be scheduled, not in the past, and unscheduled
+ok 242 - a draft can be scheduled, not in the past, and unscheduled
   ---
-  duration_ms: 1.598512
+  duration_ms: 1.744443
   type: 'test'
   ...
 # Subtest: a scheduled draft publishes when its time comes, and stays a draft until then
-ok 230 - a scheduled draft publishes when its time comes, and stays a draft until then
+ok 243 - a scheduled draft publishes when its time comes, and stays a draft until then
   ---
-  duration_ms: 3.071903
+  duration_ms: 3.23741
   type: 'test'
   ...
 # Subtest: a scheduled publish that cannot happen is cleared, with the reason kept on the draft
-ok 231 - a scheduled publish that cannot happen is cleared, with the reason kept on the draft
+ok 244 - a scheduled publish that cannot happen is cleared, with the reason kept on the draft
   ---
-  duration_ms: 1.197472
+  duration_ms: 1.303668
   type: 'test'
   ...
 # Subtest: the store initializes on an empty database and the phases table has its seq column
-ok 232 - the store initializes on an empty database and the phases table has its seq column
+ok 245 - the store initializes on an empty database and the phases table has its seq column
   ---
-  duration_ms: 75.757049
+  duration_ms: 99.232687
   type: 'test'
   ...
 # Subtest: SQL search returns exactly the in-memory results: every filter, sort, page, both grouping modes
-ok 233 - SQL search returns exactly the in-memory results: every filter, sort, page, both grouping modes
+ok 246 - SQL search returns exactly the in-memory results: every filter, sort, page, both grouping modes
   ---
-  duration_ms: 4561.539663
+  duration_ms: 4852.671363
   type: 'test'
   ...
 # Subtest: takeoff only from a confirmed analysis; printed areas become lines with their sheet and room
-ok 234 - takeoff only from a confirmed analysis; printed areas become lines with their sheet and room
+ok 247 - takeoff only from a confirmed analysis; printed areas become lines with their sheet and room
   ---
-  duration_ms: 3.040448
+  duration_ms: 3.507226
   type: 'test'
   ...
 # Subtest: estimate math checked by hand; quantity edits are flagged as adjusted; validation
-ok 235 - estimate math checked by hand; quantity edits are flagged as adjusted; validation
+ok 248 - estimate math checked by hand; quantity edits are flagged as adjusted; validation
   ---
-  duration_ms: 0.888387
+  duration_ms: 0.847446
   type: 'test'
   ...
 # Subtest: rate-card lines price from approved cleaning rates; unapproved cards cannot price
-ok 236 - rate-card lines price from approved cleaning rates; unapproved cards cannot price
+ok 249 - rate-card lines price from approved cleaning rates; unapproved cards cannot price
   ---
-  duration_ms: 1.065175
+  duration_ms: 1.172093
   type: 'test'
   ...
 # Subtest: submit as bid: amount = estimate total, bid lists quantities with sources; locked after submission
-ok 237 - submit as bid: amount = estimate total, bid lists quantities with sources; locked after submission
+ok 250 - submit as bid: amount = estimate total, bid lists quantities with sources; locked after submission
   ---
-  duration_ms: 13.864071
+  duration_ms: 13.416095
   type: 'test'
   ...
 # Subtest: the homepage is the public website; the workspace stays at /app and /login
-ok 238 - the homepage is the public website; the workspace stays at /app and /login
+ok 251 - the homepage is the public website; the workspace stays at /app and /login
   ---
-  duration_ms: 31.417343
+  duration_ms: 31.205683
   type: 'test'
   ...
 # Subtest: every public product page is served, with its own title and the shared styles
-ok 239 - every public product page is served, with its own title and the shared styles
+ok 252 - every public product page is served, with its own title and the shared styles
   ---
-  duration_ms: 29.970346
+  duration_ms: 33.688854
   type: 'test'
   ...
 # Subtest: website pages respect the content policy: no inline scripts or event handlers
-ok 240 - website pages respect the content policy: no inline scripts or event handlers
+ok 253 - website pages respect the content policy: no inline scripts or event handlers
   ---
-  duration_ms: 1.415986
+  duration_ms: 1.496287
   type: 'test'
   ...
 # Subtest: every internal link on the website leads to a page that exists
-ok 241 - every internal link on the website leads to a page that exists
+ok 254 - every internal link on the website leads to a page that exists
   ---
-  duration_ms: 27.552231
+  duration_ms: 27.905414
   type: 'test'
   ...
 # Subtest: the workspace sign-in links and emailed deep links point at /app, not the homepage
-ok 242 - the workspace sign-in links and emailed deep links point at /app, not the homepage
+ok 255 - the workspace sign-in links and emailed deep links point at /app, not the homepage
   ---
-  duration_ms: 1.436658
+  duration_ms: 1.911877
   type: 'test'
   ...
 # Subtest: the public contact form stores a valid inquiry and rejects an invalid one
-ok 243 - the public contact form stores a valid inquiry and rejects an invalid one
+ok 256 - the public contact form stores a valid inquiry and rejects an invalid one
   ---
-  duration_ms: 11.403166
+  duration_ms: 13.18814
   type: 'test'
   ...
 # Subtest: inquiries are visible only to Super Admin staff with the support permission
-ok 244 - inquiries are visible only to Super Admin staff with the support permission
+ok 257 - inquiries are visible only to Super Admin staff with the support permission
   ---
-  duration_ms: 3.214248
+  duration_ms: 3.442649
   type: 'test'
   ...
 # Subtest: the contact form is wired to the public inquiry route
-ok 245 - the contact form is wired to the public inquiry route
+ok 258 - the contact form is wired to the public inquiry route
   ---
-  duration_ms: 0.211885
+  duration_ms: 0.302518
   type: 'test'
   ...
 # Subtest: the UI screen gallery is served and links to all public screens
-ok 246 - the UI screen gallery is served and links to all public screens
+ok 259 - the UI screen gallery is served and links to all public screens
   ---
-  duration_ms: 2.882774
+  duration_ms: 3.059445
   type: 'test'
   ...
 # Subtest: the content policy forbids inline styles and scripts on every served page
-ok 247 - the content policy forbids inline styles and scripts on every served page
+ok 260 - the content policy forbids inline styles and scripts on every served page
   ---
-  duration_ms: 8.483355
+  duration_ms: 5.89899
   type: 'test'
   ...
 # Subtest: no public page or app script carries an inline style attribute or a <style> block
-ok 248 - no public page or app script carries an inline style attribute or a <style> block
+ok 261 - no public page or app script carries an inline style attribute or a <style> block
   ---
-  duration_ms: 2.796796
+  duration_ms: 3.081285
   type: 'test'
   ...
 # Subtest: Get Started leads to the role chooser, which offers all four roles
-ok 249 - Get Started leads to the role chooser, which offers all four roles
+ok 262 - Get Started leads to the role chooser, which offers all four roles
   ---
-  duration_ms: 6.167599
+  duration_ms: 6.30473
   type: 'test'
   ...
 # Subtest: a permit shows bid packages and drawings at the same site only to invited companies
-ok 250 - a permit shows bid packages and drawings at the same site only to invited companies
+ok 263 - a permit shows bid packages and drawings at the same site only to invited companies
   ---
-  duration_ms: 6.864423
+  duration_ms: 12.578657
   type: 'test'
   ...
 # Subtest: Build Estimate on a permit: prices permit square footage with approved rates; reuses the draft; proposal escapes text
-ok 251 - Build Estimate on a permit: prices permit square footage with approved rates; reuses the draft; proposal escapes text
+ok 264 - Build Estimate on a permit: prices permit square footage with approved rates; reuses the draft; proposal escapes text
   ---
-  duration_ms: 11.224605
+  duration_ms: 19.826114
   type: 'test'
   ...
 # Subtest: market activity and KPI trend are counted from real permits in the territory
-ok 252 - market activity and KPI trend are counted from real permits in the territory
+ok 265 - market activity and KPI trend are counted from real permits in the territory
   ---
-  duration_ms: 2.229023
+  duration_ms: 3.475855
   type: 'test'
   ...
-1..252
-# tests 252
+1..265
+# tests 265
 # suites 0
-# pass 252
+# pass 265
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 19478.399961
+# duration_ms 58093.138659
 
-test-ci: PASSED (tests 252, passed 252, failed 0, skipped 0, cancelled 0)
+test-ci: PASSED (tests 265, passed 265, failed 0, skipped 0, cancelled 0)
