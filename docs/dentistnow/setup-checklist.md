@@ -1,0 +1,61 @@
+# Setup checklist — DentistNow Robotics
+
+Status: prepared for the owner to action. Nothing here has been filed, registered, purchased or signed. Items marked **[owner]** need your identity, payment or signature. Items marked **[counsel]** need a securities or corporate lawyer.
+
+## A. Entity (decision 1: separate company, registered in Iowa)
+
+1. **[counsel]** Confirm the structure: separate company, its owners, and how it relates to DentistNow. Confirm an Iowa registration is the right choice for the Iowa program and for the company's location.
+2. **[owner]** Choose a company name and check availability with the Iowa Secretary of State.
+3. **[owner]** Register the company with the Iowa Secretary of State. Choose a registered agent and office address.
+4. **[owner]** Obtain a federal employer identification number (EIN) from the IRS.
+5. **[owner]** Open a company bank account and set up accounting.
+6. **[counsel]** Adopt founding documents: operating agreement or bylaws, founder share issuance, and an 83(b) election if counsel recommends one for founder stock.
+7. **[counsel]** Invention-assignment and confidentiality agreements for every founder, employee, contractor and advisor. Use the templates in the counsel review brief.
+
+## B. Contact and public presence (decision 2)
+
+1. **[owner]** Register a dedicated domain for the company, separate from personal accounts.
+2. **[owner]** Create a project email on that domain (for example, an info or investors mailbox).
+3. **[owner]** Choose a business mailing address. Use a virtual office or the registered agent's address rather than a home address.
+4. **[counsel + owner]** Publish the privacy notice (draft below) before the landing page goes live.
+5. Update `docs/dentistnow/index.html` and the deck contact slide with the real details. They are placeholders now.
+
+## C. First round (decision 3: SAFE or convertible note, if counsel agrees)
+
+1. **[counsel]** Confirm the exemption. Usually a private offering limited to accredited investors. Confirm the investor questionnaire and filing requirements.
+2. **[counsel]** Choose the instrument: SAFE (post-money, with valuation cap and discount) or convertible note.
+3. **[owner + counsel]** Agree the valuation cap, discount and any "most favoured nation" clause. The 35% stake and $19.6M pre-money in the plan are placeholders and should not be used as terms.
+4. **[counsel]** Prepare the subscription documents and a data-room record of which investor received which document.
+
+## D. Before any investor sees the materials
+
+- [ ] Entity registered and EIN obtained
+- [ ] Counsel review brief answered
+- [ ] Privacy notice published
+- [ ] Contact details live
+- [ ] Figures re-checked against sources (see the funding verification checklist)
+- [ ] Data-room gate levels applied (see the data-room index)
+
+---
+
+## Draft privacy notice (for counsel to review; not for publication as is)
+
+**DentistNow Robotics — Privacy notice (draft)**
+
+We respect your privacy. This notice explains what we collect when you contact us through our website, and how we use it.
+
+**What we collect.** If you email us, we keep your name, email address and the content of your message. We do not collect health information, payment details or other sensitive data through this website.
+
+**How we use it.** To reply to your message, share information you asked for, and manage conversations about partnership or investment interest. We do not sell personal information.
+
+**Who we share it with.** Only people who need it to respond to you, and service providers under contract. We will disclose information where the law requires it.
+
+**How long we keep it.** As long as needed to respond to you, then delete or archive it according to our records policy.
+
+**Your choices.** You can ask us to see, correct or delete the information we hold about you by contacting [project email — to be set up].
+
+**Contact.** [Business name, mailing address and project email — to be set up.]
+
+**Last updated:** [date — to be set by counsel].
+
+*Draft. Requires review by counsel. Jurisdiction-specific requirements, such as state privacy laws, may apply.*
