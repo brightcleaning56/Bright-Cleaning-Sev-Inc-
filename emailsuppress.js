@@ -62,6 +62,8 @@ function onInbound(db, fromAddress, subject, preview) {
 function gate(db, message) {
   if (!message || !message.automated) return { blocked: false };
   const to = [].concat(message.to || '').join(',').split(',').map(norm).filter(Boolean);
+  // Job inboxes (careers@, hr@) never receive automated sales email, whatever the lead says.
+  for (const a of to) if (require('./leadclass').JOB_INBOX.test(a.split('@')[0])) return { blocked: true, reason: 'job_inbox', address: a };
   for (const a of to) {
     const s = isSuppressed(db, a);
     if (s) return { blocked: true, reason: s.reason, address: a };

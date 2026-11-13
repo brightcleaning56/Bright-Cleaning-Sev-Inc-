@@ -157,7 +157,7 @@ require('./engine')(app,{db,auth,logAction,clean});
 require('./contracts2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./calls2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./complaints')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
-require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});require('./emailsuppress').mount(app,{db,auth,logAction,adminEmail});
+require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});require('./emailsuppress').mount(app,{db,auth,logAction,adminEmail});require('./leadclass').mount(app,{db,auth});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./subscriptions')(app,{db,auth,logAction,clean,adminEmail});
 require('./workqueue')(app,{db,auth,logAction,clean});
