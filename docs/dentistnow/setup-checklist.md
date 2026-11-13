@@ -20,7 +20,7 @@ Iowa: the Iowa program requires an Iowa-based company, legally formed and regist
 ## B. Contact and public presence (decision 2)
 
 1. **[owner]** Register a dedicated domain for the company, separate from personal accounts.
-2. **[owner]** Create a project email on that domain (for example, an info or investors mailbox).
+2. **[owner]** Confirm you control dentistnow.co (registrar account, renewal and DNS access). Create the mailbox info@dentistnow.co, and an investor-relations mailbox if needed. The website and email are not set up yet.
 3. **[owner]** Choose a business mailing address. Use a virtual office or the registered agent's address rather than a home address.
 4. **[counsel + owner]** Publish the privacy notice (draft below) before the landing page goes live.
 5. Update `docs/dentistnow/index.html` and the deck contact slide with the real details. They are placeholders now.
@@ -57,9 +57,9 @@ We respect your privacy. This notice explains what we collect when you contact u
 
 **How long we keep it.** As long as needed to respond to you, then delete or archive it according to our records policy.
 
-**Your choices.** You can ask us to see, correct or delete the information we hold about you by contacting [project email — to be set up].
+**Your choices.** You can ask us to see, correct or delete the information we hold about you by contacting info@dentistnow.co.
 
-**Contact.** [Business name, mailing address and project email — to be set up.]
+**Contact.** DentistNow Robotics, [business mailing address — to be set up], info@dentistnow.co. Website: dentistnow.co.
 
 **Last updated:** [date — to be set by counsel].
 
