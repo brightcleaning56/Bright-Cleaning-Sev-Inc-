@@ -22,6 +22,11 @@ and not regulatory submissions. Nothing here is FDA-cleared, and nothing here au
   or subgingival calculus removal in version 1.
 - Instruments use a clean pathway and a closed contaminated-return pathway, with validated reprocessing.
 
+| `system-ui/` | Clickable prototype of the operator and patient interface, with the engineering design baseline. Simulated data only. |
+| `funding-verification-checklist.md` | Fields to confirm by hand on the Iowa, NIDCR and SEC pages. |
+| `data-room-index.md` | What can be shared, with whom, and at which counsel-approved gate. |
+| `grant-application-outline.md` | SBIR/STTR Phase I outline with placeholders for unverified facts. |
+
 ## Not yet included
 
 - Dimensioned mechanical drawings, CAD models and tolerances.
