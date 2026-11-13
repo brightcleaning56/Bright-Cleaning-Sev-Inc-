@@ -15,10 +15,17 @@
  <div class="brand"><div class="logo">D</div><div><b>DentistNow</b><small>AUTOCLEAN PRO 2.0</small></div></div>
  <div class="navlabel">Workspace</div><nav class="nav">
  <button class="active" data-page="overview"><span class="ico">▦</span> Command center</button>
+ <button data-page="workflow"><span class="ico">⇢</span> Visit workflow</button>
  <button data-page="patients"><span class="ico">♙</span> Patient encounters</button>
  <button data-page="intake"><span class="ico">＋</span> Patient intake</button>
  <button data-page="imaging"><span class="ico">◉</span> Imaging & 3D scan</button>
  <button data-page="clinical"><span class="ico">✚</span> Clinical review</button>
+ <button data-page="perio"><span class="ico">≋</span> Periodontal chart</button>
+ <button data-page="plan"><span class="ico">☰</span> Treatment plan</button>
+ <button data-page="eligibility"><span class="ico">⚠</span> Eligibility gate</button>
+ <button data-page="consent"><span class="ico">✓</span> Proposal and consent</button>
+ <button data-page="monitor"><span class="ico">◷</span> Cleaning monitor</button>
+ <button data-page="results"><span class="ico">▣</span> Results and follow-up</button>
  <button data-page="procedure"><span class="ico">⚕</span> Procedure authorization</button>
  </nav>
  <div class="navlabel">Machine operations</div><nav class="nav">
@@ -26,9 +33,12 @@
  <button data-page="robotics"><span class="ico">⟲</span> Robotics & instruments</button>
  <button data-page="safety"><span class="ico">⬡</span> Safety monitor</button>
  <button data-page="infection"><span class="ico">♧</span> Infection control</button>
+ <button data-page="audit"><span class="ico">≣</span> Audit and safety log</button>
  </nav>
  <div class="navlabel">Administration</div><nav class="nav">
  <button data-page="reports"><span class="ico">▤</span> Reports & analytics</button>
+ <button data-page="roles"><span class="ico">☷</span> Roles and permissions</button>
+ <button data-page="datamodel"><span class="ico">⌸</span> Records and entities</button>
  <button data-page="settings"><span class="ico">⚙</span> Device settings</button>
  </nav>
  <div class="sidefoot">Prototype interface · Simulated data<br>Clinical actions are not connected to a real device.</div>
@@ -103,11 +113,164 @@
 <section class="page" id="settings"><div class="heading"><div><div class="eyebrow">Administration</div><div class="h1">Device settings</div><div class="sub">Manage device identity, software version, role permissions and integration health.</div></div><span class="pill blue">Read-only demo</span></div>
 <div class="grid g2"><div class="card"><h3 class="sectiontitle">Device identity</h3><div class="checkrow"><span>Device name</span><b>AutoClean Pro 2.0 · Demo 01</b></div><div class="checkrow"><span>Device ID</span><b>AC2-DEMO-0001</b></div><div class="checkrow"><span>Firmware</span><b>Not assigned</b></div><div class="checkrow"><span>Software release</span><b>UI prototype 0.1</b></div><div class="checkrow"><span>Clinic association</span><b>Demo Clinic</b></div></div><div class="card"><h3 class="sectiontitle">Integration status</h3><div class="checkrow"><span>DentistNow patient records</span><span class="pill">Not connected</span></div><div class="checkrow"><span>Identity provider</span><span class="pill">Not connected</span></div><div class="checkrow"><span>Imaging archive</span><span class="pill">Not connected</span></div><div class="checkrow"><span>Device gateway</span><span class="pill">Not connected</span></div><div class="checkrow"><span>Audit service</span><span class="pill">Not connected</span></div></div></div>
 <div class="notice" style="margin-top:16px">Production deployment requires authentication, role-based permissions, encrypted transport and storage, tenant isolation, audit trails, backup and recovery, monitoring and validated release management.</div></section>
+<section class="page" id="workflow"><div class="heading"><div><div class="eyebrow">Process · first visit</div><div class="h1">Visit workflow and gates</div><div class="sub">The 14-step first-visit process, who acts at each step, what stops the visit, and what each step records. Matches the engineering binder, sheet 04.</div></div><span class="pill blue">Simulation</span></div>
+<div class="card"><h3 class="sectiontitle">Visit states</h3>
+<div class="workflow" style="grid-template-columns:repeat(4,1fr)">
+<div class="step done"><b>Identified</b>Identity matched to record</div>
+<div class="step done"><b>Assessed</b>History, symptoms, imaging complete</div>
+<div class="step current"><b>Clinician review</b>Findings confirmed or rejected</div>
+<div class="step"><b>Eligible</b>Gate passed, consent pending</div>
+<div class="step"><b>Authorized</b>Professional sign-off recorded</div>
+<div class="step"><b>Cleaning</b>Under supervision, stop available</div>
+<div class="step"><b>Completed</b>Report issued, follow-up set</div>
+<div class="step" style="border-color:#f2caca;background:#fff7f7"><b>Referred</b>Stopped; professional visit needed</div>
+<div class="step" style="border-color:#f2caca;background:#fff7f7"><b>Stopped by patient</b>Instruments withdrawn; logged</div>
+<div class="step" style="border-color:#f2caca;background:#fff7f7"><b>Faulted (safe state)</b>Retraction; locked until reset</div>
+</div>
+<div class="notice">Transitions into Cleaning require every gate on the Procedure page to be true. A referral or a fault cannot be overridden from the operator screen. Recovery needs an authorized reset and a new review.</div></div>
+<div class="card" style="margin-top:16px"><h3 class="sectiontitle">The 14 steps</h3><div class="tablewrap"><table class="table"><thead><tr><th>#</th><th>Step</th><th>Acts</th><th>Stop or gate rule</th><th>Record created</th></tr></thead><tbody>
+<tr><td>1</td><td>Welcome and language</td><td>Patient</td><td>None</td><td>Session start</td></tr>
+<tr><td>2</td><td>Identity</td><td>Patient, staff</td><td>Identity must match before any record is linked</td><td>Encounter</td></tr>
+<tr><td>3</td><td>Medical screening</td><td>Patient</td><td>Flagged answers go to clinician review; not declared cleared</td><td>Medical history</td></tr>
+<tr><td>4</td><td>Symptom assessment</td><td>Patient</td><td>Pain, swelling, bleeding pattern or suspected infection leads to referral</td><td>Symptom entries, linked to a tooth or region</td></tr>
+<tr><td>5</td><td>Oral photographs</td><td>Machine</td><td>Quality below threshold triggers retake</td><td>Image set with ID, time and quality score</td></tr>
+<tr><td>6</td><td>3D oral scan</td><td>Machine</td><td>Coverage or mesh-quality failure blocks analysis</td><td>Scan model</td></tr>
+<tr><td>7</td><td>Periodontal measurements</td><td>Clinician enters</td><td>Validated instrument only; scanner cannot measure pockets</td><td>Measurement set</td></tr>
+<tr><td>8</td><td>Radiographs (only if clinician-ordered)</td><td>Clinician</td><td>No order, no exposure</td><td>Imaging order and images</td></tr>
+<tr><td>9</td><td>AI analysis</td><td>AI engine</td><td>Abstains as "not assessable" when quality is insufficient</td><td>Observations with evidence and confidence</td></tr>
+<tr><td>10</td><td>Clinician review</td><td>Clinician</td><td>Each finding confirmed, rejected or marked indeterminate</td><td>Confirmed findings</td></tr>
+<tr><td>11</td><td>Eligibility gate</td><td>Rules and clinician</td><td>Any stop rule sends the visit to Referred</td><td>Eligibility decision with reasons</td></tr>
+<tr><td>12</td><td>Proposal and consent</td><td>Patient</td><td>Decline ends the cleaning path</td><td>Consent record</td></tr>
+<tr><td>13</td><td>Authorization gate</td><td>Clinician, system</td><td>All checks true, or no cleaning</td><td>Authorization record</td></tr>
+<tr><td>14</td><td>Cleaning and report</td><td>Machine under supervision</td><td>Stop at any time; a fault retracts and locks</td><td>Procedure run, safety events, report</td></tr>
+</tbody></table></div></div></section>
+
+<section class="page" id="eligibility"><div class="heading"><div><div class="eyebrow">Process · gate 11</div><div class="h1">Eligibility gate</div><div class="sub">The rules that decide whether the visit can continue to a cleaning proposal. Any stop rule ends the cleaning path. The system never declares a patient medically cleared.</div></div><span class="pill red">1 stop rule triggered</span></div>
+<div class="notice alert"><b>Visit stopped at eligibility.</b> Swelling was recorded in the lower right region and a suspected finding needs professional assessment. Cleaning is not offered in this visit.</div>
+<div class="grid g2" style="margin-top:16px"><div class="card"><h3 class="sectiontitle">Rule results</h3>
+<div class="checkrow"><span>Identity verified against record</span><span class="pill green">Pass</span></div>
+<div class="checkrow"><span>Medical flags reviewed (heart condition, blood thinners, pregnancy)</span><span class="pill amber">Clinician review</span></div>
+<div class="checkrow"><span>Unexplained pain, swelling or suspected infection</span><span class="pill red">Stop: swelling, lower right</span></div>
+<div class="checkrow"><span>Significant periodontal finding (probing or bleeding pattern)</span><span class="pill amber">Pending measurements</span></div>
+<div class="checkrow"><span>Suspicious soft-tissue change</span><span class="pill green">None recorded</span></div>
+<div class="checkrow"><span>Scan and photo quality sufficient</span><span class="pill green">Pass</span></div>
+<div class="checkrow"><span>Uncertain findings unresolved</span><span class="pill red">1 suspected finding</span></div></div>
+<div class="card"><h3 class="sectiontitle">What the patient sees</h3><div class="notice warn" style="font-size:14px">Your visit stops here so a dental professional can check the swelling and a possible finding. This is not a diagnosis, and no cleaning has been started.</div><div class="controlrow" style="margin-top:14px"><button class="btn" onclick="toast('Referral sent to the reviewing clinician (simulation).')">Send to clinician</button><button class="btn secondary" onclick="toast('Booking request created (simulation).')">Request a visit</button></div>
+<div class="footerhint">Rule thresholds are placeholders until clinical validation sets them.</div></div></div></section>
+
+<section class="page" id="consent"><div class="heading"><div><div class="eyebrow">Patient · step 12</div><div class="h1">Proposal and consent</div><div class="sub">The patient sees what will and will not be cleaned, the limits, the risks and the alternatives. Each statement is a separate choice.</div></div><span class="pill blue">Consent not given</span></div>
+<div class="grid g2"><div class="card"><h3 class="sectiontitle">Proposed scope</h3>
+<div class="checkrow"><span>Plaque removal, upper front teeth</span><span class="pill green">In scope</span></div>
+<div class="checkrow"><span>Polishing, all teeth (validated protocol)</span><span class="pill green">In scope</span></div>
+<div class="checkrow"><span>Decay, tooth 14 (suspected)</span><span class="pill amber">Referred</span></div>
+<div class="checkrow"><span>Calculus near the gumline</span><span class="pill red">Out of scope</span></div>
+<div class="checkrow"><span>Drilling, extraction, restorative work</span><span class="pill red">Not offered</span></div>
+<div class="checkrow"><span>Estimated time</span><span>About 25 minutes</span></div>
+<div class="notice" style="margin-top:12px">Expected effects: mild sensitivity or minor gum bleeding may occur. Alternatives include a clinician visit, a later visit, or no cleaning.</div></div>
+<div class="card"><h3 class="sectiontitle">Patient choices</h3>
+<div class="checkrow"><span>I understand what will be cleaned and what will not</span><span class="toggle"></span></div>
+<div class="checkrow"><span>I understand the risks and alternatives</span><span class="toggle"></span></div>
+<div class="checkrow"><span>I know I can stop at any time with the stop button</span><span class="toggle"></span></div>
+<div class="checkrow"><span>I agree to the cleaning plan above</span><span class="toggle"></span></div>
+<div class="checkrow"><span>Optional: share anonymized images for product improvement (separate choice)</span><span class="toggle"></span></div>
+<div class="field"><label>Patient signature or confirmation</label><input placeholder="Captured on the device (not connected in this prototype)" disabled></div>
+<div class="footerhint">Consent records the language used, the time and the version of the consent text.</div></div></div></section>
+
+<section class="page" id="monitor"><div class="heading"><div><div class="eyebrow">Patient · step 14</div><div class="h1">Cleaning in progress</div><div class="sub">Live status for the patient. Stop is always available. A stop withdraws the instrument before anything else happens.</div></div><span class="pill green">Simulated run</span></div>
+<div class="grid g2"><div class="card"><h3 class="sectiontitle">Progress by region</h3>
+<div class="toothgrid" style="grid-template-columns:repeat(4,1fr)"><div class="tooth ok">Upper right · done</div><div class="tooth ok">Upper front · done</div><div class="tooth selected flag">Upper left · in progress</div><div class="tooth">Lower arch · queued</div></div>
+<div class="meter" style="margin-top:6px"><i style="width:58%"></i></div>
+<div class="row" style="margin-top:8px"><span class="muted">Overall progress</span><b>58%</b></div>
+<div class="checkrow"><span>Plaque removal</span><span class="pill green">Done</span></div>
+<div class="checkrow"><span>Polishing</span><span class="pill amber">In progress</span></div>
+<div class="checkrow"><span>Rinse and suction check</span><span class="pill">Waiting</span></div>
+<div class="checkrow"><span>Withdraw and sterile tool return</span><span class="pill">Waiting</span></div></div>
+<div class="card"><h3 class="sectiontitle">Live safety status</h3>
+<div class="checkrow"><span>Instrument force</span><span class="ok">0.35 N (limit 1.0 N)</span></div>
+<div class="checkrow"><span>Head position</span><span class="ok">Stable</span></div>
+<div class="checkrow"><span>Camera view</span><span class="ok">Visible</span></div>
+<div class="checkrow"><span>Suction</span><span class="ok">Normal</span></div>
+<div class="checkrow"><span>Water flow</span><span class="ok">85 mL/min</span></div>
+<div class="checkrow"><span>Time remaining</span><span>About 10 min</span></div>
+<div class="controlrow" style="margin-top:16px"><button class="btn secondary" onclick="toast('Paused. Instrument holds position (simulation).')">Pause</button><button class="btn stop" onclick="toast('STOP: instrument withdrawing; visit logged (simulation).')">Stop and withdraw</button></div>
+<div class="footerhint">In a real machine, stop is a hardware path that does not depend on this screen.</div></div></div></section>
+
+<section class="page" id="results"><div class="heading"><div><div class="eyebrow">Patient · step 14 · follow-up</div><div class="h1">Results and follow-up</div><div class="sub">What was done, what was not done, what needs a professional, and when to come back. Findings keep their labels.</div></div><span class="pill green">Report ready (sample)</span></div>
+<div class="grid g2"><div class="card"><h3 class="sectiontitle">Before and after</h3><div class="cols"><div class="field">Before photo (sample)</div><div class="field">After photo (sample)</div></div><div class="checkrow"><span>Plaque removed, upper front</span><span class="pill green">Yes</span></div><div class="checkrow"><span>Polishing completed</span><span class="pill green">Yes</span></div><div class="checkrow"><span>Decay, tooth 14</span><span class="pill amber">Suspected: referred</span></div><div class="checkrow"><span>Lower right swelling</span><span class="pill red">Referred</span></div></div>
+<div class="card"><h3 class="sectiontitle">Next steps</h3><div class="actionlist"><div class="action"><div class="aico">!</div><div><b>See a dental professional</b><small>Swelling (lower right) and a suspected finding on tooth 14.</small></div></div><div class="action"><div class="aico">⟳</div><div><b>Next routine visit</b><small>Within 6 months, or sooner if advised.</small></div></div><div class="action"><div class="aico">✉</div><div><b>Report sent</b><small>To you and to your dental team, after you agree.</small></div></div></div>
+<div class="controlrow" style="margin-top:14px"><button class="btn">View full report</button><button class="btn secondary">Book next visit</button></div></div></div></section>
+
+<section class="page" id="perio"><div class="heading"><div><div class="eyebrow">Clinical · gate 7</div><div class="h1">Periodontal chart</div><div class="sub">Probing depths and bleeding are entered by the clinician from a validated instrument. The scanner does not estimate pocket depth.</div></div><span class="pill amber">Partially entered</span></div>
+<div class="card"><h3 class="sectiontitle">Sites (mm) · sample entries</h3><div class="tablewrap"><table class="table"><thead><tr><th>Tooth</th><th>Distal</th><th>Mid-buccal</th><th>Mesial</th><th>Distal (L)</th><th>Mid-lingual</th><th>Mesial (L)</th><th>Bleeding</th><th>Mobility</th></tr></thead><tbody>
+<tr><td>16</td><td>2</td><td>3</td><td>2</td><td>2</td><td>2</td><td>3</td><td>Yes (2 sites)</td><td>0</td></tr>
+<tr><td>14</td><td>3</td><td>3</td><td>4</td><td>—</td><td>—</td><td>—</td><td>Not recorded</td><td>—</td></tr>
+<tr><td>36</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Not recorded</td><td>—</td></tr>
+</tbody></table></div>
+<div class="notice warn" style="margin-top:14px">Measurements at or above the clinical threshold set in the validated protocol trigger a clinician referral. Thresholds are placeholders in this prototype and must come from the clinical validation study.</div>
+<div class="controlrow" style="margin-top:12px"><button class="btn cyan" onclick="toast('Measurement set saved (simulation).')">Save measurements</button><button class="btn secondary" onclick="toast('Measurement entry unlocked for this tooth (simulation).')">Edit tooth 14</button></div></div></section>
+
+<section class="page" id="plan"><div class="heading"><div><div class="eyebrow">Clinical · treatment plan</div><div class="h1">Treatment plan and scope</div><div class="sub">Every proposed item is classified as in scope for the machine, referred to a professional, or not offered. The machine never performs an item outside the validated scope.</div></div><span class="pill blue">Draft for clinician sign-off</span></div>
+<div class="card"><div class="tablewrap"><table class="table"><thead><tr><th>Item</th><th>Scope class</th><th>Machine action</th><th>Clinician sign-off</th></tr></thead><tbody>
+<tr><td>Plaque removal, upper front</td><td><span class="pill green">Machine, validated</span></td><td>Approved after authorization</td><td><span class="pill amber">Pending</span></td></tr>
+<tr><td>Polishing, all teeth</td><td><span class="pill green">Machine, validated</span></td><td>Approved after authorization</td><td><span class="pill amber">Pending</span></td></tr>
+<tr><td>Possible decay, tooth 14</td><td><span class="pill amber">Professional</span></td><td>None; referral</td><td><span class="pill amber">Pending</span></td></tr>
+<tr><td>Gum swelling, lower right</td><td><span class="pill red">Professional, urgent</span></td><td>None; visit stopped</td><td><span class="pill red">Required</span></td></tr>
+<tr><td>Subgingival calculus</td><td><span class="pill red">Not in version 1</span></td><td>None</td><td>Dental professional</td></tr>
+<tr><td>Drilling, extraction, restorative work</td><td><span class="pill red">Not in version 1</span></td><td>None</td><td>Dental professional</td></tr>
+</tbody></table></div>
+<div class="footerhint">Scope classes follow the engineering requirements. The clinical rules behind them are not validated and must not be used clinically.</div></div></section>
+
+<section class="page" id="audit"><div class="heading"><div><div class="eyebrow">Operations · traceability</div><div class="h1">Audit and safety log</div><div class="sub">Append-only. Every treatment action, review decision, safety interruption and configuration change is recorded with the actor and device.</div></div><span class="pill green">Integrity check passed (sample)</span></div>
+<div class="card"><div class="tablewrap"><table class="table"><thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>Device</th><th>Result</th></tr></thead><tbody>
+<tr><td>09:12</td><td>Patient</td><td>Identity confirmed</td><td>Station 03</td><td><span class="pill green">Logged</span></td></tr>
+<tr><td>09:20</td><td>Patient</td><td>Medical flags recorded (heart condition)</td><td>Station 03</td><td><span class="pill amber">Review queued</span></td></tr>
+<tr><td>09:31</td><td>AI engine</td><td>Observation: possible plaque, tooth 14 (confidence 0.87)</td><td>Station 03</td><td><span class="pill blue">Unconfirmed</span></td></tr>
+<tr><td>09:44</td><td>Dr. Lee</td><td>Review: observation marked indeterminate</td><td>Clinical console</td><td><span class="pill green">Logged</span></td></tr>
+<tr><td>09:46</td><td>System</td><td>Eligibility gate: stop (swelling, lower right)</td><td>Station 03</td><td><span class="pill red">Referred</span></td></tr>
+<tr><td>10:31</td><td>Patient</td><td>Head moved 3 mm during run; paused and rechecked</td><td>Station 03</td><td><span class="pill amber">Resumed</span></td></tr>
+<tr><td>10:36</td><td>Safety controller</td><td>Camera visibility lost; motion stopped, instrument retracted</td><td>Station 03</td><td><span class="pill red">Safe state</span></td></tr>
+<tr><td>10:41</td><td>Operator</td><td>Safe state reset requested</td><td>Station 03</td><td><span class="pill amber">Blocked: review required</span></td></tr>
+</tbody></table></div></div></section>
+
+<section class="page" id="roles"><div class="heading"><div><div class="eyebrow">Administration · access control</div><div class="h1">Roles and permissions</div><div class="sub">Who can see and do what. Clinical decisions and authorization are limited to licensed professionals. The machine never acts on a role's request alone.</div></div><span class="pill blue">Design requirement</span></div>
+<div class="card"><div class="tablewrap"><table class="table"><thead><tr><th>Capability</th><th>Patient</th><th>Operator</th><th>Clinician</th><th>Maintenance</th><th>Admin</th></tr></thead><tbody>
+<tr><td>Start a visit and complete screening</td><td>Yes</td><td>Assist</td><td>View</td><td>No</td><td>No</td></tr>
+<tr><td>View own report</td><td>Yes</td><td>No</td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td>Confirm or reject findings</td><td>No</td><td>No</td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td>Authorize a cleaning procedure</td><td>No</td><td>No</td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td>Press stop or withdraw</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No</td></tr>
+<tr><td>Clear a safety fault</td><td>No</td><td>No</td><td>Yes, after review</td><td>Yes, with service record</td><td>No</td></tr>
+<tr><td>Release an instrument for use</td><td>No</td><td>No</td><td>No</td><td>Yes, with cycle record</td><td>No</td></tr>
+<tr><td>Change device configuration</td><td>No</td><td>No</td><td>No</td><td>Service only</td><td>Yes, audited</td></tr>
+<tr><td>Export patient data</td><td>Own only</td><td>No</td><td>Own patients</td><td>No</td><td>Audited, de-identified</td></tr>
+</tbody></table></div>
+<div class="notice" style="margin-top:14px">Production requires single sign-on, multi-factor sign-in for clinicians and admins, session timeouts and an audit trail for every permission change.</div></div></section>
+
+<section class="page" id="datamodel"><div class="heading"><div><div class="eyebrow">Engineering · data model</div><div class="h1">Records and entities</div><div class="sub">The records this system stores, their key fields and their owners. Used to plan the database and the DentistNow integration.</div></div><span class="pill blue">Draft schema</span></div>
+<div class="grid g2"><div class="card"><h3 class="sectiontitle">Core entities</h3>
+<div class="checkrow"><span><b>Encounter</b> · visit id, state, timestamps, station</span><span class="pill">Owner: system</span></div>
+<div class="checkrow"><span><b>Patient</b> · identity, contact, consent to link records</span><span class="pill">Owner: DentistNow</span></div>
+<div class="checkrow"><span><b>MedicalHistory</b> · conditions, medications, allergies, flags</span><span class="pill">Owner: patient</span></div>
+<div class="checkrow"><span><b>Symptom</b> · type, region, tooth, onset</span><span class="pill">Owner: patient</span></div>
+<div class="checkrow"><span><b>ImageSet / Scan</b> · files, quality score, coverage</span><span class="pill">Owner: machine</span></div>
+<div class="checkrow"><span><b>Observation</b> · AI output, evidence, confidence, status</span><span class="pill">Owner: AI engine</span></div>
+<div class="checkrow"><span><b>Finding</b> · clinician-confirmed status, notes, signer</span><span class="pill">Owner: clinician</span></div>
+<div class="checkrow"><span><b>Measurement</b> · site, depth, bleeding, mobility, instrument id</span><span class="pill">Owner: clinician</span></div></div>
+<div class="card"><h3 class="sectiontitle">Control entities</h3>
+<div class="checkrow"><span><b>Eligibility</b> · rule results, stop reasons</span><span class="pill">Owner: system</span></div>
+<div class="checkrow"><span><b>Consent</b> · statements, choices, text version, time</span><span class="pill">Owner: patient</span></div>
+<div class="checkrow"><span><b>Authorization</b> · checks, clinician id, time</span><span class="pill">Owner: clinician</span></div>
+<div class="checkrow"><span><b>ProcedureRun</b> · steps, regions, stop reason</span><span class="pill">Owner: machine</span></div>
+<div class="checkrow"><span><b>SafetyEvent</b> · type, action taken, reset record</span><span class="pill">Owner: safety controller</span></div>
+<div class="checkrow"><span><b>Instrument</b> · id, lifecycle count, cycle records, release</span><span class="pill">Owner: infection control</span></div>
+<div class="checkrow"><span><b>AuditEntry</b> · append-only, actor, device, result</span><span class="pill">Owner: system</span></div>
+<div class="footerhint">Storage, encryption, retention and HIPAA mapping are open items for the software design review.</div></div></div></section>
+
 </div></main></div>
 <div class="modalback" id="modal"><div class="modal"><h3>Start a patient encounter?</h3><p>This creates a draft encounter in the prototype. No real patient record is created or transmitted.</p><div class="controlrow"><button class="btn cyan" onclick="closeModal();go('intake')">Continue</button><button class="btn secondary" onclick="closeModal()">Cancel</button></div></div></div>
 <div class="toast" id="toast"></div>
 <script>
-const names={overview:"Command center",patients:"Patient encounters",intake:"Patient intake",imaging:"Imaging & 3D scan",clinical:"Clinical review",procedure:"Procedure authorization",machine:"Machine overview",robotics:"Robotics & instruments",safety:"Safety monitor",infection:"Infection control",reports:"Reports & analytics",settings:"Device settings"};
+const names={overview:"Command center",patients:"Patient encounters",intake:"Patient intake",imaging:"Imaging & 3D scan",clinical:"Clinical review",procedure:"Procedure authorization",machine:"Machine overview",robotics:"Robotics & instruments",safety:"Safety monitor",infection:"Infection control",reports:"Reports & analytics",settings:"Device settings",workflow:"Visit workflow",eligibility:"Eligibility gate",consent:"Proposal and consent",monitor:"Cleaning monitor",results:"Results and follow-up",perio:"Periodontal chart",plan:"Treatment plan",audit:"Audit and safety log",roles:"Roles and permissions",datamodel:"Records and entities"};
 function go(id){document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===id));document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));document.getElementById('crumb').textContent=names[id];document.getElementById('sidebar').classList.remove('open');window.scrollTo({top:0,behavior:'smooth'});}
 document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>go(b.dataset.page)));
 document.getElementById('menu').onclick=()=>document.getElementById('sidebar').classList.toggle('open');
