@@ -812,6 +812,7 @@
             <div class="tablewrap" id="slWrap" hidden><table class="t"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Labor hrs</th><th class="num">Amount</th><th></th></tr></thead><tbody id="slRows"></tbody></table></div>
           </div>
           <div class="f wide"><label for="e19">Line items</label><textarea id="e19" name="line_items_text" placeholder="One per line:  description | amount"></textarea><span class="hint">Other lines not in the library, for example “Lift rental | 850”. Library lines and these lines are both shown on the proposal.</span><label style="font-weight:600;margin-top:6px"><input type="checkbox" name="use_line_items" value="1"> Use the line-item total as the price (instead of the calculated price)</label></div>
+          <div class="f"><label for="e31">Total you typed for the proposal ($, optional)</label><input id="e31" name="proposal_total" type="number" min="0" step="any" placeholder="Leave blank to use the calculated price"><span class="hint">The proposal uses the calculated price. If your typed total differs from it by more than 1%, you will see a notice after saving.</span></div>
           <div class="f wide"><label for="e20">Terms, assumptions &amp; exclusions</label><textarea id="e20" name="terms" placeholder="Payment terms, schedule assumptions, exclusions, change orders, site readiness"></textarea></div>
         </div>
         <div class="calc" id="calc">
