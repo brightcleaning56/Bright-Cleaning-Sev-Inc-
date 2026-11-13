@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DentistNow Robotics — Investor Deck (Draft)</title>
+<style>
+  @page { size: 13.33in 7.5in; margin: 0; }
+  :root { --ink:#0d2238; --muted:#4a6279; --line:#c7d5e2; --accent:#0a6fd6; --bg:#f4f8fb; --warn:#a15c00; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Segoe UI",Arial,Helvetica,sans-serif; color:var(--ink); background:#dfe8f0; }
+  .slide { width:min(1100px, 100%); aspect-ratio:16/9; margin:24px auto; background:#fff; border-radius:10px; box-shadow:0 2px 14px rgba(0,0,0,.12); padding:48px 56px; display:flex; flex-direction:column; overflow:hidden; position:relative; }
+  .slide .num { position:absolute; right:24px; bottom:16px; color:var(--muted); font-size:12px; }
+  .slide .tag { color:var(--accent); font-size:13px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+  h1 { font-size:40px; margin:10px 0 12px; line-height:1.15; }
+  h2 { font-size:30px; margin:8px 0 14px; line-height:1.2; }
+  p, li { font-size:18px; line-height:1.45; }
+  ul { padding-left:22px; margin:6px 0; }
+  .muted { color:var(--muted); }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-top:12px; }
+  .box { border:1px solid var(--line); border-radius:10px; padding:16px 18px; background:var(--bg); }
+  .box h3 { margin:0 0 6px; font-size:19px; }
+  .box p { font-size:16px; margin:0; color:var(--muted); }
+  table { border-collapse:collapse; width:100%; font-size:16px; margin-top:10px; }
+  th, td { border:1px solid var(--line); padding:8px 10px; text-align:left; }
+  th { background:var(--bg); }
+  td.n { text-align:right; white-space:nowrap; }
+  .big { font-size:46px; font-weight:800; color:var(--accent); }
+  .verify { color:var(--warn); font-size:13px; font-weight:600; }
+  .draft-bar { position:absolute; top:0; left:0; right:0; background:#fff8ec; color:var(--warn); font-size:12px; text-align:center; padding:4px; border-bottom:1px solid var(--warn); }
+  .foot { position:absolute; left:56px; bottom:16px; font-size:12px; color:var(--muted); }
+  @media print { body { background:#fff; } .slide { margin:0; box-shadow:none; border-radius:0; page-break-after:always; width:13.33in; height:7.5in; aspect-ratio:auto; } }
+  @media (max-width:700px){ .slide { padding:28px 22px; aspect-ratio:auto; min-height:70vh; } h1 { font-size:28px; } h2 { font-size:22px; } p, li { font-size:16px; } .cols { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<section class="slide">
+  <div class="draft-bar">DRAFT — for discussion with counsel-approved recipients only. Not an offer of securities.</div>
+  <div class="tag" style="margin-top:20px">DentistNow Robotics</div>
+  <h1>AutoClean Pro 2.0</h1>
+  <p class="muted" style="font-size:22px">An AI-assisted dental examination and robotic preventive-cleaning platform. Seeking Stage A feasibility funding.</p>
+  <div class="foot">Confidential planning draft · v0.1</div>
+  <div class="num">1</div>
+</section>
+
+<section class="slide">
+  <div class="tag">The problem</div>
+  <h2>Routine dental prevention depends on scarce clinical hours</h2>
+  <ul>
+    <li>Preventive visits consume dentist and hygienist time that could go to more complex care.</li>
+    <li>Access is limited for patients with mobility limits, anxiety, or no nearby clinic.</li>
+    <li>Visit quality varies between clinicians and between sites; records are often incomplete.</li>
+  </ul>
+  <p class="muted">Market sizing is not yet validated. Stage A includes 20 buyer interviews to test these points.</p>
+  <div class="num">2</div>
+</section>
+
+<section class="slide">
+  <div class="tag">The solution</div>
+  <h2>Examine first, clean only what is cleared</h2>
+  <div class="cols">
+    <div class="box"><h3>1 · Intake and screen</h3><p>Identity, medical history, medications, symptoms per tooth or region.</p></div>
+    <div class="box"><h3>2 · Assess</h3><p>Oral photos, 3D scan, AI findings labelled Observed, Suspected or Not assessable.</p></div>
+    <div class="box"><h3>3 · Gate</h3><p>Eligibility rules stop the visit and refer to a professional when uncertain.</p></div>
+    <div class="box"><h3>4 · Authorize and clean</h3><p>Professional authorization, patient consent, validated polishing and plaque removal, full report.</p></div>
+  </div>
+  <div class="num">3</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Safety by design</div>
+  <h2>AI proposes. Independent hardware decides.</h2>
+  <div class="cols">
+    <div class="box"><h3>AI intelligence</h3><p>Interprets images and proposes findings. Cannot command the actuators.</p></div>
+    <div class="box"><h3>Motion controller</h3><p>Moves instruments only within validated position, speed and force limits.</p></div>
+    <div class="box"><h3>Safety controller</h3><p>Hardware e-stop, watchdog, and safe retraction. Works without cloud or AI.</p></div>
+  </div>
+  <p style="margin-top:16px">Out of scope for version 1: drilling, extraction, restorative work, and subgingival calculus removal.</p>
+  <div class="num">4</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Market and business model</div>
+  <h2>Hardware, subscription, maintenance and consumables</h2>
+  <table>
+    <tr><th>Revenue stream</th><th class="n">Planning range</th></tr>
+    <tr><td>Machine sale</td><td class="n">$95K–$160K</td></tr>
+    <tr><td>Machine leasing</td><td class="n">$2,500–$4,500 / month</td></tr>
+    <tr><td>Software subscription</td><td class="n">$500–$1,500 / month</td></tr>
+    <tr><td>Maintenance agreement</td><td class="n">$500–$1,200 / month</td></tr>
+    <tr><td>Approved consumables</td><td class="n">$10–$40 / visit</td></tr>
+  </table>
+  <p class="muted" style="font-size:14px">Illustrative targets, not validated prices. Production cost estimate $45K–$85K per unit, to be replaced with supplier quotes.</p>
+  <div class="num">5</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Traction and status</div>
+  <h2>Concept and planning stage</h2>
+  <ul>
+    <li>Engineering planning binder: 40 sheets in 10 stages, with acceptance criteria per sheet.</li>
+    <li>Patient and clinical UI mockups for the first-visit workflow.</li>
+    <li>Business and funding plan, and a regulatory path including an FDA Q-Submission.</li>
+  </ul>
+  <p class="verify">No working hardware, no clinical data, no regulatory clearance. These are planning documents.</p>
+  <div class="num">6</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Ask</div>
+  <h2>Stage A: technology feasibility</h2>
+  <div class="big">$150K – $300K</div>
+  <p style="margin-top:14px">Target: a laboratory demonstrator on dental models. Milestones: positioning accuracy, scan capture, emergency stop, operator dashboard.</p>
+  <p class="muted" style="font-size:16px">Stage A is not a patient-ready device and will not be presented as one.</p>
+  <div class="num">7</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Use of funds (planning)</div>
+  <h2>Where the Stage A money goes</h2>
+  <table>
+    <tr><th>Category</th><th class="n">Range</th></tr>
+    <tr><td>Engineering services and fixtures</td><td class="n">$60K–$120K</td></tr>
+    <tr><td>Software and AI prototype</td><td class="n">$35K–$70K</td></tr>
+    <tr><td>Robotic platform and hardware</td><td class="n">$20K–$40K</td></tr>
+    <tr><td>Regulatory consulting and Q-Submission prep</td><td class="n">$15K–$30K</td></tr>
+    <tr><td>Legal, entity and securities counsel</td><td class="n">$10K–$20K</td></tr>
+    <tr><td>Patent search and freedom-to-operate</td><td class="n">$5K–$10K</td></tr>
+    <tr><td>Project management and contingency</td><td class="n">$5K–$10K</td></tr>
+  </table>
+  <div class="num">8</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Funding path</div>
+  <h2>Equity and non-dilutive sources, each gated</h2>
+  <ul>
+    <li><strong>Angels and medtech investors:</strong> primary source for Stage A.</li>
+    <li><strong>Iowa America's Seed Fund program:</strong> supplement tied to a federal SBIR/STTR application. <span class="verify">Amount and split not yet verified against the program page.</span></li>
+    <li><strong>NIDCR SBIR/STTR:</strong> feasibility grant if an eligible solicitation is open. NIDCR does not fund clinical trials through SBIR. <span class="verify">Current solicitations not yet verified.</span></li>
+    <li><strong>Research and strategic partners:</strong> lab access, co-development, manufacturing.</li>
+    <li><strong>Regulation Crowdfunding (optional):</strong> up to $5M per rolling 12 months through a registered intermediary, only after counsel advises.</li>
+  </ul>
+  <div class="num">9</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Risks</div>
+  <h2>What could go wrong, and what we do about it</h2>
+  <table>
+    <tr><th>Risk</th><th>Mitigation</th></tr>
+    <tr><td>Technology does not perform on real teeth</td><td>Stage A tests it before large spending</td></tr>
+    <tr><td>Regulatory pathway is harder than planned</td><td>Early Q-Submission; regulatory specialist from the start</td></tr>
+    <tr><td>Patient safety incident</td><td>Independent safety controller; conservative eligibility rules</td></tr>
+    <tr><td>Funding gap between stages</td><td>Parallel non-dilutive sources; stage-gated budgets</td></tr>
+    <tr><td>Securities non-compliance</td><td>Counsel review before any solicitation</td></tr>
+  </table>
+  <div class="num">10</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Next 90 days and the ask</div>
+  <h2>Prove the core, then decide</h2>
+  <div class="cols">
+    <div class="box"><h3>Days 1–30</h3><p>Requirements, chair and arm configuration, preliminary BOM, regulatory assessment, buyer interviews.</p></div>
+    <div class="box"><h3>Days 31–60</h3><p>Robotic platform selected; scan and positioning tests on models; safety architecture.</p></div>
+    <div class="box"><h3>Days 61–90</h3><p>Demonstrator with controlled movement, emergency stop and dashboard; engineering results presented.</p></div>
+  </div>
+  <p style="margin-top:16px"><strong>Next step for investors:</strong> a 30-minute briefing, then a data-room review under a confidentiality agreement, once counsel has approved the materials.</p>
+  <div class="num">11</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Contact</div>
+  <h2>Let's talk</h2>
+  <p><strong>Email:</strong> <span class="verify">[project email — to be set up]</span></p>
+  <p><strong>Address:</strong> <span class="verify">[business address — to be set up]</span></p>
+  <p class="muted" style="font-size:15px">This deck is not an offer to sell or a solicitation to buy any security. Figures are planning estimates. Public-program terms must be confirmed with each program.</p>
+  <div class="num">12</div>
+</section>
+
+</body>
+</html>
