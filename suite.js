@@ -288,7 +288,7 @@ module.exports = function mountSuite(app, ctx) {
     // a contract is not an invoice, and an invoice is not cash.
     const approved = one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v, SUM(CASE WHEN total_cost>0 THEN proposal_total-total_cost END) gp, SUM(total_cost>0) costed FROM estimates WHERE archived_at IS NULL AND status='Approved' AND COALESCE(decided_at,updated_at)>=?`, start);
     const signed = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE archived_at IS NULL AND signature_status IN ('Signed','Executed','Fully signed') AND created_at>=?`, start);
-    const unsigned = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE archived_at IS NULL AND COALESCE(signature_status,'Not sent') NOT IN ('Signed','Executed','Fully signed') AND status<>'Cancelled'`);
+    const unsigned = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE archived_at IS NULL AND COALESCE(signature_status,'Not sent') NOT IN ('Signed','Executed','Fully signed') AND status NOT IN ('Closed','Cancelled','Void','Archived','Superseded')`);
     const invoiced = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE status<>'Void' AND created_at>=?`, start);
     const cash = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, start);
     const executive = {
