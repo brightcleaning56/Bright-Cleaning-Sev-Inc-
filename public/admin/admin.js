@@ -1170,6 +1170,7 @@
       title: e.project_name || 'Proposal #' + e.id,
       sub: `${e.customer_name}${e.company ? ' · ' + e.company : ''} · created ${fmtDate(e.created_at)}`,
       body: `
+        ${e.flags && e.flags.length ? `<ul class="flagl">${e.flags.map(f => `<li class="${f.level}">${esc(f.text)}</li>`).join('')}</ul>` : ''}
         <dl class="facts">
           <dt>Proposal total</dt><dd><b style="font-size:20px;color:var(--navy)">${money(e.proposal_total)}</b></dd>
           ${Number(e.tax_pct) > 0 ? `<dt>Subtotal before tax</dt><dd>${money(e.proposal_total / (1 + Number(e.tax_pct) / 100))}</dd><dt>Tax (${Number(e.tax_pct)}%)</dt><dd>${money(e.proposal_total - e.proposal_total / (1 + Number(e.tax_pct) / 100))}</dd>` : ''}
@@ -1479,13 +1480,14 @@
     msg.className = 'msg'; msg.textContent = 'Saving…';
     $('#estSave').disabled = true;
     try {
-      let saved;
+      let saved, pendingNotice = null;
       if (id) saved = (await api('/api/admin/estimates/' + id, { method: 'PUT', json: b })).estimate;
-      else saved = (await api('/api/admin/estimates', { method: 'POST', json: b })).estimate;
+      else { const resp = await api('/api/admin/estimates', { method: 'POST', json: b }); saved = resp.estimate; pendingNotice = resp.notice || null; }
       if (b.lead_id && !id) {
         try { await api('/api/admin/leads/' + Number(b.lead_id), { method: 'PATCH', json: { status: 'Proposal in Progress' } }); } catch { /* lead may not exist */ }
       }
       toast(id ? 'Estimate updated' : 'Estimate saved');
+      if (pendingNotice) toast(pendingNotice, true);
       go('proposals');
       openEstimate(saved.id);
     } catch (err) { msg.className = 'msg err'; msg.textContent = err.message; }
