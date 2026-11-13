@@ -71,7 +71,8 @@ async function waitHealthy() {
     assert(r.status === 201, 'create ' + r.status + ' ' + JSON.stringify(r.body).slice(0, 220));
     est = r.body.estimate || r.body;
     assert(est.id, 'estimate id');
-    return `proposal ${est.id}, status ${est.status}`;
+    const back = await req('GET', '/api/admin/estimates/' + est.id, owner); est = back.body.estimate || back.body;
+    return `proposal ${est.id}, status ${est.status}, proposal_total ${est.proposal_total}, total_cost ${est.total_cost}, margin ${est.margin_pct}`;
   });
 
   await check('2 Proposal: sent to the customer by email; status becomes Sent', async () => {
@@ -162,6 +163,76 @@ async function waitHealthy() {
     const b = await req('POST', `/api/admin/pm/projects/${prj.id}/billing-handoff`, owner, {});
     assert(b.status === 409 && /complete/i.test(b.body.error || ''), 'billing before completion ' + b.status + ' ' + JSON.stringify(b.body).slice(0, 160));
     return `sales 403; billing 409: ${b.body.error.slice(0, 100)}`;
+  });
+
+  let taskId = null, invId = null;
+  await check('11 Work is scheduled: a one-time visit is added to the project and goes live (dispatch approved)', async () => {
+    const r = await req('POST', `/api/admin/pm/projects/${prj.id}/work-orders`, owner, { frequency: 'once', start: '2026-12-02', count: 1 });
+    assert(r.status === 201 || r.status === 200, 'work order ' + r.status + ' ' + JSON.stringify(r.body).slice(0, 200));
+    const vs = await req('GET', '/api/admin/visits', owner);
+    const mine = (vs.body.visits || []).filter(v => v.project_id === prj.id);
+    assert(mine.length >= 1, 'visits on project ' + mine.length);
+    assert(mine.every(v => v.status === 'Scheduled'), 'statuses ' + mine.map(v => v.status).join(','));
+    return `${mine.length} visit(s) Scheduled`;
+  });
+
+  await check('12 Project moves to In Progress; then the open task blocks completion', async () => {
+    const ip = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'In Progress' });
+    assert(ip.status === 200, 'In Progress ' + ip.status + ' ' + JSON.stringify(ip.body).slice(0, 200));
+    const t = await req('POST', `/api/admin/pm/projects/${prj.id}/tasks`, owner, { title: 'Final clean and punch list', phase: 'Execution', weight: 5 });
+    assert(t.status === 201, 'task ' + t.status + ' ' + JSON.stringify(t.body).slice(0, 160));
+    taskId = (t.body.task || t.body).id;
+    const early = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'Completed' });
+    assert(early.status === 409 && /task/i.test(early.body.error || ''), 'complete with open task ' + early.status + ' ' + JSON.stringify(early.body).slice(0, 200));
+    return 'In Progress; completion blocked by the open task';
+  });
+
+  await check('13 Task done and verified by the owner; a quality inspection is signed and passes; the customer signs off', async () => {
+    const done = await req('PATCH', `/api/admin/pm/tasks/${taskId}`, owner, { status: 'Done' });
+    assert(done.status === 200, 'task done ' + done.status + ' ' + JSON.stringify(done.body).slice(0, 160));
+    const ver = await req('PATCH', `/api/admin/pm/tasks/${taskId}`, owner, { status: 'Verified' });
+    assert(ver.status === 200, 'task verified ' + ver.status + ' ' + JSON.stringify(ver.body).slice(0, 160));
+    const tpls = await req('GET', '/api/admin/qc/templates', owner);
+    const tplFor = (tpls.body.templates || []).find(x => x.active) || (tpls.body.templates || [])[0];
+    const c = await req('POST', '/api/admin/qc/inspections', owner, { area: 'Riverside Lofts - final walk', date: '2026-12-02', template_id: tplFor.id, itype: 'Internal', project_id: prj.id });
+    assert(c.status === 201, 'inspection ' + c.status + ' ' + JSON.stringify(c.body).slice(0, 200));
+    invId = (c.body.inspection || c.body).id;
+    const cur = await req('GET', `/api/admin/qc/inspections/${invId}`, owner);
+    const items = (cur.body.inspection || cur.body).items.map(i => ({ ...i, result: 'Pass', note: '' }));
+    const rated = await req('PATCH', `/api/admin/qc/inspections/${invId}`, owner, { items });
+    assert(rated.status === 200, 'rate ' + rated.status);
+    const signed = await req('POST', `/api/admin/qc/inspections/${invId}/sign`, owner, { name: 'Test Inspector' });
+    assert(signed.status === 200, 'sign ' + signed.status + ' ' + JSON.stringify(signed.body).slice(0, 160));
+    const so = await req('POST', `/api/admin/pm/projects/${prj.id}/signoff`, owner, { name: 'Dana Builder', title: 'Site manager' });
+    assert(so.status === 200, 'sign-off ' + so.status + ' ' + JSON.stringify(so.body).slice(0, 160));
+    return `task verified; inspection ${invId} signed; customer sign-off recorded`;
+  });
+
+  await check('14 Project completes; the draft billing invoice is created for the contract value and not sent', async () => {
+    const q = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'Quality Review' });
+    assert(q.status === 200, 'Quality Review ' + q.status + ' ' + JSON.stringify(q.body).slice(0, 200));
+    const done = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'Completed' });
+    assert(done.status === 200, 'Completed ' + done.status + ' ' + JSON.stringify(done.body).slice(0, 260));
+    const b = await req('POST', `/api/admin/pm/projects/${prj.id}/billing-handoff`, owner, {});
+    assert(b.status === 200 || b.status === 201, 'billing ' + b.status + ' ' + JSON.stringify(b.body).slice(0, 200));
+    const cv = await req('GET', '/api/admin/contracts2', owner);
+    const crow = (cv.body.contracts || []).find(x => x.id === con.id) || {};
+    assert(b.body.invoice_id && Number(b.body.amount) === Number(crow.value), 'handoff bills the contract value: billed ' + b.body.amount + ', contract value ' + crow.value);
+    const list = await req('GET', '/api/admin/invoices', owner);
+    const inv = (list.body.invoices || []).find(x => x.id === b.body.invoice_id);
+    assert(inv, 'invoice in the list');
+    assert(inv.status === 'Draft', 'invoice status ' + inv.status);
+    assert(Number(inv.amount) === Number(est.proposal_total), 'invoice equals the approved proposal total: ' + inv.amount + ' vs ' + est.proposal_total);
+    assert(!inv.sent_at, 'not sent');
+    const again = await req('POST', `/api/admin/pm/projects/${prj.id}/billing-handoff`, owner, {});
+    assert(again.status === 409, 'second handoff ' + again.status);
+    return `draft invoice ${inv.invoice_number} for $${inv.amount}, not sent; second handoff refused`;
+  });
+
+  await check('15 Completed project cannot be reopened from the status control', async () => {
+    const r = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'In Progress' });
+    assert(r.status === 409, 'reopen ' + r.status);
+    return '409: ' + r.body.error.slice(0, 100);
   });
 
   stop();
