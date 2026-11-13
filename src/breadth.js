@@ -66,3 +66,22 @@ export function inviteEligible(store, org, user, pkg, { at = Date.now() } = {}) 
   store.audit({ actor: user.email, orgId: org.id, action: 'request.invite_eligible', target: pkg.id, detail: { invited: n } });
   return { ok: true, invited: n };
 }
+
+/**
+ * Scheduled reminders: for each open package closing within three days, remind the invited companies that have not
+ * answered. Uses the same rules as the manual reminder (only unanswered companies, at most once every two days).
+ */
+export async function autoRemind(store, { at = Date.now(), fetchImpl = fetch } = {}) {
+  const sent = [];
+  for (const pkg of store.list('bidRequests', r => r.status === 'open' && r.publicationId)) {
+    const daysLeft = Math.ceil((Date.parse(pkg.dueDate) + DAY - at) / DAY);
+    if (daysLeft < 0 || daysLeft > 3) continue;
+    if (!store.list('invitations', i => i.requestId === pkg.id && (!i.intent || i.intent === 'undecided')).length) continue;
+    const org = store.get('orgs', pkg.buyerOrgId);
+    const owner = store.list('users', u => u.orgId === pkg.buyerOrgId && u.role === 'owner' && !u.disabled)[0];
+    if (!org || !owner) continue;
+    const x = await remindUnanswered(store, org, { id: 'system', email: 'automatic reminder' }, pkg, { at, fetchImpl });
+    if (x.ok) sent.push({ packageId: pkg.id, queued: x.queued });
+  }
+  return sent;
+}

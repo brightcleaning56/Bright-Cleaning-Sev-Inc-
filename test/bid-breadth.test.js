@@ -2,7 +2,7 @@ import './_env.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../src/store.js';
-import { bidBreadth, remindUnanswered, inviteEligible } from '../src/breadth.js';
+import { bidBreadth, remindUnanswered, inviteEligible, autoRemind } from '../src/breadth.js';
 import { config } from '../src/config.js';
 
 const DAY = 864e5;
@@ -71,4 +71,15 @@ test('an invite-only package is not opened to eligible companies', () => {
   const w = setup({ distribution: 'invite_only' });
   assert.equal(inviteEligible(w.store, w.gc, w.user, w.pkg).code, 409);
   assert.equal(bidBreadth(w.store, w.pkg).eligibleNotInvited, 0);
+});
+
+test('scheduled reminders go out only for packages closing within three days, to companies that have not answered', async () => {
+  const soon = setup({ dueInDays: 2 });
+  const later = setup({ dueInDays: 10 });
+  const ok = async () => ({ ok: true, json: async () => ({}), status: 200 });
+  const sentSoon = await autoRemind(soon.store, { fetchImpl: ok });
+  assert.equal(sentSoon.length, 1);
+  assert.equal(soon.store.list('messages', m => m.kind === 'bid_reminder').length, 2);
+  assert.equal((await autoRemind(later.store, { fetchImpl: ok })).length, 0, 'a package with ten days left is not reminded');
+  assert.equal((await autoRemind(soon.store, { fetchImpl: ok })).length, 0, 'the same package is not reminded again the same day');
 });

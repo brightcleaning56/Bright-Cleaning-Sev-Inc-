@@ -670,6 +670,7 @@ async function leadTab(t, body) {
       return `<div class="gate x-6384e367" ><div><strong>${esc(r.title)}</strong> <small>${esc(r.buyerName)}${r.buyerKind ? ' (' + esc(String(r.buyerKind).replace('_', ' ')) + ')' : ''} · ${esc(r.address)}, ${esc(r.city)}, ${esc(r.state)} · bids due <strong>${esc(String(r.dueDate).slice(0, 10))}</strong> · ${esc(r.status)}</small>
         <small>${esc((r.trades || []).map(label).join(' · '))}${r.squareFeet ? ' · ' + r.squareFeet.toLocaleString() + ' SF' : ''}${r.documentsUrl ? ` · <a href="${safeUrl(r.documentsUrl)}" target="_blank" rel="noopener">plans & specs</a>` : ''}</small>
         ${i.why ? `<small class="muted">Why you were invited: ${esc(i.why)}</small>` : ''}
+        ${i.request.invitedCount > 1 ? `<small class="muted">${i.request.invitedCount} companies were invited to this package.</small>` : ''}
         ${i.request.insuranceRequirements ? `<small class="muted">Insurance required to bid: ${[i.request.insuranceRequirements.generalLiabilityMin ? 'general liability of at least $' + Number(i.request.insuranceRequirements.generalLiabilityMin).toLocaleString('en-US') : '', i.request.insuranceRequirements.workersComp ? 'a current workers comp certificate' : ''].filter(Boolean).join(' and ')}. Add your certificates under Insurance so the publisher can check them before you bid.</small>` : ''}
         ${r.description ? `<small>${esc(r.description)}</small>` : ''}
         <div data-inv="${i.id}">${r.documentCount ? await planRoomHtml(r.id) : ''}<div id="est-${i.id}"></div>${open ? `<button class="x-fe7b4979" data-est-manual="${i.id}" >Build estimate manually</button>` : ''}</div>
@@ -1504,11 +1505,12 @@ async function buyerView() {
       <strong>Sign to award this proposal</strong><small>Other companies are told they were not selected. A signed record is saved for both sides.</small>
       <label>Type your full name<input name="n" required minlength="3" autocomplete="name"></label>
       <label class="x-0a9765da" ><input class="x-495e8c7d" type="checkbox" name="c" required ><span>${esc(consent)}</span></label>
+      <label><small>Only if this company is below the package's insurance minimum: why you are awarding anyway</small><textarea name="ir" rows="2" maxlength="1000"></textarea></label>
       <div class="row"><button class="primary">Sign and award</button><button type="button" data-cancel>Cancel</button></div><div class="err"></div></form></td>`;
     row.after(tr);
     tr.querySelector('[data-cancel]').onclick = () => tr.remove();
     tr.querySelector('form').onsubmit = async ev => { ev.preventDefault(); const f = ev.target;
-      try { const x = await api('POST', `/api/requests/${b.dataset.req}/award`, {submissionId: b.dataset.award, signerName: f.n.value, consent: f.c.checked}); render(); }
+      try { const x = await api('POST', `/api/requests/${b.dataset.req}/award`, {submissionId: b.dataset.award, signerName: f.n.value, consent: f.c.checked, insuranceReason: f.ir.value}); render(); }
       catch (e) { f.querySelector('.err').textContent = e.message; } };
   });
 }

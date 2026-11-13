@@ -3,6 +3,7 @@
 // straight into the buyer's inbox. The buyer asked for these bids, so delivery is internal and
 // confirmed — no cold email, no DNS dependency.
 import crypto from 'node:crypto';
+import { prequalProfile, insuranceCheck } from './prequal.js';
 import { now } from './store.js';
 import { activeRateCards, estimateOpportunity, CATEGORIES } from './estimate.js';
 import { scoreOpportunity, transition } from './domain.js';
@@ -222,6 +223,8 @@ export const consentText = company =>
  * consent wording, time, IP, user agent, and a SHA-256 of the exact document accepted).
  * Winner's bid -> awarded, others -> lost, request closed, contract record created for both parties.
  */
+// Insurance check for a company against a package's minimum (see src/prequal.js).
+const checkInsurance = (store, seller, req) => (seller ? insuranceCheck(prequalProfile(store, seller).insurance, req) : { required: true, met: false, shortfalls: ['company not found'] });
 export function awardRequest(store, buyerOrg, user, requestId, submissionId, acceptance = {}) {
   if (!acceptance.signerName || String(acceptance.signerName).trim().length < 3) throw Object.assign(new Error('signerName required: type your full name to sign'), { code: 400 });
   if (acceptance.consent !== true) throw Object.assign(new Error('consent to electronic records and signatures is required'), { code: 400 });
@@ -236,6 +239,14 @@ export function awardRequest(store, buyerOrg, user, requestId, submissionId, acc
     const bid = store.tget('bids', s.sellerOrgId, s.bidId);
     if (bid && ['delivered', 'opened', 'sent'].includes(bid.status)) transition(store, bid, s.id === winner.id ? 'awarded' : 'lost', `buyer:${user.email}`);
   }
+  // Insurance minimum: awarding a company that does not meet it is allowed, but only with a recorded reason.
+  const insuranceCheck = winner && r.insuranceRequirements ? checkInsurance(store, store.get('orgs', winner.sellerOrgId), r.insuranceRequirements) : null;
+  let insuranceException = null;
+  if (insuranceCheck && !insuranceCheck.met) {
+    const reason = String(acceptance.insuranceReason || '').trim().slice(0, 1000);
+    if (reason.length < 10) throw Object.assign(new Error(`${winner.sellerName} does not meet the insurance minimum (${insuranceCheck.shortfalls.join('; ')}). Record why you are awarding anyway (at least 10 characters).`), { code: 409 });
+    insuranceException = { shortfalls: insuranceCheck.shortfalls, reason, by: user.email, at: now() };
+  }
   const signedAt = now();
   const contract = store.put('contracts', {
     requestId: r.id, submissionId: winner.id, bidId: winner.bidId, buyerOrgId: buyerOrg.id, sellerOrgId: winner.sellerOrgId,
@@ -245,7 +256,7 @@ export function awardRequest(store, buyerOrg, user, requestId, submissionId, acc
     acceptance: { signerName: String(acceptance.signerName).trim().slice(0, 120), signerEmail: user.email, signerUserId: user.id,
       onBehalfOf: buyerOrg.name, consentText: consentText(buyerOrg.name), consentVersion: CONSENT_VERSION,
       ip: acceptance.ip || null, userAgent: String(acceptance.userAgent || '').slice(0, 300), at: signedAt },
-    status: 'accepted',
+    status: 'accepted', insuranceException,
   });
   Object.assign(r, { status: 'awarded', awardedSubmissionId: winner.id, awardedAt: signedAt, contractId: contract.id }); store.put('bidRequests', r);
   store.audit({ actor: user.email, orgId: buyerOrg.id, action: 'request.award', target: r.id, detail: { submissionId, contractId: contract.id, sha256: contract.documentSha256 } });

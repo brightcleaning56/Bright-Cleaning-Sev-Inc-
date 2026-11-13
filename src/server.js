@@ -44,7 +44,7 @@ import { handleInbound, analytics, importDirectory, directoryGaps, requeueNeedsC
 import { sendEmail } from './outbound.js';
 import { sendAwardNotices, notifyOrg } from './notices.js';
 import { saveVerificationDoc, verificationDocPath } from './verifydocs.js';
-import { bidBreadth, remindUnanswered, inviteEligible } from './breadth.js';
+import { bidBreadth, remindUnanswered, inviteEligible, autoRemind } from './breadth.js';
 import { drainOutbox, outboxCounts } from './outbox.js';
 import { proposeAmendment, acceptAmendment, declineAmendment, withdrawAmendment, amendmentView } from './amendments.js';
 import { askQuestion, answerQuestion, questionsFor, notifyRfiAnswer } from './rfi.js';
@@ -480,7 +480,7 @@ export function createServer(store, deps = {}) {
   route('GET', '/api/consent-text', 'user', ({ user }) => ({ text: consentText(store.get('orgs', user.orgId).name) }));
   route('POST', '/api/requests/:id/award', 'owner', ({ params, body, user, req, ip }) => {
     need(can(user, 'award'), 403, 'your company has not given you permission to award work');
-    try { const r = awardRequest(store, buyerOrg(user), user, params.id, body.submissionId, { signerName: body.signerName, consent: body.consent, ip, userAgent: req.headers['user-agent'] });
+    try { const r = awardRequest(store, buyerOrg(user), user, params.id, body.submissionId, { signerName: body.signerName, consent: body.consent, insuranceReason: body.insuranceReason, ip, userAgent: req.headers['user-agent'] });
       const c = r?.contractId && store.get('contracts', r.contractId); if (c) { const pid = linkAward(store, c); if (pid) recomputePhase(store, pid); }
       const all = store.list('submissions', x => x.requestId === params.id); const winnerSub = all.find(x => x.id === body.submissionId);
       sendAwardNotices(store, store.get('bidRequests', params.id), winnerSub, all.filter(x => x.id !== body.submissionId), { fetchImpl: (deps && deps.fetchImpl) || fetch }).catch(() => {});
@@ -577,7 +577,7 @@ export function createServer(store, deps = {}) {
       const r = store.get('bidRequests', i.requestId); if (!r) return null;
       const mine = store.list('submissions', s => s.requestId === r.id && s.sellerOrgId === o.id).sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)))[0];
       return { id: i.id, intent: i.intent, invitedAt: i.invitedAt, why: i.reason || null, request: { id: r.id, title: r.title, description: r.description, address: r.address, city: r.city, state: r.state, projectType: r.projectType,
-        trades: r.trades, squareFeet: r.squareFeet, dueDate: r.dueDate, status: r.status, buyerName: r.buyerName, buyerKind: r.buyerKind, documentsUrl: r.documentsUrl, insuranceRequirements: r.insuranceRequirements || null,
+        trades: r.trades, squareFeet: r.squareFeet, dueDate: r.dueDate, status: r.status, buyerName: r.buyerName, buyerKind: r.buyerKind, documentsUrl: r.documentsUrl, insuranceRequirements: r.insuranceRequirements || null, invitedCount: store.list('invitations', x => x.requestId === r.id).length,
         addendumCount: r.addendumCount || 0, addenda: r.addenda || [], documentCount: store.list('documents', d => d.requestId === r.id && !d.removed).length },
         acknowledgedThrough: i.ackAddendum || 0,
         myBid: mine ? { total: mine.total, recurring: mine.recurring, status: mine.status, submittedAt: mine.submittedAt, revision: mine.revision || 1, receiptId: mine.receiptId || null, sha256: mine.sha256 || null } : null };
@@ -1111,7 +1111,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       try { await fn(); } catch (e) { console.error(name + ' failed', e); store.put('jobs', { type: name, status: 'failed', error: e.message }); store.save(); }
       finally { running = false; }
     };
-    const cycle = async () => { try { publishDue(store); await runCycleGuarded(store); } catch (e) { console.error('cycle failed', e); } };
+    const cycle = async () => { try { publishDue(store); await runCycleGuarded(store); await autoRemind(store, { fetchImpl: globalThis.fetch }); } catch (e) { console.error('cycle failed', e); } };
     timers.push(setInterval(cycle, config.cycleMinutes * 60e3), setTimeout(cycle, 10e3));
     // Retries and sends queued transactional email (see src/outbox.js). Cheap when nothing is due.
     timers.push(setInterval(() => drainOutbox(store).catch(e => console.error("outbox failed", e)), Number(process.env.OUTBOX_INTERVAL_MS || 60e3)));
