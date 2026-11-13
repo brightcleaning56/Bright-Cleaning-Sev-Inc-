@@ -10,8 +10,8 @@ Recommended (for counsel to confirm):
 1. **[counsel]** Legal name: DentistNow. Confirm whether the robotics work is a division of DentistNow, a trade name ("DentistNow Robotics"), or a separate subsidiary. If a separate entity is needed, it is formed in Delaware under its own legal name. Delaware matches the parent and is the standard choice for investors. Confirm ownership and the IP transfer from DentistNow.
 2. **[owner]** Choose a name and check availability with the Delaware Division of Corporations.
 3. **[owner]** File the certificate of incorporation with Delaware and appoint a registered agent.
-4. **[owner]** Obtain a federal employer identification number (EIN) from the IRS.
-5. **[owner]** Open a bank account and set up accounting. Keep the robotics work's finances separate from the rest of DentistNow, in the way counsel advises.
+4. **[owner]** EIN: done. DentistNow already has one. A separate subsidiary would need its own.
+5. **[owner]** Bank account: done. DentistNow has a business account. Set up separate accounting for the robotics work if needed. Keep the robotics work's finances separate from the rest of DentistNow, in the way counsel advises.
 6. **[counsel]** Adopt bylaws, issue founder shares, decide on an 83(b) election for founder stock, and sign an intercompany IP assignment from DentistNow.
 7. **[counsel]** Invention-assignment and confidentiality agreements for every founder, employee, contractor and advisor.
 
