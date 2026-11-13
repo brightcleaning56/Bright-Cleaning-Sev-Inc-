@@ -51,3 +51,9 @@ Record:
 ## When you're done
 
 Send the answers as a list, using the item labels above. Mark anything you could not confirm as "not found" rather than guessing.
+
+## Status (owner confirmation)
+
+- Iowa program: confirmed from the IEDA page text supplied by the owner (see section 1).
+- NIDCR SBIR/STTR and SEC Regulation Crowdfunding: marked confirmed by the project owner. The owner did not supply field-by-field answers, so no solicitation numbers, deadlines or contact names are recorded here. Add them if the team needs an audit trail.
+- Re-check all public-program figures before any external use, since they change.
