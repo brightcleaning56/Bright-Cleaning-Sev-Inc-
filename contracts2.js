@@ -83,7 +83,8 @@ module.exports = function mountContracts(app, ctx) {
     res.json({ contract: get(k.id) });
   });
   app.post('/api/admin/contracts2/:id/send', auth, async (req, res) => {
-    let k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' }); k = fill(k);
+    let k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
+    if (k.archived_at) return res.status(409).json({ error: 'This contract is archived. Restore it before doing this.' }); k = fill(k);
     if (locked(k)) return res.status(409).json({ error: 'This contract is already signed.' });
     if (k.status === 'Superseded' || k.status === 'Closed') return res.status(409).json({ error: `This contract is ${k.status.toLowerCase()}.` });
     const miss = [!k.email && 'customer email', !(k.value > 0) && 'contract value', !k.scope && 'scope of work', !k.start_date && 'start date'].filter(Boolean);
@@ -97,6 +98,7 @@ module.exports = function mountContracts(app, ctx) {
   });
   app.post('/api/admin/contracts2/:id/countersign', auth, (req, res) => {
     const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
+    if (k.archived_at) return res.status(409).json({ error: 'This contract is archived. Restore it before doing this.' });
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can countersign contracts.' });
     // A client's online proposal approval only stands for the original contract; amendments and renewals need their own signature.
     const approvedOnline = k.proposal_status === 'Approved' && !k.parent_id && (k.kind || 'Contract') === 'Contract';
@@ -114,6 +116,7 @@ module.exports = function mountContracts(app, ctx) {
   });
   app.post('/api/admin/contracts2/:id/amend', auth, (req, res) => {
     const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
+    if (k.archived_at) return res.status(409).json({ error: 'This contract is archived. Restore it before doing this.' });
     if (!executed(k)) return res.status(409).json({ error: 'Only an executed contract can be amended. Edit the draft instead.' });
     const reason = clean((req.body || {}).reason, 500); if (!reason) return res.status(400).json({ error: 'Describe what the amendment changes.' });
     const root = k.parent_id || k.id; const lastV = db.prepare('SELECT id, version FROM contracts WHERE id=? OR parent_id=? ORDER BY version DESC, id DESC LIMIT 1').get(root, root); if (lastV && lastV.id !== k.id) return res.status(409).json({ error: `Version ${lastV.version} of this contract is newer. Amend that version (or finish its open draft) instead.` }); const v = (db.prepare('SELECT MAX(version) v FROM contracts WHERE id=? OR parent_id=?').get(root, root).v || 1) + 1;
@@ -133,6 +136,7 @@ module.exports = function mountContracts(app, ctx) {
   });
   app.post('/api/admin/contracts2/:id/renew', auth, (req, res) => {
     const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
+    if (k.archived_at) return res.status(409).json({ error: 'This contract is archived. Restore it before doing this.' });
     if (!executed(k) || !k.end_date || !k.start_date) return res.status(409).json({ error: 'Only an executed contract with start and end dates can be renewed.' });
     if (db.prepare('SELECT 1 FROM contracts WHERE renewed_from=?').get(k.id)) return res.status(409).json({ error: 'A renewal already exists for this contract.' });
     const span = Date.parse(k.end_date) - Date.parse(k.start_date), s = new Date(Date.parse(k.end_date) + 864e5).toISOString().slice(0, 10), e = new Date(Date.parse(s) + span).toISOString().slice(0, 10);

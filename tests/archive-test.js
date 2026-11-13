@@ -101,6 +101,18 @@ const call = async (method, url, who, body) => {
     return r.status;
   });
 
+  await check('archived contract cannot be sent, countersigned, amended or renewed', async () => {
+    const archived = await call('POST', '/api/admin/contracts2/1/archive', 'mgr@example.com', { archive: true });
+    assert(archived.status === 200, 'could not archive for this check');
+    const out = [];
+    for (const [route, body] of [['send', {}], ['countersign', { name: 'Test Signer' }], ['amend', { reason: 'x' }], ['renew', {}]]) {
+      const r = await call('POST', '/api/admin/contracts2/1/' + route, 'mgr@example.com', body);
+      assert(r.status === 409, route + ' expected 409, got ' + r.status);
+      out.push(route + ' 409');
+    }
+    return out.join(', ');
+  });
+
   await check('manager restores the contract and it returns to the KPIs', async () => {
     const r = await call('POST', '/api/admin/contracts2/1/archive', 'mgr@example.com', { archive: false });
     assert(r.status === 200, 'restore failed');
