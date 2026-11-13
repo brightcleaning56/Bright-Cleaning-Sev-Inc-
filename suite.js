@@ -262,7 +262,7 @@ module.exports = function mountSuite(app, ctx) {
     const recv = one(`SELECT COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) paid, COALESCE(SUM(CASE WHEN paid_amount<amount THEN amount-paid_amount END),0) outstanding,
       COALESCE(SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN amount-paid_amount END),0) overdue, SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN 1 END) overdue_n FROM invoices WHERE status<>'Void'`, today, today);
     const ops = {
-      projects_active: one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold')`).n || 0,
+      projects_active: one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived')`).n || 0,
       projects_completed: one(`SELECT COUNT(*) n FROM projects WHERE status='Completed'`).n || 0,
       visits_done: one(`SELECT COUNT(*) n FROM visits WHERE status='Done' AND date>=?`, start).n || 0,
       visits_upcoming: one(`SELECT COUNT(*) n FROM visits WHERE status='Scheduled' AND date>=?`, today).n || 0,

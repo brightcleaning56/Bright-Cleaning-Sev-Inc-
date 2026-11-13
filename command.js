@@ -28,7 +28,7 @@ module.exports = function mountCommand(app, ctx) {
     const sent = sentIn(from, nowIso), sentPrev = sentIn(prevFrom, from);
     const won = wonIn(from, nowIso), wonPrev = wonIn(prevFrom, from);
     const collectedMonth = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, monthStart).v;
-    const activeProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled')`).n;
+    const activeProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived')`).n;
 
     const overdueInvoices = one(`SELECT COUNT(*) n FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND due_date<>'' AND due_date IS NOT NULL AND due_date<? AND paid_amount<amount`, today).n;
     const lateProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled') AND due_date<>'' AND due_date IS NOT NULL AND due_date<?`, today).n;
