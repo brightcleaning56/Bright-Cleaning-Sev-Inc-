@@ -83,7 +83,7 @@ th{font:600 11.5px Inter,"Segoe UI",system-ui,-apple-system,sans-serif;color:var
 .thumb.big{width:210px;height:118px;border-radius:9px}.thumb.big svg{width:46px;height:46px}
 .res b{display:block;font-size:13.5px}.res small{display:block;font-size:12px}
 .hdr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:16px;align-items:center}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}.stat{border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(135px,100%),1fr));gap:10px}.stat{border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:0}
 .stat b{white-space:nowrap;display:block;font:800 20px/1.2 Inter,"Segoe UI",system-ui,-apple-system,sans-serif}.stat span{font-size:12px;color:var(--muted)}
 .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:14px 0 12px;overflow-x:auto}
 .tabs button{all:unset;cursor:pointer;padding:9px 12px;font-weight:600;font-size:13.5px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
@@ -313,7 +313,7 @@ body{font-size:13px}h2{font-size:20px}h3{font-size:14.5px;margin-bottom:8px}
 .x-f889cd2d{height:200px!important}
 .x-f99822a5{padding:18px;text-align:center;color:var(--muted)!important}
 .x-fb2957a3{font-size:9px!important}
-.x-fb874af5{grid-template-columns:repeat(3,minmax(120px,1fr))!important}
+.x-fb874af5{grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr))!important}
 .x-fcc9f9e7{display:grid;gap:10px;margin-top:12px!important}
 .x-fd8f71c4{padding:0;border:0!important}
 .x-fdf33f23{margin-bottom:8px!important}
@@ -462,3 +462,9 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 .breadth-stats small{color:var(--muted)}
 .breadth-actions{margin:0;padding-left:18px;display:grid;gap:6px}
 @media (max-width:640px){.breadth-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Stats and header cells shrink to the screen on phones instead of pushing the page wider. */
+.hdr>*,.stats>*{min-width:0;max-width:100%}
+
+/* Project header on phones: image and title stack; buttons and stats take the full width. */
+@media (max-width:640px){.hdr{grid-template-columns:minmax(0,1fr)!important;grid-template-areas:"title" "img" "stats" "btn"!important}.hdr>.thumb{max-width:120px}}
