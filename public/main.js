@@ -670,6 +670,7 @@ async function leadTab(t, body) {
       return `<div class="gate x-6384e367" ><div><strong>${esc(r.title)}</strong> <small>${esc(r.buyerName)}${r.buyerKind ? ' (' + esc(String(r.buyerKind).replace('_', ' ')) + ')' : ''} · ${esc(r.address)}, ${esc(r.city)}, ${esc(r.state)} · bids due <strong>${esc(String(r.dueDate).slice(0, 10))}</strong> · ${esc(r.status)}</small>
         <small>${esc((r.trades || []).map(label).join(' · '))}${r.squareFeet ? ' · ' + r.squareFeet.toLocaleString() + ' SF' : ''}${r.documentsUrl ? ` · <a href="${safeUrl(r.documentsUrl)}" target="_blank" rel="noopener">plans & specs</a>` : ''}</small>
         ${i.why ? `<small class="muted">Why you were invited: ${esc(i.why)}</small>` : ''}
+        ${i.request.insuranceRequirements ? `<small class="muted">Insurance required to bid: ${[i.request.insuranceRequirements.generalLiabilityMin ? 'general liability of at least $' + Number(i.request.insuranceRequirements.generalLiabilityMin).toLocaleString('en-US') : '', i.request.insuranceRequirements.workersComp ? 'a current workers comp certificate' : ''].filter(Boolean).join(' and ')}. Upload your certificates before you bid so the publisher can see them.</small>` : ''}
         ${r.description ? `<small>${esc(r.description)}</small>` : ''}
         <div data-inv="${i.id}">${r.documentCount ? await planRoomHtml(r.id) : ''}<div id="est-${i.id}"></div>${open ? `<button class="x-fe7b4979" data-est-manual="${i.id}" >Build estimate manually</button>` : ''}</div>
         ${r.addendumCount > i.acknowledgedThrough ? `<div class="x-c5c11f3d" ><small><strong>Addendum ${r.addendumCount} posted.</strong> ${esc(r.addenda.at(-1)?.note || '')} Review the plan room, then acknowledge before bidding.</small> <button data-ack="${i.id}">Acknowledge addenda 1–${r.addendumCount}</button></div>` : (r.addendumCount ? `<small>Addenda 1–${r.addendumCount} acknowledged.</small>` : '')}
@@ -1194,18 +1195,37 @@ async function publisherPanels() {
   publisherActivityList();
   publisherBilling();
   $('#newpub').onclick = () => {
-    $('#newpubf').innerHTML = `<form id="npf" class="panel x-970f4ddb" ><b>New project</b>
-      <div class="grid2"><input name="title" placeholder="Project name" required><input name="address" placeholder="Street address" required><input name="city" placeholder="City" required><input name="state" placeholder="State (2 letters)" maxlength="2" required>
-      <select name="projectType">${['office','retail','warehouse','industrial','multifamily','medical','education','hospitality','restaurant','institutional','mixed_use','other_commercial'].map(x => `<option>${x}</option>`).join('')}</select>
-      <input name="estValue" type="number" placeholder="Estimated value ($, optional)"><input name="buildingSf" type="number" placeholder="Building size (SF, optional)">
-      <input name="owner" placeholder="Owner (optional)"><input name="developer" placeholder="Developer (optional)"><input name="architect" placeholder="Architect (optional)"><input name="gc" placeholder="General contractor (optional)"></div>
-      <div class="grid2"><label><small>Estimated start</small><input name="scheduleStart" type="date"></label><label><small>Estimated completion</small><input name="scheduleCompletion" type="date"></label></div>
-      <textarea name="description" rows="2" placeholder="Project description"></textarea>
-      <label><small>Your company's relationship to this project</small><select name="relationship">${Object.entries(REL_LABEL).map(([k, l]) => `<option value="${k}" ${k === KIND_REL[pinfo.kind] ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <input name="authorizationEvidence" placeholder="Authorization from the owner (required for CM / architect / other agent): letter, contract reference or link">
-      <div class="row"><button class="primary">Create draft</button><span class="err"></span></div></form>`;
-    $('#npf').onsubmit = async ev => { ev.preventDefault(); const f = ev.target; const b = Object.fromEntries(new FormData(f).entries());
-      try { const p = await api('POST', '/api/publications', b); $('#newpubf').innerHTML = ''; await publisherPanels(); openPublication(p.id); } catch (e) { f.querySelector('.err').textContent = e.message; } };
+    const TYPES_NP = ['office','retail','warehouse','industrial','multifamily','medical','education','hospitality','restaurant','institutional','mixed_use','other_commercial'];
+    $('#newpubf').innerHTML = `<form id="npf" class="panel npwiz" aria-label="New project"><div class="wiz-head"><b>New project</b> <small>Creates a draft. Nothing is visible to bidders until you publish.</small></div>
+      <ol class="wiz npsteps" id="npsteps"><li class="cur" data-n="1"><button type="button" data-goto="1">1. Project</button></li><li data-n="2"><button type="button" data-goto="2">2. Team & schedule</button></li><li data-n="3"><button type="button" data-goto="3">3. Review</button></li></ol>
+      <fieldset class="wstep" data-s="1"><legend>Project information</legend>
+        <div class="grid2"><input name="title" placeholder="Project name" required aria-label="Project name"><input name="address" placeholder="Street address" required aria-label="Street address"><input name="city" placeholder="City" required aria-label="City"><input name="state" placeholder="State (2 letters)" maxlength="2" required aria-label="State"></div>
+        <div class="grid2"><label><small>Project type</small><select name="projectType">${TYPES_NP.map(x => `<option>${x}</option>`).join('')}</select></label><label><small>Building size (SF, optional)</small><input name="buildingSf" type="number" min="0"></label></div>
+        <div class="grid2"><label><small>Estimated value (USD, optional)</small><input name="estValue" type="number" min="0"></label></div>
+        <label><small>Description for your records</small><textarea name="description" rows="2"></textarea></label>
+        <div class="row"><button type="button" class="primary" data-next="2">Next: team & schedule</button><span class="err" role="alert"></span></div></fieldset>
+      <fieldset class="wstep" data-s="2" hidden><legend>Team and schedule</legend>
+        <div class="grid2"><input name="owner" placeholder="Owner (optional)" aria-label="Owner"><input name="developer" placeholder="Developer (optional)" aria-label="Developer"><input name="architect" placeholder="Architect (optional)" aria-label="Architect"><input name="gc" placeholder="General contractor (optional)" aria-label="General contractor"></div>
+        <div class="grid2"><label><small>Estimated start</small><input name="scheduleStart" type="date"></label><label><small>Estimated completion</small><input name="scheduleCompletion" type="date"></label></div>
+        <label><small>Your company's relationship to this project</small><select name="relationship">${Object.entries(REL_LABEL).map(([k, l]) => `<option value="${k}" ${k === KIND_REL[pinfo.kind] ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label><small>Authorization from the owner (needed for a construction manager, architect or other agent)</small><input name="authorizationEvidence"></label>
+        <div class="row"><button type="button" data-back="1">Back</button><button type="button" class="primary" data-next="3">Next: review</button><span class="err" role="alert"></span></div></fieldset>
+      <fieldset class="wstep" data-s="3" hidden><legend>Review</legend><div id="npreview"></div>
+        <p><small>Trade packages, plans and bidders are added in the project workspace next. Each trade becomes its own package with its own bidders, plans and deadline.</small></p>
+        <div class="row"><button type="button" data-back="2">Back</button><button class="primary" type="submit">Create draft</button><span class="err" role="alert"></span></div></fieldset></form>`;
+    const npf = $('#npf'); const showStep = n => {
+      npf.querySelectorAll('.wstep').forEach(s => s.hidden = Number(s.dataset.s) !== n);
+      npf.querySelectorAll('#npsteps li').forEach(li => { const k = Number(li.dataset.n); li.className = k === n ? 'cur' : k < n ? 'done' : ''; });
+      if (n === 3) { const v = Object.fromEntries(new FormData(npf).entries()); const row = (k, l) => v[k] ? `<li><b>${l}:</b> ${esc(v[k])}</li>` : '';
+        $('#npreview').innerHTML = `<ul class="vreq">${row('title', 'Project')}${row('address', 'Address')}${[row('city', 'City'), row('state', 'State')].join('')}${row('projectType', 'Type')}${row('owner', 'Owner')}${row('developer', 'Developer')}${row('architect', 'Architect')}${row('gc', 'General contractor')}${row('scheduleStart', 'Start')}${row('scheduleCompletion', 'Completion')}</ul>`; }
+    };
+    const stepValid = n => { const inputs = [...npf.querySelectorAll(`.wstep[data-s="${n}"] input, .wstep[data-s="${n}"] select, .wstep[data-s="${n}"] textarea`)]; for (const i of inputs) if (!i.checkValidity()) { i.reportValidity(); return false; } return true; };
+    npf.querySelectorAll('[data-next]').forEach(b => b.onclick = () => { const to = Number(b.dataset.next); if (to === 2 ? stepValid(1) : stepValid(1) && stepValid(2)) showStep(to); });
+    npf.querySelectorAll('[data-back]').forEach(b => b.onclick = () => showStep(Number(b.dataset.back)));
+    npf.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { const to = Number(b.dataset.goto); if (to === 1 || (to === 2 && stepValid(1)) || (to === 3 && stepValid(1) && stepValid(2))) showStep(to); });
+    npf.onsubmit = async ev => { ev.preventDefault(); const f = ev.target; if (!(stepValid(1) && stepValid(2))) return; const b = Object.fromEntries(new FormData(f).entries());
+      const err = f.querySelector('.wstep[data-s="3"] .err');
+      try { const p = await api('POST', '/api/publications', b); $('#newpubf').innerHTML = ''; await publisherPanels(); openPublication(p.id); } catch (e) { err.textContent = e.message; } };
   };
   // team & subscription
   const users = await api('GET', '/api/org/users').catch(() => []), sub = await api('GET', '/api/subscription').catch(() => null);

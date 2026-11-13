@@ -435,3 +435,12 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 .vdocform .row{grid-column:1 / -1}
 .linkish{all:unset;cursor:pointer;color:var(--accent);font-weight:600;text-decoration:underline}
 @media (max-width:640px){.vdocform{grid-template-columns:minmax(0,1fr)}}
+
+/* New project wizard: three steps, each validated before the next. */
+.npwiz .wstep{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;display:grid;gap:10px}
+.npwiz .wstep legend{padding:0 6px;font-weight:700;color:var(--ink)}
+.npwiz .wstep .row{justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.npsteps li button{width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;color:var(--muted);font-size:13px}
+.npsteps li.done button{color:var(--ink);border-color:#9fd6b5}
+.npsteps li.cur button{color:var(--accent);border-color:var(--accent);font-weight:700}
+.npwiz .wstep[hidden]{display:none}

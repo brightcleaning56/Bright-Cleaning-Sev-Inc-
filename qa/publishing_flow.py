@@ -17,7 +17,10 @@ with sync_playwright() as p:
     steps.append('1 verified publisher badge: ' + str('Verified publisher' in gc.inner_text('#verc')))
     gc.click('#newpub'); gc.wait_for_timeout(300)
     for k, v in {'title': 'Delaware Medical Office', 'address': '1200 Pike St', 'city': 'Seattle', 'state': 'WA', 'description': 'New 120,000 SF medical office building'}.items(): gc.fill(f'#npf [name={k}]', v)
-    gc.select_option('#npf [name=projectType]', 'medical'); gc.click('#npf button.primary'); gc.wait_for_timeout(1200)
+    gc.select_option('#npf [name=projectType]', 'medical'); gc.click('#npf [data-next="2"]'); gc.wait_for_timeout(300)
+    gc.fill('#npf [name=developer]', 'ABC Development'); gc.fill('#npf [name=scheduleStart]', (datetime.date.today() + datetime.timedelta(days=60)).isoformat()); gc.click('#npf [data-next="3"]'); gc.wait_for_timeout(300)
+    steps.append('2w wizard review lists the project: ' + str('Delaware Medical Office' in gc.inner_text('#npreview')))
+    gc.click('#npf .wstep[data-s="3"] button.primary'); gc.wait_for_timeout(1200)
     t = gc.inner_text('#pubm'); steps.append('2 draft created, checklist shown, relationship matches company type (property manager): ' + str('draft' in t and 'Checklist' in t and 'Property manager for the owner' in t))
     steps.append('2a setup guide on a new draft: step 2 of 6 (scope and trade packages): ' + str('Step 2 of 6' in gc.inner_text('.wizard')))
     when = (datetime.date.today() + datetime.timedelta(days=3)).isoformat() + 'T09:00'

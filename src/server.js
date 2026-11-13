@@ -576,7 +576,7 @@ export function createServer(store, deps = {}) {
       const r = store.get('bidRequests', i.requestId); if (!r) return null;
       const mine = store.list('submissions', s => s.requestId === r.id && s.sellerOrgId === o.id).sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)))[0];
       return { id: i.id, intent: i.intent, invitedAt: i.invitedAt, why: i.reason || null, request: { id: r.id, title: r.title, description: r.description, address: r.address, city: r.city, state: r.state, projectType: r.projectType,
-        trades: r.trades, squareFeet: r.squareFeet, dueDate: r.dueDate, status: r.status, buyerName: r.buyerName, buyerKind: r.buyerKind, documentsUrl: r.documentsUrl,
+        trades: r.trades, squareFeet: r.squareFeet, dueDate: r.dueDate, status: r.status, buyerName: r.buyerName, buyerKind: r.buyerKind, documentsUrl: r.documentsUrl, insuranceRequirements: r.insuranceRequirements || null,
         addendumCount: r.addendumCount || 0, addenda: r.addenda || [], documentCount: store.list('documents', d => d.requestId === r.id && !d.removed).length },
         acknowledgedThrough: i.ackAddendum || 0,
         myBid: mine ? { total: mine.total, recurring: mine.recurring, status: mine.status, submittedAt: mine.submittedAt, revision: mine.revision || 1, receiptId: mine.receiptId || null, sha256: mine.sha256 || null } : null };
