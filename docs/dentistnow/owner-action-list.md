@@ -1,0 +1,41 @@
+# Owner action list — things only you can do
+
+Maintained by the assistant. Each item needs your identity, payment, signature, account access, or a decision that is yours. Work through the list in order; items 1–4 unblock the rest.
+
+Last updated: 2026-11-13.
+
+## Blocking (do first)
+
+1. **Form DentistNow Robotics in Delaware.** Choose the name, file the certificate of incorporation, appoint a registered agent. Send me the company name and the registered agent.
+2. **Get an EIN** from the IRS for the new company.
+3. **Open a company bank account** and keep its money separate from DentistNow.
+4. **Confirm you control dentistnow.co** (registrar login, renewal, DNS access).
+
+## Needed before any outside sharing
+
+5. **Create the mailbox info@dentistnow.co** (and an investor-relations mailbox, if you want one).
+6. **Publish the privacy notice** at dentistnow.co/privacy after counsel has reviewed the draft in the setup checklist.
+7. **Send the counsel package** (zip in the last delivery) to securities counsel with the cover note. Fill in your name and contact details in the cover note first.
+8. **Give me the business mailing address** for the landing page, deck and privacy notice.
+9. **Decide whether the company will be Iowa-based.** If not, the Iowa program is not available and I'll take it out of the plan. If yes, register in Iowa and tell me.
+
+## Needed to move engineering forward
+
+10. **Approve the quote request list** and send it to suppliers (or tell me which supplier groups to contact).
+11. **Decide on the X-ray module** for version 1: remove it and offer it as an option (recommended, saves up to $18,000).
+12. **Name an engineering lead** for the mechanical and robotics work, if one is not already in place.
+
+## Needed to bring in advisers
+
+13. **Engage a regulatory specialist** to own the FDA Q-Submission outline.
+14. **Engage a dental clinical advisor** to review the eligibility rules and consent wording.
+15. **Engage a valuation advisor** to review the 35% stake and the valuation placeholder before any investor sees them.
+
+## Needed for the public site
+
+16. **Decide the next image set.** The current images are the interface screens and a concept layout. Approve them, or tell me what to replace.
+17. **Approve the landing page** (structure and wording) once counsel has reviewed the risk and investor-process sections.
+
+## Verified facts still to confirm
+
+18. **NIDCR and SEC items** are marked owner-confirmed. If you have the solicitation numbers or the source page for the crowdfunding figures, send them so the audit trail is complete.
