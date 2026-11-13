@@ -1404,7 +1404,7 @@ async function buyerView() {
   const drawLevel = async id => {
     const L = await api('GET', `/api/requests/${id}/leveling`); const box = $('#lv-' + id);
     box.innerHTML = `<div class="panel x-8a77e5a3" ><h3>Bid leveling — ${L.stats.bids} bid(s) · low ${L.stats.low ? money(L.stats.low) : '—'} · median ${L.stats.median ? money(L.stats.median) : '—'} · high ${L.stats.high ? money(L.stats.high) : '—'}</h3>
-      <div class="scroll"><table><tr><th>Bidder</th><th class="num">Bid</th><th class="num">vs. low</th><th>Addenda</th><th>General liability</th><th>Workers comp</th><th>License</th><th>Flags</th><th>Prequalification</th></tr>
+      <div class="scroll"><table><tr><th>Bidder</th><th class="num">Bid</th><th class="num">vs. low</th><th>Addenda</th><th>General liability</th><th>Workers comp</th><th>License</th><th>Flags</th><th>Award</th><th>Prequalification</th></tr>
       ${L.rows.map(x => `<tr><td><b>${esc(x.company)}</b><br><small>rev ${x.revision}${x.revisions && x.revisions.length > 1 ? ` (${x.revisions.length - 1} earlier)` : ''} · ${ago(x.submittedAt)}${x.receiptId ? ' · ' + esc(x.receiptId) : ''}</small>
           <details><summary><small>Scope, exclusions & revisions</small></summary>
             <p><small><b>Scope:</b> ${esc(x.scope || '—')}</small></p>${x.exclusions ? `<p><small><b>Exclusions:</b> ${esc(x.exclusions)}</small></p>` : ''}
@@ -1414,9 +1414,12 @@ async function buyerView() {
         <td>${ins(x.prequal.insurance.generalLiability)}</td><td>${ins(x.prequal.insurance.workersComp)}</td>
         <td>${[...x.prequal.stateLicenses.map(l => `${esc(l.state)} ${esc(l.number)} ${l.active ? '<span class="pill green">active</span>' : '<span class="pill red">' + esc(l.status || 'inactive') + '</span>'}`), ...x.prequal.licenses.map(l => `${esc(l.issuer)} ${esc(l.number)}${l.current ? '' : ' <span class="pill red">expired</span>'}`)].join('<br>') || '<small>none on file</small>'}</td>
         <td><small>${esc(x.prequal.flags.join('; ') || '—')}</small></td>
+        <td>${L.request.status === 'open' ? `<button class="primary" data-lvaward="${esc(x.submissionId)}">Award</button>` : `<small>${esc(L.request.status)}</small>`}</td>
         <td>${x.decision ? `<span class="pill ${x.decision.status === 'approved' ? 'green' : x.decision.status === 'rejected' ? 'red' : ''}">${esc(x.decision.status)}</span><br>` : ''}<button data-pq="${x.sellerOrgId}" data-st="approved" data-req="${id}">Approve</button> <button data-pq="${x.sellerOrgId}" data-st="rejected" data-req="${id}">Reject</button></td></tr>`).join('')}</table></div>
       <small>Insurance and licenses are what each bidder filed; "verified" means confirmed with the carrier or state. State license status comes from the state's public register.</small></div>`;
     box.querySelectorAll('[data-pq]').forEach(b => b.onclick = async () => { await api('POST', `/api/prequal/${b.dataset.pq}`, { status: b.dataset.st }); drawLevel(b.dataset.req); });
+    // Award from the comparison: opens the same sign-to-award form as the bid list, for the chosen bid.
+    box.querySelectorAll('[data-lvaward]').forEach(b => b.onclick = () => { const a = document.querySelector(`[data-award="${b.dataset.lvaward}"]`); if (a) { a.click(); a.closest('tr')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
   };
   document.querySelectorAll('[data-level]').forEach(b => b.onclick = () => drawLevel(b.dataset.level));
   document.querySelectorAll('[data-up]').forEach(f => f.onsubmit = async ev => { ev.preventDefault();

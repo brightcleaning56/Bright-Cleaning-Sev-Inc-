@@ -50,6 +50,10 @@ with sync_playwright() as p:
     det = gc.inner_text('details[open]') if gc.query_selector('details[open]') else ''
     steps.append('8 scope and revision history shown for each bid: ' + str('Scope:' in det and 'rev 1' in det and '(current)' in det))
     if not ('Scope:' in det and 'rev 1' in det and '(current)' in det): problems.append('bid scope and revision history not shown in the comparison')
+    gc.click('[data-lvaward]'); gc.wait_for_timeout(500)
+    signing = 'Sign to award this proposal' in gc.inner_text('body')
+    steps.append('9 award from the comparison opens the signing form: ' + str(signing))
+    if not signing: problems.append('Award in the comparison does not open the signing form')
     gc.screenshot(path=OUT('lv.png'), full_page=True)
     b.close()
 print('\n'.join(steps)); print('PROBLEMS:', [x for x in problems if 'ERR_NAME' not in x and 'cdnjs' not in x])
