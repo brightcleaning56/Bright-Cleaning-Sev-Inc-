@@ -38,8 +38,8 @@ None in the chain itself. One behaviour to decide on (above).
 
 ## Decision applied (owner, 2026-11-12): show the calculated price with a warning
 
-- The calculated price stays the proposal price. It is the same behaviour as before.
-- The create response now includes a  when a typed total differs from the calculated one by more than 1%, saying what was entered and what the proposal uses.
-- The create response also includes the estimate's flags, and the per-square-foot warning now starts below /usr/bin/bash.05 per sq ft (it was below /usr/bin/bash.02). This flag appears on the estimate screen.
-- The admin create form does not send a typed total, so the notice is shown only to API callers for now.
-- Tests: the chain test checks the notice and the warning; the main suite (224), UI (83) and other suites still pass.
+- The calculated price stays the proposal price. This is the same behaviour as before.
+- The create response now includes a `notice` when a typed total differs from the calculated one by more than 1%. It says what was entered and what the proposal uses.
+- The create response also includes the estimate's flags. The per-square-foot warning now starts below $0.05 per sq ft (it was below $0.02). The flags appear on the estimate screen.
+- The admin create form does not send a typed total, so the notice reaches API callers only for now.
+- Tests: the chain test checks the notice and the warning. The main suite (224), the UI suite (83) and the other suites still pass.
