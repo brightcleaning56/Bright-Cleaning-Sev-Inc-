@@ -44,6 +44,7 @@ import { handleInbound, analytics, importDirectory, directoryGaps, requeueNeedsC
 import { sendEmail } from './outbound.js';
 import { sendAwardNotices, notifyOrg } from './notices.js';
 import { saveVerificationDoc, verificationDocPath } from './verifydocs.js';
+import { bidBreadth, remindUnanswered, inviteEligible } from './breadth.js';
 import { drainOutbox, outboxCounts } from './outbox.js';
 import { proposeAmendment, acceptAmendment, declineAmendment, withdrawAmendment, amendmentView } from './amendments.js';
 import { askQuestion, answerQuestion, questionsFor, notifyRfiAnswer } from './rfi.js';
@@ -749,6 +750,11 @@ export function createServer(store, deps = {}) {
     store.put('publications', p); return p; });
   route('POST', '/api/publications/:id/packages', 'user', ({ params, body, user }) => R(addPackage(store, pubOrg(user), user, params.id, body), 'package'));
   route('POST', '/api/packages/:id/deadline', 'user', ({ params, body, user }) => { const r = changeDeadline(store, pubOrg(user), user, params.id, body); need(r.ok, r.code || 400, r.error); return { dueDate: r.request.dueDate, addendum: r.addendum }; });
+  // Bid breadth: how wide the bidding is for a package, and the actions that widen it.
+  const ownPackage = (user, id) => { const o = pubOrg(user), r = store.get('bidRequests', id); need(r && r.buyerOrgId === o.id && r.publicationId, 404, 'not found'); return { o, r }; };
+  route('GET', '/api/packages/:id/breadth', 'user', ({ params, user }) => { const { r } = ownPackage(user, params.id); return bidBreadth(store, r); });
+  route('POST', '/api/packages/:id/remind', 'user', async ({ params, user }) => { const { o, r } = ownPackage(user, params.id); need(can(user, 'invite'), 403, 'no permission to invite'); const x = await remindUnanswered(store, o, user, r, { fetchImpl: (deps && deps.fetchImpl) || fetch }); need(x.ok, x.code || 400, x.error); return x; });
+  route('POST', '/api/packages/:id/invite-eligible', 'user', ({ params, user }) => { const { o, r } = ownPackage(user, params.id); need(can(user, 'invite'), 403, 'no permission to invite'); const x = inviteEligible(store, o, user, r); need(x.ok, x.code || 400, x.error); return x; });
   route('PATCH', '/api/packages/:id', 'user', ({ params, body, user }) => {
     const o = pubOrg(user), r = store.get('bidRequests', params.id); need(r && r.buyerOrgId === o.id && r.publicationId, 404, 'not found'); need(can(user, 'publish') || can(user, 'invite'), 403, 'no permission');
     if (r.status !== 'draft') { need(Object.keys(body).every(k => k === 'invitees'), 409, 'published packages: change dates or scope with an addendum; you can still invite more bidders'); }

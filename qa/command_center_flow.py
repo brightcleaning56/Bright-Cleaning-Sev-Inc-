@@ -47,6 +47,14 @@ with sync_playwright() as p:
             if pg.inner_text('#bmsg').strip(): problems.append('inviting from the directory failed: ' + pg.inner_text('#bmsg'))
             if 'Invited' not in pg.inner_text('#brows'): problems.append('an invited company is not marked Invited')
     steps.append('2b bidder directory filters, eligibility and invite work')
+    pg.click('[data-pubopen]'); pg.wait_for_timeout(900)
+    if pg.query_selector('[data-breadth]'):
+        pg.click('[data-breadth]'); pg.wait_for_timeout(900)
+        panel = pg.inner_text('.breadth') if pg.query_selector('.breadth') else ''
+        if 'Bid breadth' not in panel or 'eligible, not invited' not in panel: problems.append('bid breadth panel does not show its counts')
+        steps.append('2c bid breadth panel shows counts and actions')
+    else:
+        problems.append('no Bid breadth control on a published package')
     labels = pg.evaluate("[...document.querySelectorAll('.choose button')].map(b => b.innerText.split('\\n')[0])")
     if labels != ['Create full project', 'Post single trade', 'Create cleaning request']: problems.append(f'request chooser is {labels}')
     opts = pg.evaluate("[...document.querySelectorAll('#sv option')].map(o => o.value)")
