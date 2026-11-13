@@ -38,7 +38,7 @@ Last updated: 2026-11-13.
 
 ## Engineering decisions still open
 
-19. **Set the test thresholds marked TBD** in the engineering test plan (positioning, force, e-stop time). These need the engineering lead and clinical advisor.
+19. **Confirm the proposed test thresholds** in `test-thresholds-proposed.md`. The engineering lead and clinical advisor must confirm them.
 
 ## Verified facts still to confirm
 

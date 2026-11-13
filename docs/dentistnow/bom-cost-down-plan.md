@@ -49,7 +49,7 @@ On these estimates the $85,000 ceiling is reachable only if the X-ray module is 
 ## 4. Decisions and owners
 
 - **Owner:** Product Director, with the mechanical and robotics leads.
-- **Decision 1:** remove the X-ray module from version 1 and offer it as an option.
+- **Decision 1 (adopted in the documents):** remove the X-ray module from version 1 and offer it as an option. The owner can reverse this.
 - **Decision 2:** confirm the arm count from the workspace study.
 - **Gate:** no Stage C commitment until a re-quoted bill of materials is at or below $85,000.
 - **Financial model:** re-run the unit-cost sheet with the re-quoted figure.
