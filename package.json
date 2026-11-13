@@ -8,7 +8,8 @@
     "create-admin": "node scripts/create-admin.js",
     "test": "node tests/run-tests.js",
     "test:b2": "node tests/b2-test.js",
-    "test:suppress": "node tests/suppress-test.js && node tests/suppress-routes-test.js"
+    "test:suppress": "node tests/suppress-test.js && node tests/suppress-routes-test.js",
+    "test:workflows": "node tests/workflow-modules-test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
