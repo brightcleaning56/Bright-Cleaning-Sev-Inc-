@@ -132,9 +132,13 @@ ${b.documentUrl ? `<p>Supporting documents: <a href="${escH(b.documentUrl)}">${e
 ${r.addendumCount ? `<p><strong>Acknowledges addenda 1–${r.addendumCount}.</strong></p>` : ''}<p style="font-size:12px;color:#555">${creds ? escH(creds) + '. ' : ''}Valid for ${Number(b.validDays) > 0 ? Number(b.validDays) : 30} days. Not a contract until accepted in writing.</p>
 <p>${escH(name)}${legal.postalAddress ? '<br>' + escH(legal.postalAddress) : ''}${org.profile?.phone ? '<br>' + escH(org.profile.phone) : ''}<br>${escH(user.email)}</p></body></html>`;
   const prior = store.list('submissions', s => s.requestId === r.id && s.sellerOrgId === org.id && s.status === 'submitted')[0];
+  // A revision keeps the earlier bid: its amount, scope, proposal, receipt and time are kept in revisionHistory.
+  const earlier = prior ? { revision: prior.revision || 1, total: prior.total, recurring: prior.recurring || null, scope: prior.scope || null,
+    exclusions: prior.exclusions || null, documentUrl: prior.documentUrl || null, proposalHtml: prior.proposalHtml, sha256: prior.sha256, receiptId: prior.receiptId, submittedAt: prior.submittedAt } : null;
   const sub = store.put('submissions', { ...(prior || {}), requestId: r.id, buyerOrgId: r.buyerOrgId, sellerOrgId: org.id, bidId: prior?.bidId || null,
     sellerName: name, sellerEmail: user.email, total: amount, recurring: b.recurring ? 'monthly' : null, proposalHtml: html, submittedAt: now(), status: 'submitted',
-    channel: 'manual', revision: (prior?.revision || 0) + 1,
+    channel: 'manual', revision: (prior?.revision || 0) + 1, revisionHistory: [...(prior?.revisionHistory || []), ...(earlier ? [earlier] : [])],
+    scope: String(b.scope).trim().slice(0, 4000), exclusions: b.exclusions ? String(b.exclusions).trim().slice(0, 4000) : null, documentUrl: b.documentUrl || null,
     receiptId: 'R-' + crypto.randomBytes(5).toString('hex').toUpperCase(), sha256: crypto.createHash('sha256').update(html).digest('hex') });
   inv.intent = 'will_bid'; inv.submissionId = sub.id; inv.submittedAt = sub.submittedAt; store.put('invitations', inv);
   store.audit({ actor: user.email, orgId: org.id, action: prior ? 'bid.revise' : 'bid.submit', target: sub.id, detail: { requestId: r.id, amount } });

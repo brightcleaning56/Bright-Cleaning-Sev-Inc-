@@ -31,7 +31,12 @@ with sync_playwright() as p:
     sub.click('[data-bidform]'); sub.wait_for_timeout(300)
     sub.fill('input[name=amount]', '86400'); sub.fill('textarea[name=scope]', 'Furnish and install 180 LF thermally broken storefront, including glass and hardware.')
     sub.click('text=Send bid'); sub.wait_for_timeout(800)
-    steps.append('4 sub bid shown: ' + str('$86,400.00' in sub.content()))
+    try:
+        sub.wait_for_function("() => document.body.innerText.includes('86,400')", timeout=8000); shown = True
+    except Exception:
+        shown = False
+    steps.append('4 sub bid shown: ' + str(shown))
+    if not shown: problems.append('bidder does not see the submitted amount after sending the bid')
     gc.wait_for_timeout(2500); gc.reload(); gc.fill('#e', 'pm@acme.test') if gc.query_selector('#e') else None
     if gc.query_selector('#e'): gc.fill('#p', 'demo password 123'); gc.click('button.primary'); gc.wait_for_timeout(1000)
     gc.wait_for_timeout(1500); txt = gc.inner_text('body')
@@ -41,6 +46,10 @@ with sync_playwright() as p:
     steps.append('6 leveling table: ' + str('Bid leveling' in t and '$86,400.00' in t and 'none on file' in t and 'no general liability certificate on file' in t))
     gc.click('[data-pq][data-st=approved]'); gc.wait_for_timeout(900)
     steps.append('7 prequal approved: ' + str('approved' in gc.inner_text('body')))
+    gc.click('details summary:has-text("Scope, exclusions")'); gc.wait_for_timeout(300)
+    det = gc.inner_text('details[open]') if gc.query_selector('details[open]') else ''
+    steps.append('8 scope and revision history shown for each bid: ' + str('Scope:' in det and 'rev 1' in det and '(current)' in det))
+    if not ('Scope:' in det and 'rev 1' in det and '(current)' in det): problems.append('bid scope and revision history not shown in the comparison')
     gc.screenshot(path=OUT('lv.png'), full_page=True)
     b.close()
 print('\n'.join(steps)); print('PROBLEMS:', [x for x in problems if 'ERR_NAME' not in x and 'cdnjs' not in x])

@@ -60,6 +60,8 @@ export function leveling(store, buyer, requestId) {
       const decision = store.tlist('prequal', buyer.id, p => p.sellerOrgId === s.sellerOrgId)[0];
       return { submissionId: s.id, sellerOrgId: s.sellerOrgId, company: s.sellerName, total: s.total, recurring: s.recurring, revision: s.revision || 1, submittedAt: s.submittedAt, status: s.status,
         pctAboveLow: low ? Math.round(1000 * (s.total - low) / low) / 10 : 0, addendaAcknowledged: inv?.ackAddendum || 0, receiptId: s.receiptId || null,
+        scope: s.scope || null, exclusions: s.exclusions || null, documentUrl: s.documentUrl || null, receiptSha256: s.sha256 || null,
+        revisions: [...(s.revisionHistory || []).map(h => ({ revision: h.revision, total: h.total, recurring: h.recurring, receiptId: h.receiptId, submittedAt: h.submittedAt, scope: h.scope || null })), { revision: s.revision || 1, total: s.total, recurring: s.recurring || null, receiptId: s.receiptId || null, submittedAt: s.submittedAt, current: true }],
         prequal: prequalProfile(store, seller), decision: decision ? { status: decision.status, note: decision.note, decidedAt: decision.decidedAt } : null };
     }),
   };
