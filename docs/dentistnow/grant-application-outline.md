@@ -44,6 +44,6 @@ Status: outline only. Program terms, solicitation numbers, deadlines and eligibi
 
 ## 8. Before submission
 1. Confirm the solicitation text and deadline on the official site.
-2. Confirm the Iowa co-funding terms if they are to be used (see the funding verification checklist).
+2. Iowa co-funding terms are confirmed from the IEDA program page ($75K total: $50K Phase I, $25K Phase II). Confirm the company is Iowa-registered and under 500 employees before applying.
 3. Have a grant-writing advisor review the draft.
 4. Confirm the budget against quotes.

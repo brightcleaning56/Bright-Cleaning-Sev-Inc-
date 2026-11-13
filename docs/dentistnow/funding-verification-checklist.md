@@ -4,6 +4,15 @@ Use this to check the public program pages by hand. Paste the answers back, with
 
 ## 1. Iowa — America's Seed Fund: Iowa Program
 
+Status: **confirmed** from the IEDA program page text supplied by the project owner (undated). Recheck before external use. The page reports a broken link elsewhere on the site.
+
+Confirmed:
+- Total support $75,000. Phase I $50,000 on top of a federal grant or contract. Phase II $25,000 on submission of a federal grant or contract.
+- Eligibility: Iowa-based, legally formed and registered with the Iowa Secretary of State, fewer than 500 employees, innovative, industry-agnostic.
+- Applications reviewed on an ongoing basis. Contact IEDA for the current application.
+
+Still to confirm: matching requirements and the current contact route.
+
 Pages:
 - https://opportunityiowa.gov/business/small-business-entrepreneurs/small-business-resources/americas-seed-fund-iowa-program
 - https://www.iowaeda.com/small-business/sbir-sttr/
