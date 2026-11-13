@@ -31,7 +31,7 @@
   .fine { font-size:11.5px; color:var(--muted); }
   .sources li { font-size:12px; color:var(--muted); margin:3px 0; }
   a { color:var(--accent); }
-  @media (max-width:600px){ main { padding:20px 16px 40px; } table { font-size:12px; } }
+  @media (max-width:600px){ main { padding:20px 16px 40px; } table { font-size:12px; display:block; overflow-x:auto; } }
 </style>
 </head>
 <body>
@@ -59,7 +59,8 @@
   <li><a href="#s12">First 90 days</a></li>
   <li><a href="#s13">Funding timeline, start to close</a></li>
   <li><a href="#s14">Open decisions and checklist</a></li>
-  <li><a href="#s15">Sources</a></li>
+  <li><a href="#s15">Financial model and investor returns</a></li>
+  <li><a href="#s16">Sources</a></li>
 </ol></div>
 
 <h2 id="s1">1. Executive summary</h2>
@@ -301,7 +302,45 @@
   <li>No statements of FDA clearance, approval or validated clinical performance.</li>
 </ul>
 
-<h2 id="s15">15. Sources</h2>
+<h2 id="s15">15. Financial model and investor returns</h2>
+<div class="banner"><strong>Illustrative model, not a forecast.</strong> Every input is a planning assumption, and none is validated against market data or supplier quotes. The workbook is <code>docs/dentistnow/financial-model.xlsx</code> (live formulas, three scenarios). Money is in thousands of US dollars, before tax, with no working capital or capex.</div>
+<h3>15.1 Revenue, gross margin and operating result (Base case)</h3>
+<table><tr><th>$K (Base)</th><th class=n>Y1</th><th class=n>Y2</th><th class=n>Y3</th><th class=n>Y4</th><th class=n>Y5</th><th class=n>Y6</th><th class=n>Y7</th></tr><tr><td>Machines sold</td><td class=n>0</td><td class=n>0</td><td class=n>0</td><td class=n>10</td><td class=n>20</td><td class=n>40</td><td class=n>70</td></tr><tr><td>Hardware revenue</td><td class=n>0</td><td class=n>0</td><td class=n>0</td><td class=n>1,200</td><td class=n>2,400</td><td class=n>4,800</td><td class=n>8,400</td></tr><tr><td>Recurring revenue (software, maintenance, consumables)</td><td class=n>0</td><td class=n>0</td><td class=n>0</td><td class=n>183</td><td class=n>732</td><td class=n>1,830</td><td class=n>3,843</td></tr><tr><td><b>Total revenue</b></td><td class=n>0</td><td class=n>0</td><td class=n>0</td><td class=n>1,383</td><td class=n>3,132</td><td class=n>6,630</td><td class=n>12,243</td></tr><tr><td>Gross profit</td><td class=n>0</td><td class=n>0</td><td class=n>0</td><td class=n>665</td><td class=n>1,531</td><td class=n>3,262</td><td class=n>6,062</td></tr><tr><td>Gross margin</td><td class=n>0.0%</td><td class=n>0.0%</td><td class=n>0.0%</td><td class=n>48.1%</td><td class=n>48.9%</td><td class=n>49.2%</td><td class=n>49.5%</td></tr><tr><td>Total operating expenses</td><td class=n>1,600</td><td class=n>2,400</td><td class=n>2,700</td><td class=n>2,020</td><td class=n>2,540</td><td class=n>3,380</td><td class=n>4,340</td></tr><tr><td><b>Operating result (EBITDA proxy)</b></td><td class=n>(1,600)</td><td class=n>(2,400)</td><td class=n>(2,700)</td><td class=n>(1,355)</td><td class=n>(1,009)</td><td class=n>(118)</td><td class=n>1,722</td></tr><tr><td>Cumulative cash before financing</td><td class=n>(1,600)</td><td class=n>(4,000)</td><td class=n>(6,700)</td><td class=n>(8,055)</td><td class=n>(9,065)</td><td class=n>(9,182)</td><td class=n>(7,461)</td></tr></table>
+<p class="fine">Operating result is an EBITDA proxy: gross profit less development, general and administration, sales and support, and sales commissions. Year 7 operating margin in the Base case is 14.1%. Gross margin is about 48–50% in the Base case because hardware margin (about 47%) is blended with recurring margin (about 55%).</p>
+<h3>15.2 Three scenarios</h3>
+<table><tr><th>Measure</th><th class=n>Conservative</th><th class=n>Base</th><th class=n>Upside</th></tr><tr><td>Year 7 machines sold</td><td class=n>35</td><td class=n>70</td><td class=n>100</td></tr><tr><td>Year 7 revenue</td><td class=n>4,270</td><td class=n>12,243</td><td class=n>23,982</td></tr><tr><td>Year 7 gross margin</td><td class=n>24.0%</td><td class=n>49.5%</td><td class=n>60.8%</td></tr><tr><td>Year 7 operating result</td><td class=n>(2,807)</td><td class=n>1,722</td><td class=n>9,669</td></tr><tr><td>Funding need (peak cash deficit)</td><td class=n>16,036</td><td class=n>9,182</td><td class=n>7,233</td></tr><tr><td>Total raise incl. 15% buffer</td><td class=n>18,441</td><td class=n>10,560</td><td class=n>8,318</td></tr><tr><td>Enterprise value at exit (Y7)</td><td class=n>8,540</td><td class=n>36,729</td><td class=n>95,928</td></tr><tr><td>Investor proceeds at exit (35% stake)</td><td class=n>3,831</td><td class=n>13,940</td><td class=n>39,200</td></tr><tr><td>Investor multiple (MOIC)</td><td class=n>0.21x</td><td class=n>1.32x</td><td class=n>4.71x</td></tr></table>
+<p class="fine">Conservative: $95K price, $75K unit cost, 35 machines in Year 7. Upside: $140K price, $50K unit cost, 100 machines in Year 7. Investor proceeds assume a 35% stake. The Year 7 exit multiple is 2x, 3x and 4x revenue.</p>
+<h3>15.3 How investors get their money back</h3>
+<ul>
+  <li><strong>No cash returns before exit in the Base case.</strong> Cumulative cash before financing stays negative through Year 7, with a low point of about $9.2M in Year 6. Investors receive nothing until the company is sold, merged, or pays distributions from positive cash.</li>
+  <li><strong>The main route is an exit around Year 7.</strong> In the Base case, enterprise value is about $36.7M (3x Year 7 revenue of $12.2M). Equity value including cash is about $39.8M. An investor holding 35% receives about $13.9M, or 1.32x the $10.6M raised.</li>
+  <li><strong>A recurring-revenue royalty does not repay the raise.</strong> A 5% royalty on Base-case recurring revenue in Years 4–7 totals about $0.33M, against a $10.6M raise. It can be a sweetener, not the repayment route.</li>
+  <li><strong>Liquidation preference.</strong> A preferred-share structure could return invested capital first in a low-value sale. It does not change the Base-case economics above, and its terms need securities counsel.</li>
+</ul>
+<h3>15.4 What must be true for investors to earn 3x</h3>
+<p>At a 3x Year 7 exit multiple and a 35% stake, the Base case gives 1.32x. Reaching 3x needs about 126 machines sold in Year 7, which is about 1.8 times the Base case, or a combination of higher volume, lower unit cost, and higher recurring revenue. The sensitivity table in the workbook shows the trade-off. Three levers matter most, in order: units sold, unit cost, and the exit multiple. Each needs evidence from Stage A and Stage B before this model should be used to ask for capital.</p>
+<h3>15.5 Valuation check</h3>
+<p>Raising the Base-case $10.6M for 35% implies a post-money valuation of about $30.2M and a pre-money valuation of about $19.6M. That is a high valuation for a concept-stage company with no hardware. Treat the 35% stake as a placeholder. A lower valuation gives investors a larger stake and a higher multiple, but founders should expect pressure in the opposite direction. Counsel and an advisor on valuation should set this before any investor sees it.</p>
+<h3>15.6 Reconciliation to the staged budgets</h3>
+<table>
+  <tr><th>Source</th><th class="n">Amount</th></tr>
+  <tr><td>Stage A (feasibility)</td><td class="n">$0.15M–$0.30M</td></tr>
+  <tr><td>Stage B (functional prototype)</td><td class="n">$0.75M–$1.80M</td></tr>
+  <tr><td>Stage C (commercial development)</td><td class="n">$3.50M–$9.50M</td></tr>
+  <tr><th>Combined staged range</th><th class="n">$4.40M–$11.60M</th></tr>
+  <tr><td>Base-case total raise (incl. buffer)</td><td class="n">$10.6M</td></tr>
+  <tr><td>Conservative-case total raise (incl. buffer)</td><td class="n">$18.4M</td></tr>
+</table>
+<p>The Base-case raise sits inside the staged range, at its upper end. The Conservative case needs more than the staged plan allows, so an additional round or a smaller programme would be needed. Operating losses in the model include general, sales and commercial costs that the development budget does not cover.</p>
+<h3>15.7 Limitations</h3>
+<ul>
+  <li>Units, prices, visits, consumable costs and recurring fees are assumptions with no market validation.</li>
+  <li>No dilution from later rounds. Real investor returns will be lower if rounds are added.</li>
+  <li>Annual periods, pre-tax, no working capital or capex, and a simplified return calculation.</li>
+  <li>Regulatory delay, clinical study results, reimbursement and manufacturing yield are not modeled.</li>
+</ul>
+
+<h2 id="s16">16. Sources</h2>
 <ul class="sources">
   <li>Iowa program terms: <a href="https://opportunityiowa.gov/business/small-business-entrepreneurs/small-business-resources/americas-seed-fund-iowa-program">Iowa Economic Development Authority — America's Seed Fund: Iowa Program</a>; <a href="https://www.iowaeda.com/small-business/sbir-sttr/">IEDA SBIR/STTR page</a>; <a href="https://bioconnectiowa.org/sbir-sttr-outreach/">BioConnect Iowa SBIR/STTR outreach</a>. Sources disagree on the amount; confirm.</li>
   <li>Regulation Crowdfunding limits: <a href="https://www.sec.gov/resources-small-businesses/regulation-crowdfunding-guidance-issuers">SEC — Regulation Crowdfunding: Guidance for Issuers</a>; <a href="https://www.sec.gov/smallbusiness/RegCrowdfunding">SEC — Regulation Crowdfunding</a>.</li>

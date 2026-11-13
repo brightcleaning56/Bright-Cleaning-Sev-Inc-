@@ -30,7 +30,7 @@
   .draft-bar { position:absolute; top:0; left:0; right:0; background:#fff8ec; color:var(--warn); font-size:12px; text-align:center; padding:4px; border-bottom:1px solid var(--warn); }
   .foot { position:absolute; left:56px; bottom:16px; font-size:12px; color:var(--muted); }
   @media print { body { background:#fff; } .slide { margin:0; box-shadow:none; border-radius:0; page-break-after:always; width:13.33in; height:7.5in; aspect-ratio:auto; } }
-  @media (max-width:700px){ .slide { padding:28px 22px; aspect-ratio:auto; min-height:70vh; } h1 { font-size:28px; } h2 { font-size:22px; } p, li { font-size:16px; } .cols { grid-template-columns:1fr; } }
+  @media (max-width:700px){ .slide { padding:28px 22px; aspect-ratio:auto; min-height:70vh; } h1 { font-size:28px; } h2 { font-size:22px; } p, li { font-size:16px; } .cols { grid-template-columns:1fr; } .slide table { font-size:12px; display:block; overflow-x:auto; } .slide th, .slide td { padding:5px 6px; } }
 </style>
 </head>
 <body>
@@ -113,6 +113,7 @@
   <div class="big">$150K – $300K</div>
   <p style="margin-top:14px">Target: a laboratory demonstrator on dental models. Milestones: positioning accuracy, scan capture, emergency stop, operator dashboard.</p>
   <p class="muted" style="font-size:16px">Stage A is not a patient-ready device and will not be presented as one.</p>
+  <p style="font-size:16px;margin-top:10px">Full programme capital in the Base case is about $10.6M, including buffer. See the financial slides.</p>
   <div class="num">7</div>
 </section>
 
@@ -171,13 +172,43 @@
   <div class="num">11</div>
 </section>
 
+
+<section class="slide">
+  <div class="tag">Financial model</div>
+  <h2>Revenue, gross margin and operating result</h2>
+  <table style='font-size:15px'><tr><th>$K, Base</th><th class=n>Y1</th><th class=n>Y2</th><th class=n>Y3</th><th class=n>Y4</th><th class=n>Y5</th><th class=n>Y6</th><th class=n>Y7</th></tr><tr><td>Machines sold</td><td class=n>0</td><td class=n>0</td><td class=n>0</td><td class=n>10</td><td class=n>20</td><td class=n>40</td><td class=n>70</td></tr><tr><td><b>Total revenue</b></td><td class=n>0</td><td class=n>0</td><td class=n>0</td><td class=n>1,383</td><td class=n>3,132</td><td class=n>6,630</td><td class=n>12,243</td></tr><tr><td>Recurring share of revenue</td><td class=n>–</td><td class=n>–</td><td class=n>–</td><td class=n>13%</td><td class=n>23%</td><td class=n>28%</td><td class=n>31%</td></tr><tr><td>Gross margin</td><td class=n>0%</td><td class=n>0%</td><td class=n>0%</td><td class=n>48%</td><td class=n>49%</td><td class=n>49%</td><td class=n>50%</td></tr><tr><td><b>Operating result</b></td><td class=n>(1,600)</td><td class=n>(2,400)</td><td class=n>(2,700)</td><td class=n>(1,355)</td><td class=n>(1,009)</td><td class=n>(118)</td><td class=n>1,722</td></tr><tr><td>Cumulative cash</td><td class=n>(1,600)</td><td class=n>(4,000)</td><td class=n>(6,700)</td><td class=n>(8,055)</td><td class=n>(9,065)</td><td class=n>(9,182)</td><td class=n>(7,461)</td></tr></table>
+  <p class="muted" style="font-size:14px;margin-top:10px">Base case, planning assumptions, not validated. Operating result is an EBITDA proxy before tax. Gross margin is about 48–50%. The business turns operating-positive in Year 7. Full workings: financial-model.xlsx.</p>
+  <div class="num">12</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Scenarios</div>
+  <h2>Three cases, and what each does to investors</h2>
+  <table><tr><th>Measure</th><th class=n>Conservative</th><th class=n>Base</th><th class=n>Upside</th></tr><tr><td>Year 7 machines sold</td><td class=n>35</td><td class=n>70</td><td class=n>100</td></tr><tr><td>Year 7 revenue</td><td class=n>4,270</td><td class=n>12,243</td><td class=n>23,982</td></tr><tr><td>Year 7 gross margin</td><td class=n>24.0%</td><td class=n>49.5%</td><td class=n>60.8%</td></tr><tr><td>Year 7 operating result</td><td class=n>(2,807)</td><td class=n>1,722</td><td class=n>9,669</td></tr><tr><td>Funding need (peak cash deficit)</td><td class=n>16,036</td><td class=n>9,182</td><td class=n>7,233</td></tr><tr><td>Total raise incl. 15% buffer</td><td class=n>18,441</td><td class=n>10,560</td><td class=n>8,318</td></tr><tr><td>Enterprise value at exit (Y7)</td><td class=n>8,540</td><td class=n>36,729</td><td class=n>95,928</td></tr><tr><td>Investor proceeds at exit (35% stake)</td><td class=n>3,831</td><td class=n>13,940</td><td class=n>39,200</td></tr><tr><td>Investor multiple (MOIC)</td><td class=n>0.21x</td><td class=n>1.32x</td><td class=n>4.71x</td></tr></table>
+  <p class="muted" style="font-size:14px;margin-top:10px">Investor proceeds use a 35% stake and a 2x / 3x / 4x exit multiple. Placeholder terms, not offered terms.</p>
+  <div class="num">13</div>
+</section>
+
+<section class="slide">
+  <div class="tag">Investor return</div>
+  <h2>How investors get their money back</h2>
+  <ul>
+    <li><strong>No cash back before exit in the Base case.</strong> Cumulative cash stays negative through Year 7.</li>
+    <li><strong>Exit is the main route.</strong> Base-case enterprise value $36.7M in Year 7 (3x revenue). An investor holding 35% receives about $13.9M, or 1.32x.</li>
+    <li><strong>A royalty does not repay the raise.</strong> 5% of Base-case recurring revenue in Years 4–7 is about $0.33M.</li>
+    <li><strong>3x needs about 126 machines in Year 7</strong>, about 1.8x the Base case, or a combination of higher volume, lower unit cost and higher recurring revenue.</li>
+  </ul>
+  <p class="verify">Valuation placeholder: $10.6M for 35% implies about $19.6M pre-money, which is high for a concept-stage company. Not for discussion until counsel and a valuation advisor review it.</p>
+  <div class="num">14</div>
+</section>
+
 <section class="slide">
   <div class="tag">Contact</div>
   <h2>Let's talk</h2>
   <p><strong>Email:</strong> <span class="verify">[project email — to be set up]</span></p>
   <p><strong>Address:</strong> <span class="verify">[business address — to be set up]</span></p>
   <p class="muted" style="font-size:15px">This deck is not an offer to sell or a solicitation to buy any security. Figures are planning estimates. Public-program terms must be confirmed with each program.</p>
-  <div class="num">12</div>
+  <div class="num">15</div>
 </section>
 
 </body>

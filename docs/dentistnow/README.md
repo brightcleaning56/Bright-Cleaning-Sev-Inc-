@@ -10,6 +10,7 @@ and not regulatory submissions. Nothing here is FDA-cleared, and nothing here au
 | `blueprint-binder.html` | 40-sheet planning index in 10 stages, architecture, workflow and roadmap. Print at 11×17 in (tabloid). |
 | `ui-screens.html` | Patient interface (first-visit screens) and clinical operator interface mockups. Open in a browser. |
 | `business-funding-plan.html` | Business and funding plan: intended use, unit economics, staged budgets, funding sources, first $150K–$300K use of funds, regulatory path, risks, 90-day plan, funding timeline. |
+| `financial-model.xlsx` | Illustrative financial model with live formulas: revenue, gross margin, operating result, cash need, three scenarios and investor returns. Planning assumptions only. |
 | `index.html` | Investor and partner landing page draft. No data-collecting form. Placeholders for contact details. Marked DRAFT until securities counsel review. |
 
 ## Scope rules the package follows

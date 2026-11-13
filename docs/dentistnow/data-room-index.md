@@ -21,6 +21,7 @@ Purpose: which materials can be shared, with whom, and at what gate. Nothing lea
 | Business and funding plan | `docs/dentistnow/business-funding-plan.html` | G1 | Contains unverified program terms (marked) |
 | Investor deck draft | `docs/dentistnow/investor-deck.html` | G0 | Do not share until verified figures and counsel review |
 | Funding terms checklist | `docs/dentistnow/funding-verification-checklist.md` | G0 | Internal working file |
+| Financial model (xlsx) | `docs/dentistnow/financial-model.xlsx` | G0 | Illustrative only; investor-facing use needs counsel and verified assumptions |
 | Grant application outline | `docs/dentistnow/grant-application-outline.md` | G0 | Placeholders for unverified facts |
 | Landing page draft | `docs/dentistnow/index.html` | G4 once approved | Marked DRAFT; contact and privacy placeholders |
 
