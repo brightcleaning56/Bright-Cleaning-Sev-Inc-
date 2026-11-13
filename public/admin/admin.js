@@ -1199,6 +1199,7 @@
         <button class="btn ghost" id="eCopy">Copy link</button>
         <button class="btn ghost" id="eEdit"${e.status === 'Approved' ? ' disabled title="Approved proposals are locked. Duplicate to change."' : ''}>Edit</button>
         <button class="btn ghost" id="eDup">Duplicate</button>
+        <button class="btn ghost" id="eArch">${e.archived_at ? 'Restore' : 'Archive'}</button>
         <span class="grow"></span>
         <button class="btn danger" id="eDel"${e.status === 'Approved' ? ' disabled title="Approved proposals are kept for your records."' : ''}>Delete</button>`
     });
@@ -1259,6 +1260,12 @@
     $('#eEdit').onclick = () => { closeDrawer(); editEstimate(e.id); };
     $('#eDup').onclick = async () => {
       try { const r = await api(`/api/admin/estimates/${e.id}/duplicate`, { method: 'POST' }); toast('Copy created'); closeDrawer(); editEstimate(r.id); }
+      catch (err) { toast(err.message, true); }
+    };
+    $('#eArch').onclick = async () => {
+      const restore = !!e.archived_at;
+      if (!restore && !confirm('Archive this proposal? It stays on record but leaves the Command Center and Reports totals. You can restore it later.')) return;
+      try { await api('/api/admin/estimates/' + e.id + '/archive', { method: 'POST', json: { archive: !restore } }); toast(restore ? 'Proposal restored' : 'Proposal archived'); closeDrawer(); load(state.view); }
       catch (err) { toast(err.message, true); }
     };
     $('#eDel').onclick = async () => {
@@ -1703,6 +1710,7 @@
         ${(k.signature_status === 'Customer signed' || k.proposal_status === 'Approved') && !k.countersigned_at ? '<button type="button" class="btn" id="kCs">Countersign</button>' : ''}
         <button type="button" class="btn ghost" id="kPdf">Download PDF</button>
         ${exec ? '<button type="button" class="btn ghost" id="kAmend">Amend</button><button type="button" class="btn ghost" id="kRenew">Renew</button>' : ''}
+        <button type="button" class="btn ghost" id="kArch">${k.archived_at ? 'Restore' : 'Archive'}</button>
       </div>
       ${k.signature_status === 'Declined' ? `<p class="err" style="display:block">Customer declined: ${esc(k.decline_reason || '')}. Edit the contract and send it again.</p>` : ''}
       ${signed ? '<p class="muted cwlock">This contract is signed and locked. Changes need a formal amendment; the signed version is kept.</p>' : ''}
@@ -1803,6 +1811,7 @@
     act('#cwStd', () => { const t = $('#cw_terms'); if (t) { t.value = d.default_terms; cwDirty = true; } });
     act('#kAmend', async () => { const reason = prompt('What does the amendment change?'); if (!reason) return; try { const r = await api(`/api/admin/contracts2/${id}/amend`, { method: 'POST', json: { reason } }); toast('Amendment drafted'); loadRegister('contracts'); await openContract(r.id); } catch (e) { toast(e.message, true); } });
     act('#kRenew', async () => { const pct = prompt('Price change for the renewal term (%), e.g. 3 or 0:', '0'); if (pct === null) return; try { const r = await api(`/api/admin/contracts2/${id}/renew`, { method: 'POST', json: { increase_pct: Number(pct) || 0 } }); toast(`Renewal drafted: ${r.start_date} to ${r.end_date}`); loadRegister('contracts'); await openContract(r.id); } catch (e) { toast(e.message, true); } });
+    act('#kArch', async () => { const restore = !!k.archived_at; if (!restore && !confirm('Archive this contract? It stays on record, becomes read-only and leaves the totals. You can restore it later.')) return; try { await api(`/api/admin/contracts2/${id}/archive`, { method: 'POST', json: { archive: !restore } }); toast(restore ? 'Contract restored' : 'Contract archived'); await load(state.view); openContract(id); } catch (err) { toast(err.message, true); } });
     $$('#cwWrap [data-kv]').forEach(b => b.onclick = () => openContract(Number(b.dataset.kv)));
     loadContractPdf(id);
   }
@@ -1814,9 +1823,9 @@
     tabs.innerHTML = `<button data-rt="" class="${!sel.value ? 'on' : ''}">All (${R.length})</button>` + sts.map(x => `<button data-rt="${esc(x)}" class="${sel.value === x ? 'on' : ''}">${esc(x)} (${R.filter(r => stOf(r) === x).length})</button>`).join('');
     $$('#regTabs-' + t + ' button').forEach(b => b.onclick = () => { sel.value = b.dataset.rt; renderRegister(t); });
     if (t === 'contracts') {
-      const act = R.filter(r => r.status === 'Active'), sum = a => a.reduce((s, r) => s + (Number(r.value) || 0), 0), in60 = localISO(new Date(Date.now() + 60 * 864e5));
-      kp.innerHTML = [kt('contracts', 'blue', 'Active contracts', act.length, money(sum(act))), kt('money', 'navy', 'Total contracted', money(sum(R.filter(r => r.status !== 'Closed'))), 'not closed'), kt('issues', 'amber', 'Awaiting signature', R.filter(r => ['Sent', 'Viewed', 'Customer signed'].includes(r.signature_status) && r.status !== 'Closed').length, `${R.filter(r => r.signature_status === 'Customer signed').length} need your countersignature`),
-        kt('cal', 'red', 'Ending within 60 days', R.filter(r => r.status === 'Active' && r.end_date && r.end_date <= in60).length, 'plan the renewal'), kt('proposals', 'purple', 'Drafts', R.filter(r => r.status === 'Draft').length, ''), kt('check', 'green', 'Closed', R.filter(r => r.status === 'Closed').length, '')].join('');
+      const RL = R.filter(r => !r.archived_at), act = RL.filter(r => r.status === 'Active'), sum = a => a.reduce((s, r) => s + (Number(r.value) || 0), 0), in60 = localISO(new Date(Date.now() + 60 * 864e5));
+      kp.innerHTML = [kt('contracts', 'blue', 'Active contracts', act.length, money(sum(act))), kt('money', 'navy', 'Total contracted', money(sum(RL.filter(r => r.status !== 'Closed'))), 'not closed'), kt('issues', 'amber', 'Awaiting signature', RL.filter(r => ['Sent', 'Viewed', 'Customer signed'].includes(r.signature_status) && r.status !== 'Closed').length, `${RL.filter(r => r.signature_status === 'Customer signed').length} need your countersignature`),
+        kt('cal', 'red', 'Ending within 60 days', RL.filter(r => r.status === 'Active' && r.end_date && r.end_date <= in60).length, 'plan the renewal'), kt('proposals', 'purple', 'Drafts', RL.filter(r => r.status === 'Draft').length, ''), kt('check', 'green', 'Closed', RL.filter(r => r.status === 'Closed').length, '')].join('');
     } else {
       const live = R.filter(i => i.status !== 'Void' && i.status !== 'Draft'), billed = live.reduce((s, i) => s + Number(i.amount || 0), 0), paid = live.reduce((s, i) => s + Number(i.paid_amount || 0), 0), od = live.filter(i => invoiceState(i) === 'Overdue');
       kp.innerHTML = [kt('invoices', 'blue', 'Billed', money(billed), `${live.length} sent invoices`), kt('check', 'green', 'Collected', money(paid), billed ? Math.round(paid / billed * 100) + '% of billed' : ''), kt('money', 'navy', 'Outstanding', money(Math.max(0, billed - paid)), ''),

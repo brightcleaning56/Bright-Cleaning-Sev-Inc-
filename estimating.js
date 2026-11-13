@@ -26,7 +26,8 @@ const EXTRA_COLUMNS = [
   ['sent_at', 'TEXT'], ['viewed_at', 'TEXT'], ['last_viewed_at', 'TEXT'], ['view_count', 'INTEGER DEFAULT 0'],
   ['decided_at', 'TEXT'], ['decision_ip', 'TEXT'], ['decision_agent', 'TEXT'], ['unit_condition', 'TEXT'],
   ['windows_interior_panes', 'REAL DEFAULT 0'], ['windows_interior_rate', 'REAL DEFAULT 0'],
-  ['windows_exterior_panes', 'REAL DEFAULT 0'], ['windows_exterior_rate', 'REAL DEFAULT 0'], ['windows_cost', 'REAL DEFAULT 0']
+  ['windows_exterior_panes', 'REAL DEFAULT 0'], ['windows_exterior_rate', 'REAL DEFAULT 0'], ['windows_cost', 'REAL DEFAULT 0'],
+  ['archived_at', 'TEXT'], ['archived_by', 'TEXT']
 ];
 
 // Unit condition charge added on top of every deep clean line (price book: Light $40, Moderate $60, Heavy $80).

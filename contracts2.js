@@ -18,7 +18,7 @@ module.exports = function mountContracts(app, ctx) {
   const cols = db.prepare('PRAGMA table_info(contracts)').all().map(c => c.name);
   for (const [c, t] of [['customer_id', 'INTEGER'], ['project_id', 'INTEGER'], ['email', 'TEXT'], ['terms', 'TEXT'], ['payment_terms', 'TEXT'], ['billing', 'TEXT'], ['auto_renew', 'INTEGER DEFAULT 0'], ['notice_days', 'INTEGER DEFAULT 30'],
     ['public_token', 'TEXT'], ['sent_at', 'TEXT'], ['viewed_at', 'TEXT'], ['signer_name', 'TEXT'], ['signer_title', 'TEXT'], ['signed_at', 'TEXT'], ['signed_ip', 'TEXT'], ['decline_reason', 'TEXT'],
-    ['countersigned_by', 'TEXT'], ['countersigned_at', 'TEXT'], ['version', 'INTEGER DEFAULT 1'], ['parent_id', 'INTEGER'], ['superseded_by', 'INTEGER'], ['kind', "TEXT DEFAULT 'Contract'"], ['renewed_from', 'INTEGER'], ['updated_at', 'TEXT']])
+    ['countersigned_by', 'TEXT'], ['countersigned_at', 'TEXT'], ['version', 'INTEGER DEFAULT 1'], ['parent_id', 'INTEGER'], ['superseded_by', 'INTEGER'], ['kind', "TEXT DEFAULT 'Contract'"], ['renewed_from', 'INTEGER'], ['updated_at', 'TEXT'], ['archived_at', 'TEXT'], ['archived_by', 'TEXT']])
     if (!cols.includes(c)) db.exec(`ALTER TABLE contracts ADD COLUMN ${c} ${t}`);
   const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
@@ -50,7 +50,7 @@ module.exports = function mountContracts(app, ctx) {
 
   app.get('/api/admin/contracts2', auth, (req, res) => {
     const rows = db.prepare(`SELECT k.*, p.name project_name FROM contracts k LEFT JOIN projects p ON p.id=k.project_id ORDER BY k.id DESC`).all().map(k => ({ ...k, number: number(k), public_token: undefined }));
-    const live = rows.filter(k => !['Closed', 'Superseded'].includes(k.status)), sum = a => Math.round(a.reduce((s, k) => s + (Number(k.value) || 0), 0) * 100) / 100;
+    const live = rows.filter(k => !['Closed', 'Superseded'].includes(k.status) && !k.archived_at), sum = a => Math.round(a.reduce((s, k) => s + (Number(k.value) || 0), 0) * 100) / 100;
     const in60 = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
     res.json({ contracts: rows, kpis: { executed: live.filter(executed).length, executed_value: sum(live.filter(executed)), awaiting_customer: live.filter(k => ['Sent', 'Viewed'].includes(k.signature_status)).length,
       awaiting_countersign: live.filter(k => k.signature_status === 'Customer signed').length, declined: live.filter(k => k.signature_status === 'Declined').length, drafts: live.filter(k => !k.signature_status || k.signature_status === 'Not sent').length,
@@ -65,6 +65,7 @@ module.exports = function mountContracts(app, ctx) {
   });
   app.patch('/api/admin/contracts2/:id', auth, (req, res) => {
     const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
+    if (k.archived_at) return res.status(409).json({ error: 'This contract is archived. Restore it before editing.' });
     if (locked(k)) return res.status(409).json({ error: 'This contract has been signed. Changes need an amendment.' });
     const b = req.body || {}, set = {};
     for (const [f, n] of [['title', 200], ['scope', 20000], ['terms', 20000], ['payment_terms', 500], ['billing', 100], ['customer_name', 150], ['company', 150]]) if (f in b) set[f] = clean(b[f], n);
@@ -120,6 +121,15 @@ module.exports = function mountContracts(app, ctx) {
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Draft','Not sent','Amendment',?,?,?,?)`).run(k.estimate_id, k.customer_id, k.project_id, k.customer_name, k.company, k.email, k.title, `${k.scope || ''}\n\nAmendment ${v - 1}: ${reason}`, k.terms, k.payment_terms, k.billing, k.start_date, k.end_date, k.value, k.auto_renew, k.notice_days, v, root, now(), now()).lastInsertRowid;
     logAction(req, 'drafted amendment', 'contract', id, `${number(get(id))} amends ${k.number}: ${reason}`);
     res.status(201).json({ id });
+  });
+  // Archive / restore a contract. Archived contracts stay on record, are read-only, and leave the totals.
+  app.post('/api/admin/contracts2/:id/archive', auth, (req, res) => {
+    const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });
+    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can archive contracts.' });
+    const archive = (req.body || {}).archive !== false;
+    db.prepare('UPDATE contracts SET archived_at=?, archived_by=?, updated_at=? WHERE id=?').run(archive ? now() : null, archive ? who(req) : null, now(), k.id);
+    logAction(req, archive ? 'archived' : 'restored', 'contract', k.id, `${k.number} (${k.status}, ${k.signature_status || 'Not sent'})`);
+    res.json({ ok: true, archived: archive });
   });
   app.post('/api/admin/contracts2/:id/renew', auth, (req, res) => {
     const k = get(req.params.id); if (!k) return res.status(404).json({ error: 'Contract not found.' });

@@ -230,10 +230,10 @@ module.exports = function mountSuite(app, ctx) {
     const byMonth = (sql) => { const m = Object.fromEntries(db.prepare(sql).all(start).map(r => [r.m, r])); return keys.map(k => m[k] || { m: k, n: 0, v: 0 }); };
     const leads = byMonth(`SELECT substr(created_at,1,7) m, COUNT(*) n, 0 v FROM leads WHERE kind IN ('bid','inquiry') AND created_at>=? GROUP BY m`);
     const sent = byMonth(`SELECT substr(sent_at,1,7) m, COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates WHERE sent_at>=? GROUP BY m`);
-    const won = byMonth(`SELECT substr(COALESCE(decided_at,updated_at),1,7) m, COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates WHERE status='Approved' AND COALESCE(decided_at,updated_at)>=? GROUP BY m`);
+    const won = byMonth(`SELECT substr(COALESCE(decided_at,updated_at),1,7) m, COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates WHERE archived_at IS NULL AND status='Approved' AND COALESCE(decided_at,updated_at)>=? GROUP BY m`);
     const collected = byMonth(`SELECT substr(received_at,1,7) m, COUNT(*) n, COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=? GROUP BY m`);
-    const decided = db.prepare(`SELECT SUM(status='Approved') w, SUM(status='Declined') l, COALESCE(SUM(CASE WHEN status='Approved' THEN proposal_total END),0) wv FROM estimates WHERE COALESCE(decided_at,updated_at)>=? AND status IN ('Approved','Declined')`).get(start);
-    const byService = db.prepare(`SELECT COALESCE(scope_category,'unspecified') k, COUNT(*) n, ROUND(AVG(proposal_total),2) avg, COALESCE(SUM(proposal_total),0) total FROM estimates WHERE status='Approved' AND COALESCE(decided_at,updated_at)>=? GROUP BY k ORDER BY total DESC`).all(start);
+    const decided = db.prepare(`SELECT SUM(status='Approved') w, SUM(status='Declined') l, COALESCE(SUM(CASE WHEN status='Approved' THEN proposal_total END),0) wv FROM estimates WHERE archived_at IS NULL AND COALESCE(decided_at,updated_at)>=? AND status IN ('Approved','Declined')`).get(start);
+    const byService = db.prepare(`SELECT COALESCE(scope_category,'unspecified') k, COUNT(*) n, ROUND(AVG(proposal_total),2) avg, COALESCE(SUM(proposal_total),0) total FROM estimates WHERE archived_at IS NULL AND status='Approved' AND COALESCE(decided_at,updated_at)>=? GROUP BY k ORDER BY total DESC`).all(start);
     const pipeline = db.prepare(`SELECT status k, COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates GROUP BY status`).all();
     const topCustomers = db.prepare(`SELECT COALESCE(NULLIF(company,''),customer_name) k, COUNT(*) n, COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) paid FROM invoices GROUP BY k ORDER BY billed DESC LIMIT 8`).all();
     const w = decided.w || 0, l = decided.l || 0;
@@ -286,9 +286,9 @@ module.exports = function mountSuite(app, ctx) {
     const leadServices = all(`SELECT COALESCE(json_extract(intake,'$.service'), CASE kind WHEN 'bid' THEN 'bid (no form)' ELSE kind END) k, COUNT(*) n, SUM(auto_estimate_id>0) drafted FROM leads WHERE kind IN ('bid','inquiry') AND created_at>=? GROUP BY k ORDER BY n DESC`, start);
     // Executive figures: each financial stage is its own measure. An approved proposal is not a contract,
     // a contract is not an invoice, and an invoice is not cash.
-    const approved = one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v, SUM(CASE WHEN total_cost>0 THEN proposal_total-total_cost END) gp, SUM(total_cost>0) costed FROM estimates WHERE status='Approved' AND COALESCE(decided_at,updated_at)>=?`, start);
-    const signed = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE signature_status IN ('Signed','Executed','Fully signed') AND created_at>=?`, start);
-    const unsigned = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE COALESCE(signature_status,'Not sent') NOT IN ('Signed','Executed','Fully signed') AND status<>'Cancelled'`);
+    const approved = one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v, SUM(CASE WHEN total_cost>0 THEN proposal_total-total_cost END) gp, SUM(total_cost>0) costed FROM estimates WHERE archived_at IS NULL AND status='Approved' AND COALESCE(decided_at,updated_at)>=?`, start);
+    const signed = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE archived_at IS NULL AND signature_status IN ('Signed','Executed','Fully signed') AND created_at>=?`, start);
+    const unsigned = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE archived_at IS NULL AND COALESCE(signature_status,'Not sent') NOT IN ('Signed','Executed','Fully signed') AND status<>'Cancelled'`);
     const invoiced = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE status<>'Void' AND created_at>=?`, start);
     const cash = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, start);
     const executive = {
@@ -310,7 +310,7 @@ module.exports = function mountSuite(app, ctx) {
     const issues = [];
     const uncat = all(`SELECT id, project_name, customer_name, proposal_total FROM estimates WHERE (scope_category IS NULL OR scope_category='') AND status IN ('Sent','Viewed','Approved') ORDER BY id DESC LIMIT 20`);
     if (uncat.length) issues.push({ level: 'review', text: `${uncat.length} sent or approved proposal(s) have no service category, so service reports show them as "Not categorized".`, ids: uncat.map(x => x.id), kind: 'estimate' });
-    const apNoContract = all(`SELECT e.id FROM estimates e WHERE e.status='Approved' AND NOT EXISTS (SELECT 1 FROM contracts c WHERE c.estimate_id=e.id)`);
+    const apNoContract = all(`SELECT e.id FROM estimates e WHERE e.archived_at IS NULL AND e.status='Approved' AND NOT EXISTS (SELECT 1 FROM contracts c WHERE c.estimate_id=e.id)`);
     if (apNoContract.length) issues.push({ level: 'review', text: `${apNoContract.length} approved proposal(s) have no contract yet.`, ids: apNoContract.map(x => x.id), kind: 'estimate' });
     if (unsigned.n) issues.push({ level: 'info', text: `${unsigned.n} contract(s) worth ${'$' + Number(unsigned.v).toLocaleString('en-US', { minimumFractionDigits: 2 })} are not signed, so they are not counted as signed contract value.` });
     const projNoInv = one(`SELECT COUNT(*) n FROM projects p WHERE p.status IN ('In Progress','Completed','Quality Review') AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.project_id=p.id)`).n;

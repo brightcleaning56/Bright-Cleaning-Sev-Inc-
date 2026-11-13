@@ -91,6 +91,8 @@ module.exports = function mountAdminExt(app, ctx) {
     res.status(201).json({ id: r.lastInsertRowid });
   });
 
+  require('./estimate-archive')(app, { db, auth, logAction }); // proposal archive / restore
+
   app.delete('/api/admin/estimates/:id', auth, (req, res) => {
     const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(id(req));
     if (!e) return res.status(404).json({ error: 'Not found' });
