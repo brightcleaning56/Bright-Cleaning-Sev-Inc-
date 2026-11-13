@@ -1450,6 +1450,8 @@
     if (m.useItems && m.price < m.cost) warn.push(`The line-item total (${money(m.itemsTotal)}) is below your cost (${money(m.cost)}).`);
     if (!m.useItems && m.items.length && Math.abs(m.itemsTotal - m.price) > 1 && Math.abs(m.itemsTotal - m.total) > 1) warn.push(`Line items add up to ${money(m.itemsTotal)}, but the proposal total is ${money(m.total)}. The customer will see both. Check “Use the line-item total as the price” if the line items are the price.`);
     if (n('margin_pct') > 90) warn.push('Gross margin is capped at 90%.');
+    if (n('area_sqft') > 0 && m.total > 0 && m.total / n('area_sqft') < 0.05) warn.push(`The price is $${(m.total / n('area_sqft')).toFixed(3)} per sq ft, below the typical $0.05. Check the production rate, labor hours and costs before saving.`);
+    if (n('area_sqft') > 0 && m.total > 10000 && m.total / n('area_sqft') > 25) warn.push(`The price is $${(m.total / n('area_sqft')).toFixed(2)} per sq ft, far above any cleaning price. Check the production rate and quantities.`);
     $('#cWarn').hidden = !warn.length;
     $('#cWarn').textContent = warn.join(' ');
     const pr = n('production_rate'), ar = n('area_sqft');
