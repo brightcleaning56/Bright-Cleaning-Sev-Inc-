@@ -36,6 +36,10 @@ Last updated: 2026-11-13.
 16. **Decide the next image set.** The current images are the interface screens and a concept layout. Approve them, or tell me what to replace.
 17. **Approve the landing page** (structure and wording) once counsel has reviewed the risk and investor-process sections.
 
+## Engineering decisions still open
+
+19. **Set the test thresholds marked TBD** in the engineering test plan (positioning, force, e-stop time). These need the engineering lead and clinical advisor.
+
 ## Verified facts still to confirm
 
 18. **NIDCR and SEC items** are marked owner-confirmed. If you have the solicitation numbers or the source page for the crowdfunding figures, send them so the audit trail is complete.
