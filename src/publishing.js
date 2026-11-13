@@ -296,3 +296,31 @@ export function publisherActivity(store, org, { limit = 100 } = {}) {
   return store.data.audit.filter(e => e.orgId === org.id).slice(-Math.min(Math.max(1, Number(limit) || 100), 500)).reverse()
     .map(e => ({ at: e.at, actor: e.actor, action: e.action, label: ACTIVITY_LABELS[e.action] || e.action.replace(/[._]/g, ' '), target: e.target || null }));
 }
+
+/**
+ * Copies a project's details and its trade packages into a new draft. Plans, bidders, invitations, bids, questions and
+ * deadlines are NOT copied: the new draft starts clean, and each copied package gets a placeholder bid date 30 days out to set again.
+ */
+export function duplicatePublication(store, org, user, pubId) {
+  const src = own(store, org, pubId); if (!src) return { ok: false, code: 404, error: 'not found' };
+  if (!can(user, 'publish')) return { ok: false, code: 403, error: 'no permission to publish' };
+  const pkgs = store.list('bidRequests', r => r.publicationId === src.id);
+  const created = createPublication(store, org, user, {
+    title: `Copy of ${src.title}`.slice(0, 200), address: src.address, city: src.city, state: src.state, projectType: src.projectType,
+    description: src.description, estValue: src.estValue, buildingSf: src.buildingSf, team: src.team, schedule: { start: null, completion: null },
+    relationship: src.authority?.relationship, authorizationEvidence: src.authority?.evidence,
+    owner: src.team?.owner, developer: src.team?.developer, architect: src.team?.architect, gc: src.team?.gc,
+  });
+  if (!created.ok) return created;
+  const copied = [];
+  for (const k of pkgs) {
+    const r = addPackage(store, org, user, created.publication.id, {
+      title: k.title, trades: k.trades, description: k.description, inclusions: k.inclusions, exclusions: k.exclusions, instructions: k.instructions,
+      distribution: k.distribution, insuranceRequirements: k.insuranceRequirements, contactName: k.contactName, noDocuments: true,
+      dueDate: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
+    });
+    if (r.ok) copied.push(r.package.id);
+  }
+  store.audit({ actor: user.email, orgId: org.id, action: 'publication.duplicate', target: created.publication.id, detail: { from: src.id, packages: copied.length } });
+  return { ok: true, publication: created.publication, packages: copied.length };
+}

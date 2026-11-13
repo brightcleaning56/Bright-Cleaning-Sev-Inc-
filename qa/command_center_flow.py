@@ -55,6 +55,10 @@ with sync_playwright() as p:
         steps.append('2c bid breadth panel shows counts and actions')
     else:
         problems.append('no Bid breadth control on a published package')
+    if pg.query_selector('[data-dup]'):
+        pg.click('[data-dup]'); pg.wait_for_timeout(1200)
+        if 'Copy of' not in pg.inner_text('#pubm'): problems.append('duplicate project did not open a copy')
+        steps.append('2d duplicate project opens a draft copy')
     labels = pg.evaluate("[...document.querySelectorAll('.choose button')].map(b => b.innerText.split('\\n')[0])")
     if labels != ['Create full project', 'Post single trade', 'Create cleaning request']: problems.append(f'request chooser is {labels}')
     opts = pg.evaluate("[...document.querySelectorAll('#sv option')].map(o => o.value)")

@@ -33,7 +33,7 @@ import * as adminPhase5 from './admin/phase5.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
 import { changeDeadline } from './deadline.js';
-import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, publisherSummary, publisherActivity, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
+import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, publisherSummary, publisherActivity, duplicatePublication, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
 import { CATALOG, PRICE_STATUS, entitlementsFor, seatCheck, usage } from './entitlements.js';
 import { syncDocument, indexDocument, syncPlanRoom, listSets, searchDocuments, compareRevisions } from './planroom.js';
 import { saveDocument, listDocuments, viewLink, openFromLink, acknowledgeAddenda, planholders } from './documents.js';
@@ -748,6 +748,7 @@ export function createServer(store, deps = {}) {
     for (const k of ['title', 'description', 'estValue', 'buildingSf']) if (body[k] !== undefined) p[k] = k === 'estValue' || k === 'buildingSf' ? Number(body[k]) || null : String(body[k]).slice(0, k === 'title' ? 200 : 4000);
     if (body.authorizationEvidence !== undefined) p.authority = { ...p.authority, evidence: String(body.authorizationEvidence).slice(0, 2000) };
     store.put('publications', p); return p; });
+  route('POST', '/api/publications/:id/duplicate', 'user', ({ params, user }) => { const r = duplicatePublication(store, pubOrg(user), user, params.id); need(r.ok, r.code || 400, r.error); return { id: r.publication.id, packages: r.packages }; });
   route('POST', '/api/publications/:id/packages', 'user', ({ params, body, user }) => R(addPackage(store, pubOrg(user), user, params.id, body), 'package'));
   route('POST', '/api/packages/:id/deadline', 'user', ({ params, body, user }) => { const r = changeDeadline(store, pubOrg(user), user, params.id, body); need(r.ok, r.code || 400, r.error); return { dueDate: r.request.dueDate, addendum: r.addendum }; });
   // Bid breadth: how wide the bidding is for a package, and the actions that widen it.

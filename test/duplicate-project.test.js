@@ -1,0 +1,30 @@
+import './_env.js';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { Store } from '../src/store.js';
+import { createPublication, addPackage, decideVerification, duplicatePublication } from '../src/publishing.js';
+
+test('duplicating a project copies its details and packages, and nothing from the bidding', () => {
+  const store = new Store(null);
+  const gc = store.put('orgs', { slug: 'gc', name: 'ABC', kind: 'buyer', buyerKind: 'developer', status: 'active', settings: {} });
+  const user = store.put('users', { email: 'gm@abc.test', role: 'owner', orgId: gc.id });
+  decideVerification(store, { email: 'staff' }, gc.id, { status: 'verified', note: 'checked' });
+  const src = createPublication(store, gc, user, { title: 'Clinic A', address: '1 Main', city: 'Ankeny', state: 'IA', projectType: 'medical', description: 'Medical office, 40,000 SF.', owner: 'Harbor', developer: 'ABC Dev', scheduleStart: '2027-03-01' }).publication;
+  const pk = addPackage(store, gc, user, src.id, { title: 'Electrical', trades: ['electrical'], dueDate: '2030-01-01', description: 'Electrical rough-in and trim for the building.', inclusions: 'Feeders', exclusions: 'Fire alarm', insuranceRequirements: { generalLiabilityMin: 1000000, workersComp: true }, noDocuments: true }).package;
+  store.put('invitations', { requestId: pk.id, buyerOrgId: gc.id, sellerOrgId: 'sub-1', intent: 'will_bid' });
+  store.put('submissions', { requestId: pk.id, sellerOrgId: 'sub-1', total: 1000 });
+  const dup = duplicatePublication(store, gc, user, src.id);
+  assert.equal(dup.ok, true, dup.error);
+  const copy = store.get('publications', dup.publication.id);
+  assert.equal(copy.title, 'Copy of Clinic A');
+  assert.equal(copy.status, 'draft');
+  assert.equal(copy.team.owner, 'Harbor');
+  assert.equal(copy.schedule.start, null, 'dates are not carried over');
+  const copies = store.list('bidRequests', r => r.publicationId === copy.id);
+  assert.equal(copies.length, 1);
+  assert.deepEqual(copies[0].trades, ['electrical']);
+  assert.deepEqual(copies[0].insuranceRequirements, { generalLiabilityMin: 1000000, workersComp: true });
+  assert.equal(store.list('invitations', i => i.requestId === copies[0].id).length, 0, 'no invitations are copied');
+  assert.equal(store.list('submissions', s => s.requestId === copies[0].id).length, 0, 'no bids are copied');
+  assert.equal(store.get('bidRequests', pk.id).status, 'draft', 'the original package is untouched');
+});
