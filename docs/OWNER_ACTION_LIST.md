@@ -5,7 +5,7 @@ Last updated: 2026-11-13.
 
 ## Needs your decision or access
 
-1. **Push the four local commits at 6 PM.** Pushes from this machine need a GitHub sign-in. Run `gh auth login` and `gh auth setup-git`, or sign in when Git asks. Commits: 7c2cc88, 5e4a917, c23dd7f, 4c11ef1.
+1. **Push the local commits at 6 PM** (now 6: 7c2cc88, 5e4a917, c23dd7f, 4c11ef1, 6b6bde6, bf7b3db). Pushes from this machine need a GitHub sign-in. Run `gh auth login` and `gh auth setup-git`, or sign in when Git asks. Commits: 7c2cc88, 5e4a917, c23dd7f, 4c11ef1.
 2. **AI lead triage is down.** The Anthropic credit balance is too low. Add credits in Anthropic billing.
 3. **GROK BOT lead key** sent five leads at 8:02 AM today and is still active. Confirm the leads are real, then keep or revoke the key.
 4. **Test accounts still have access:** "Eric Moore test" (Supervisor) and "Daniel mOORE TEST" (Inspector) in Settings. Remove them?
@@ -14,6 +14,9 @@ Last updated: 2026-11-13.
 7. **Cleaning scopes:** 40 of 86 items have no price. Price them or archive them. Estimates using them can be wrong until then.
 8. **Microsoft 365 inbox** needs an app registration on your Microsoft account.
 9. **Overdue follow-ups:** "Call back Danielle Kelly" (due Nov 11) and "Call back TEST" (due Nov 5). Mark done, or tell me what to do.
+
+10. **Automated follow-up email to a customer.** On Nov 11 the system emailed josh.wallace@robinsmorton.com a follow-up on the Terrell proposal ($291,652.56). The proposal follow-up rule is on in Settings. Keep it on, or turn it off?
+11. **Danielle Kelly calls.** The log shows about 10 outbound "missed call, call back" attempts since Nov 4, plus an overdue callback task. Her number (515-778-5860) is also listed under "Daniel Sailee". Confirm whether these are the same person, and whether the automatic callbacks should stop.
 
 ## Verify after the 6 PM deploy
 
