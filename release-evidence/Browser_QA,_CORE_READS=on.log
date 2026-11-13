@@ -17,4 +17,4 @@ PASS  package questions: asked, answered by the GC, read by an invited company
 PASS  publisher command center (tiles, project search and filters, request chooser, unconfirmed banner and resend)
 PASS  Super Admin review screens (publisher verification, owner authority, company record)
 PASS  public website (homepage, every page, mobile menu, sign-in hand-off to /app, clean console)
-mode: CORE_READS=on · screenshots and logs: /tmp/tmp.ZI5zTE4DoS/logs/qa-core-on
+mode: CORE_READS=on · screenshots and logs: /tmp/tmp.Kyli3GTssP/logs/qa-core-on
