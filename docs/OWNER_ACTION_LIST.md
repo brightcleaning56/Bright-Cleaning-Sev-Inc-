@@ -5,7 +5,7 @@ Last updated: 2026-11-13.
 
 ## Needs your decision or access
 
-1. **Push the local commits at 6 PM** (now 9, oldest first: 7c2cc88, 5e4a917, c23dd7f, 4c11ef1, 6b6bde6, bf7b3db, de19e9d, 03101a9, b0d534f). Pushing needs a GitHub sign-in on this machine: `gh auth login` then `gh auth setup-git`.
+1. **Push the local commits at 6 PM** (now 10, oldest first: 7c2cc88, 5e4a917, c23dd7f, 4c11ef1, 6b6bde6, bf7b3db, de19e9d, 03101a9, b0d534f, 43be92a). Pushing needs a GitHub sign-in on this machine: `gh auth login` then `gh auth setup-git`.
 2. **AI lead triage is down.** The Anthropic credit balance is too low. Add credits in Anthropic billing.
 3. **GROK BOT lead key** sent five leads at 8:02 AM today and is still active. Confirm the leads are real, then keep or revoke the key.
 4. **Test accounts still have access:** "Eric Moore test" (Supervisor) and "Daniel mOORE TEST" (Inspector) in Settings. Remove them?
