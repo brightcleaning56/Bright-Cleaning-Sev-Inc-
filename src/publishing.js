@@ -155,11 +155,30 @@ export function coverage(store, org, pubId) {
 }
 
 /** Bidder directory for publishers: subscriber companies by trade and state (names and trades only). */
-export function searchBidders(store, { q, trade, state }) {
+/**
+ * Bidder directory. Returns active companies that match the filters. When a package is given, each result says whether
+ * the company is eligible for it (trade and territory) and whether it is already invited. Results stay an array so the
+ * existing package invite panel keeps working.
+ */
+export function searchBidders(store, { q, trade, state, packageId, limit = 50 } = {}) {
   const ql = String(q || '').toLowerCase(), st = String(state || '').toUpperCase();
-  return store.list('orgs', o => o.kind !== 'buyer' && o.status === 'active' && Array.isArray(o.trades) && o.trades.length
+  const pkg = packageId ? store.get('bidRequests', packageId) : null;
+  const invited = pkg ? new Set(store.list('invitations', i => i.requestId === pkg.id).map(i => i.sellerOrgId)) : new Set();
+  const rows = store.list('orgs', o => o.kind !== 'buyer' && o.status === 'active' && Array.isArray(o.trades) && o.trades.length
     && (!ql || String(o.legal?.name || o.name).toLowerCase().includes(ql)) && (!trade || o.trades.includes(trade)) && (!st || (o.territories || []).includes(st) || o.subscription?.plan === 'internal'))
-    .slice(0, 50).map(o => ({ id: o.id, name: o.legal?.name || o.name, trades: o.trades, states: (o.territories || []).slice(0, 10) }));
+    .sort((a, b) => String(a.legal?.name || a.name).localeCompare(String(b.legal?.name || b.name)));
+  return rows.slice(0, Math.min(Math.max(1, Number(limit) || 50), 200)).map(o => {
+    const row = { id: o.id, name: o.legal?.name || o.name, trades: o.trades, states: (o.territories || []).slice(0, 10) };
+    if (pkg) {
+      const tradeOk = (pkg.trades || []).some(t => o.trades.includes(t));
+      const nationwide = o.subscription?.plan === 'internal' || o.subscription?.plan === 'national';
+      const territoryOk = nationwide || (o.territories || []).includes(pkg.state);
+      row.eligible = tradeOk && territoryOk;
+      row.eligibility = !tradeOk ? 'Does not perform a trade in this package' : !territoryOk ? `Does not cover ${pkg.state}` : 'Trade and service area match';
+      row.invited = invited.has(o.id);
+    }
+    return row;
+  });
 }
 
 export { TRADES };

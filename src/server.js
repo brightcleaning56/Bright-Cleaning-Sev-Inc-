@@ -15,7 +15,7 @@ import { runCycleGuarded, cycleStatus, handleEmailEvent } from './autopilot.js';
 import { readiness } from './readiness.js';
 import { createBackup, restoreTest, backupDocuments, verifyDocumentVault, syncOffsite } from './backup.js';
 import { createCheckout, applyStripeEvent, PLANS } from './billing.js';
-import { BUYER_KINDS, createRequest, awardRequest, closeRequest, contractDocument, consentText, countersignContract, TRADES, setIntent, submitBid } from './marketplace.js';
+import { BUYER_KINDS, createRequest, awardRequest, closeRequest, contractDocument, consentText, countersignContract, TRADES, setIntent, submitBid, inviteCompanies } from './marketplace.js';
 import { contactFromProject } from './outreach.js';
 import { prequalProfile, setPrequal, leveling } from './prequal.js';
 import { SCALES, saveMeasurement, listMeasurements, deleteMeasurement } from './measure.js';
@@ -764,7 +764,7 @@ export function createServer(store, deps = {}) {
   route('POST', '/api/publications/:id/schedule', 'user', ({ params, body, user }) => { const r = schedulePublication(store, pubOrg(user), user, params.id, body.publishAt); need(r.ok, r.code || 400, r.error); return { scheduledFor: r.scheduledFor }; });
   route('POST', '/api/publications/:id/unschedule', 'user', ({ params, user }) => { const r = unschedulePublication(store, pubOrg(user), user, params.id); need(r.ok, r.code || 400, r.error); return { ok: true }; });
   route('POST', '/api/publications/:id/status', 'user', ({ params, body, user }) => R(setStatus(store, pubOrg(user), user, params.id, body.status), 'publication'));
-  route('GET', '/api/bidders', 'user', ({ user, query }) => { pubOrg(user); return searchBidders(store, { q: query.get('q'), trade: query.get('trade'), state: query.get('state') }); });
+  route('GET', '/api/bidders', 'user', ({ user, query }) => { const o = pubOrg(user); const pk = query.get('packageId'); if (pk) { const r = store.get('bidRequests', pk); need(r && r.buyerOrgId === o.id, 404, 'package not found'); } return searchBidders(store, { q: query.get('q'), trade: query.get('trade'), state: query.get('state'), packageId: pk, limit: query.get('limit') }); });
   route('GET', '/api/subscription', 'user', ({ user }) => { const o = store.get('orgs', user.orgId); const e = entitlementsFor(o);
     return { entitlements: e, usage: usage(store, o), catalog: Object.entries(CATALOG).filter(([k, v]) => v.line === (o.kind === 'buyer' ? 'publisher' : 'subscriber') && k !== 'trial').map(([k, v]) => ({ key: k, ...v })), priceStatus: PRICE_STATUS }; });
 

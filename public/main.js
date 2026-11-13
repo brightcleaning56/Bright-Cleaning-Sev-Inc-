@@ -1108,6 +1108,43 @@ function verifyHistory(v) {
   if (!h.length) return '';
   return `<ol class="vhist">${h.map(x => `<li><b>${esc(VERIFY_EVENT[x.event] || x.event)}</b> <small>${fmtDate(x.at)}${x.note ? ' · ' + esc(x.note) : ''}</small></li>`).join('')}</ol>`;
 }
+// Bidder directory: find active companies by trade and area, see eligibility for a package, and invite them.
+async function bidderDirectory() {
+  const el = $('#bdir'); if (!el) return;
+  const pubs = await api('GET', '/api/publications').catch(() => []);
+  const pkgs = [];
+  for (const p of pubs.slice(0, 30)) {
+    const c = await api('GET', '/api/publications/' + p.id).catch(() => null);
+    for (const k of (c?.packages || [])) if (k.status === 'open' || k.status === 'draft') pkgs.push({ id: k.id, label: k.title === p.title ? p.title : `${p.title} · ${k.title}`, status: k.status });
+  }
+  el.innerHTML = `<div class="card bdir"><h2>Bidder directory</h2>
+    <p class="x-67fc00b7">Find active companies by trade and area. Choose a package to see whether each company is eligible and already invited. Draft packages invite the company when you publish.</p>
+    <div class="bdir-filters"><input id="bq" type="search" placeholder="Company name" aria-label="Company name"><select id="btrade" aria-label="Trade"><option value="">All trades</option>${TRADES_LIST.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}</select>
+      <input id="bst" placeholder="State, e.g. WA" maxlength="2" aria-label="State"><select id="bpkg" aria-label="Compare to package"><option value="">Compare to a package (optional)</option>${pkgs.map(k => `<option value="${esc(k.id)}">${esc(k.label)}${k.status === 'draft' ? ' (draft)' : ''}</option>`).join('')}</select>
+      <small id="bcount" role="status"></small></div>
+    <div id="bmsg" class="err" role="alert"></div>
+    <div class="scroll"><table><tr><th>Company</th><th>Trades</th><th>Areas</th><th>For this package</th><th></th></tr><tbody id="brows"></tbody></table></div></div>`;
+  const draw = async () => {
+    const qs = new URLSearchParams(); const q = $('#bq').value.trim(), t = $('#btrade').value, st = $('#bst').value.trim(), pk = $('#bpkg').value;
+    if (q) qs.set('q', q); if (t) qs.set('trade', t); if (st) qs.set('state', st); if (pk) qs.set('packageId', pk);
+    const rows = await api('GET', '/api/bidders?' + qs.toString()).catch(e => { $('#bmsg').textContent = e.message; return []; });
+    $('#bcount').textContent = `${rows.length} compan${rows.length === 1 ? 'y' : 'ies'}${rows.length === 50 ? ' (first 50; narrow the filters)' : ''}`;
+    const tradeLabel = k => (TRADES_LIST.find(x => x.key === k) || {}).label || k;
+    $('#brows').innerHTML = rows.length ? rows.map(r => {
+      const pkgCell = !pk ? '<small>—</small>' : r.invited ? '<span class="pill green">Invited</span>' : r.eligible ? '<span class="pill">Eligible</span> <small>' + esc(r.eligibility) + '</small>' : `<small class="x-ce711e4f">${esc(r.eligibility)}</small>`;
+      const action = !pk ? '' : r.invited ? '' : `<button data-binv="${esc(r.id)}" ${r.eligible ? '' : 'disabled title="' + esc(r.eligibility) + '"'}>Invite</button>`;
+      return `<tr><td><b>${esc(r.name)}</b></td><td><small>${esc(r.trades.map(tradeLabel).join(', '))}</small></td><td><small>${esc((r.states || []).join(', ') || '—')}</small></td><td>${pkgCell}</td><td>${action}</td></tr>`;
+    }).join('') : '<tr><td colspan="5"><small>No companies match these filters.</small></td></tr>';
+    $('#brows').querySelectorAll('[data-binv]').forEach(b => b.onclick = async () => {
+      $('#bmsg').textContent = ''; b.disabled = true;
+      try { await api('PATCH', '/api/packages/' + pk, { invitees: [b.dataset.binv] }); await draw(); }
+      catch (e) { $('#bmsg').textContent = e.message; b.disabled = false; }
+    });
+  };
+  ['#bq', '#bst'].forEach(sel => $(sel).addEventListener('input', draw));
+  ['#btrade', '#bpkg'].forEach(sel => $(sel).addEventListener('change', draw));
+  draw();
+}
 async function publisherPanels() {
   const pinfo = await api('GET', '/api/publisher').catch(() => null); if (!pinfo) return;
   const v = pinfo.publisher || {};
@@ -1131,6 +1168,7 @@ async function publisherPanels() {
     rows.querySelectorAll('[data-pubopen]').forEach(b => b.onclick = () => openPublication(b.dataset.pubopen));
   };
   $('#pubq')?.addEventListener('input', drawPubs); $('#pubf')?.addEventListener('change', drawPubs); drawPubs();
+  bidderDirectory();
   $('#newpub').onclick = () => {
     $('#newpubf').innerHTML = `<form id="npf" class="panel x-970f4ddb" ><b>New project</b>
       <div class="grid2"><input name="title" placeholder="Project name" required><input name="address" placeholder="Street address" required><input name="city" placeholder="City" required><input name="state" placeholder="State (2 letters)" maxlength="2" required>
@@ -1265,7 +1303,7 @@ async function buyerView() {
   $('#app').innerHTML = `<div class="wrap"><header><h1>BUILDINTEL</h1><span class="who">${esc(me.org.name)} · ${esc(me.user.email)} <button id="lo">Sign out</button></span></header>
   ${roleBannerHtml(me.org, steps)}
   <div id="emailbanner"></div>
-  <div id="pcc"></div><div id="verc"></div><div id="pubc"></div>
+  <div id="pcc"></div><div id="verc"></div><div id="pubc"></div><div id="bdir"></div>
   <div class="sign x-6384e367" ><div><h2>Start a request</h2><p>Choose what you are posting. Every option is saved as a permanent record and invites the matching companies in the area.</p>
   <div class="choose"><button type="button" id="ch-full"><b>Create full project</b><small>Several trade packages, plan rooms and bidder lists, published together.</small></button><button type="button" id="ch-trade"><b>Post single trade</b><small>One trade or service. Companies answer will-bid or won't-bid and submit bids.</small></button><button type="button" id="ch-clean"><b>Create cleaning request</b><small>Final construction clean, recurring janitorial, windows, floor care, pressure washing and parking lots.</small></button></div>
   <h3 id="rfh">Single trade request</h3><p>For one trade. For a full project with several trade packages and plan rooms, use <b>Create full project</b> above.</p>
