@@ -61,6 +61,17 @@ Scope: dental models and instrumented fixtures only. No human subjects. Each tes
 | CLN-03 | Soft-tissue contact | Measure force and contact on a gum-simulant fixture | No contact above the force limit; no contact with the simulated gum margin beyond the limit |
 | CLN-04 | Water and suction | Run the irrigation and suction for a full cycle | Flow within TBD mL/min; leak sensor triggers at TBD level |
 
+## 9. Additional tests (added after the risk register review)
+
+| ID | Requirement | Method | Pass criterion |
+|---|---|---|---|
+| TL-01 | Tool attachment lock and identity (R-11) | Attempt to run with an unlocked tool, a wrong tool ID, and a lifecycle-expired tool | Motion inhibited in all three cases; each attempt logged |
+| TMP-01 | Temperature monitoring (R-16) | Run the motor and electronics for a full duty cycle with thermocouples | Surface and component temperatures stay within TBD limits; overtemperature stops the run |
+| PWR-01 | Power loss mid-run (R-17) | Cut mains during a run | Safe state; no motion on restore until an authorized reset; event logged |
+| REG-01 | Software regression after a change (R-19) | Re-run SW-01 to SW-03 and ESTOP-01 after each release | All pass before release; failures block the release |
+| RPR-01 | Reprocessing validation (R-13, R-14) | Run the validated cleaning and sterilization cycle on test instruments; record indicators | Indicators pass each cycle; no instrument released without a passed cycle record |
+| SEC-01 | Access control and audit (R-18) | Attempt access with an unauthorized role; review the audit log | Access refused; every attempt logged. Full security testing is Stage B. |
+
 ## 7. Pass, fail and retest rules
 
 - A failed test is recorded with the measured value, the criterion, and the cause (if known).
