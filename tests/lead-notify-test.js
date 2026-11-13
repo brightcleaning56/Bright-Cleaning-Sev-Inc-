@@ -66,4 +66,9 @@ check('a failed email does not throw and does not block later alerts', () => {
   assert.strictEqual(failing.leadArrived(1, 'GROK BOT', 'Lead A'), 'sent');
 });
 
+check('a notifier that throws synchronously does not throw to the caller', () => {
+  const bad = createLeadNotifier({ notify: () => { throw new Error('boom'); }, to: 'x', windowMs: 1000, now: () => 0, setTimer: () => ({ unref() {} }) });
+  assert.strictEqual(bad.leadArrived(1, 'GROK BOT', 'Lead A'), 'sent');
+});
+
 console.log(`\n${passed} passed`);

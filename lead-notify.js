@@ -14,7 +14,11 @@ function createLeadNotifier({ notify, to, windowMs = DEFAULT_WINDOW_MS, now = ()
     const more = lines.length - shown.length;
     const subject = lines.length === 1 ? `New lead from ${source}` : `${lines.length} new leads from ${source}`;
     const body = shown.join('\n\n----------\n\n') + (more > 0 ? `\n\n…and ${more} more. See Leads in the admin for the full list.` : '');
-    return Promise.resolve(notify(subject, body, to)).then(() => true, () => false);
+    try {
+      return Promise.resolve(notify(subject, body, to)).then(() => true, () => false);
+    } catch {
+      return Promise.resolve(false); // a notifier that throws must not fail the intake request
+    }
   }
 
   function flush(source, st) {
