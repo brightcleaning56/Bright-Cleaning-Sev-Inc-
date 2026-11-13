@@ -2226,6 +2226,12 @@
     box.insertAdjacentHTML('beforebegin', `<div id="leadAuto">${auto}</div>`);
     if ($('#autoOpen')) $('#autoOpen').onclick = () => { closeDrawer(); go('proposals'); openEstimate(l.auto_estimate_id); };
     if ($('#autoDraft')) $('#autoDraft').onclick = async () => { try { const r = await api(`/api/admin/leads/${l.id}/draft-estimate`, { method: 'POST' }); toast(`Draft estimate #${r.estimate_id} ready${r.total ? ' – ' + money(r.total) : ''}`); closeDrawer(); go('proposals'); openEstimate(r.estimate_id); } catch (e) { toast(e.message, true); } };
+    api(`/api/admin/leads/${l.id}/classification`).then(c => {
+      const who = { person: 'a person', company_inbox: 'a company inbox (confirm the right person)', job_inbox: 'a job inbox', missing: 'no usable address' }[c.recipient.type] || c.recipient.type;
+      const d = `<div id="leadClass" class="autobox"><b>Lead type:</b> ${esc(c.segment_label)} · ${esc(c.intent_label)}<br><small class="muted">Contact: ${esc(c.recipient.address || 'none')} (${esc(who)})</small><br><small><b>Permitted:</b> ${esc(c.action_why)}</small>${c.draft ? `<details style="margin-top:6px"><summary>Suggested draft (not sent)</summary><pre style="white-space:pre-wrap">${esc(c.draft.subject)}\n\n${esc(c.draft.body)}</pre></details>` : ''}</div>`;
+      if ($('#leadClass')) $('#leadClass').remove();
+      if ($('#leadAuto')) $('#leadAuto').insertAdjacentHTML('beforeend', d);
+    }).catch(() => {});
     const st = await getAI();
     let ai = null; try { ai = l.ai ? JSON.parse(l.ai) : null; } catch { ai = null; }
     if (!st.enabled && !ai) { box.innerHTML = '<div class="formsection">AI assistant</div><p class="muted">AI is off. Add ANTHROPIC_API_KEY in Render to get an automatic summary, missing-information list and a reply draft for every new lead.</p>'; return; }
