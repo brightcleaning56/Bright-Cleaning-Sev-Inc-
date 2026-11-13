@@ -151,6 +151,8 @@ async function viewCompany(parts) {
   const v = c.verificationDetail, body = {
     overview: `<table><tr><th>Legal name</th><td>${esc(c.legal?.name || c.name)}</td></tr><tr><th>Type</th><td>${esc(c.type)} ${esc(c.buyerKind || '')}</td></tr><tr><th>Status</th><td>${statusPill(c.status)}</td></tr><tr><th>Verification</th><td>${statusPill(c.verification)}</td></tr><tr><th>Created</th><td>${fmt(c.createdAt)}</td></tr><tr><th>Company ID</th><td><code>${esc(c.id)}</code></td></tr></table>`,
     verification: `<table><tr><th>Status</th><td>${statusPill(v.status)}</td></tr>${v.evidence ? `<tr><th>Evidence</th><td>${Object.entries(v.evidence).filter(([, x]) => x).map(([k, x]) => `${esc(k)}: ${esc(x)}`).join('<br>')}</td></tr>` : ''}<tr><th>Requested</th><td>${fmt(v.requestedAt)}</td></tr><tr><th>Last decision</th><td>${esc(v.decidedBy || '—')} ${v.decidedAt ? fmt(v.decidedAt) : ''}<br>${esc(v.note || '')}</td></tr></table>
+      <h3>Uploaded documents</h3>${(v.documents || []).length ? `<table><tr><th>File</th><th>Kind</th><th>Size</th><th>Uploaded</th><th>SHA-256</th><th></th></tr>${v.documents.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.kind)}</td><td>${Math.round(d.size / 1024)} KB</td><td>${fmt(d.uploadedAt)} <small class="muted">${esc(d.uploadedBy || '')}</small></td><td><code>${esc(String(d.sha256).slice(0, 12))}…</code></td><td><button type="button" class="linkish" data-vdoc="${esc(d.id)}" data-company="${esc(c.id)}">View</button></td></tr>`).join('')}</table>` : '<p class="muted">No documents uploaded.</p>'}
+      <h3>Review history</h3>${(v.history || []).length ? `<table><tr><th>When</th><th>Event</th><th>By</th><th>Note</th></tr>${v.history.map(h => `<tr><td>${fmt(h.at)}</td><td>${esc(h.event)}</td><td>${esc(h.by || '')}</td><td>${esc(h.note || '')}</td></tr>`).join('')}</table>` : '<p class="muted">No review history yet.</p>'}
       ${c.type === 'publisher' && can('admin.company.verify') ? `<div class="row x-d2c171b1" ><button class="primary" data-dec="approve">Approve</button><button data-dec="request_info">Request more information</button><button class="danger" data-dec="reject">Reject</button></div>` : ''}`,
     members: `<table><tr><th>User</th><th>Company role</th><th>Platform roles</th><th>State</th><th>Last login</th></tr>${c.members.map(m => `<tr><td><a href="#/user/${m.id}">${esc(m.email)}</a></td><td>${esc(m.role)}</td><td>${esc(m.platformRoles.join(', ') || '—')}</td><td>${statusPill(m.disabled ? 'disabled' : 'active')}</td><td>${fmt(m.lastLoginAt)}</td></tr>`).join('')}</table>`,
     markets: `<p><b>Trades:</b> ${esc(c.trades.join(', ') || '—')}</p><p><b>Territories:</b> ${esc(c.territories.join(', ') || '—')}</p>`,
@@ -503,5 +505,14 @@ async function viewSecurity() {
       <form id="mfae" class="row"><input name="code" inputmode="numeric" maxlength="6" placeholder="6-digit code" aria-label="Code from your app"><button class="primary">Turn on</button><span class="err" id="mfaerr"></span></form>`;
     $('#mfae').onsubmit = async ev => { ev.preventDefault(); try { await api('POST', '/api/admin/mfa/enable', { code: ev.target.code.value.trim() }); toast('Two-step sign-in is on.'); render(); } catch (e) { $('#mfaerr').textContent = e.message; } }; });
 }
+// Staff view of a company's verification document: opened through the server so the access is logged.
+document.addEventListener('click', async e => {
+  const b = e.target.closest && e.target.closest('[data-vdoc]'); if (!b) return;
+  try {
+    const r = await fetch(`/api/admin/companies/${encodeURIComponent(b.dataset.company)}/verification-documents/${encodeURIComponent(b.dataset.vdoc)}`, { headers: { authorization: 'Bearer ' + TOKEN } });
+    if (!r.ok) { toast('This document could not be opened.'); return; }
+    window.open(URL.createObjectURL(await r.blob()), '_blank', 'noopener');
+  } catch { toast('This document could not be opened.'); }
+});
 window.addEventListener('hashchange', render);
 render();

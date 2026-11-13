@@ -11,6 +11,24 @@ const cov = (creds, type) => {
   return { onFile: true, current: isCurrent(c), expiresAt: c.expiresAt, limit: c.coverages.find(v => v.type === type).limit, carrier: c.issuer, verified: c.verification?.status === 'verified_with_issuer' };
 };
 
+/** Compares a company's certificates with a package's minimum. Each shortfall is said in plain words. */
+export function insuranceCheck(ins, req) {
+  if (!req) return { required: false, met: true, shortfalls: [] };
+  const shortfalls = [];
+  if (req.generalLiabilityMin) {
+    const gl = ins.generalLiability;
+    if (!gl.onFile) shortfalls.push('no general liability certificate on file');
+    else if (!gl.current) shortfalls.push('general liability certificate expired');
+    else if ((gl.limit || 0) < req.generalLiabilityMin) shortfalls.push(`general liability is $${Number(gl.limit || 0).toLocaleString('en-US')}, below the $${req.generalLiabilityMin.toLocaleString('en-US')} required`);
+  }
+  if (req.workersComp) {
+    const wc = ins.workersComp;
+    if (!wc.onFile) shortfalls.push('no workers comp certificate on file');
+    else if (!wc.current) shortfalls.push('workers comp certificate expired');
+  }
+  return { required: true, met: shortfalls.length === 0, shortfalls };
+}
+
 export function prequalProfile(store, seller) {
   const creds = store.tlist('credentials', seller.id);
   const legal = seller.legal?.name || seller.name;
@@ -60,6 +78,7 @@ export function leveling(store, buyer, requestId) {
       const decision = store.tlist('prequal', buyer.id, p => p.sellerOrgId === s.sellerOrgId)[0];
       return { submissionId: s.id, sellerOrgId: s.sellerOrgId, company: s.sellerName, total: s.total, recurring: s.recurring, revision: s.revision || 1, submittedAt: s.submittedAt, status: s.status,
         pctAboveLow: low ? Math.round(1000 * (s.total - low) / low) / 10 : 0, addendaAcknowledged: inv?.ackAddendum || 0, receiptId: s.receiptId || null,
+        insuranceCheck: insuranceCheck(prequalProfile(store, seller).insurance, r.insuranceRequirements),
         scope: s.scope || null, exclusions: s.exclusions || null, documentUrl: s.documentUrl || null, receiptSha256: s.sha256 || null,
         revisions: [...(s.revisionHistory || []).map(h => ({ revision: h.revision, total: h.total, recurring: h.recurring, receiptId: h.receiptId, submittedAt: h.submittedAt, scope: h.scope || null })), { revision: s.revision || 1, total: s.total, recurring: s.recurring || null, receiptId: s.receiptId || null, submittedAt: s.submittedAt, current: true }],
         prequal: prequalProfile(store, seller), decision: decision ? { status: decision.status, note: decision.note, decidedAt: decision.decidedAt } : null };

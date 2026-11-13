@@ -31,3 +31,5 @@ dialog{border:1px solid var(--line);border-radius:16px;max-width:500px;width:min
 /* Inline styles moved to classes (keeps the CSP free of unsafe-inline). */
 .x-0466783d{width:100%!important}
 .x-455f8cca{justify-content:flex-end!important}
+
+.linkish{all:unset;cursor:pointer;color:var(--accent);font-weight:600;text-decoration:underline}

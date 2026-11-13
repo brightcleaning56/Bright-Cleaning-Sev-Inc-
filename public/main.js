@@ -1270,6 +1270,7 @@ async function openPublication(id) {
       <select name="trade">${TRADES_LIST.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}</select>
       <select name="distribution"><option value="eligible">Eligible subscribers (matching trade & area) + my list</option><option value="invite_only">Invite-only (my list)</option></select></div>
       <textarea name="description" rows="2" placeholder="Scope of work (20+ characters)"></textarea><div class="grid2"><textarea name="inclusions" rows="2" placeholder="Inclusions"></textarea><textarea name="exclusions" rows="2" placeholder="Exclusions"></textarea></div>
+      <div class="grid2"><label><small>Minimum general liability (USD, optional)</small><input name="insuranceGL" type="number" min="0" step="1000" placeholder="e.g. 1000000"></label><label class="vf-check"><input type="checkbox" name="workersComp"> Workers comp certificate required</label></div>
       <div class="row"><button class="primary">Add package</button><span class="err"></span></div></form>` : ''}</div>`;
   const reload = async () => { await publisherPanels(); openPublication(id); };
   box.querySelectorAll('[data-step]').forEach(b => b.onclick = () => {
@@ -1298,7 +1299,8 @@ async function openPublication(id) {
       $('#br-' + kid).querySelectorAll('[data-addinv]').forEach(btn => btn.onclick = async () => { await api('PATCH', '/api/packages/' + kid, { invitees: [btn.dataset.addinv] }); btn.replaceWith(document.createTextNode(k.status === 'open' ? 'invited' : 'added to list')); }); };
   });
   $('#pkf')?.addEventListener('submit', async ev => { ev.preventDefault(); const f = ev.target;
-    try { await api('POST', `/api/publications/${id}/packages`, { title: f.title.value, dueDate: f.dueDate.value, trades: [f.trade.value], distribution: f.distribution.value, description: f.description.value, inclusions: f.inclusions.value, exclusions: f.exclusions.value }); reload(); }
+    try { await api('POST', `/api/publications/${id}/packages`, { title: f.title.value, dueDate: f.dueDate.value, trades: [f.trade.value], distribution: f.distribution.value, description: f.description.value, inclusions: f.inclusions.value, exclusions: f.exclusions.value,
+      insuranceRequirements: { generalLiabilityMin: f.insuranceGL.value, workersComp: f.workersComp.checked } }); reload(); }
     catch (e) { f.querySelector('.err').textContent = e.message; } });
 }
 
@@ -1432,6 +1434,7 @@ async function buyerView() {
     box.innerHTML = `<div class="panel x-8a77e5a3" ><h3>Bid leveling — ${L.stats.bids} bid(s) · low ${L.stats.low ? money(L.stats.low) : '—'} · median ${L.stats.median ? money(L.stats.median) : '—'} · high ${L.stats.high ? money(L.stats.high) : '—'}</h3>
       <div class="scroll"><table><tr><th>Bidder</th><th class="num">Bid</th><th class="num">vs. low</th><th>Addenda</th><th>General liability</th><th>Workers comp</th><th>License</th><th>Flags</th><th>Award</th><th>Prequalification</th></tr>
       ${L.rows.map(x => `<tr><td><b>${esc(x.company)}</b><br><small>rev ${x.revision}${x.revisions && x.revisions.length > 1 ? ` (${x.revisions.length - 1} earlier)` : ''} · ${ago(x.submittedAt)}${x.receiptId ? ' · ' + esc(x.receiptId) : ''}</small>
+          ${x.insuranceCheck && x.insuranceCheck.required ? (x.insuranceCheck.met ? '<div><span class="pill green">Meets insurance minimum</span></div>' : `<div class="vnote"><b>Below insurance minimum:</b> ${esc(x.insuranceCheck.shortfalls.join('; '))}. You can still award, but record why.</div>`) : ''}
           <details><summary><small>Scope, exclusions & revisions</small></summary>
             <p><small><b>Scope:</b> ${esc(x.scope || '—')}</small></p>${x.exclusions ? `<p><small><b>Exclusions:</b> ${esc(x.exclusions)}</small></p>` : ''}
             ${x.documentUrl ? `<p><small><a href="${esc(x.documentUrl)}" target="_blank" rel="noopener">Bid documents</a></small></p>` : ''}

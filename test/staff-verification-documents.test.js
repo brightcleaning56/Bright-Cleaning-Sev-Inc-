@@ -1,0 +1,35 @@
+import './_env.js';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
+import { config } from '../src/config.js';
+import { Store } from '../src/store.js';
+import { createServer } from '../src/server.js';
+import { hashPassword } from '../src/security.js';
+import { saveVerificationDoc } from '../src/verifydocs.js';
+
+test('platform staff can open a publisher\'s verification document; anyone else cannot; each view is logged', async t => {
+  config.trustProxy = true; config.docDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bi-staffdoc-'));
+  const store = new Store(null);
+  const gc = store.put('orgs', { slug: 'gc', name: 'ABC', kind: 'buyer', buyerKind: 'developer', status: 'active', settings: {} });
+  const gm = store.put('users', { email: 'gm@abc.test', role: 'owner', orgId: gc.id });
+  const up = saveVerificationDoc(store, store.get('orgs', gc.id), gm, { name: 'license.pdf', kind: 'license', buffer: Buffer.from('%PDF-1.4 license') });
+  assert.equal(up.ok, true, up.error);
+  store.put('users', { email: 'staff@bc.test', role: 'platform_owner', passwordHash: hashPassword('staff password 123') });
+  store.put('users', { email: 'customer@x.test', role: 'owner', orgId: store.put('orgs', { slug: 'x', name: 'X', kind: 'subscriber', status: 'active', settings: {} }).id, passwordHash: hashPassword('customer password 123') });
+  const srv = createServer(store).listen(0);
+  await new Promise(r => srv.once('listening', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const login = async (email, password) => (await (await fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.201' }, body: JSON.stringify({ email, password }) })).json()).token;
+  const url = `${base}/api/admin/companies/${gc.id}/verification-documents/${up.document.id}`;
+  assert.equal((await fetch(url)).status, 401, 'signed out is refused');
+  const staff = await login('staff@bc.test', 'staff password 123');
+  const ok = await fetch(url, { headers: { authorization: 'Bearer ' + staff } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('content-type'), 'application/pdf');
+  assert.match(await ok.text(), /%PDF-1.4 license/);
+  assert.equal(store.data.audit.filter(e => e.action === 'admin.publisher.document.view').length, 1, 'the view is logged');
+  const customer = await login('customer@x.test', 'customer password 123');
+  assert.equal((await fetch(url, { headers: { authorization: 'Bearer ' + customer } })).status, 403, 'a company cannot use the staff route');
+});

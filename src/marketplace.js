@@ -43,6 +43,14 @@ export function validateRequest(b) {
   return e;
 }
 
+/** Minimum insurance a package asks for: general liability in dollars and whether workers comp is required. */
+export function normalizeInsurance(x) {
+  if (!x || typeof x !== 'object') return null;
+  const gl = Math.max(0, Math.round(Number(x.generalLiabilityMin) || 0));
+  const wc = !!x.workersComp;
+  return gl || wc ? { generalLiabilityMin: gl || null, workersComp: wc } : null;
+}
+
 export function createRequest(store, buyerOrg, user, b, opts = {}) {
   if (buyerOrg.kind !== 'buyer') throw new Error('only buyer accounts can post requests');
   if (buyerOrg.status !== 'active') throw new Error('verify your account before posting requests');
@@ -60,6 +68,7 @@ export function createRequest(store, buyerOrg, user, b, opts = {}) {
     invitees: Array.isArray(b.invitees) ? [...new Set(b.invitees.map(String))].slice(0, 500) : [],
     inclusions: b.inclusions ? String(b.inclusions).slice(0, 4000) : null, exclusions: b.exclusions ? String(b.exclusions).slice(0, 4000) : null,
     instructions: b.instructions ? String(b.instructions).slice(0, 4000) : null, contactName: b.contactName ? String(b.contactName).slice(0, 120) : null,
+    insuranceRequirements: normalizeInsurance(b.insuranceRequirements),
   });
   const invited = r.status === 'open' ? openPackageInvites(store, r) : 0;   // drafts invite nobody
   store.audit({ actor: user.email, orgId: buyerOrg.id, action: 'request.create', target: r.id, detail: { invited } });

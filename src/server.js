@@ -966,6 +966,20 @@ export function createServer(store, deps = {}) {
         const r = saveVerificationDoc(store, org, user, { name: url.searchParams.get('name'), kind: url.searchParams.get('kind'), buffer: Buffer.concat(chunks) });
         return send(res, r.ok ? 200 : (r.code || 400), r.ok ? { document: r.document } : { error: r.error });
       }
+      // Staff view of a company's verification document. Needs the company-read permission and is logged.
+      const svd = req.method === 'GET' && url.pathname.match(/^\/api\/admin\/companies\/([^/]+)\/verification-documents\/([^/]+)$/);
+      if (svd) {
+        const user = sessionUser(store, (req.headers.authorization || '').replace(/^Bearer /, ''));
+        if (!user) return send(res, 401, { error: 'sign in required' });
+        if (!hasPerm(user, 'admin.company.read')) return send(res, 403, { error: 'your staff role cannot view company documents' });
+        const org = store.get('orgs', svd[1]);
+        const found = org && org.kind === 'buyer' && verificationDocPath(org, svd[2]);
+        if (!found || !fs.existsSync(found.file)) return send(res, 404, { error: 'not found' });
+        store.audit({ actor: user.email, orgId: org.id, action: 'admin.publisher.document.view', target: svd[2], detail: { name: found.doc.name } }); store.save();
+        const buf = fs.readFileSync(found.file);
+        res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${found.doc.name.replace(/"/g, '')}"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Content-Length': buf.length });
+        return res.end(buf);
+      }
       const vdl = req.method === 'GET' && url.pathname.match(/^\/api\/publisher\/documents\/([^/]+)$/);
       if (vdl) {
         const user = sessionUser(store, (req.headers.authorization || '').replace(/^Bearer /, ''));

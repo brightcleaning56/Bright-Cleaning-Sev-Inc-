@@ -57,7 +57,7 @@ export function companyDetail(store, id) {
   const auditTrail = (store.data.audit || []).filter(a => a.orgId === id || a.target === id).slice(-100).reverse();
   return { ok: true, company: {
     ...companyRow(store, o), legal: redact(o.legal || null), territories: o.territories || [],
-    verificationDetail: o.kind === 'buyer' ? { status: verificationOf(o), evidence: o.publisher?.evidence || null, requestedAt: o.publisher?.requestedAt || null, decidedBy: o.publisher?.decidedBy || null, decidedAt: o.publisher?.decidedAt || null, note: o.publisher?.note || null }
+    verificationDetail: o.kind === 'buyer' ? { status: verificationOf(o), documents: (o.publisher?.documents || []).map(d => ({ id: d.id, name: d.name, kind: d.kind, size: d.size, sha256: d.sha256, uploadedAt: d.uploadedAt, uploadedBy: d.uploadedBy })), history: o.publisher?.history || [], evidence: o.publisher?.evidence || null, requestedAt: o.publisher?.requestedAt || null, decidedBy: o.publisher?.decidedBy || null, decidedAt: o.publisher?.decidedAt || null, note: o.publisher?.note || null }
       : { status: verificationOf(o), note: 'Subscriber accounts confirm their email; business verification applies to publishers.' },
     members: users.map(u => ({ id: u.id, email: u.email, role: u.role, permissions: u.permissions || null, disabled: !!u.disabled, lastLoginAt: u.lastLoginAt || null, platformRoles: platformRolesOf(u) })),
     credentials: store.tlist ? store.tlist('credentials', id).map(c => ({ id: c.id, kind: c.kind, status: c.status, expiresOn: c.expiresOn || null })) : [],
