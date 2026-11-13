@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" role="img" aria-labelledby="t d">
+  <title id="t">AutoClean Pro 2.0 concept layout</title>
+  <desc id="d">Concept side-view layout showing the patient chair, imaging module, robotic instrument arm, safety controller, fluid and suction, and sanitation pathways. Not to scale; not a CAD drawing.</desc>
+  <defs>
+    <linearGradient id="cab" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d3d5c"/><stop offset="1" stop-color="#10243a"/></linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#20b8c5"/><stop offset="1" stop-color="#3578c8"/></linearGradient>
+  </defs>
+  <rect width="800" height="520" fill="#0c1c2d"/>
+  <!-- enclosure -->
+  <rect x="120" y="70" width="560" height="380" rx="36" fill="url(#cab)" stroke="#2c5a84" stroke-width="2"/>
+  <!-- imaging module (top) -->
+  <rect x="300" y="92" width="200" height="54" rx="12" fill="#173650" stroke="#20b8c5" stroke-width="2"/>
+  <text x="400" y="124" text-anchor="middle" fill="#e6f1f8" font-family="Segoe UI,Arial" font-size="16">Imaging module</text>
+  <!-- robotic arm -->
+  <path d="M470 170 L540 220 L560 300 L590 330" fill="none" stroke="url(#glow)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="470" cy="170" r="11" fill="#20b8c5"/>
+  <circle cx="540" cy="220" r="9" fill="#20b8c5"/>
+  <circle cx="560" cy="300" r="9" fill="#20b8c5"/>
+  <rect x="580" y="318" width="26" height="30" rx="6" fill="#e6f1f8"/>
+  <!-- patient chair -->
+  <path d="M220 330 Q230 260 280 250 L330 250 L340 330 Z" fill="#2c5a84" stroke="#4f8fbf" stroke-width="2"/>
+  <rect x="180" y="330" width="250" height="26" rx="8" fill="#2c5a84" stroke="#4f8fbf" stroke-width="2"/>
+  <circle cx="300" cy="210" r="30" fill="none" stroke="#9fb4c5" stroke-width="2" stroke-dasharray="4 4"/>
+  <!-- safety controller -->
+  <rect x="150" y="128" width="120" height="44" rx="10" fill="#173650" stroke="#3ccf91" stroke-width="2"/>
+  <text x="210" y="155" text-anchor="middle" fill="#e6f1f8" font-family="Segoe UI,Arial" font-size="14">Safety controller</text>
+  <!-- fluid and suction -->
+  <rect x="520" y="390" width="120" height="40" rx="8" fill="#173650" stroke="#4f8fbf" stroke-width="2"/>
+  <text x="580" y="415" text-anchor="middle" fill="#e6f1f8" font-family="Segoe UI,Arial" font-size="14">Fluid and suction</text>
+  <!-- sanitation pathways -->
+  <rect x="150" y="390" width="150" height="40" rx="8" fill="#173650" stroke="#4f8fbf" stroke-width="2"/>
+  <text x="225" y="415" text-anchor="middle" fill="#e6f1f8" font-family="Segoe UI,Arial" font-size="14">Clean / used pathways</text>
+  <!-- patient stop -->
+  <circle cx="330" cy="392" r="0"/>
+  <!-- leader lines and labels -->
+  <g stroke="#7f97ad" stroke-width="1.5" fill="none">
+    <path d="M210 150 L240 150 L268 118"/>
+    <path d="M400 92 L400 70"/>
+    <path d="M300 250 L300 226"/>
+    <path d="M580 390 L580 350"/>
+    <path d="M225 390 L225 362"/>
+  </g>
+  <text x="400" y="62" text-anchor="middle" fill="#9fb4c5" font-family="Segoe UI,Arial" font-size="13">Enclosure and patient entry</text>
+  <text x="300" y="300" text-anchor="middle" fill="#9fb4c5" font-family="Segoe UI,Arial" font-size="13">Chair with head support</text>
+  <text x="640" y="250" fill="#9fb4c5" font-family="Segoe UI,Arial" font-size="13">Instrument arm</text>
+  <text x="400" y="500" text-anchor="middle" fill="#7f97ad" font-family="Segoe UI,Arial" font-size="13">Concept layout. Not to scale. Not a CAD drawing or manufacturing specification.</text>
+</svg>
