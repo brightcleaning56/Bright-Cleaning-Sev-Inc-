@@ -1,4 +1,4 @@
-# Setup checklist — DentistNow Robotics
+# Setup checklist — DentistNow (legal name); DentistNow Robotics (division or trade name)
 
 Status: prepared for the owner to action. Nothing here has been filed, registered, purchased or signed. Items marked **[owner]** need your identity, payment or signature. Items marked **[counsel]** need a securities or corporate lawyer.
 
@@ -7,11 +7,11 @@ Status: prepared for the owner to action. Nothing here has been filed, registere
 Facts: DentistNow is already a Delaware company. DentistNow Robotics has not been formed. The company is not registered in Iowa.
 
 Recommended (for counsel to confirm):
-1. **[counsel]** Form DentistNow Robotics as a Delaware corporation, wholly owned by DentistNow or held as a separate entity. Delaware matches the parent and is the standard choice for investors. Confirm ownership and the IP transfer from DentistNow.
+1. **[counsel]** Legal name: DentistNow. Confirm whether the robotics work is a division of DentistNow, a trade name ("DentistNow Robotics"), or a separate subsidiary. If a separate entity is needed, it is formed in Delaware under its own legal name. Delaware matches the parent and is the standard choice for investors. Confirm ownership and the IP transfer from DentistNow.
 2. **[owner]** Choose a name and check availability with the Delaware Division of Corporations.
 3. **[owner]** File the certificate of incorporation with Delaware and appoint a registered agent.
 4. **[owner]** Obtain a federal employer identification number (EIN) from the IRS.
-5. **[owner]** Open a bank account and set up accounting. Keep DentistNow Robotics finances separate from DentistNow.
+5. **[owner]** Open a bank account and set up accounting. Keep the robotics work's finances separate from the rest of DentistNow, in the way counsel advises.
 6. **[counsel]** Adopt bylaws, issue founder shares, decide on an 83(b) election for founder stock, and sign an intercompany IP assignment from DentistNow.
 7. **[counsel]** Invention-assignment and confidentiality agreements for every founder, employee, contractor and advisor.
 
@@ -45,7 +45,7 @@ Iowa: the Iowa program requires an Iowa-based company, legally formed and regist
 
 ## Draft privacy notice (for counsel to review; not for publication as is)
 
-**DentistNow Robotics — Privacy notice (draft)**
+**DentistNow — Privacy notice (draft)**
 
 We respect your privacy. This notice explains what we collect when you contact us through our website, and how we use it.
 
@@ -59,7 +59,7 @@ We respect your privacy. This notice explains what we collect when you contact u
 
 **Your choices.** You can ask us to see, correct or delete the information we hold about you by contacting info@dentistnow.co.
 
-**Contact.** DentistNow Robotics, [business mailing address — to be set up], info@dentistnow.co. Website: dentistnow.co.
+**Contact.** DentistNow, [business mailing address — to be set up], info@dentistnow.co. Website: dentistnow.co.
 
 **Last updated:** [date — to be set by counsel].
 

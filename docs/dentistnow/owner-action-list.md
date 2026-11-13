@@ -6,7 +6,7 @@ Last updated: 2026-11-13.
 
 ## Blocking (do first)
 
-1. **Form DentistNow Robotics in Delaware.** Choose the name, file the certificate of incorporation, appoint a registered agent. Send me the company name and the registered agent.
+1. **Confirm the legal structure in Delaware.** The legal name is DentistNow. Decide whether robotics is a division, a trade name ("DentistNow Robotics") or a separate subsidiary, then have counsel confirm it. If a subsidiary is needed, file its certificate of incorporation and appoint a registered agent. Send me the legal name you choose.
 2. **Get an EIN** from the IRS for the new company.
 3. **Open a company bank account** and keep its money separate from DentistNow.
 4. **Confirm you control dentistnow.co** (registrar login, renewal, DNS access).
