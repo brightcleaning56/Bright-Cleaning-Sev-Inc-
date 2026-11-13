@@ -9,7 +9,8 @@
     "test": "node tests/run-tests.js",
     "test:b2": "node tests/b2-test.js",
     "test:suppress": "node tests/suppress-test.js && node tests/suppress-routes-test.js",
-    "test:workflows": "node tests/workflow-modules-test.js"
+    "test:workflows": "node tests/workflow-modules-test.js",
+    "test:workflows2": "node tests/workflow-modules2-test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
