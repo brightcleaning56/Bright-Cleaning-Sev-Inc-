@@ -162,7 +162,7 @@ export function coverage(store, org, pubId) {
  * the company is eligible for it (trade and territory) and whether it is already invited. Results stay an array so the
  * existing package invite panel keeps working.
  */
-export function searchBidders(store, { q, trade, state, packageId, limit = 50 } = {}) {
+export function searchBidders(store, { q, trade, state, packageId, limit = 50, at = Date.now() } = {}) {
   const ql = String(q || '').toLowerCase(), st = String(state || '').toUpperCase();
   const pkg = packageId ? store.get('bidRequests', packageId) : null;
   const invited = pkg ? new Set(store.list('invitations', i => i.requestId === pkg.id).map(i => i.sellerOrgId)) : new Set();
@@ -170,7 +170,10 @@ export function searchBidders(store, { q, trade, state, packageId, limit = 50 } 
     && (!ql || String(o.legal?.name || o.name).toLowerCase().includes(ql)) && (!trade || o.trades.includes(trade)) && (!st || (o.territories || []).includes(st) || o.subscription?.plan === 'internal'))
     .sort((a, b) => String(a.legal?.name || a.name).localeCompare(String(b.legal?.name || b.name)));
   return rows.slice(0, Math.min(Math.max(1, Number(limit) || 50), 200)).map(o => {
-    const row = { id: o.id, name: o.legal?.name || o.name, trades: o.trades, states: (o.territories || []).slice(0, 10) };
+    const lastActive = store.list('users', u => u.orgId === o.id && !u.disabled).map(u => u.lastLoginAt).filter(Boolean).sort().at(-1) || null;
+    const ageDays = lastActive ? (at - Date.parse(lastActive)) / 864e5 : null;
+    const row = { id: o.id, name: o.legal?.name || o.name, trades: o.trades, states: (o.territories || []).slice(0, 10),
+      lastActiveAt: lastActive, freshness: ageDays === null ? 'unknown' : ageDays > 365 ? 'stale' : 'current' };
     if (pkg) {
       const tradeOk = (pkg.trades || []).some(t => o.trades.includes(t));
       const nationwide = o.subscription?.plan === 'internal' || o.subscription?.plan === 'national';

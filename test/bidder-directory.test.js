@@ -40,3 +40,16 @@ test('the limit is respected and capped', () => {
   assert.equal(searchBidders(store, { limit: 1 }).length, 1);
   assert.equal(searchBidders(store, { limit: 9999 }).length, 3);
 });
+
+test('each company shows when it was last active, and long-inactive companies are flagged', () => {
+  const { store } = world();
+  const now = Date.parse('2027-06-01T00:00:00Z');
+  const elec = store.list('orgs', o => o.name === 'Bright Electric')[0];
+  const old = store.list('orgs', o => o.name === 'Texas Electric')[0];
+  store.put('users', { email: 'a@bright.test', role: 'owner', orgId: elec.id, lastLoginAt: '2027-05-01T00:00:00Z' });
+  store.put('users', { email: 'b@texas.test', role: 'owner', orgId: old.id, lastLoginAt: '2025-01-01T00:00:00Z' });
+  const rows = Object.fromEntries(searchBidders(store, { at: now }).map(r => [r.name, r]));
+  assert.equal(rows['Bright Electric'].freshness, 'current');
+  assert.equal(rows['Texas Electric'].freshness, 'stale');
+  assert.equal(rows['Coastal Plumbing'].freshness, 'unknown');
+});
