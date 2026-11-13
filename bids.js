@@ -20,7 +20,7 @@ module.exports = function mountBids(app, ctx) {
     if (total <= 0) f.push({ level: 'block', text: 'Total is $0. A proposal cannot be sent at $0.' });
     if (area > 0 && total > 10000 && total / area > 25) f.push({ level: 'block', text: `Price is $${(total / area).toFixed(2)} per sq ft — far above any cleaning price. Check the production rate (sq ft per labor hour) and quantities before sending.` });
     else if (area > 0 && total > 0 && total / area > 5) f.push({ level: 'warn', text: `Unusually high: $${(total / area).toFixed(2)} per sq ft (typical cleaning is $0.05–$2.50).` });
-    if (area > 0 && total > 0 && total / area < 0.02) f.push({ level: 'warn', text: `Unusually low: $${(total / area).toFixed(3)} per sq ft.` });
+    if (area > 0 && total > 0 && total / area < 0.05) f.push({ level: 'warn', text: `Below the typical cleaning price of $0.05 per sq ft ($${(total / area).toFixed(3)} now). Check the production rate, labor hours and costs before sending.` });
     if (Number(e.labor_hours) > 3000 * (Number(e.visits) || 1)) f.push({ level: 'block', text: `${Math.round(e.labor_hours).toLocaleString()} labor hours looks too high. Check the production rate (sq ft per labor hour), not price per sq ft.` });
     if (!area && !(Number(e.use_line_items) && Number(e.line_items_total) > 0) && !String(e.line_items || '').includes('qty')) f.push({ level: 'warn', text: 'Missing quantities: no square footage or line items.' });
     if (cost > 0 && total > 0) { const m = (total - cost) / total * 100; if (m < 15) f.push({ level: 'warn', text: `Low margin: ${m.toFixed(1)}% (below 15%).` }); }

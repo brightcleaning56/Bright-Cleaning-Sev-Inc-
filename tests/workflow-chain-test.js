@@ -71,6 +71,8 @@ async function waitHealthy() {
     assert(r.status === 201, 'create ' + r.status + ' ' + JSON.stringify(r.body).slice(0, 220));
     est = r.body.estimate || r.body;
     assert(est.id, 'estimate id');
+    assert(r.body.notice && /You entered \$6200\.00/.test(r.body.notice) && /uses \$1661\.85/.test(r.body.notice), 'price notice: ' + r.body.notice);
+    assert((r.body.flags || []).some(x => x.level === 'warn' && /Below the typical cleaning price/.test(x.text)), 'per-sq-ft warning shown');
     const back = await req('GET', '/api/admin/estimates/' + est.id, owner); est = back.body.estimate || back.body;
     return `proposal ${est.id}, status ${est.status}, proposal_total ${est.proposal_total}, total_cost ${est.total_cost}, margin ${est.margin_pct}`;
   });
