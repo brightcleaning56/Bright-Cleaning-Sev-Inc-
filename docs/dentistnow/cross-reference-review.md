@@ -14,7 +14,7 @@ Status key: **Aligned** = consistent. **Fixed** = corrected today. **Decision** 
 | "Unattended" in the funding plan (regulatory and care-rejection risks) | Our documents | **Fixed** | Reworded to "automated cleaning under clinician oversight". |
 | "Unattended" and "autonomous" in the counsel brief (question 12) | Our documents | Aligned | Asks counsel to review that language. |
 | "Do not promise a finished autonomous machine" | Plan | Aligned | Describes future work, not version 1. |
-| Original goal: a patient gets cleaned "without a dentist or dental assistant" | Your first brief | **Decision** | Conflicts with supervised version 1. Research found no authorized unsupervised dental treatment in the US. Choose: keep supervised v1 and aim at unsupervised later (recommended), or change the goal. |
+| Original goal: a patient gets cleaned "without a dentist or dental assistant" | Your first brief | **Applied** | Supervised version 1; no-dentist operation is a later-stage goal, subject to FDA and state rules. Stated in plan, deck and landing page FAQ. |
 | "No Dentist Needed", "Fully Automated Teeth Cleaning", "AI-Powered Autonomous … Diagnosis & Cleaning" | Marketing image (sent today) | **Do not use** | Conflicts with the design and with the research. |
 
 ## 2. Claims and diagnosis
@@ -30,7 +30,7 @@ Status key: **Aligned** = consistent. **Fixed** = corrected today. **Decision** 
 | Item | Source | Status | Notes |
 |---|---|---|---|
 | Unit production cost $45K–$85K | Your brief | Aligned | Model base is $60K. |
-| BOM total about $109,300 | 40-page image set | **Decision** | Above the $45K–$85K range and the model base. The BOM is an estimate, so either the cost range moves up or the BOM is revised. The model should be re-run if the cost changes. |
+| BOM total about $109,300 | 40-page image set | **Applied** (target $60K, ceiling $85K; BOM must fall) | Above the $45K–$85K range and the model base. The BOM is an estimate, so either the cost range moves up or the BOM is revised. The model should be re-run if the cost changes. |
 | Selling price $95K–$160K; target gross margin 40–55% | Your image and brief | Aligned | Model base 49%. |
 | Development budget $3.5M–$9.5M; Stage A $150K–$300K; Stage B $750K–$1.8M | Your brief | Aligned | Stage A breakdown sums to the range. |
 | Pilot of 10 units, $1.2M–$2.5M | Image set | Not in our plan | Could be added to the roadmap. |
@@ -40,7 +40,7 @@ Status key: **Aligned** = consistent. **Fixed** = corrected today. **Decision** 
 | Item | Source | Status | Notes |
 |---|---|---|---|
 | 36–48 month planning schedule | Your brief | Aligned | Plan uses 40–48+ months. |
-| 49-month roadmap | Image set | **Decision** | One month longer than our plan. Choose one figure and use it in every document. |
+| 49-month roadmap | Image set | **Applied** | 48 months is the planning target; 49 is the contingency. |
 
 ## 5. Regulatory
 
@@ -55,11 +55,11 @@ Status key: **Aligned** = consistent. **Fixed** = corrected today. **Decision** 
 
 | Item | Source | Status | Notes |
 |---|---|---|---|
-| Patient "Start Cleaning" button | 40-page UI image set | **Decision** | In that set the patient starts the cleaning. Our prototype requires clinician authorization first. Use the prototype rule unless you choose otherwise. |
+| Patient "Start Cleaning" button | 40-page UI image set | **Applied** (patient cannot start a cleaning) | In that set the patient starts the cleaning. Our prototype requires clinician authorization first. Use the prototype rule unless you choose otherwise. |
 | Operator dashboard, authorization gate, safety monitor, audit log | Brief and UI | Aligned | |
 | Simulated data labelled | Prototype | Aligned | |
 
-## Decisions needed from you
+## Decisions (applied on 2026-11-13)
 
 1. Keep the original goal of "no dentist" for later versions only (recommended), or change the goal now?
 2. Which unit cost to use: $45K–$85K or the $109,300 BOM. The second needs a re-run of the model.
