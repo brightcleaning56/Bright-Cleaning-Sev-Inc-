@@ -11,6 +11,8 @@ and not regulatory submissions. Nothing here is FDA-cleared, and nothing here au
 | `ui-screens.html` | Patient interface (first-visit screens) and clinical operator interface mockups. Open in a browser. |
 | `business-funding-plan.html` | Business and funding plan: intended use, unit economics, staged budgets, funding sources, first $150K–$300K use of funds, regulatory path, risks, 90-day plan, funding timeline. |
 | `financial-model.xlsx` | Illustrative financial model with live formulas: revenue, gross margin, operating result, cash need, three scenarios and investor returns. Planning assumptions only. |
+| `media/autoclean-pro-explainer.mp4` | 72-second concept explainer video (recorded from an HTML animation). Concept illustration only. |
+| `media/still-*.png` | Concept stills from the explainer. |
 | `index.html` | Investor and partner landing page draft. No data-collecting form. Placeholders for contact details. Marked DRAFT until securities counsel review. |
 
 ## Scope rules the package follows
