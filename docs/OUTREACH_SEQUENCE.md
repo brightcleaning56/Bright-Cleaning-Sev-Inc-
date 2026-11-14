@@ -66,4 +66,8 @@ A lead is ready for its first email only when the system has all of these:
 
 **Pricing is left to a person.** The introduction says what we do and how we work, then says that prices are not sent by email and that one of our people will walk the job and send a written proposal with one price. The system never quotes a price in an introduction.
 
-Automatic sending (a background sweep) is **not** on. Turning it on needs the owner's yes.
+**Automatic sending is on (owner approval).** A background sweep checks every 10 minutes for leads from the last 14 days with status New or In Review. For each one that passes the contact check and has never been contacted, it sends the **first** email: the introduction, never a follow-up. At most 10 go out per run. A lead that has been contacted at all (any sent email, or an earlier introduction) is skipped by the sweep, and follow-ups are always written by a person.
+
+The switch is the setting `auto_intro_email` (on by default). Turn it off in the automation settings API (`PUT /api/admin/ai/settings` with `{"auto_intro_email": false}`). The sweep interval is `INTRO_SWEEP_MS` (default 600000).
+
+The sweep also includes staff-added contacts, as the owner asked. Each introduction still names the company, what we do and how we work, and says prices come from a person.

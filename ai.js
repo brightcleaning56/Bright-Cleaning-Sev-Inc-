@@ -139,7 +139,7 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
   const fail = (res, e) => res.status(e.code === 'AI_OFF' ? 503 : 502).json({ error: e.message, ai_off: e.code === 'AI_OFF' });
   app.get('/api/admin/ai/status', auth, (req, res) => res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', true), auto_draft_estimates: setting('auto_draft_estimates', true) }));
   app.put('/api/admin/ai/settings', auth, (req, res) => {
-    for (const k of ['auto_triage', 'auto_request_info', 'auto_draft_estimates']) if (k in (req.body || {})) db.prepare("INSERT INTO ai_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k, req.body[k] ? '1' : '0');
+    for (const k of ['auto_triage', 'auto_request_info', 'auto_draft_estimates', 'auto_intro_email']) if (k in (req.body || {})) db.prepare("INSERT INTO ai_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k, req.body[k] ? '1' : '0');
     logAction(req, 'changed', 'ai settings', 0, `auto_triage ${!!req.body.auto_triage}`);
     res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', true), auto_draft_estimates: setting('auto_draft_estimates', true) });
   });

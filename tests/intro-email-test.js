@@ -6,7 +6,7 @@ const lc = require('../leadclass');
 
 const db = new Database(':memory:');
 db.exec(`
-  CREATE TABLE leads(id INTEGER PRIMARY KEY, kind TEXT, contact_name TEXT, company TEXT, email TEXT, phone TEXT, address TEXT, details TEXT, origin TEXT, intake TEXT);
+  CREATE TABLE leads(id INTEGER PRIMARY KEY, kind TEXT, contact_name TEXT, company TEXT, email TEXT, phone TEXT, address TEXT, details TEXT, origin TEXT, intake TEXT, status TEXT DEFAULT 'New', created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
   CREATE TABLE email_log(id INTEGER PRIMARY KEY, to_addr TEXT, subject TEXT, body TEXT, status TEXT, error TEXT, provider TEXT, created_at TEXT);
   CREATE TABLE audit_log(id INTEGER PRIMARY KEY, actor TEXT, action TEXT, entity TEXT, entity_id INTEGER, details TEXT, created_at TEXT);
 `);
@@ -89,6 +89,26 @@ async function check(name, fn) { await fn(); passed++; console.log('PASS  ' + na
     assert.strictEqual(lc.introIsSafe({ subject: 'x', body: 'Our rate is $2 per square foot' }), false);
     assert.strictEqual(lc.introIsSafe({ subject: 'x', body: 'We will send a written proposal with one price.' }), true);
   });
+
+  await check('the automatic sweep introduces only complete, never-contacted leads, once', async () => {
+    db.prepare("INSERT INTO leads(id,kind,contact_name,company,email,phone,address,details,origin) VALUES(4,'bid','Sam Lee','Lee Homes','sam@leehomes.com','515-555-0102','9 Elm St','Move-out clean for a single-family home.','website')").run();
+    const before = sent.length;
+    const sweep = lc.startIntroSweep(db, () => mailer, () => true);
+    await sweep();
+    assert.strictEqual(sent.length, before + 1, 'exactly one new introduction');
+    assert.strictEqual(sent[sent.length - 1].to, 'sam@leehomes.com');
+    assert.ok(/One of our people will walk the job/.test(sent[sent.length - 1].text));
+    await sweep();
+    assert.strictEqual(sent.length, before + 1, 'a second run does not email again');
+  });
+
+  await check('the sweep does nothing when the switch is off', async () => {
+    db.prepare("INSERT INTO leads(id,kind,contact_name,company,email,phone,address,details,origin) VALUES(5,'bid','Ann Cole','Cole Co','ann@colecompany.com','515-555-0103','2 Oak St','Clean.','website')").run();
+    const before = sent.length;
+    await lc.startIntroSweep(db, () => mailer, () => false)();
+    assert.strictEqual(sent.length, before);
+  });
+
 
   console.log(`\n${passed} passed`);
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

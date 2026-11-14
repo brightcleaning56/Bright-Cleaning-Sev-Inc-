@@ -135,8 +135,52 @@ function introIsSafe(draft) {
   return !!draft && !/\$\s?\d|\b\d[\d,]*(\.\d+)?\s?(\/|per)\s?(sq|sf|hour|hr|visit|month|unit)/i.test(draft.body + ' ' + draft.subject);
 }
 
+// Automatic introductions. The first email to a complete lead is always the introduction (never a follow-up),
+// and a lead that has been contacted at all is never sent one again by this sweep. Owners can switch it off with the
+// setting "auto_intro_email" (Settings > Automation). Limits: only leads from the last 14 days, at most 10 sends per run.
+const INTRO_WINDOW_DAYS = 14, INTRO_MAX_PER_RUN = 10;
+// A lead that has had an introduction is never introduced again (checked in the audit log too, so it holds even if mail logging is off).
+const introAlready = (db, id) => !!db.prepare("SELECT 1 FROM audit_log WHERE entity='lead' AND entity_id=? AND action='sent introduction email'").get(id);
+async function sendIntro(db, mailer, l) {
+  const c = contactCheck(l);
+  if (!c.complete || c.recipient_type !== 'person') return { sent: false, reason: 'contact incomplete' };
+  if (db.prepare("SELECT COUNT(*) n FROM email_log WHERE lower(to_addr)=lower(?) AND status='sent'").get(l.email).n > 0 || introAlready(db, l.id)) return { sent: false, reason: 'already contacted' };
+  const draft = draftFor(l, segmentOf(l), intentOf(l), 'intro');
+  if (!introIsSafe(draft)) return { sent: false, reason: 'price guard' };
+  try {
+    const r = await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject: draft.subject, text: draft.body, automated: true });
+    if (r && r.suppressed) return { sent: false, reason: 'blocked: ' + r.reason };
+    db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('automation', 'sent introduction email', 'lead', l.id, draft.subject, new Date().toISOString());
+    return { sent: true, subject: draft.subject };
+  } catch (e) { return { sent: false, reason: e.message }; }
+}
+function startIntroSweep(db, getMailer, isOn) {
+  let busy = false;
+  const sweep = async () => {
+    if (busy || !isOn()) return;
+    busy = true;
+    try {
+      const m = getMailer && getMailer(); if (!m) return;
+      const since = new Date(Date.now() - INTRO_WINDOW_DAYS * 864e5).toISOString();
+      const rows = db.prepare("SELECT * FROM leads WHERE status IN ('New','In Review') AND email IS NOT NULL AND email<>'' AND created_at>=? ORDER BY id LIMIT 100").all(since);
+      let n = 0;
+      for (const l of rows) {
+        if (n >= INTRO_MAX_PER_RUN) break;
+        if (/\btest\b/i.test(`${l.contact_name || ''} ${l.company || ''}`)) continue;
+        if ((await sendIntro(db, m, l)).sent) n++;
+      }
+    } catch (e) { console.error('intro sweep failed:', e.message); }
+    finally { busy = false; }
+  };
+  const t = setInterval(sweep, Number(process.env.INTRO_SWEEP_MS) || 600000);
+  t.unref();
+  return sweep;
+}
+
 function mount(app, ctx) {
   const { db, auth, getMailer, logAction } = ctx;
+  const introOn = () => { const r = db.prepare("SELECT value FROM ai_settings WHERE key='auto_intro_email'").get(); return r ? r.value === '1' : true; };
+  if (process.env.INTRO_SWEEP_MS !== '0') startIntroSweep(db, getMailer, introOn);
   const leadOf = id => db.prepare('SELECT * FROM leads WHERE id=?').get(Number(id));
   const priorSends = email => email ? db.prepare("SELECT COUNT(*) n FROM email_log WHERE lower(to_addr)=lower(?) AND status='sent'").get(email).n : 0;
 
@@ -164,7 +208,7 @@ function mount(app, ctx) {
     const c = contactCheck(l);
     if (!c.complete) return res.status(409).json({ error: `Add the missing details first: ${c.missing.join(', ')}.`, missing: c.missing });
     if (c.recipient_type !== 'person') return res.status(409).json({ error: 'Send only to a person, not a shared or job inbox.' });
-    if (priorSends(l.email) > 0) return res.status(409).json({ error: 'This contact was already introduced. Use the follow-up note instead.' });
+    if (priorSends(l.email) > 0 || introAlready(db, l.id)) return res.status(409).json({ error: 'This contact was already introduced. Use the follow-up note instead.' });
     const m = getMailer && getMailer();
     if (!m) return res.status(503).json({ error: 'Email is not set up, so nothing was sent.' });
     const draft = draftFor(l, segmentOf(l), intentOf(l), 'intro');
@@ -180,4 +224,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { classify, segmentOf, intentOf, recipientOf, permittedAction, draftFor, contactCheck, introIsSafe, JOB_INBOX, SEGMENTS, mount };
+module.exports = { classify, segmentOf, intentOf, recipientOf, permittedAction, draftFor, contactCheck, introIsSafe, sendIntro, startIntroSweep, JOB_INBOX, SEGMENTS, mount };
