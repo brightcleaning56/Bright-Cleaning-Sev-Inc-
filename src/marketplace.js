@@ -70,6 +70,7 @@ export function createRequest(store, buyerOrg, user, b, opts = {}) {
     inclusions: b.inclusions ? String(b.inclusions).slice(0, 4000) : null, exclusions: b.exclusions ? String(b.exclusions).slice(0, 4000) : null,
     instructions: b.instructions ? String(b.instructions).slice(0, 4000) : null, contactName: b.contactName ? String(b.contactName).slice(0, 120) : null,
     insuranceRequirements: normalizeInsurance(b.insuranceRequirements),
+    noDocuments: !!b.noDocuments,
   });
   const invited = r.status === 'open' ? openPackageInvites(store, r) : 0;   // drafts invite nobody
   store.audit({ actor: user.email, orgId: buyerOrg.id, action: 'request.create', target: r.id, detail: { invited } });
@@ -313,4 +314,22 @@ export function contractDocument(c) {
   const amends = (c.amendments || []).map(x => `<tr><td style="padding:6px 0;vertical-align:top">#${x.number}</td><td style="padding:6px 0">${esc(x.status)} · ${x.changes.map(ch => ch.field === 'total' ? `price $${Number(ch.from).toLocaleString('en-US')} to $${Number(ch.to).toLocaleString('en-US')}` : 'scope: ' + esc(ch.to)).join('; ')}<br><small>Reason: ${esc(x.reason)}</small><br><small>Proposed by ${esc(x.proposed?.signerName)} at ${esc(x.proposedAt)}${x.acceptance ? ' · accepted by ' + esc(x.acceptance.signerName) + ' at ' + esc(x.acceptedAt) + ' · record SHA-256 ' + esc(x.documentSha256) : ''}${x.decline ? ' · declined: ' + esc(x.decline.reason) : ''}</small></td></tr>`).join('');
   const amendSection = amends ? `<section style="font-family:Helvetica,Arial,sans-serif;max-width:720px;margin:24px auto"><h2>Amendments</h2><table style="border-collapse:collapse;font-size:14px;width:100%">${amends}</table><p><small>The original proposal above is unchanged. Only accepted amendments change the amount due.</small></p></section>` : '';
   return c.proposalHtml.replace('</body>', amendSection + cert + '</body>');
+}
+
+/**
+ * Invites one company to every open package it matches (trade, area, eligible distribution), straight away, rather than
+ * waiting for the periodic job. Used when a company confirms its email or changes its trades or areas.
+ */
+export function inviteOrgToOpenRequests(store, org) {
+  if (!org || org.kind === 'buyer' || org.status === 'pending_verification' || !Array.isArray(org.trades) || !org.trades.length) return 0;
+  const nationwide = org.subscription?.plan === 'internal' || org.subscription?.plan === 'national';
+  let n = 0;
+  for (const r of store.list('bidRequests', x => x.status === 'open' && x.distribution !== 'invite_only' && x.buyerOrgId !== org.id)) {
+    if (store.list('invitations', i => i.requestId === r.id && i.sellerOrgId === org.id).length) continue;
+    if (!org.trades.some(t => (r.trades || []).includes(t))) continue;
+    if (!nationwide && !(org.territories || []).includes(r.state)) continue;
+    store.put('invitations', { requestId: r.id, buyerOrgId: r.buyerOrgId, sellerOrgId: org.id, intent: 'undecided', invitedAt: now(), notifiedAt: null, viewedAt: null, reason: whyInvited(org, r) });
+    n++;
+  }
+  return n;
 }

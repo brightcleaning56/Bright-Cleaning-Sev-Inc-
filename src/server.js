@@ -15,7 +15,7 @@ import { runCycleGuarded, cycleStatus, handleEmailEvent } from './autopilot.js';
 import { readiness } from './readiness.js';
 import { createBackup, restoreTest, backupDocuments, verifyDocumentVault, syncOffsite } from './backup.js';
 import { createCheckout, applyStripeEvent, PLANS } from './billing.js';
-import { BUYER_KINDS, createRequest, awardRequest, closeRequest, contractDocument, consentText, countersignContract, TRADES, setIntent, submitBid, inviteCompanies } from './marketplace.js';
+import { BUYER_KINDS, createRequest, awardRequest, closeRequest, contractDocument, consentText, countersignContract, TRADES, setIntent, submitBid, inviteCompanies, inviteOrgToOpenRequests } from './marketplace.js';
 import { contactFromProject } from './outreach.js';
 import { prequalProfile, setPrequal, leveling, levelingCsv } from './prequal.js';
 import { SCALES, saveMeasurement, listMeasurements, deleteMeasurement } from './measure.js';
@@ -568,7 +568,8 @@ export function createServer(store, deps = {}) {
     need(!body.website || /^https?:\/\//i.test(String(body.website)), 400, 'website must be an http(s) link');
     o.profile = { ...(o.profile || {}), ...Object.fromEntries(['phone', 'website', 'description'].filter(k => body[k] !== undefined).map(k => [k, String(body[k]).slice(0, 1000)])) };
     store.put('orgs', o); store.audit({ actor: user.email, orgId: o.id, action: 'profile.update', detail: Object.keys(body) });
-    return { trades: o.trades || [], legal: o.legal, profile: o.profile };
+    const newlyInvited = inviteOrgToOpenRequests(store, o); if (newlyInvited) store.audit({ actor: 'system', orgId: o.id, action: 'invitations.auto', detail: { count: newlyInvited, reason: 'profile' } });
+    return { trades: o.trades || [], legal: o.legal, profile: o.profile, invitedToOpenPackages: newlyInvited };
   });
   route('GET', '/api/profile', 'user', ({ user }) => { const o = store.get('orgs', user.orgId); return { trades: o.trades || [], legal: o.legal || {}, profile: o.profile || {}, territories: o.territories || [] }; });
   route('GET', '/api/invitations', 'user', ({ user }) => {
@@ -1049,6 +1050,7 @@ export function createServer(store, deps = {}) {
         if (org.status === 'pending_verification') {
           org.status = 'active'; org.verifiedAt = now(); org.verifiedBy = 'email'; store.put('orgs', org);
           store.audit({ actor: 'email', orgId: org.id, action: 'buyer.verify' }); store.save();
+          if (org.kind !== 'buyer') inviteOrgToOpenRequests(store, org);   // invited to matching open packages as soon as the account is live
         }
         return page(200, `<h1>Email confirmed</h1><p>${org.kind === 'buyer' ? 'You can sign in and post bid requests now.' : 'Your 14-day trial has started. Sign in to search projects.'}</p>${signIn}`);
       }
