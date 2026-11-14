@@ -92,7 +92,8 @@ module.exports = function mountAutobid(app, ctx) {
     const text = `Hello ${first},\n\n${['manual', 'import', 'outbound'].includes(l.origin) ? 'This is Bright Clean, a commercial cleaning company in Des Moines. We would like to learn about your projects and what you need cleaned' + (l.company ? ' at ' + l.company : '') + '.' : 'Thank you for your request for ' + (l.project_name || l.service || 'cleaning services') + (l.address ? ' at ' + l.address : '') + '.'} To prepare an accurate price, we need a few details:\n\n${questions.map(q => '- ' + q).join('\n')}\n\nReply to this email with the answers, or with any drawings or photos that show the areas. We will prepare the price once we have them.\n\nThank you,\nBright Cleaning Sev Inc.`;
     const t = now();
     Promise.resolve(m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject: `A few questions before we price your project`, text, automated: true }))
-      .then(() => {
+      .then(r => {
+        if (r && r.suppressed) return; // blocked address: nothing was asked
         db.prepare('INSERT INTO ai_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, sig);
         db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','asked contact for bid details','lead',?,?,?)").run(l.id, questions.join(' | ').slice(0, 900), t);
         if (app.locals.setLeadWaiting) app.locals.setLeadWaiting(l.id);

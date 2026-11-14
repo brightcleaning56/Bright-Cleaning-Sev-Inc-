@@ -216,7 +216,7 @@ module.exports = function mountIntake(app, ctx) {
     const ops = getOps();
     if (ops) ops.upsertCustomer({ name: b.contact_name, company: b.company, email: b.email, phone: b.phone, address: b.address }, 'quote request');
     notify(`New quote request: ${def.title}`, `${clean(b.contact_name)} (${clean(b.company)})\n${clean(b.email)} · ${clean(b.phone)}\n${clean(b.address)}\n\n${details}\n\nBefore pricing:\n${fl.map(x => '- ' + x.text).join('\n') || '- Nothing flagged'}`, process.env.NOTIFY_EMAIL);
-    notify('We received your Bright Clean quote request', `Thank you. We received your ${def.title.toLowerCase()} request and will follow up within one business day.`, clean(b.email, 254));
+    notify('We received your Bright Clean quote request', `Thank you. We received your ${def.title.toLowerCase()} request and will follow up within one business day.`, clean(b.email, 254), true);
     res.status(201).json({ message: 'Thank you. Your request has been received.', id: info.lastInsertRowid });
   });
 };

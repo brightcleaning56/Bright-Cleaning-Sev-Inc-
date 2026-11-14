@@ -22,7 +22,7 @@ module.exports = function mountMonitoring(app, ctx) {
   };
   // 5xx responses (route errors are already turned into responses by handlers)
   // A 502 caused by the email provider refusing the RECIPIENT is not a server fault: answer 422 with guidance, no alert.
-  const REJECT = /code (406|300)|inactive|invalid email|recipient.*(rejected|suppress)/i;
+  const REJECT = /code 406|inactive|invalid email|recipient.*(rejected|suppress)/i;
   app.use((req, res, next) => {
     const json = res.json.bind(res);
     res.json = body => { if (res.statusCode === 502 && body && REJECT.test(String(body.error || ''))) { res.status(422); body = { ...body, error: String(body.error) + ' — The email provider refused this address: it bounced before or was marked as spam. Check the spelling of the email address (for example the domain) and correct it on the record; if it is correct, the address must be reactivated in Postmark.', recipient_rejected: true }; } return json(body); };

@@ -317,7 +317,9 @@ Only report what you can read on a sheet, and always give the sheet. Never guess
     if (/\$\s?\d/.test(ai.reply_body || '') || !ai.reply_subject || !ai.reply_body) return;
     const m = getMailer(); if (!m) return;
     try {
-      await m.sendMail({ from: process.env.FROM_EMAIL || 'info@brightclean.net', to: l.email, subject: ai.reply_subject, text: ai.reply_body, automated: true });
+      const sent = await m.sendMail({ from: process.env.FROM_EMAIL || 'info@brightclean.net', to: l.email, subject: ai.reply_subject, text: ai.reply_body, automated: true });
+      // A blocked address (opted out, bounced, job inbox) is not a request: record nothing as asked.
+      if (sent && sent.suppressed) { logRun('ai_info_request', id, 'suppressed', sent.reason); return; }
       const cur = JSON.parse(db.prepare('SELECT ai FROM leads WHERE id=?').get(id).ai || '{}'); cur.info_requested_at = now();
       db.prepare("UPDATE leads SET ai=?, status=CASE WHEN status='New' THEN 'In Review' ELSE status END WHERE id=?").run(JSON.stringify(cur), id);
       if (app.locals.setLeadWaiting) app.locals.setLeadWaiting(id);

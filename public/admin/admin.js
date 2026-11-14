@@ -9,6 +9,8 @@
   let token = localStorage.getItem(TOKEN_KEY);
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // CSV cell text: quotes doubled; a leading = + - @ or tab/CR is prefixed so Excel does not run it as a formula.
+  const csvText = v => { const t = String(v ?? ''); return (/^[=+\-@\t\r]/.test(t) ? "'" + t : t).replace(/"/g, '""'); };
   const money = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v || 0));
   // Local calendar date of this device (Central time for the office), not UTC — UTC flips to tomorrow every evening.
   const localISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -870,7 +872,7 @@
     const k = state.leadKind;
     const rows = state.leads.filter(l => inKind(l, k));
     const cols = ['id', 'created_at', 'kind', 'status', 'contact_name', 'company', 'email', 'phone', 'project_name', 'project_type', 'service', 'address', 'square_footage', 'bid_due_date', 'start_date', 'frequency', 'details', 'notes'];
-    const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const q = v => '"' + csvText(v) + '"';
     const blob = new Blob([[cols.join(','), ...rows.map(r => cols.map(c => q(r[c])).join(','))].join('\n')], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1134,7 +1136,7 @@
     $$('#propRows [data-det]').forEach(b => b.onclick = () => { prop.sel = Number(b.dataset.det); drawFlow(state.estimates.find(e => e.id === prop.sel)); openBid(prop.sel); });
   }
   $('#propCsv').addEventListener('click', () => {
-    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`, rows = [['Proposal', 'Version', 'Type', 'Customer', 'Project', 'Service', 'Amount', 'Estimated cost', 'Status', 'Stage', 'Created', 'Sent', 'Valid until', 'Views', 'Accepted by'], ...state.estimates.map(e => [pnum(e), e.version || 1, e.bid_type === 'gc_bid' ? 'GC bid' : 'Proposal', e.company || e.customer_name, e.project_name, e.scope_category, e.proposal_total, e.total_cost, e.status, e.stage, e.created_at, e.sent_at, e.expires_on, e.view_count, e.signer_name])];
+    const q = v => `"${csvText(v)}"`, rows = [['Proposal', 'Version', 'Type', 'Customer', 'Project', 'Service', 'Amount', 'Estimated cost', 'Status', 'Stage', 'Created', 'Sent', 'Valid until', 'Views', 'Accepted by'], ...state.estimates.map(e => [pnum(e), e.version || 1, e.bid_type === 'gc_bid' ? 'GC bid' : 'Proposal', e.company || e.customer_name, e.project_name, e.scope_category, e.proposal_total, e.total_cost, e.status, e.stage, e.created_at, e.sent_at, e.expires_on, e.view_count, e.signer_name])];
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'proposals.csv'; a.click();
   });
   $('#propAiBtn').addEventListener('click', () => { $('#propAiDesc').focus(); $('#propAiDesc').scrollIntoView && $('#propAiDesc').scrollIntoView({ block: 'center' }); });
@@ -1713,7 +1715,7 @@
     return rows.slice().sort(cmp);
   }
   function exportContracts() {
-    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const q = v => `"${csvText(v)}"`;
     const rows = [['Number', 'Title', 'Customer', 'Status', 'Signature', 'Value', 'Payment terms', 'Start', 'End', 'Created']]
       .concat(contractRows().map(r => [r.number, r.title, r.company || r.customer_name, r.status, r.signature_status, r.value, r.payment_terms, r.start_date, r.end_date, r.created_at]));
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
@@ -2471,10 +2473,11 @@
     openDrawer({ title, sub: sub || '', body: `<form id="genForm" class="grid" novalidate>${defs.map(field).join('')}</form><div id="genExtra"></div><p class="msg" id="genMsg" role="status"></p>`,
       footer: `<button class="btn" id="genSave">Save</button>${extraFooter || ''}` });
     $('#genSave').onclick = async () => {
+      const saveBtn = $('#genSave'); if (saveBtn.disabled) return; saveBtn.disabled = true; // one click, one save
       const f = $('#genForm'), body = {};
       for (const d of defs) { const el = f.elements[d.name]; if (!el) continue; body[d.name] = d.type === 'checkbox' ? el.checked : d.type === 'file' ? el.files : el.value; }
       try { const res = await submit(body); closeDrawer(); if (after) after(res); }
-      catch (err) { $('#genMsg').className = 'msg err'; $('#genMsg').textContent = err.message; }
+      catch (err) { saveBtn.disabled = false; $('#genMsg').className = 'msg err'; $('#genMsg').textContent = err.message; }
     };
     return $('#genForm');
   }
@@ -2793,7 +2796,7 @@
   $('#qualityAdd').addEventListener('click', () => newInspection());
   $('#qTplBtn').addEventListener('click', () => { qState.tab = 'templates'; drawQ(); });
   ['#qSearch', '#qCust', '#qProj'].forEach(x => $(x).addEventListener(x === '#qSearch' ? 'input' : 'change', () => drawQ()));
-  $('#qCsv').addEventListener('click', () => { const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`; const rows = [['Number', 'Date', 'Area', 'Customer', 'Project', 'Type', 'Template', 'Inspector', 'Crew', 'Score', 'Result', 'Status', 'Failed items'], ...qState.inspections.map(r => [r.number, r.date, r.area, r.customer_company || r.customer_name, r.project_name, r.itype, r.template, r.signed_name || r.inspector, r.crew, r.score, r.passed == null ? '' : r.passed ? 'Passed' : 'Failed', r.status, r.items.filter(i => i.result === 'Fail').map(i => i.label).join('; ')])]; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'inspections.csv'; a.click(); });
+  $('#qCsv').addEventListener('click', () => { const q = v => `"${csvText(v)}"`; const rows = [['Number', 'Date', 'Area', 'Customer', 'Project', 'Type', 'Template', 'Inspector', 'Crew', 'Score', 'Result', 'Status', 'Failed items'], ...qState.inspections.map(r => [r.number, r.date, r.area, r.customer_company || r.customer_name, r.project_name, r.itype, r.template, r.signed_name || r.inspector, r.crew, r.score, r.passed == null ? '' : r.passed ? 'Passed' : 'Failed', r.status, r.items.filter(i => i.result === 'Fail').map(i => i.label).join('; ')])]; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'inspections.csv'; a.click(); });
   // ---------------- Quality → Customer complaints ----------------
   const CSTAGE_COLOR = { NEW: '#6b7280', TRIAGE: '#6b7280', ASSIGNED: '#1f6fd1', INVESTIGATING: '#1f6fd1', CORRECTIVE_ACTION: '#c77700', REINSPECTION: '#c77700', CUSTOMER_CONFIRMATION: '#7c3aed', RESOLVED: '#1e8e3e', CLOSED: '#1e8e3e', INFO_NEEDED: '#c0392b', ON_HOLD: '#6b7280', ESCALATED: '#c0392b' };
   let cmpFilter = 'open';
@@ -3438,7 +3441,7 @@
   let issT; $('#issSearch').addEventListener('input', () => { clearTimeout(issT); issT = setTimeout(() => { issState.page = 1; loadIssues(); }, 250); });
   $('#issAdd').addEventListener('click', () => openIssue(null, null));
   $('#issCsv').addEventListener('click', () => {
-    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`, rows = [['Number', 'Type', 'Title', 'Customer', 'Contact', 'Property', 'Project', 'Category', 'Priority', 'Source', 'Assigned to', 'Due', 'Status', 'Created', 'Resolved'], ...issState.issues.map(i => [i.number, issState.options.types[i.type], i.title, i.customer_company || i.customer_name, i.contact_name, i.property_name || i.property, i.project_name, i.category, i.priority, i.source, i.assigned_to, i.due_date, i.status, i.created_at, i.resolved_at])];
+    const q = v => `"${csvText(v)}"`, rows = [['Number', 'Type', 'Title', 'Customer', 'Contact', 'Property', 'Project', 'Category', 'Priority', 'Source', 'Assigned to', 'Due', 'Status', 'Created', 'Resolved'], ...issState.issues.map(i => [i.number, issState.options.types[i.type], i.title, i.customer_company || i.customer_name, i.contact_name, i.property_name || i.property, i.project_name, i.category, i.priority, i.source, i.assigned_to, i.due_date, i.status, i.created_at, i.resolved_at])];
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'issues-and-tasks.csv'; a.click();
   });
   async function loadIssues() {
@@ -3654,7 +3657,7 @@
     $$('#pjSide [data-w]').forEach(b => b.onclick = () => openProject(p.id, b.dataset.w));
   }
   $('#pjCsv').addEventListener('click', () => {
-    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`, rows = [['Project', 'Name', 'Customer', 'Service', 'Manager', 'Status', 'Progress %', 'Contract value', 'Budget', 'Actual cost', 'Start', 'Due', 'Actual start', 'Actual end'], ...pj.list.map(p => [p.number, p.name, p.company || p.customer_name, p.service_label, p.manager, p.status, p.progress, p.contract_value, p.budget, p.actual_cost, p.start_date, p.due_date, p.actual_start, p.actual_end])];
+    const q = v => `"${csvText(v)}"`, rows = [['Project', 'Name', 'Customer', 'Service', 'Manager', 'Status', 'Progress %', 'Contract value', 'Budget', 'Actual cost', 'Start', 'Due', 'Actual start', 'Actual end'], ...pj.list.map(p => [p.number, p.name, p.company || p.customer_name, p.service_label, p.manager, p.status, p.progress, p.contract_value, p.budget, p.actual_cost, p.start_date, p.due_date, p.actual_start, p.actual_end])];
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'projects.csv'; a.click();
   });
   const WTABS = [['overview', 'Overview', 'overview'], ['scope', 'Scope of work', 'proposals'], ['schedule', 'Schedule', 'cal'], ['crew', 'Crew & staffing', 'leads'], ['tasks', 'Tasks & milestones', 'check'], ['documents', 'Documents & drawings', 'documents'], ['site', 'Site information', 'pin'], ['photos', 'Photos & evidence', 'documents'], ['quality', 'Quality inspections', 'quality'], ['issues', 'Issues & risks', 'issues'], ['costs', 'Costs & budget', 'money'], ['comms', 'Customer communications', 'emails'], ['contract', 'Contract', 'contracts'], ['activity', 'Activity history', 'activity']];

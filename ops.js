@@ -187,7 +187,9 @@ module.exports = function mountOps(app, ctx) {
         saved = name + '.enc';
       }
       // Off-site copy to Backblaze B2 when configured. A failure here is logged but does not fail the local backup.
-      const off = await b2.uploadFile(path.join(backupDir, saved), saved);
+      // Never copy the plain database off-site: without BACKUP_KEY the off-site copy is skipped.
+      const off = key ? await b2.uploadFile(path.join(backupDir, saved), saved) : { ok: false, skipped: true, detail: 'BACKUP_KEY is not set' };
+      if (!key) console.error('Off-site backup skipped: BACKUP_KEY is not set, so the copy would be unencrypted.');
       if (!off.ok && !off.skipped) { console.error('Off-site backup failed:', off.detail); alertOwner('Off-site backup failed', `The backup was saved on the server but not copied to Backblaze: ${off.detail}\n\nCheck the Backblaze key and the BACKUP_* settings in Render.`); }
       if (!off.skipped) db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run('backup-offsite', null, reason, null, off.ok ? 'ok' : 'failed', clean(off.detail, 500), now());
       const all = listBackups();

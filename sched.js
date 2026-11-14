@@ -53,17 +53,19 @@ module.exports = function mountSched(app, ctx) {
     if (total > (emp.max_week_hours || 40)) warn.push(`overtime: ${total.toFixed(1)} h scheduled that week (limit ${emp.max_week_hours || 40} h)`);
     return { block, warn, week_hours: Math.round(total * 10) / 10 };
   }
-  const empPublic = e => ({ ...e, token: undefined, crew_link: e.token ? `/crew/${e.token}` : null });
+  // The crew link is a login for that cleaner's clock-in page: only operations roles may see it.
+  const empPublic = (e, withLink = false) => ({ ...e, token: undefined, crew_link: withLink && e.token ? `/crew/${e.token}` : null });
 
   // ---------- Employees ----------
   app.get('/api/admin/employees', auth, (req, res) => {
+    const canLink = require('./roles').canRunOperations(roleOf(req));
     const d = clean(req.query.date, 10) || today();
     const list = db.prepare('SELECT * FROM employees ORDER BY active DESC, name').all().map(e => {
       const off = db.prepare('SELECT * FROM employee_timeoff WHERE employee_id=? AND start_date<=? AND end_date>=?').get(e.id, d, d);
       const jobs = db.prepare("SELECT COUNT(*) n FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date=? AND v.status NOT IN ('Cancelled','Skipped')").get(e.id, d).n;
       const ws = weekStart(d), hrs = db.prepare("SELECT v.start_time, v.end_time FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date BETWEEN ? AND ? AND v.status NOT IN ('Cancelled','Skipped')").all(e.id, ws, addDays(ws, 6)).reduce((t, x) => t + visitMins(x), 0) / 60;
       const dow = new Date(d + 'T12:00:00Z').getUTCDay() || 7;
-      return { ...empPublic(e), off: off ? off.reason || 'Time off' : null, jobs_on_date: jobs, week_hours: Math.round(hrs * 10) / 10, available: !!e.active && !off && String(e.work_days || '').split(',').map(Number).includes(dow) };
+      return { ...empPublic(e, canLink), off: off ? off.reason || 'Time off' : null, jobs_on_date: jobs, week_hours: Math.round(hrs * 10) / 10, available: !!e.active && !off && String(e.work_days || '').split(',').map(Number).includes(dow) };
     });
     res.json({ employees: list, roles: ROLES, timeoff: db.prepare('SELECT t.*, e.name FROM employee_timeoff t JOIN employees e ON e.id=t.employee_id WHERE t.end_date>=? ORDER BY t.start_date').all(addDays(d, -30)), holidays: db.prepare('SELECT * FROM company_holidays WHERE date>=? ORDER BY date').all(addDays(d, -30)) });
   });
