@@ -43,3 +43,26 @@ and not regulatory submissions. Nothing here is FDA-cleared, and nothing here au
 1. Regulatory specialist review of intended use and classification (FDA pre-submission planned).
 2. Clinical advisor review of the eligibility rules and patient wording.
 3. Engineering feasibility on a dental-model fixture.
+
+## Full index (all planning and working documents)
+
+| File | Purpose |
+|---|---|
+| `owner-action-list.md` | Everything that needs the owner's identity, payment, signature or decision |
+| `setup-checklist.md` | Entity, contact and first-round steps; draft privacy notice |
+| `counsel-review-brief.md` | Questions and materials for securities counsel |
+| `cross-reference-review.md` | Checks of the documents against all planning inputs |
+| `engineering-schedule-90-day.md` | Stage A weekly schedule with gates |
+| `engineering-test-plan.md` | Test IDs, methods and pass criteria |
+| `test-thresholds-proposed.md` | Proposed starting thresholds (to be confirmed) |
+| `risk-register.md` | Hazards, controls and verifying tests |
+| `demo-readiness-checklist.md` | Gate checklist for the demonstrator |
+| `bom-cost-down-plan.md` | Route from the $109,300 estimate to the $85K ceiling |
+| `quote-request-list.md` | Hardware quote requests by line item |
+| `fda-presubmission-outline.md` | Q-Submission draft, including autonomy questions |
+| `funding-verification-checklist.md` | Funding figures and their verification status |
+| `data-room-index.md` | What can be shared, with whom, and at which gate |
+| `grant-application-outline.md` | SBIR/STTR Phase I outline |
+| `financial-model.xlsx` | Live model with scenarios and sensitivities |
+| `system-ui/` | Interface prototype (simulated data) |
+| `media/` | Concept layout, interface screenshots, explainer video |
