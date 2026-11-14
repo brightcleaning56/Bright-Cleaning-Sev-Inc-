@@ -332,7 +332,7 @@ module.exports = function mountSuite(app, ctx) {
       ['Outstanding', r.executive.outstanding.value, r.executive.outstanding.count], ['Overdue', r.executive.overdue.value, r.executive.overdue.count],
       ['Win rate %', r.win.rate ?? '', `${r.win.won} won of ${r.win.sample} decided`], [], ['Stage', 'Count'], ...r.flow.map(f => [f.k, f.n]), [],
       ['Month', 'Calls', 'Leads', 'Proposals sent', 'Won', 'Won value', 'Billed', 'Collected', 'Inspection avg'],
-      ...r.months.map((m, i) => [m, r.calls[i].n, r.leads[i].n, r.sent[i].n, r.won[i].n, r.won[i].v, r.billed[i].v, r.collected[i].v, r.quality[i].n ? r.quality[i].v : '']), [],
+      ...r.months.map((m, i) => [m, r.calls[i].n, r.leads[i].n, r.sent[i].n, r.won[i].n, r.won[i].v, r.billed[i].v, r.collected[i].v, r.quality[i].n && r.quality[i].v != null ? r.quality[i].v : '']), [],
       ['Data notes'], ...r.data_issues.map(x => [x.level, x.text])];
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="bright-clean-report-${r.period.end}.csv"`);

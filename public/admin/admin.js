@@ -1105,7 +1105,7 @@
       return `<tr class="click" data-est="${e.id}"><td><b style="color:#1f6fd1">${esc(pnum(e))}</b><small>v${e.version || 1}${e.bid_type === 'gc_bid' ? ' · GC bid' : ''}</small></td><td><b>${esc(e.company || e.customer_name)}</b><small>${esc(e.project_name || '')}</small></td>
         <td>${e.scope_category ? `<span class="pill t-task">${esc(SVC[e.scope_category] || e.scope_category)}</span>` : '<span class="muted">Not set</span>'}</td><td class="num"><b>${money(e.proposal_total)}</b>${warn}</td>
         <td>${fmtDate(e.created_at)}</td><td>${e.sent_at ? fmtDate(e.sent_at) : '—'}</td><td class="${expired ? 'due-late' : ''}">${e.expires_on ? fmtDate(e.expires_on) : '—'}</td><td>${act}</td>
-        <td><span class="pill st-${esc(e.status)}">${esc(e.status === 'Approved' ? 'Accepted' : e.status)}</span></td><td><button class="btn small ghost" data-det="${e.id}" title="Details, versions and history">Details</button> <button class="btn small ghost" data-edit="${e.id}">Edit</button></td></tr>`;
+        <td><span class="pill st-${esc(e.status)}">${esc(e.status === 'Approved' ? 'Accepted' : e.status)}</span>${e.archived_at ? ' <span class="badge">Archived</span>' : ''}</td><td><button class="btn small ghost" data-det="${e.id}" title="Details, versions and history">Details</button> <button class="btn small ghost" data-edit="${e.id}">Edit</button></td></tr>`;
     }).join('') : `<tr><td class="emptyrow" colspan="10">${q || st || sv || rg ? 'No proposals match your filters.' : 'No estimates yet. Click “New estimate” or describe a project to the AI assistant.'}</td></tr>`;
     $('#propShowing').textContent = all.length ? `Showing ${(prop.page - 1) * per + 1} – ${Math.min(prop.page * per, all.length)} of ${all.length}` : '';
     $('#propPages').innerHTML = pages > 1 ? Array.from({ length: pages }, (_, n) => `<button class="${n + 1 === prop.page ? 'on' : ''}" data-pg="${n + 1}">${n + 1}</button>`).join('') : '';
@@ -1279,6 +1279,43 @@
 
   // Estimator form
   const ef = $('#estimateForm');
+
+  // ---------- Pick an existing customer to fill the estimate ----------
+  const pickerCss = document.createElement('style');
+  pickerCss.textContent = '.cpick{position:absolute;left:0;right:0;top:100%;z-index:50;background:#fff;border:1px solid #d6dde6;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:260px;overflow:auto;margin-top:4px}.cpick button{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;cursor:pointer;font:inherit;color:inherit}.cpick button:hover{background:#eef4fb}.cpick small{display:block;color:#5b6b7c}';
+  document.head.appendChild(pickerCss);
+  let pickerCustomers = null;
+  async function customersForPicker() {
+    if (!pickerCustomers) { try { pickerCustomers = (await api('/api/admin/customers')).customers || []; } catch { pickerCustomers = []; } }
+    return pickerCustomers;
+  }
+  function fillFromCustomer(c) {
+    const set = (k, v) => { if (ef.elements[k] && v) ef.elements[k].value = v; };
+    set('customer_name', c.name); set('company', c.company); set('email', c.email); set('site_address', c.address);
+    toast('Customer details filled in from ' + (c.company || c.name || 'the customer record'));
+  }
+  function attachCustomerPicker(input) {
+    const wrap = input && input.closest('.f'); if (!wrap) return;
+    wrap.style.position = 'relative';
+    const box = document.createElement('div'); box.className = 'cpick'; box.hidden = true; wrap.appendChild(box);
+    const show = async () => {
+      const q = input.value.trim().toLowerCase(); if (q.length < 2) { box.hidden = true; return; }
+      const hits = (await customersForPicker()).filter(c => [c.name, c.company, c.email, c.phone].join(' ').toLowerCase().includes(q)).slice(0, 8);
+      if (!hits.length) { box.hidden = true; return; }
+      box.innerHTML = hits.map(c => '<button type="button" data-cid="' + c.id + '"><b>' + esc(c.company || c.name || 'Customer') + '</b><small>' + esc([c.name, c.email, c.phone].filter(Boolean).join(' · ')) + '</small></button>').join('');
+      box.hidden = false;
+    };
+    input.addEventListener('input', show);
+    input.addEventListener('focus', show);
+    input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 150));
+    box.addEventListener('mousedown', ev => {
+      const b = ev.target.closest('[data-cid]'); if (!b) return; ev.preventDefault();
+      const c = (pickerCustomers || []).find(x => String(x.id) === b.dataset.cid); if (!c) return;
+      fillFromCustomer(c); box.hidden = true;
+    });
+  }
+  attachCustomerPicker(ef.elements.customer_name);
+  attachCustomerPicker(ef.elements.company);
   const DEFAULTS = { area_sqft: 0, production_rate: 0, labor_hours: 0, labor_rate: 0, supplies_cost: 0, equipment_cost: 0, other_cost: 0, overhead_pct: 10, margin_pct: 25, tax_pct: 0, visits: 1, crew_size: 1, shift_hours: 8, travel_cost: 0, mobilization_cost: 0, subcontractor_cost: 0, disposal_cost: 0, insurance_pct: 0, contingency_pct: 0, minimum_charge: 0 };
   const EXTRA_KEYS = ['visits', 'crew_size', 'shift_hours', 'travel_cost', 'mobilization_cost', 'subcontractor_cost', 'disposal_cost', 'insurance_pct', 'contingency_pct', 'minimum_charge', 'template_key', 'windows_interior_panes', 'windows_interior_rate', 'windows_exterior_panes', 'windows_exterior_rate', 'windows_cost'];
   let templates = [];
@@ -1299,6 +1336,7 @@
 
   function openEstimator(est, lead) {
     ef.reset();
+    pickerCustomers = null;
     ef.elements.id.value = '';
     Object.entries(DEFAULTS).forEach(([k, v]) => { ef.elements[k].value = v; });
     const d = localISO(new Date(Date.now() + 30 * 864e5));
@@ -3270,7 +3308,7 @@
     $('#repIssues').innerHTML = r.data_issues.map(x => `<li class="${esc(x.level)}">${esc(x.text)}${x.ids && x.kind === 'estimate' ? ' ' + x.ids.slice(0, 5).map(id => `<button class="linklike" data-est="${id}">#${id}</button>`).join(' ') : ''}</li>`).join('');
     bindOpeners($('#repIssues'));
     const mName = k => new Date(k + '-15').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    $('#repMonthsRows').innerHTML = r.months.slice().reverse().map((m, j) => { const i = r.months.length - 1 - j; return `<tr><td>${mName(m)}</td><td class="num">${r.calls[i].n}</td><td class="num">${r.leads[i].n}</td><td class="num">${r.sent[i].n}</td><td class="num">${r.won[i].n}</td><td class="num">${money(r.won[i].v)}</td><td class="num">${money(r.billed[i].v)}</td><td class="num">${money(r.collected[i].v)}</td><td class="num">${r.quality[i].n ? r.quality[i].v + '%' : '—'}</td></tr>`; }).join('');
+    $('#repMonthsRows').innerHTML = r.months.slice().reverse().map((m, j) => { const i = r.months.length - 1 - j; return `<tr><td>${mName(m)}</td><td class="num">${r.calls[i].n}</td><td class="num">${r.leads[i].n}</td><td class="num">${r.sent[i].n}</td><td class="num">${r.won[i].n}</td><td class="num">${money(r.won[i].v)}</td><td class="num">${money(r.billed[i].v)}</td><td class="num">${money(r.collected[i].v)}</td><td class="num">${r.quality[i].n && r.quality[i].v != null ? r.quality[i].v + '%' : '—'}</td></tr>`; }).join('');
     const rv = r.receivables, o = r.ops, au = r.automation;
     kpiTiles('#repKpis2', [{ label: 'Outstanding', value: money(rv.outstanding) }, { label: 'Overdue', value: money(rv.overdue), sub: `${rv.overdue_n || 0} invoice(s)`, alert: rv.overdue > 0 }, { label: 'Inspection average', value: o.inspections.avg == null ? '—' : o.inspections.avg + '%', sub: `${o.inspections.n || 0} inspections` }, { label: 'Calls', value: o.calls.n || 0, sub: `${o.calls.missed || 0} missed · ${o.calls.to_leads || 0} became leads` }]);
     const top = Math.max(1, ...r.flow.map(f => f.n));
