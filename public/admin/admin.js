@@ -990,7 +990,7 @@
       const invNo = id => (invs.find(i => i.id === id) || {}).invoice_number || '';
       const ev = [];
       invs.forEach(i => ev.push({ date: String(i.issue_date || i.created_at || '').slice(0, 10), kind: 'Invoice', ref: i.invoice_number || ('#' + i.id), charge: Number(i.amount) || 0, credit: 0, note: [i.status, parseInvLines(i.line_items).map(l => l.service).join(', ')].filter(Boolean).join(' · ') }));
-      (d.payments || []).filter(p => invs.some(i => i.id === p.invoice_id)).forEach(p => ev.push({ date: String(p.received_at || '').slice(0, 10), kind: 'Payment', ref: invNo(p.invoice_id), charge: 0, credit: Number(p.amount) || 0, note: p.note || 'Payment received' }));
+      (d.payments || []).filter(p => invs.some(i => i.id === p.invoice_id)).forEach(p => ev.push({ date: String(p.received_at || '').slice(0, 10), kind: (Number(p.amount) || 0) < 0 ? 'Refund' : 'Payment', ref: invNo(p.invoice_id), charge: (Number(p.amount) || 0) < 0 ? -Number(p.amount) : 0, credit: (Number(p.amount) || 0) > 0 ? Number(p.amount) : 0, note: p.note || ((Number(p.amount) || 0) < 0 ? 'Refund' : 'Payment received') }));
       ev.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'Invoice' ? -1 : 1));
       let run = 0;
       const ledgerRows = ev.map(x => { run = Math.round((run + x.charge - x.credit) * 100) / 100; return `<tr><td>${fmtDate(x.date)}</td><td>${esc(x.kind)}</td><td>${esc(x.ref)}</td><td>${esc(x.note)}</td><td class="num">${x.charge ? money(x.charge) : ''}</td><td class="num">${x.credit ? money(x.credit) : ''}</td><td class="num"><b>${money(run)}</b></td></tr>`; }).join('');
@@ -1974,6 +1974,7 @@
       body: `<form id="recForm" class="grid" novalidate>${cfg.fields.map(f => fieldHTML(f, f[0] === 'line_items' ? linesText(rec.line_items) : rec[f[0]])).join('')}</form><p class="msg" id="recMsg" role="status"></p>`,
       footer: `<button class="btn" id="recSave">${id ? 'Save changes' : 'Create ' + cfg.label}</button>
         ${t === 'invoices' && id && bal && rec.status !== 'Void' ? '<button class="btn ghost" id="recPay">Record payment</button>' : ''}
+        ${t === 'invoices' && id && Number(rec.paid_amount) > 0 ? '<button class="btn ghost" id="recRefund">Refund</button>' : ''}
         ${t === 'invoices' && id && !['Void', 'Paid'].includes(rec.status) ? `<button class="btn" id="recSend">${rec.sent_at ? 'Resend invoice' : 'Send invoice'}</button>` : ''}
         ${t === 'invoices' && id ? '<button class="btn ghost" id="recPdf">PDF</button><button class="btn ghost" id="recPrint">Print</button>' : ''}
         <span class="grow"></span>${id ? '<button class="btn danger" id="recDel">Delete</button>' : ''}`
@@ -2016,6 +2017,18 @@
       catch (err) { toast(err.message, true); }
     };
     if ($('#recPay')) $('#recPay').onclick = () => recordPayment(id);
+    if ($('#recRefund')) $('#recRefund').onclick = () => openForm({
+      title: 'Record refund',
+      sub: rec.invoice_number + ' · received ' + money(rec.paid_amount),
+      defs: [{ name: 'amount', label: 'Amount refunded ($) *', type: 'number' }, { name: 'note', label: 'Why is the money being refunded? *', wide: true }],
+      submit: x => {
+        const amount = Number(String(x.amount || '').replace(/[$,\s]/g, ''));
+        if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
+        if (!String(x.note || '').trim()) throw new Error('Say why the money is being refunded.');
+        return api('/api/admin/invoices/' + id + '/refund', { method: 'POST', json: { amount, note: x.note } });
+      },
+      after: () => { toast('Refund recorded'); state.invoices = []; load(state.view); if (state.view === 'customers') loadCustomerPage(); }
+    });
     if ($('#recPrint')) $('#recPrint').onclick = () => printInvoice(rec);
     if ($('#recPdf')) $('#recPdf').onclick = () => downloadFile({ name: (rec.invoice_number || 'invoice') + '.pdf', url: `/api/admin/invoices/${id}/pdf` });
     if ($('#recSend')) $('#recSend').onclick = async () => { const to = prompt('Send the invoice (PDF attached) to:', rec.email || ''); if (!to) return; let body = { to };
