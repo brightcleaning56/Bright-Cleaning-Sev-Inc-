@@ -179,7 +179,7 @@ function startIntroSweep(db, getMailer, isOn) {
 
 function mount(app, ctx) {
   const { db, auth, getMailer, logAction } = ctx;
-  const introOn = () => { const r = db.prepare("SELECT value FROM ai_settings WHERE key='auto_intro_email'").get(); return r ? r.value === '1' : true; };
+  const introOn = () => { const r = db.prepare("SELECT value FROM ai_settings WHERE key='auto_intro_email'").get(); return r ? r.value === '1' : false; };
   if (process.env.INTRO_SWEEP_MS !== '0') startIntroSweep(db, getMailer, introOn);
   const leadOf = id => db.prepare('SELECT * FROM leads WHERE id=?').get(Number(id));
   const priorSends = email => email ? db.prepare("SELECT COUNT(*) n FROM email_log WHERE lower(to_addr)=lower(?) AND status='sent'").get(email).n : 0;
