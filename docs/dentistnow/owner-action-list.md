@@ -16,8 +16,8 @@ Last updated: 2026-11-13.
 5. ~~Create the mailbox info@dentistnow.co~~ **Done (owner-confirmed).** Not checked from here.
 6. ~~Publish the privacy notice~~ **Done (owner-confirmed)** at dentistnow.co/privacy. Not checked from here.
 7. **Send the counsel package** (zip in the last delivery) to securities counsel with the cover note. Fill in your name and contact details in the cover note first.
-8. **Give me the business mailing address** for the landing page, deck and privacy notice.
-9. **Decide whether the company will be Iowa-based.** If not, the Iowa program is not available and I'll take it out of the plan. If yes, register in Iowa and tell me.
+8. ~~Business mailing address~~ **Done (owner):** 1170 SE Olson Dr, Waukee, Iowa 50263. Now on the landing page, deck and privacy notice draft.
+9. **Decide whether the company will be Iowa-based.** The mailing address is in Iowa, which is a fact for counsel, not proof of eligibility. The Iowa program needs an Iowa-based company registered with the Iowa Secretary of State. If the company will not operate in Iowa, I will take the program out of the plan. If it will, counsel should advise on registering.
 
 ## Needed to move engineering forward
 

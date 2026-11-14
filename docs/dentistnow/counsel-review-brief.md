@@ -41,7 +41,7 @@ Status: draft for the project owner to send. Nothing in these files has been sha
 ## 3. Decisions the owner must make before the review
 
 - Confirm the entity structure (Delaware, as proposed) and whether the company will be Iowa-based.
-- Provide the business mailing address. The domain is dentistnow.co and the proposed mailbox is info@dentistnow.co (not yet created). Review the privacy notice draft.
+- Business mailing address: 1170 SE Olson Dr, Waukee, Iowa 50263. The domain is dentistnow.co and the mailbox is info@dentistnow.co. Review the privacy notice draft. The Iowa mailing address does not by itself establish Iowa eligibility; confirm where the company operates.
 - Choose the first-round instrument.
 - Choose which materials are shareable now (see the data-room index).
 

@@ -21,7 +21,7 @@ Iowa: the Iowa program requires an Iowa-based company, legally formed and regist
 
 1. **[owner]** Register a dedicated domain for the company, separate from personal accounts.
 2. **[owner]** Confirm you control dentistnow.co (registrar account, renewal and DNS access). Create the mailbox info@dentistnow.co, and an investor-relations mailbox if needed. The website and email are not set up yet.
-3. **[owner]** Choose a business mailing address. Use a virtual office or the registered agent's address rather than a home address.
+3. **[owner]** Business mailing address: 1170 SE Olson Dr, Waukee, Iowa 50263. Confirm it is an office or mailbox, not a home address.
 4. **[counsel + owner]** Publish the privacy notice (draft below) before the landing page goes live.
 5. Update `docs/dentistnow/index.html` and the deck contact slide with the real details. They are placeholders now.
 
@@ -59,7 +59,7 @@ We respect your privacy. This notice explains what we collect when you contact u
 
 **Your choices.** You can ask us to see, correct or delete the information we hold about you by contacting info@dentistnow.co.
 
-**Contact.** DentistNow, [business mailing address — to be set up], info@dentistnow.co. Website: dentistnow.co.
+**Contact.** DentistNow, 1170 SE Olson Dr, Waukee, Iowa 50263, info@dentistnow.co. Website: dentistnow.co.
 
 **Last updated:** [date — to be set by counsel].
 
