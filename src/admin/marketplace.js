@@ -138,7 +138,7 @@ function docRow(store, d) {
   const r = store.get('bidRequests', d.requestId) || {};
   return { id: d.id, name: d.name, sheet: d.sheet || null, discipline: d.discipline, packageId: d.requestId, package: r.title || null, publisher: r.buyerName || null,
     revision: d.addendum ? `Addendum ${d.addendum}` : 'Original', size: d.size || null, sha256: d.sha256 || null, uploadedAt: d.uploadedAt,
-    validation: 'PDF signature checked at upload', malwareScan: 'not scanned — no scanner configured (WS3)', storage: 'server disk (R2 not connected)',
+    validation: 'PDF signature checked at upload', malwareScan: 'not scanned — no scanner configured', storage: 'server disk (R2 not connected)',
     state: d.removed ? 'removed' : d.quarantined ? 'quarantined' : 'available', revokedCompanies: (r.revokedOrgs || []).length };
 }
 export function listDocuments(store, q) {

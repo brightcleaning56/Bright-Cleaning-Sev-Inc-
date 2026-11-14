@@ -193,7 +193,7 @@ export function overview(store) {
       card('users_active', 'Active users', users.filter(u => !u.disabled).length, 'users not disabled', { view: 'users', filter: { state: 'active' } }),
       card('users_disabled', 'Disabled users', users.filter(u => u.disabled).length, 'users disabled', { view: 'users', filter: { state: 'disabled' } }),
       card('staff', 'Platform staff', users.filter(u => platformRolesOf(u).length).length, 'users holding a platform role', { view: 'users', filter: { platform: 'staff' } }),
-      na('users_invited', 'Invited users', 'email invitations are not built yet (WS2)') ] },
+      na('users_invited', 'Invited users', 'email invitations are not built yet') ] },
     { title: 'Projects & marketplace', cards: [
       card('projects', 'Permanent projects', store.list('projects').length, 'project-core records', { view: 'projects', perm: 'admin.project.read' }),
       ...Object.entries(count(store.list('projects'), p => p.phase)).map(([ph, n]) => card('phase_' + ph, `Projects in ${ph}`, n, `projects with phase = ${ph}`, { view: 'projects', filter: { phase: ph }, perm: 'admin.project.read' })),
@@ -206,10 +206,10 @@ export function overview(store) {
       card('awards', 'Awards', store.list('contracts').length, 'signed award contracts', null) ] },
     { title: 'Subscriptions & revenue', cards: [
       ...Object.entries(plans).map(([p, n]) => card('plan_' + p, `On ${p.replace('_', ' ')}`, n, `companies whose effective plan is ${p}`, { view: 'companies', filter: { plan: p } })),
-      na('mrr', 'Monthly recurring revenue', config.stripeSecret ? 'Stripe connected but reconciliation is not built (WS5)' : 'Stripe not connected — no verified payments to report') ] },
+      na('mrr', 'Monthly recurring revenue', config.stripeSecret ? 'Stripe connected but reconciliation is not built' : 'Stripe not connected — no verified payments to report') ] },
     { title: 'Operations', cards: [
       card('ai_jobs', 'AI analyses run', store.count ? store.count('analyses') : Object.keys(store.data.analyses || {}).length, 'AI analysis records, all companies (count only — contents stay private to each company)', null),
-      na('ai_cost', 'AI cost', 'no metered cost records yet (WS7)'),
+      na('ai_cost', 'AI cost', 'no metered cost records yet'),
       card('docs', 'Plan-room files', store.list('documents', d => !d.removed).length, 'documents not removed', { view: 'documents', perm: 'admin.bid.read' }),
       card('storage', 'Plan-room storage (MB)', Math.round(store.list('documents', d => !d.removed).reduce((n, d) => n + (d.size || 0), 0) / 1048576 * 10) / 10, 'sum of stored document sizes', null),
       card('jobs_failed', 'Failed jobs (24h)', store.list('jobs', j => j.status === 'failed' && Date.now() - Date.parse(j.createdAt) < 864e5).length, 'job records with status failed in the last 24 hours', null),

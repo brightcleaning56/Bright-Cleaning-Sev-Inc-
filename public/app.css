@@ -468,3 +468,7 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 
 /* Project header on phones: image and title stack; buttons and stats take the full width. */
 @media (max-width:640px){.hdr{grid-template-columns:minmax(0,1fr)!important;grid-template-areas:"title" "img" "stats" "btn"!important}.hdr>.thumb{max-width:120px}}
+
+/* Checkbox with its label on one line (used in forms such as the package insurance minimum). */
+.vf-check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink)}
+.vf-check input{width:auto;margin:0}

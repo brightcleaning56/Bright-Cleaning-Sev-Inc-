@@ -12,7 +12,7 @@ const fail = (code, error) => ({ ok: false, code, error });
 const needReason = r => String(r || '').trim().length >= 5;
 const qv = (q, k) => typeof q.get === 'function' ? q.get(k) : (Object.prototype.hasOwnProperty.call(q, k) ? q[k] : null);
 const by = f => (a, b) => (f(a) < f(b) ? -1 : f(a) > f(b) ? 1 : 0), byDesc = f => (a, b) => -by(f)(a, b);
-const STRIPE = () => config.stripeSecret ? 'configured — reconciliation not built (WS5)' : 'not connected';
+const STRIPE = () => config.stripeSecret ? 'configured — reconciliation not built' : 'not connected';
 
 // ---------- subscriptions ----------
 function subRow(store, o) {
@@ -93,7 +93,7 @@ export function aiUsage(store, q) {
       confirmed: a.filter(x => x.status === 'verified').length, unconfirmed: a.filter(x => x.status !== 'verified').length, allowance: aiAllowanceFor(o), override: o.aiLimitOverride ?? null, planAllowance: entitlementsFor(o).ok ? (entitlementsFor(o).aiPerDay ?? 0) : 0 };
   }).filter(r => qv(q, 'active') !== 'true' || r.thisMonth > 0);
   const res = paginate(rows, q, { month: byDesc(r => r.thisMonth), company: by(r => r.company.toLowerCase()) }, 'month');
-  return res.ok ? { ...res, provider: config.anthropicKey ? 'configured' : 'not connected', cost: { value: null, unavailable: 'no metered cost records yet (WS7)' }, accuracy: { value: null, unavailable: 'accuracy run on ≥100 real sheets is BLOCKED on the owner (AI key + labeled sheets)' } } : res;
+  return res.ok ? { ...res, provider: config.anthropicKey ? 'configured' : 'not connected', cost: { value: null, unavailable: 'no metered cost records yet' }, accuracy: { value: null, unavailable: 'accuracy run on ≥100 real sheets is BLOCKED on the owner (AI key + labeled sheets)' } } : res;
 }
 /** Lower (or pause, 0) a company's daily AI allowance below its plan; null removes the override. */
 export function setAiLimit(store, ctx, orgId, { limit, reason }) {
