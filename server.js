@@ -1,5 +1,7 @@
 
 require('dotenv').config();
+// Every outside call (AI, Twilio, Postmark, Backblaze, Microsoft) gets a timeout, so a stalled service cannot hang a request or a sweep forever.
+if(!global.__outboundTimeout){const f0=global.fetch;global.fetch=(u,o={})=>f0(u,o.signal?o:{...o,signal:AbortSignal.timeout(Number(process.env.OUTBOUND_TIMEOUT_MS)||30000)});global.__outboundTimeout=true}
 const express=require('express'),path=require('path'),fs=require('fs'),crypto=require('crypto');
 const helmet=require('helmet'),rateLimit=require('express-rate-limit'),multer=require('multer'),bcrypt=require('bcryptjs'),jwt=require('jsonwebtoken'),Database=require('better-sqlite3');
 const app=express();const estimating=require('./estimating');const {isEmail}=require('./ops');let ops=null;const APP_VERSION='5.0.0';const PORT=process.env.PORT||3000;const ROOT=__dirname;const uploadDir=process.env.UPLOAD_DIR||path.join(ROOT,'uploads');const dataDir=process.env.DATA_DIR||path.join(ROOT,'data');fs.mkdirSync(uploadDir,{recursive:true});fs.mkdirSync(dataDir,{recursive:true});

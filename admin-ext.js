@@ -60,7 +60,8 @@ module.exports = function mountAdminExt(app, ctx) {
     const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(id(req));
     if (!e) return res.status(404).json({ error: 'Not found' });
     if (['Approved'].includes(e.status)) return res.status(409).json({ error: 'This proposal was approved by the customer. Duplicate it to make changes.' });
-    if (['Sent', 'Viewed', 'Declined'].includes(e.status)) {
+    const FROZEN = ['Sent', 'Viewed', 'Declined', 'Expired', 'Withdrawn', 'Superseded'];
+    if (FROZEN.includes(e.status)) {
       const locked = ['proposal_total', 'scope', 'terms', 'tax_pct', 'area_sqft', 'production_rate', 'labor_hours', 'labor_rate', 'use_line_items', 'customer_name', 'email', 'company', 'site_address', 'project_name', 'windows_interior_panes', 'windows_interior_rate', 'windows_exterior_panes', 'windows_exterior_rate', 'windows_cost'];
       const norm = v => v === true ? '1' : v === false ? '0' : (v === null || v === undefined) ? '' : String(v).trim();
       const same = (a, z) => (a !== '' && z !== '' && isFinite(Number(a)) && isFinite(Number(z))) ? Number(a) === Number(z) : norm(a) === norm(z);
@@ -72,6 +73,8 @@ module.exports = function mountAdminExt(app, ctx) {
     const scopeErr = require('./scopes').resolveLines(db, b);
     if (scopeErr) return res.status(400).json({ error: scopeErr });
     const m = estimateMath(b);
+    // A proposal the client has seen keeps its price. Any field left out of the request is priced as zero, which would change the total; refuse that.
+    if (FROZEN.includes(e.status) && Math.abs(Number(m.proposal_total) - Number(e.proposal_total || 0)) > 0.005) return res.status(409).json({ error: 'This proposal was already sent, and its price would change. Duplicate the proposal to revise the price.' });
     const f = { ...estimateFields(b), labor_hours: m.labor_hours, labor_cost: m.labor_cost, total_cost: m.total_cost, proposal_total: m.proposal_total, updated_at: new Date().toISOString(), id: e.id };
     db.prepare(`UPDATE estimates SET lead_id=@lead_id,customer_name=@customer_name,company=@company,email=@email,project_name=@project_name,site_address=@site_address,scope=@scope,area_sqft=@area_sqft,production_rate=@production_rate,labor_hours=@labor_hours,labor_rate=@labor_rate,labor_cost=@labor_cost,supplies_cost=@supplies_cost,equipment_cost=@equipment_cost,other_cost=@other_cost,overhead_pct=@overhead_pct,margin_pct=@margin_pct,tax_pct=@tax_pct,total_cost=@total_cost,proposal_total=@proposal_total,line_items=@line_items,terms=@terms,expires_on=@expires_on,updated_at=@updated_at WHERE id=@id`).run(f);
     require('./estimating').saveExtras(db, e.id, b, m);

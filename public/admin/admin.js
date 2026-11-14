@@ -65,6 +65,7 @@
   async function initPhone() {
     try { phoneCfg = await api('/api/admin/phone/settings'); } catch { return; }
     if (!phoneCfg.softphone) return;
+    if (device) return; // already registered in this page: do not create a second device
     try {
       await loadSdk();
       const t = await api('/api/admin/voice/token');
@@ -231,6 +232,8 @@
 
   // ---------- Auth ----------
   function signOut(message) { try { if (es) { es.close(); es = null; } } catch { /* */ }
+    // A signed-out browser must stop receiving calls: release the phone device.
+    try { if (device) { device.destroy(); device = null; } } catch { /* */ }
     token = null;
     localStorage.removeItem(TOKEN_KEY);
     try { $('#tbName').textContent = '—'; $('#tbRole').textContent = ''; } catch { /* */ }
@@ -907,7 +910,11 @@
   function openCustomerPage(id) { cp.id = id; cp.tab = 'overview'; sessionStorage.setItem('bc_cust', id); if (state.view !== 'customers') go('customers'); else { renderCustomers(); loadCustomerPage(); } }
   async function loadCustomerPage() {
     if (!cp.id) return;
-    try { cp.d = await api(`/api/admin/customers/${cp.id}/profile`); } catch (e) { $('#custPage').innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+    const seq = loadCustomerPage.seq = (loadCustomerPage.seq || 0) + 1, id = cp.id;
+    let d; try { d = await api(`/api/admin/customers/${id}/profile`); } catch (e) { if (seq === loadCustomerPage.seq && id === cp.id) $('#custPage').innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+    // Ignore a slow reply for a customer the user has already left.
+    if (seq !== loadCustomerPage.seq || id !== cp.id) return;
+    cp.d = d;
     renderCustomerPage();
   }
   const TABS = [['overview', 'Overview'], ['contacts', 'Contacts'], ['properties', 'Properties'], ['notes', 'Notes'], ['calls', 'Calls'], ['emails', 'Emails'], ['issues', 'Issues'], ['estimates', 'Estimates'], ['proposals', 'Proposals'], ['contracts', 'Contracts'], ['projects', 'Projects'], ['invoices', 'Invoices'], ['documents', 'Documents'], ['activity', 'Activity']];
@@ -1766,7 +1773,9 @@
     if (cwData && cwData.contract.id !== id && !leaveContract()) return;
     if (contractRouteId() !== id) history.pushState(null, '', '#contracts/' + id);
     setContractLayout(true);
-    let d; try { d = await api('/api/admin/contracts2/' + id); } catch (e) { toast(e.message, true); return backToContracts(); }
+    const seq = openContract.seq = (openContract.seq || 0) + 1;
+    let d; try { d = await api('/api/admin/contracts2/' + id); } catch (e) { if (seq === openContract.seq) { toast(e.message, true); return backToContracts(); } return; }
+    if (seq !== openContract.seq) return; // a newer contract was opened while this one loaded
     cwData = d; cwDirty = false;
     renderContract();
   }
