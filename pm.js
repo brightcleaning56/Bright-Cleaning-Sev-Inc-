@@ -95,12 +95,12 @@ module.exports = function mountPM(app, ctx) {
       const cu = !p.customer_id && db.prepare('SELECT id FROM customers WHERE (company<>\'\' AND lower(company)=lower(?)) OR (email<>\'\' AND lower(email)=lower(?))').get(p.company || (e && e.company) || '', (e && e.email) || '');
       db.prepare('UPDATE projects SET estimate_id=COALESCE(estimate_id,?), service=COALESCE(service,?), customer_id=COALESCE(customer_id,?) WHERE id=?').run(eid || null, (e && SVC[e.scope_category]) || null, (cu && cu.id) || null, p.id);
     }
-    const list = db.prepare('SELECT * FROM projects ORDER BY id DESC').all().map(summary);
+    const list = db.prepare('SELECT * FROM projects ORDER BY id DESC').all().map(summary).map(p => ({ ...p, needs_start_date: !p.start_date && !['Archived', 'Completed'].includes(p.status) }));
     const month = today().slice(0, 7);
     const sum = (a, f) => Math.round(a.reduce((t, x) => t + (Number(f(x)) || 0), 0) * 100) / 100;
     const live = list.filter(p => p.status !== 'Archived');
     res.json({ projects: list, services: Object.fromEntries(Object.entries(SERVICES).map(([k, v]) => [k, v.label])), cost_categories: COST_CATS,
-      kpis: { active: live.filter(p => ['In Progress', 'Mobilization', 'Ready to mobilize', 'Quality Review'].includes(p.status)).length, kickoff: live.filter(p => p.status === 'Planning').length,
+      kpis: { awaiting_start: live.filter(p => p.needs_start_date).length, active: live.filter(p => ['In Progress', 'Mobilization', 'Ready to mobilize', 'Quality Review'].includes(p.status)).length, kickoff: live.filter(p => p.status === 'Planning').length,
         awaiting_approval: live.filter(p => p.awaiting_approval).length, behind: live.filter(p => p.behind).length, on_hold: live.filter(p => p.status === 'On Hold').length,
         completed_month: live.filter(p => p.status === 'Completed' && String(p.actual_end || p.updated_at || '').slice(0, 7) === month).length,
         contracted: sum(live.filter(p => p.contract_signed), p => p.contract_value), budget: sum(live, p => p.budget), actual_cost: sum(live, p => p.actual_cost),
@@ -153,6 +153,7 @@ module.exports = function mountPM(app, ctx) {
     const k = contractOf(p), r = readinessOf(p), why = [];
     if (!executed(k) && !p.contract_waiver) why.push('the contract is not executed');
     if (!r.complete) why.push('readiness is incomplete: ' + r.missing.join(', '));
+    if (!p.start_date) why.push('the planned start date is not set (enter it on the project first)');
     if (why.length) return res.status(409).json({ error: 'Cannot approve dispatch yet: ' + why.join('; ') + '.' });
     db.prepare("UPDATE projects SET dispatch_approved_by=?, dispatch_approved_at=?, status=CASE WHEN status='Planning' THEN 'Ready to mobilize' ELSE status END, updated_at=? WHERE id=?").run(who(req), now(), now(), p.id);
     db.prepare("UPDATE visits SET status='Scheduled' WHERE project_id=? AND status='Tentative'").run(p.id);
@@ -175,10 +176,11 @@ module.exports = function mountPM(app, ctx) {
   // Work orders: tentative visits from the frequency; they become Scheduled only after dispatch approval.
   app.post('/api/admin/pm/projects/:id/work-orders', auth, (req, res) => {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
-    const b = req.body || {}, freq = b.frequency || p.frequency, start = clean(b.start || p.start_date || today(), 10), count = Math.min(60, Math.max(1, Number(b.count) || 4));
+    const b = req.body || {}, freq = b.frequency || p.frequency, start = clean(b.start || p.start_date || '', 10), count = Math.min(60, Math.max(1, Number(b.count) || 4));
     const step = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, once: 0 }[freq];
     if (step == null) return res.status(400).json({ error: 'Choose a frequency: once, daily, weekly, biweekly or monthly.' });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return res.status(400).json({ error: 'Start date must be a date.' });
+    if (!start) return res.status(400).json({ error: 'Set the planned start date on the project first, so the visits land on the right day.' });
     // Once the job is contracted (office sign-off) the visits are scheduled: staff see them and the customer sees them in the portal.
     const contracted = ['Contracted', 'Ready to mobilize', 'Mobilization', 'In Progress', 'Quality Review', 'Completed'].includes(p.status);
     const n = step ? count : 1, ids = [], status = (p.dispatch_approved_by || contracted) ? 'Scheduled' : 'Tentative', title = `${(SERVICES[p.service] || {}).label || 'Service'} – ${p.name || number(p)}`;

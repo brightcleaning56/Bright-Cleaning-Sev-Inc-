@@ -516,7 +516,10 @@ async function startServer(env, dataDir) {
     const a = await req('PATCH', '/api/admin/contracts/' + contractId, { token: T, json: { status: 'Active', signature_status: 'Signed', signer_name: 'Dana Builder', signed_on: '2026-11-02', start_date: '2026-11-10', end_date: '2027-11-10' } });
     const early = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'In Progress' } });
     for (const key of ['staffing', 'dates', 'access', 'equipment', 'supplies', 'safety']) await req('POST', `/api/admin/pm/projects/${projectId}/readiness`, { token: T, json: { key } });
+    const noStart = await req('POST', `/api/admin/pm/projects/${projectId}/approve-dispatch`, { token: T });
+    const setStart = await req('PATCH', `/api/admin/pm/projects/${projectId}`, { token: T, json: { start_date: '2026-11-10' } });
     const ap = await req('POST', `/api/admin/pm/projects/${projectId}/approve-dispatch`, { token: T });
+    if (!(noStart.status === 409 && /planned start date/.test(noStart.data.error) && setStart.status === 200)) throw new Error('start date gate: ' + JSON.stringify({ noStart: noStart.data, setStart: setStart.data }));
     const b = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'In Progress', progress: 50, manager: 'Eric', due_date: '2026-11-15' } });
     const noSign = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'Completed', progress: 100 } });
     await req('POST', `/api/admin/pm/projects/${projectId}/signoff`, { token: T, json: { name: 'Dana Builder', title: 'Owner rep' } });
@@ -1499,6 +1502,7 @@ async function startServer(env, dataDir) {
     const st = (await req('POST', '/api/admin/login', { json: { email: 'crew1@brightclean.test', password: 'a-long-password-123' } })).data.token;
     globalThis.__st = st;
     const staff = await req('POST', `/api/admin/pm/projects/${p.id}/approve-dispatch`, { token: st });
+    await req('PATCH', `/api/admin/pm/projects/${p.id}`, { token: T, json: { start_date: '2026-11-10' } });
     const ok = await req('POST', `/api/admin/pm/projects/${p.id}/approve-dispatch`, { token: T });
     const go = await req('POST', `/api/admin/pm/projects/${p.id}/status`, { token: T, json: { status: 'In Progress' } });
     const det = (await req('GET', '/api/admin/pm/projects/' + p.id, { token: T })).data;
@@ -2017,6 +2021,7 @@ async function startServer(env, dataDir) {
     // 10 project readiness + dispatch authorization
     await req('POST', `/api/admin/pm/projects/${p0.id}/plan`, { token: T, json: { service: 'construction' } });
     for (const key of ['staffing', 'dates', 'access', 'equipment', 'supplies', 'safety']) await req('POST', `/api/admin/pm/projects/${p0.id}/readiness`, { token: T, json: { key } });
+    await req('PATCH', `/api/admin/pm/projects/${p0.id}`, { token: T, json: { start_date: '2026-11-10' } });
     const ad = await req('POST', `/api/admin/pm/projects/${p0.id}/approve-dispatch`, { token: T });
     const go = await req('POST', `/api/admin/pm/projects/${p0.id}/status`, { token: T, json: { status: 'In Progress' } });
     ok('10 Readiness confirmed, owner authorizes dispatch, project In Progress', ad.status === 200 && go.status === 200, JSON.stringify({ ad: [ad.status, ad.data.error], go: [go.status, go.data.error] }));
