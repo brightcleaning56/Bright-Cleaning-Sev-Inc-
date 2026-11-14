@@ -35,6 +35,8 @@ module.exports = function mountPayments(app, ctx) {
     if (['Draft', 'Void', 'Paid'].includes(inv.status)) return res.status(409).json({ error: 'This invoice cannot be paid online right now. Call (515) 303-3024 for help.' });
     const balance = money2(Number(inv.amount || 0) - Number(inv.paid_amount || 0));
     if (!(balance > 0)) return res.status(409).json({ error: 'This invoice is already paid in full.' });
+    const openPage = db.prepare("SELECT id FROM online_payments WHERE invoice_id=? AND status='Pending' AND created_at>=?").get(inv.id, new Date(Date.now() - 30 * 60000).toISOString());
+    if (openPage) return res.status(409).json({ error: 'A payment page for this invoice is already open. Finish that payment, or wait 30 minutes and try again.' });
     const key = process.env.STRIPE_SECRET_KEY;
     if (!key) return res.status(503).json({ error: 'Online payment is not set up yet. Call (515) 303-3024 to pay by phone.' });
     const body = new URLSearchParams({
@@ -79,6 +81,14 @@ module.exports = function mountPayments(app, ctx) {
       if (prev && prev.status === 'Paid') return 'duplicate';
       const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(invId);
       if (!inv) return 'no-invoice';
+      const balanceNow = money2(Number(inv.amount || 0) - Number(inv.paid_amount || 0));
+      if (amount > balanceNow + 0.005) {
+        // Two payment pages were paid, or the invoice was paid another way first. Do not apply it; the owner refunds the extra.
+        if (prev) db.prepare("UPDATE online_payments SET status='Needs refund', paid_at=? WHERE stripe_session_id=?").run(now(), s.id);
+        else db.prepare("INSERT INTO online_payments(invoice_id,stripe_session_id,amount,email,status,created_at,paid_at) VALUES(?,?,?,?,?,?,?)").run(inv.id, s.id, amount, s.customer_email || inv.email || '', 'Needs refund', now(), now());
+        try { logAction({ user: { email: 'stripe' } }, 'online payment needs refund', 'invoice', inv.id, `${inv.invoice_number}: ${amount.toFixed(2)} received but the balance was ${balanceNow.toFixed(2)}`); } catch { /* */ }
+        return 'needs-refund';
+      }
       const paid = money2(Number(inv.paid_amount || 0) + amount);
       const status = paid >= Number(inv.amount || 0) ? 'Paid' : 'Partially Paid';
       db.prepare('UPDATE invoices SET paid_amount=?, status=? WHERE id=?').run(paid, status, inv.id);
