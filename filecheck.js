@@ -18,6 +18,7 @@ function check(filePath, originalName) {
   if (EXE.some(s => starts(head, s))) return `${name} is a program, not a document. It was not accepted.`;
   if (ext === 'heic' || ext === 'heif') return head.slice(4, 8).toString('latin1') === 'ftyp' ? null : `${name} is not a real ${ext.toUpperCase()} image.`;
   if (['mp4', 'm4v', 'mov'].includes(ext)) return head.slice(4, 8).toString('latin1') === 'ftyp' ? null : `${name} is not a real ${ext.toUpperCase()} video (its contents do not match its name). It was not accepted.`;
+  if (ext === 'webp') return starts(head, [0x52, 0x49, 0x46, 0x46]) && head.slice(8, 12).toString('latin1') === 'WEBP' ? null : `${name} is not a real WEBP image (its contents do not match its name). It was not accepted.`;
   if (ext === 'webm') return starts(head, [0x1a, 0x45, 0xdf, 0xa3]) ? null : `${name} is not a real WEBM video (its contents do not match its name). It was not accepted.`;
   const sigs = SIG[ext]; if (!sigs) return `${name}: this file type is not accepted.`;
   if (!sigs.some(s => starts(head, s))) return `${name} is not a real ${ext.toUpperCase()} file (its contents do not match its name). It was not accepted.`;

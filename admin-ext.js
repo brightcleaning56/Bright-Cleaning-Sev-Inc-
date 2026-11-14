@@ -143,12 +143,15 @@ module.exports = function mountAdminExt(app, ctx) {
     if (amt > balance + 0.005) return res.status(400).json({ error: `That is more than the balance due ($${balance.toFixed(2)}). Record the exact amount, or record the extra as a separate credit.` });
     const paid = Math.round((Number(inv.paid_amount || 0) + amt) * 100) / 100;
     const status = paid >= Number(inv.amount || 0) ? 'Paid' : 'Partially Paid';
-    db.prepare('UPDATE invoices SET paid_amount=?,status=? WHERE id=?').run(paid, status, inv.id);
     // Dated payment record (feeds "collected this month" on the Command Center).
     const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.received_on || '')) && req.body.received_on <= require('./bizdate').today() ? req.body.received_on : null;
     const nowIso = new Date().toISOString();
-    db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)')
-      .run(inv.id, amt, clean(req.body.note || '', 300), day ? day + 'T12:00:00.000Z' : nowIso, (req.user && req.user.email) || null, nowIso);
+    // The balance update and the payment record are written together, so a crash cannot leave one without the other.
+    db.transaction(() => {
+      db.prepare('UPDATE invoices SET paid_amount=?,status=? WHERE id=?').run(paid, status, inv.id);
+      db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)')
+        .run(inv.id, amt, clean(req.body.note || '', 300), day ? day + 'T12:00:00.000Z' : nowIso, (req.user && req.user.email) || null, nowIso);
+    })();
     logAction(req, 'recorded payment', 'invoice', inv.id, `$${amt.toFixed(2)}${req.body.note ? ' — ' + clean(req.body.note, 300) : ''}`);
     res.json({ ok: true, paid_amount: paid, status });
   });
