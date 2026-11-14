@@ -155,6 +155,9 @@ async function waitHealthy() {
       const r = await req('POST', `/api/admin/pm/projects/${prj.id}/readiness`, owner, { key, note: 'test' });
       assert(r.status === 200, key + ' ' + r.status + ' ' + JSON.stringify(r.body).slice(0, 120));
     }
+    // Dispatch needs a planned start date (the start-date rule).
+    const sdt = await req('PATCH', `/api/admin/pm/projects/${prj.id}`, owner, { start_date: '2026-11-10' });
+    assert(sdt.status === 200, 'start date ' + sdt.status);
     const d = await req('POST', `/api/admin/pm/projects/${prj.id}/approve-dispatch`, owner, {});
     assert(d.status === 200, 'dispatch ' + d.status + ' ' + JSON.stringify(d.body).slice(0, 200));
     return '6 of 6 confirmed; dispatch approved';

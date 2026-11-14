@@ -126,6 +126,7 @@ async function check(area, name, fn) {
     $('#r_email').value = 'ap@prairie.test'; $('#r_amount').value = '800'; $('#r_company').value = 'Prairie'; $('#r_status').value = 'Sent';
     $('#recSave').click(); await sleep(900);
     d.querySelector('#rows-invoices [data-pay]').click(); await sleep(900);
+    $('#genForm [name=amount]').value = '800'; $('#genSave').click(); await sleep(900);
     const inv = (await api('GET', '/api/admin/invoices', null, T)).invoices[0];
     assert(inv.email === 'ap@prairie.test' && inv.status === 'Paid', JSON.stringify(inv)); return `${inv.invoice_number} saved with email; payment -> Paid`;
   });
