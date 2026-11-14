@@ -14,8 +14,8 @@ A **controlled pilot** with two or three general contractors and their subcontra
 
 | Check | Result | Where |
 |---|---|---|
-| Unit and integration tests | 285 of 285 pass | `npm run test:ci` |
-| Browser checks across every screen | 21 of 21 pass, with core reads off and on | `qa/run.sh`, `docs/RELEASE-VERIFICATION.md` |
+| Unit and integration tests | 278 pass, 0 fail, 11 skipped (the PostgreSQL tests need `TEST_DATABASE_URL`) | `node --test test/*.test.js` |
+| Browser checks across every screen | 23 of 23 pass on the latest commit | `qa/run.sh`, `docs/RELEASE-VERIFICATION.md` |
 | End-to-end journey: Super Admin → owner → subcontractor → award → countersign → audit log | Passes every step | `qa/full_system_flow.py` |
 | Golden path through the HTTP routes (sign-up to countersigned contract) | Passes | `test/golden-path.test.js` |
 | Phone width: every main screen fits 390px | Passes | `qa/mobile_sweep.py` |
@@ -39,7 +39,7 @@ These are real gaps in the evidence, not in the code. Do not claim them as done.
 - **Real payments.** No charge has been taken or refunded in any test.
 - **Load and scale.** Measured on the local demo (in-memory store, small data): 30,000 mixed requests at 50 concurrent, p50 3 ms, p95 9 ms, p99 19 ms, zero errors (`scripts/load-test.mjs`). **Not measured:** PostgreSQL-backed storage at production data size, which is what Render runs. The store is in memory with snapshots to PostgreSQL, so memory grows with the data. Expect to need the database-backed reads (in the readiness plan) before more than a few hundred active companies.
 - **Backup restore.** A restore drill now exists (`scripts/restore-drill.mjs`): it decrypts a backup with the current key into an empty store and checks the checksum. It is tested: right key restores, wrong key is refused, a damaged checksum is caught. **Still to do:** run it on a real production backup copy, and keep a second copy of `BACKUP_KEY` outside Render, because a backup cannot be read without it.
-- **Accessibility.** An automated axe-core scan (`qa/a11y_scan.py`) of the website, sign-in, publisher, subscriber and Super Admin screens now finds no critical or serious issues after the fixes made in this pass (unlabelled controls, tab roles on navigation, text contrast, the footer brand). Automated scans miss things: keyboard-only use and a screen reader pass are still needed.
+- **Accessibility.** An automated axe-core scan (`qa/a11y_scan.py`) of the website, sign-in, publisher, subscriber and Super Admin screens finds no critical or serious issues. The last scan also fixed a serious map-attribution link, and the app root is now a `main` landmark. Remaining findings are moderate or minor (heading order on one website page, empty table headers in publisher tables, region labels on some screens). Automated scans miss things: keyboard-only use and a screen reader pass are still needed.
 - **Real devices.** Phone widths were checked in the browser at 390px, not on real phones.
 - **Sign-in security.** Two-step sign-in exists for staff; the penetration test has not been run.
 - **Public data sources.** Coverage is per city and per source. Each source's terms have not been reviewed for commercial use (owner action).

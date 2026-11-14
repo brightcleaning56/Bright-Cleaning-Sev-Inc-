@@ -480,3 +480,4 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 /* Keyboard focus is always visible (some controls reset their outline). */
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent,#1f5fd1)!important;outline-offset:2px}
 .insfit{margin:8px 0}.insfit-form{display:grid;gap:6px;margin-top:6px}.insfit-form input{padding:6px 8px}
+.leaflet-container .leaflet-control-attribution a{text-decoration:underline}
