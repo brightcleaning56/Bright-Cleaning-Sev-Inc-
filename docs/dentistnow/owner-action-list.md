@@ -18,7 +18,7 @@ Last updated: 2026-11-13.
 7. **Send the counsel package** (zip in the last delivery) to securities counsel with the cover note. Fill in your name and contact details in the cover note first.
 8. ~~Business mailing address~~ **Done (owner):** 1170 SE Olson Dr, Waukee, Iowa 50263. Now on the landing page, deck and privacy notice draft.
 9. ~~Decide Iowa operations~~ **Done (owner):** the company will be in Iowa.
-9a. **Register the company in Iowa** with the Iowa Secretary of State. Counsel advises whether a domestic Iowa entity or a foreign qualification of the Delaware company is needed.
+9a. ~~Register the company in Iowa~~ **Done (owner).** Counsel advised on the form of registration.
 9b. **Confirm eligibility with IEDA** and the current application. The program page gives an intake email; confirm it is current before you write.
 
 ## Needed to move engineering forward
