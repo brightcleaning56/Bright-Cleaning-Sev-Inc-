@@ -4,6 +4,10 @@
 const crypto = require('crypto');
 module.exports = function mountPayments(app, ctx) {
   const { db, logAction } = ctx;
+  // Same definition as command.js, so this module also works on its own (the card-payment ledger rows go here).
+  db.exec(`CREATE TABLE IF NOT EXISTS payments(
+    id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, amount REAL NOT NULL, note TEXT,
+    received_at TEXT NOT NULL, recorded_by TEXT, created_at TEXT NOT NULL);`);
   db.exec(`CREATE TABLE IF NOT EXISTS online_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, stripe_session_id TEXT UNIQUE NOT NULL, amount REAL NOT NULL, email TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, paid_at TEXT)`);
   db.exec(`CREATE TABLE IF NOT EXISTS portal_profiles(email TEXT PRIMARY KEY, name TEXT, company TEXT, phone TEXT, notify TEXT, valid_after TEXT, updated_at TEXT)`);
   const now = () => new Date().toISOString();
@@ -78,6 +82,8 @@ module.exports = function mountPayments(app, ctx) {
       const paid = money2(Number(inv.paid_amount || 0) + amount);
       const status = paid >= Number(inv.amount || 0) ? 'Paid' : 'Partially Paid';
       db.prepare('UPDATE invoices SET paid_amount=?, status=? WHERE id=?').run(paid, status, inv.id);
+      // Every received payment also goes on the payments ledger, so reports and the customer ledger include card payments.
+      db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)').run(inv.id, amount, 'Online card payment (Stripe ' + s.id + ')', now(), 'stripe', now());
       if (prev) db.prepare("UPDATE online_payments SET status='Paid', paid_at=? WHERE stripe_session_id=?").run(now(), s.id);
       else db.prepare("INSERT INTO online_payments(invoice_id,stripe_session_id,amount,email,status,created_at,paid_at) VALUES(?,?,?,?,?,?,?)").run(inv.id, s.id, amount, s.customer_email || inv.email || '', 'Paid', now(), now());
       try { logAction({ user: { email: 'stripe' } }, 'online payment received', 'invoice', inv.id, `${inv.invoice_number}: $${amount.toFixed(2)} (${status})`); } catch { /* */ }
