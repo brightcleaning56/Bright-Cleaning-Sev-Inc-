@@ -19,7 +19,7 @@ module.exports = function mountAI(app, ctx) {
     try { db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run(kind, ref, 'ai', null, status, String(detail || '').slice(0, 500), now()); } catch { /* table shape differs: ignore */ }
   };
 
-  const COMPANY = `You work for Bright Cleaning Sev Inc. (Bright Clean), a commercial cleaning company: construction final cleaning (rough, final, touch-up/punch, FF&E turnover), interior and exterior window cleaning, commercial janitorial, multifamily common areas, unit turnovers, power washing, parking lot upkeep and valet trash. Phone +1 (515) 303-3024, info@brightclean.net, brightclean.net.
+  const COMPANY = `You work for Bright Cleaning Sev Inc. (Bright Clean), a cleaning company serving single-family homes, multifamily properties and commercial buildings. Services include construction final cleaning (rough, final, touch-up/punch, FF&E turnover), interior and exterior window cleaning, commercial janitorial, multifamily common areas, unit turnovers, power washing, parking lot upkeep and valet trash. Phone +1 (515) 303-3024, info@brightclean.net, brightclean.net.
 Never invent prices, rates, availability, insurance, licenses, certifications or contract promises. Never state a price. If something is unknown, say it will be confirmed.`;
 
   async function call(messages, system, maxTokens = 1500) {

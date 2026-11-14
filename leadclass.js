@@ -67,38 +67,54 @@ function permittedAction(l, seg, intent, recipient) {
 
 function firstName(l) { return String(l.contact_name || '').trim().split(/\s+/)[0] || ''; }
 
+// Outreach runs in two stages, and this only drafts the note. Nothing here sends email.
+//  - First note ("intro"): who we are, what we clean, how we work, how we can help with their project, and what we need to know.
+//  - Follow-up ("follow_up"): sent after a first note went out to this address. Asks to be added to their bidder list for future
+//    projects and construction cleaning on single-family homes, commercial buildings and multifamily properties.
+const CO_PROFILE = 'We are a cleaning company in Des Moines, Iowa. We clean single-family homes, apartment and multifamily properties, and commercial buildings, and we handle construction cleanup: rough, final and touch-up cleaning after a build or renovation.';
+const HOW_WE_WORK = 'We start with a walkthrough, then send one written proposal with one price, so there are no surprises. Once you approve, we schedule the work, and our crew checks it against a written checklist before we call it done.';
+
 // The reply draft. No prices. Only asks for what is missing.
-function draftFor(l, seg, intent) {
+function draftFor(l, seg, intent, stage = 'intro') {
   const co = l.company || 'your company';
   const hi = firstName(l) ? `Hello ${firstName(l)},` : 'Hello,';
-  const intro = `This is ${COMPANY.name}, a commercial cleaning company in ${COMPANY.city}.`;
+  const intro = `This is ${COMPANY.name}. ${CO_PROFILE}`;
   const sign = `\n\nBright Clean Team\n${COMPANY.name} Sev Inc.\n${COMPANY.phone}\n${COMPANY.email}`;
   if (seg === 'post_construction' && intent === 'bidder_list') {
     return {
       subject: `Bright Clean: bidder list and current projects for ${co}`,
-      body: `${hi}\n\n${intro} We do post-construction cleaning for general contractors: rough-in, final clean, touch-up and punch list, and make-ready for multifamily and senior living.\n\nWe would like to be added to ${co}'s bidder list for post-construction cleaning. Could you tell us:\n1. How do you add a cleaning subcontractor to your bid list, and is there a registration form or prequalification packet?\n2. Do you have projects in construction or starting soon that need cleaning phases? If so, please send the project name, city, cleaning phases (rough, final, punch) and the bid due date, and we will bid on them.\n3. Who should we send bids to?\n\nWe can send our insurance certificate, licenses, safety program and references on request.${sign}`
+      body: `${hi}\n\n${intro} We do post-construction cleaning for general contractors: rough-in, final clean, touch-up and punch list, and make-ready for multifamily and senior living.\n\nWe would like to be added to ${co}'s bidder list for post-construction cleaning. Could you tell us:\n1. How do you add a cleaning subcontractor to your bid list, and is there a registration form or prequalification packet?\n2. Do you have current or upcoming projects that need cleaning, and when are they due?\n3. Who should we contact for bid invitations?\n\nThank you for your time.${sign}`
+    };
+  }
+  if (stage === 'follow_up' || intent === 'bidder_list') {
+    return {
+      subject: `Bright Clean: bidder list for ${co}`,
+      body: `${hi}\n\nWe reached out recently about cleaning services. ${CO_PROFILE}\n\nWe would like to be added to your bidder list for upcoming projects, and for any construction cleaning you need on single-family homes, commercial buildings or multifamily properties.\n\nCould you tell us:\n1. How do you add a cleaning vendor to your list, and is there a registration form or prequalification packet?\n2. Which upcoming projects will need cleaning, and when are they due?\n3. Who should we contact about bid invitations?\n\nThank you for your time.${sign}`
     };
   }
   if (seg === 'post_construction') {
     return {
       subject: `Bright Clean: post-construction cleaning for ${co}`,
-      body: `${hi}\n\n${intro} We do post-construction cleaning for general contractors and developers.\n\nDo you have projects that need rough, final, touch-up or make-ready cleaning? Please send the project name, address, phases needed and the target dates, and we will schedule a walkthrough and send a proposal. We can also send our insurance and licensing on request.${sign}`
+      body: `${hi}\n\n${intro} We do post-construction cleaning for general contractors and developers. ${HOW_WE_WORK}\n\nDo you have projects that need rough, final, touch-up or make-ready cleaning? Please send the project name, address, phases needed and the target dates, and we will schedule a walkthrough and send a proposal. We can also send our insurance and licensing on request.${sign}`
     };
   }
-  const area = { multifamily: 'multifamily common areas and unit turnovers', single_family: 'single-family homes', residential: 'residential cleaning', construction: 'construction cleaning', commercial: 'commercial cleaning' }[seg] || 'commercial and residential cleaning';
+  const area = { multifamily: 'apartment and multifamily properties, including common areas and unit turnovers', single_family: 'single-family homes, including move-in, move-out and recurring cleaning', residential: 'residential cleaning', construction: 'construction cleanup', commercial: 'commercial cleaning' }[seg] || 'single-family homes, multifamily properties and commercial buildings';
+  const ask = intent === 'bid_request'
+    ? 'Thanks for the request. To put together a price we need: the project name and address, the scope (for example the number of units or square footage), the cleaning frequency or phases, and the bid due date. We can also set up a walkthrough.'
+    : 'We would like to learn about your project and what you need cleaned. Would a short call or a walkthrough work for you?';
   return {
     subject: `Bright Clean: cleaning services for ${co}`,
-    body: `${hi}\n\n${intro} We provide ${area}.\n\n${intent === 'bid_request' ? 'Thanks for the request. To put together a price we need: the project name and address, the scope (for example the number of units or square footage), the cleaning frequency or phases, and the bid due date. We can also set up a walkthrough.' : 'We would like to learn about your projects and what you need cleaned. A short call or a walkthrough would be a good first step.'}${sign}`
+    body: `${hi}\n\n${intro} For you, that means ${area}. ${HOW_WE_WORK}\n\n${ask}${sign}`
   };
 }
 
-function classify(l) {
+function classify(l, stage = 'intro') {
   const seg = segmentOf(l), intent = intentOf(l), recipient = recipientOf(l.email);
   const perm = permittedAction(l, seg, intent, recipient);
   const notes = [];
   if (seg === 'unknown') notes.push('No segment words found. Ask the contact what kind of work they do.');
   if (intent === 'bidder_list') notes.push('Bidder-list request: answer the process question and ask for current projects to bid on.');
-  const draft = intent === 'job_application' ? null : draftFor(l, seg, intent);
+  const draft = intent === 'job_application' ? null : draftFor(l, seg, intent, stage);
   return { segment: seg, segment_label: SEGMENT_LABEL[seg], intent, intent_label: INTENT_LABEL[intent], recipient, action: perm.action, action_why: perm.why, notes, draft };
 }
 
@@ -107,7 +123,10 @@ function mount(app, ctx) {
   app.get('/api/admin/leads/:id/classification', auth, (req, res) => {
     const l = db.prepare('SELECT * FROM leads WHERE id=?').get(Number(req.params.id));
     if (!l) return res.status(404).json({ error: 'Lead not found.' });
-    res.json(classify(l));
+    // First note if nothing has been sent to this address; otherwise a follow-up. Drafts only.
+    const sent = l.email ? db.prepare("SELECT COUNT(*) n FROM email_log WHERE lower(to_addr)=lower(?) AND status='sent'").get(l.email).n : 0;
+    const stage = sent > 0 ? 'follow_up' : 'intro';
+    res.json({ ...classify(l, stage), stage, prior_sends: sent });
   });
 }
 
