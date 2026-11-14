@@ -2322,6 +2322,7 @@ async function startServer(env, dataDir) {
 
   // ---------- DIRECTIVE WORKFLOWS C / D / E: service-specific questionnaires + pricing ----------
   await check('Workflows C/D/E', 'Construction, multifamily and janitorial each use their own questionnaire; multifamily + janitorial now price recurring monthly service from the price book; janitorial calculates staffing from the company production rate; anything unpriced is named, never guessed', async () => {
+    await req('PUT', '/api/admin/automation/ai-settings', { token: T, json: { auto_draft_estimates: false } }); // the background sweep would draft these test leads itself and race the test
     const steps = [], ok = (n, pass, ev) => { steps.push({ step: n, result: pass ? 'PASS' : 'FAIL', evidence: String(ev).slice(0, 240) }); return pass; };
     try {
       const schema = (await req('GET', '/api/quote-schema')).data.services, names = k => schema[k].fields.map(f => f.name);
@@ -2393,6 +2394,7 @@ async function startServer(env, dataDir) {
     return `${steps.length}/${steps.length} steps PASS`;
   });
 
+  await req('PUT', '/api/admin/automation/ai-settings', { token: T, json: { auto_draft_estimates: true } });
   await check('Calls', 'Click-to-call: settings validated; staff phone rings first; bridge dials the customer from the business number (recorded); customer answered vs no-answer recorded; unsigned bridge refused', async () => {
     const crypto = require('crypto'), base = 'https://brightclean.net';
     const sign = (path, params) => crypto.createHmac('sha1', 'tw-test-token').update(base + path + Object.keys(params).sort().map(k => k + params[k]).join('')).digest('base64');
