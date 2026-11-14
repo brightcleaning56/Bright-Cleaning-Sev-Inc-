@@ -17,7 +17,7 @@ import { createBackup, restoreTest, backupDocuments, verifyDocumentVault, syncOf
 import { createCheckout, applyStripeEvent, PLANS } from './billing.js';
 import { BUYER_KINDS, createRequest, awardRequest, closeRequest, contractDocument, consentText, countersignContract, TRADES, setIntent, submitBid, inviteCompanies } from './marketplace.js';
 import { contactFromProject } from './outreach.js';
-import { prequalProfile, setPrequal, leveling } from './prequal.js';
+import { prequalProfile, setPrequal, leveling, levelingCsv } from './prequal.js';
 import { SCALES, saveMeasurement, listMeasurements, deleteMeasurement } from './measure.js';
 import { backfillCore, linkBidRequest, linkBidRequestTo, pickProjects, linkDocument, linkAward, recomputePhase, coreView, searchCoreMemory, mergeProjects, splitLinks, resolveReview, resolveProjectId } from './core.js';
 import { reconcileCore, searchCoreSql } from './coredb.js';
@@ -972,6 +972,18 @@ export function createServer(store, deps = {}) {
         if (tooBig) return send(res, 413, { error: `file is larger than ${Math.round(config.maxDocBytes / 1048576)} MB` });
         const r = saveVerificationDoc(store, org, user, { name: url.searchParams.get('name'), kind: url.searchParams.get('kind'), buffer: Buffer.concat(chunks) });
         return send(res, r.ok ? 200 : (r.code || 400), r.ok ? { document: r.document } : { error: r.error });
+      }
+      // Bid comparison as CSV (the company's own packages only).
+      const csvm = req.method === 'GET' && url.pathname.match(/^\/api\/requests\/([^/]+)\/leveling\.csv$/);
+      if (csvm) {
+        const user = sessionUser(store, (req.headers.authorization || '').replace(/^Bearer /, ''));
+        if (!user) return send(res, 401, { error: 'sign in required' });
+        const L = leveling(store, store.get('orgs', user.orgId), csvm[1]);
+        if (!L) return send(res, 404, { error: 'not found' });
+        const body = levelingCsv(L);
+        const safe = String(L.request.title || 'bids').replace(/[^\w.\- ]+/g, '').slice(0, 60).trim() || 'bids';
+        res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${safe} - bid comparison.csv"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
+        return res.end(body);
       }
       // Staff view of a company's verification document. Needs the company-read permission and is logged.
       const svd = req.method === 'GET' && url.pathname.match(/^\/api\/admin\/companies\/([^/]+)\/verification-documents\/([^/]+)$/);

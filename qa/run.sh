@@ -5,7 +5,7 @@
 set -u
 cd "$(dirname "$0")/.."
 export QA_OUT="${QA_OUT:-$(mktemp -d)}"; mkdir -p "$QA_OUT"; FAIL=0; PIDS=()
-start() { CORE_READS="${CORE_READS:-off}" LOGIN_RATE_LIMIT=1000 DOC_DIR="$(mktemp -d)" QA_PORT=$2 node "qa/$1" > "$QA_OUT/$1.log" 2>&1 & PIDS+=($!); for i in $(seq 1 40); do grep -qs up "$QA_OUT/$1.log" && return; grep -qs EADDRINUSE "$QA_OUT/$1.log" && { echo "server $1 could not take port $2 (still in use)"; exit 1; }; sleep 0.25; done; echo "server $1 did not start"; cat "$QA_OUT/$1.log"; exit 1; }
+start() { local before; before=$(grep -c "^up$" "$QA_OUT/$1.log" 2>/dev/null || echo 0); CORE_READS="${CORE_READS:-off}" LOGIN_RATE_LIMIT=1000 DOC_DIR="$(mktemp -d)" QA_PORT=$2 node "qa/$1" >> "$QA_OUT/$1.log" 2>&1 & PIDS+=($!); for i in $(seq 1 40); do [ "$(grep -c "^up$" "$QA_OUT/$1.log" 2>/dev/null || echo 0)" -gt "$before" ] && return; grep -qs EADDRINUSE "$QA_OUT/$1.log" && { echo "server $1 could not take port $2 (still in use)"; exit 1; }; sleep 0.25; done; echo "server $1 did not start"; tail -n 20 "$QA_OUT/$1.log"; exit 1; }
 # Each check that uses the main demo server starts from a clean one: earlier checks change shared state
 # (suspensions, plan access, sign-in counts), and a check must not depend on what ran before it.
 reset_main() { kill "${MAIN_PID:-}" 2>/dev/null; wait "${MAIN_PID:-}" 2>/dev/null; start world-main.mjs 4401; MAIN_PID=${PIDS[-1]}; }

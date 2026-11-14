@@ -85,3 +85,17 @@ export function leveling(store, buyer, requestId) {
     }),
   };
 }
+
+/** Bid comparison as CSV for sharing with the team. Cells that a spreadsheet could run as formulas are neutralised. */
+export function levelingCsv(L) {
+  const cell = v => {
+    let s = v == null ? '' : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const head = ['Company', 'Bid', 'Recurring', 'Above low bid (%)', 'Revision', 'Submitted', 'Receipt', 'Addenda acknowledged', 'Meets insurance minimum', 'Insurance shortfalls', 'Scope', 'Exclusions', 'Documents link', 'Prequalification flags'];
+  const rows = L.rows.map(x => [x.company, x.total, x.recurring || '', x.pctAboveLow, x.revision, x.submittedAt, x.receiptId || '',
+    `${x.addendaAcknowledged} of ${L.request.addendumCount}`, x.insuranceCheck?.required ? (x.insuranceCheck.met ? 'yes' : 'no') : 'no minimum set',
+    (x.insuranceCheck?.shortfalls || []).join('; '), x.scope || '', x.exclusions || '', x.documentUrl || '', (x.prequal?.flags || []).join('; ')]);
+  return [head, ...rows].map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
+}
