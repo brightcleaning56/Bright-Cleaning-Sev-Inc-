@@ -13,7 +13,7 @@ with sync_playwright() as p:
         keys = [x.get_attribute('data-t') for x in pg.query_selector_all('nav button')]
         for k in keys:
             pg.click(f'nav button[data-t="{k}"]'); pg.wait_for_timeout(700)
-            sel = pg.get_attribute('nav button[aria-selected="true"]', 'data-t')
+            sel = pg.get_attribute('nav button[aria-current="page"]', 'data-t')
             if sel != k: bad.append(f'{email}: clicked {k} but landed on {sel}')
             else: ok += 1
         if errs: bad.append(f'{email}: JS errors {errs}')

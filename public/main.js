@@ -177,10 +177,10 @@ async function drawLeft() {
     el.innerHTML = `${seg === 'map' ? '<div class="mapbox x-f889cd2d" id="ccmap" ></div>' : ''}
       <form class="flt" id="ccf"><div class="row x-a562f4fd" ><strong>Filter Projects</strong><a href="#" id="ccreset" class="link x-11696618" >Reset</a></div>
       ${fi('pin', 'Location', `<input name="city" value="${esc(f.city || '')}" placeholder="Any city in your territory">`)}
-      ${fi('building', 'Project Type', `<select name="type"><option value="">Commercial (All)</option>${TYPES.map(x => `<option ${f.type === x ? 'selected' : ''}>${x}</option>`).join('')}</select>`)}
-      ${fi('clock', 'Construction Stage', `<select name="stage"><option value="">All active stages</option>${Object.entries(STAGE_LABEL).filter(([s2]) => !['finaled', 'expired'].includes(s2)).map(([s2, l]) => `<option value="${s2}" ${f.stage === s2 ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+      ${fi('building', 'Project Type', `<select name="type" aria-label="Project type"><option value="">Commercial (All)</option>${TYPES.map(x => `<option ${f.type === x ? 'selected' : ''}>${x}</option>`).join('')}</select>`)}
+      ${fi('clock', 'Construction Stage', `<select name="stage" aria-label="Project stage"><option value="">All active stages</option>${Object.entries(STAGE_LABEL).filter(([s2]) => !['finaled', 'expired'].includes(s2)).map(([s2, l]) => `<option value="${s2}" ${f.stage === s2 ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
       ${fi('money', 'Project Value', `<div class="two"><input name="minValue" type="number" min="0" placeholder="Min $" value="${esc(f.minValue || '')}"><input name="maxValue" type="number" min="0" placeholder="Max $" value="${esc(f.maxValue || '')}"></div>`)}
-      ${fi('brief', 'Work Type', `<select name="work"><option value="">Any work</option>${WORK.map(w => `<option value="${w.key}" ${f.work === w.key ? 'selected' : ''}>${esc(w.label)}</option>`).join('')}</select>`)}
+      ${fi('brief', 'Work Type', `<select name="work" aria-label="Work type"><option value="">Any work</option>${WORK.map(w => `<option value="${w.key}" ${f.work === w.key ? 'selected' : ''}>${esc(w.label)}</option>`).join('')}</select>`)}
       ${fi('grid', 'Building Size', `<input name="minSqft" type="number" min="0" placeholder="Minimum SF" value="${esc(f.minSqft || '')}">`)}
       <button class="primary" id="ccgo">Search Projects</button></form><div id="ccres"></div>`;
     $('#ccreset').onclick = ev => { ev.preventDefault(); CC.f = {}; CC.sel = null; drawLeft(); };
@@ -535,8 +535,8 @@ async function leadTab(t, body) {
     if (id) return projectView(id, body);
     body.innerHTML = `<form class="x-8f1e7690" id="pf" >
       <input name="q" placeholder="Keywords, address, GC" value="${esc(lastFilters.q||'')}"><input name="city" placeholder="City" value="${esc(lastFilters.city||'')}">
-      <select name="type"><option value="">Any building type</option>${TYPES.map(x => `<option ${lastFilters.type===x?'selected':''}>${x}</option>`).join('')}</select>
-      <select name="work"><option value="">Any work type</option>${WORK.map(w => `<option value="${w.key}" ${lastFilters.work===w.key?'selected':''}>${esc(w.label)}</option>`).join('')}</select>
+      <select name="type" aria-label="Building type"><option value="">Any building type</option>${TYPES.map(x => `<option ${lastFilters.type===x?'selected':''}>${x}</option>`).join('')}</select>
+      <select name="work" aria-label="Work type"><option value="">Any work type</option>${WORK.map(w => `<option value="${w.key}" ${lastFilters.work===w.key?'selected':''}>${esc(w.label)}</option>`).join('')}</select>
       <select name="stage"><option value="">Any stage</option>${Object.entries(STAGE_LABEL).map(([k,v]) => `<option value="${k}" ${lastFilters.stage===k?'selected':''}>${v}</option>`).join('')}</select>
       <input name="minValue" type="number" min="0" placeholder="Min value $" value="${esc(lastFilters.minValue||'')}">
       <label class="x-606f6500" ><input class="x-30e741d9" type="checkbox" name="hasContact"  ${lastFilters.hasContact?'checked':''}>Verified GC contact</label>
@@ -1288,8 +1288,8 @@ async function openPublication(id) {
       <td>${k.status === 'draft' ? `<button data-nodocs="${k.id}">No documents needed</button> <button data-pkdel="${k.id}">Remove</button>` : ''} <button data-pkinv="${k.id}">Invite bidders</button>${k.status === 'open' ? ` <button data-dl="${k.id}">Change deadline</button>` : ''} <button data-breadth="${k.id}">Bid breadth</button></td></tr><tr><td class="x-fd8f71c4" colspan="10" ><div id="pkinv-${k.id}"></div><div id="pkdl-${k.id}"></div><div id="pkbr-${k.id}"></div></td></tr>`).join('')}</table></div><small>Upload plans for each package in “Your requests” below (each package is listed there with its plan room).</small>` : '<div class="empty">No packages yet.</div>'}
     ${['draft', 'published'].includes(p.status) ? `<form id="pkf" class="panel x-3a011d71" ><b>Add a trade package</b>
       <div class="grid2"><input name="title" placeholder="Package name (e.g. Electrical)" required><label><small>Bids due</small><input name="dueDate" type="date" required></label>
-      <select name="trade">${TRADES_LIST.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}</select>
-      <select name="distribution"><option value="eligible">Eligible subscribers (matching trade & area) + my list</option><option value="invite_only">Invite-only (my list)</option></select></div>
+      <select name="trade" aria-label="Trade">${TRADES_LIST.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}</select>
+      <select name="distribution" aria-label="Who can bid"><option value="eligible">Eligible subscribers (matching trade & area) + my list</option><option value="invite_only">Invite-only (my list)</option></select></div>
       <textarea name="description" rows="2" placeholder="Scope of work (20+ characters)"></textarea><div class="grid2"><textarea name="inclusions" rows="2" placeholder="Inclusions"></textarea><textarea name="exclusions" rows="2" placeholder="Exclusions"></textarea></div>
       <div class="grid2"><label><small>Minimum general liability (USD, optional)</small><input name="insuranceGL" type="number" min="0" step="1000" placeholder="e.g. 1000000"></label><label class="vf-check"><input type="checkbox" name="workersComp"> Workers comp certificate required</label></div>
       <div class="row"><button class="primary">Add package</button><span class="err"></span></div></form>` : ''}</div>`;
@@ -1374,7 +1374,7 @@ async function buyerView() {
   <form class="x-fcc9f9e7" id="rf" >
    <div class="x-0edf7ec4" >
    <input id="t" placeholder="Project title" required><input id="a" placeholder="Street address" required><input id="ci" placeholder="City" required><input id="st" placeholder="State" maxlength="2" required>
-   <select id="pt">${['office','retail','warehouse','industrial','multifamily','medical','education','hospitality','restaurant','institutional','mixed_use','other_commercial'].map(x=>`<option>${x}</option>`).join('')}</select>
+   <select id="pt" aria-label="Project type">${['office','retail','warehouse','industrial','multifamily','medical','education','hospitality','restaurant','institutional','mixed_use','other_commercial'].map(x=>`<option>${x}</option>`).join('')}</select>
    <label class="x-bbe2ad4b" >Bids due<input id="dd" type="date" required></label>
    <input id="docs" placeholder="Link to plans & specs (optional)">${me.org.buyerKind === 'construction_manager' ? '<input id="authev" placeholder="Owner authorization: letter or contract reference (required when you post for an owner)">' : ''}</div>
    <div class="x-d461c96d" ><input id="pjq" placeholder="Link to an existing BUILDINTEL project (optional): type 3+ letters of the name or address, after the state" autocomplete="off"><input type="hidden" id="pjid">
@@ -1452,7 +1452,7 @@ async function buyerView() {
     const subs = r.submissions ? await api('GET', `/api/requests/${r.id}/submissions`) : [];
     const room = await planRoomHtml(r.id);
     const ph = r.invited ? await api('GET', `/api/requests/${r.id}/planholders`).catch(() => []) : [];
-    const upload = ['open', 'draft'].includes(r.status) ? `<form data-up="${r.id}" class="row x-fe7b4979" ><input class="x-3521b3d8" type="file" accept="application/pdf" multiple ><label class="x-6a6cfcff" ><input class="x-30e741d9" type="checkbox" name="add" >This is an addendum</label><input class="x-55585d51" name="note" placeholder="Addendum note (what changed)" ><button>Upload PDFs</button><span class="err"></span></form>` : '';
+    const upload = ['open', 'draft'].includes(r.status) ? `<form data-up="${r.id}" class="row x-fe7b4979" ><input class="x-3521b3d8" type="file" accept="application/pdf" multiple aria-label="Upload plan PDFs"><label class="x-6a6cfcff" ><input class="x-30e741d9" type="checkbox" name="add" >This is an addendum</label><input class="x-55585d51" name="note" placeholder="Addendum note (what changed)" ><button>Upload PDFs</button><span class="err"></span></form>` : '';
     const phHtml = ph.length ? `<div class="scroll x-fe7b4979" ><table><tr><th>Planholder / bidder</th><th>Intent</th><th>Opened plans</th><th>Addenda acknowledged</th><th>Bid</th></tr>${ph.map(x => `<tr><td>${esc(x.company)}</td><td>${esc(x.intent.replace('_', ' '))}</td><td>${x.viewedPlans ? 'yes, ' + x.filesOpened + ' file(s) · ' + ago(x.lastViewedAt) : 'not yet'}</td><td>${x.addenda ? x.acknowledgedThrough + ' of ' + x.addenda : '—'}</td><td>${x.bid ? 'submitted' : '—'}</td></tr>`).join('')}</table></div>` : '';
     return `<div class="gate x-6384e367" ><div><strong>${esc(r.title)}</strong> <small>${esc(r.address)}, ${esc(r.city)}${r.squareFeet ? ' · ' + r.squareFeet.toLocaleString() + ' SF' : ''} · due ${esc(String(r.dueDate).slice(0,10))} · ${esc(r.status)}</small>
     <small>${(r.trades || []).map(k => esc((TRADES_LIST.find(t => t.key === k) || {}).label || k)).join(' · ')} · <strong>${r.invited ?? 0} invited</strong>, ${r.willBid ?? 0} will bid, ${r.wontBid ?? 0} won't bid${r.documentsUrl ? ` · <a href="${safeUrl(r.documentsUrl)}" target="_blank" rel="noopener">plans</a>` : ''}</small>
@@ -1555,8 +1555,8 @@ async function render() {
   const roleSet = me.org?.kind === 'subscriber' && SUB_ROLE_NAV[me.org.segment] ? new Set(SUB_ROLE_NAV[me.org.segment]) : null;
   const ok = k => avail.has(k.split(':')[0]) && (!roleSet || roleSet.has(k));
   const sel = k => k === navKey;
-  const navHtml = NAV.map(n => n.key ? (ok(n.key) ? `<button class="solo" role="tab" data-t="${n.key}" aria-selected="${sel(n.key)}">${ICON[n.icon]}${n.label}</button>` : '')
-    : (it => it.length ? `<div class="grp ${CLOSED.has(n.group) ? 'closed' : ''}" data-grp="${esc(n.group)}"><span>${ICON[n.icon]}${n.group}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="sub">` + it.map(([k, l]) => `<button role="tab" data-t="${k}" aria-selected="${sel(k)}">${l}</button>`).join('') + '</div>' : '')(n.items.filter(([k]) => ok(k)))).join('');
+  const navHtml = NAV.map(n => n.key ? (ok(n.key) ? `<button class="solo" data-t="${n.key}" aria-current="${sel(n.key) ? 'page' : 'false'}">${ICON[n.icon]}${n.label}</button>` : '')
+    : (it => it.length ? `<div class="grp ${CLOSED.has(n.group) ? 'closed' : ''}" data-grp="${esc(n.group)}"><span>${ICON[n.icon]}${n.group}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="sub">` + it.map(([k, l]) => `<button data-t="${k}" aria-current="${sel(k) ? 'page' : 'false'}">${l}</button>`).join('') + '</div>' : '')(n.items.filter(([k]) => ok(k)))).join('');
   const TOP = [['command', 'Projects'], ['projects:permits', 'Permits'], ['planroom:drawing', 'Drawings'], ['contractors', 'GCs'], ['estimates', 'Takeoff'], ['estimates:estimating', 'Estimating'], ['invitations:bids', 'Bidding']].filter(([k]) => ok(k));
   const initials = String(me.org?.name || 'BI').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
   $('#app').innerHTML = `<div class="app"><aside class="side"><div class="brand">${ICON.logo}<div><b>BUILDINTEL<sup class="x-fb2957a3" >®</sup></b><small>Commercial Construction Intelligence</small></div></div><nav aria-label="Main">${navHtml}</nav></aside>

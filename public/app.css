@@ -1,4 +1,4 @@
-:root{--bg:#eef2f7;--panel:#fff;--panel2:#f6f8fb;--ink:#0f1f33;--muted:#5b6b7f;--line:#e1e7ef;--accent:#1f5fd1;--stake:#1f5fd1;--chip:#edf3fc;
+:root{--bg:#eef2f7;--panel:#fff;--panel2:#f6f8fb;--ink:#0f1f33;--muted:#4f5f73;--line:#e1e7ef;--accent:#1f5fd1;--stake:#1f5fd1;--chip:#edf3fc;
  --pass:#16a34a;--fail:#dc2626;--owner:#b7791f;--warn:#ea580c;--side1:#0b2545;--side2:#102f57;color-scheme:light}
 @media (prefers-color-scheme:dark){:root{--bg:#0c141e;--panel:#132030;--panel2:#18283b;--ink:#e6edf5;--muted:#9db0c4;--line:#24384e;--accent:#4c8dff;--stake:#4c8dff;--chip:#1b2c42;
  --pass:#4ade80;--fail:#f87171;--owner:#facc15;--warn:#fb923c;--side1:#08182c;--side2:#0b2140;color-scheme:dark}}
@@ -40,7 +40,7 @@ button svg{width:16px;height:16px;margin-right:4px}
 .bell{position:relative;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--panel2);cursor:pointer;border:1px solid var(--line)}
 .bell i{position:absolute;top:-4px;right:-4px;background:var(--fail);color:#fff;font:700 10px Inter,"Segoe UI",system-ui,-apple-system,sans-serif;border-radius:999px;padding:1px 5px;font-style:normal}
 .who2{display:flex;gap:8px;align-items:center;font-weight:600}
-.avatar{width:32px;height:32px;border-radius:50%;background:#f59e0b;color:#fff;display:grid;place-items:center;font:700 12px Inter,"Segoe UI",system-ui,-apple-system,sans-serif}
+.avatar{width:32px;height:32px;border-radius:50%;background:#b45309;color:#fff;display:grid;place-items:center;font:700 12px Inter,"Segoe UI",system-ui,-apple-system,sans-serif}
 .content{padding:18px 22px 40px}
 /* building blocks */
 .card,.empty,.gate,.sign{background:var(--panel);border:1px solid var(--line);border-radius:10px}
@@ -147,7 +147,7 @@ body{font-size:13px}h2{font-size:20px}h3{font-size:14.5px;margin-bottom:8px}
 .link{color:var(--accent);font-weight:600;text-decoration:none;display:inline-block;margin-top:8px;cursor:pointer}
 .donut{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px;align-items:center;justify-items:center}.donut svg{width:112px;height:112px}.donut .legend{justify-self:stretch}.legend div{display:flex;justify-content:space-between;gap:6px;font-size:12px;padding:2px 0}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
-.btn-green{background:#16a34a;border-color:#16a34a;color:#fff}
+.btn-green{background:#15803d;border-color:#15803d;color:#fff}
 .bars div{display:grid;grid-template-columns:150px 1fr 60px;gap:8px;align-items:center;font-size:12.5px;padding:3px 0}
 .bars span.b{height:12px;border-radius:6px;background:var(--accent);display:block}
 .ctc a{color:var(--accent);margin-left:6px}
@@ -472,3 +472,6 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 /* Checkbox with its label on one line (used in forms such as the package insurance minimum). */
 .vf-check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink)}
 .vf-check input{width:auto;margin:0}
+
+/* Map attribution links are underlined so they are not the only cue to tell them apart from text. */
+.leaflet-control-attribution a{text-decoration:underline}

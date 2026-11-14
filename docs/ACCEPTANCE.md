@@ -3,7 +3,7 @@
 Status as of this build. Rule applied throughout: *a module counts as built only if it is connected to persistent
 backend data and covered by automated tests and/or an end-to-end browser test.* Where something is not done, it says so.
 
-Evidence sources: 285 automated tests (`docs/TEST-INVENTORY.md`), end-to-end browser flows run in Chromium against a
+Evidence sources: 286 automated tests (`docs/TEST-INVENTORY.md`), end-to-end browser flows run in Chromium against a
 real server, and the live deployment (https://buildintel-9wqh.onrender.com, Render + PostgreSQL).
 Without `TEST_DATABASE_URL`, 4 PostgreSQL integration tests are skipped (all others run, and none need the database driver installed); with a test database all 135 run. CI runs with PostgreSQL and fails if any test is skipped.
 Browser checks: `bash qa/run.sh`. The running build reports its version and Git commit on **Launch Gates** (`/api/release`).

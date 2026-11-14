@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**285 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**286 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -336,6 +336,9 @@
 - HTTP: seats are enforced; permissions control publish, upload and award
 - AI credits come from the plan (never above the platform cap); Free has none
 - coverage states the document situation explicitly: uploaded (with revision), intentionally none, or missing — plus blockers
+
+## restore-drill.test.js (1)
+- the restore drill proves a backup with the right key, refuses a wrong key, and catches a checksum mismatch
 
 ## rfi.test.js (3)
 - an invited company asks; the GC answers; every invited company sees the answer, not the asker

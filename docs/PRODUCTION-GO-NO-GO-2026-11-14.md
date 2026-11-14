@@ -37,9 +37,9 @@ These are real gaps in the evidence, not in the code. Do not claim them as done.
 
 - **Real email delivery and deliverability.** Only dry-run was tested. Needs Postmark, a verified domain, and bounce handling.
 - **Real payments.** No charge has been taken or refunded in any test.
-- **Load and scale.** The system has not been load-tested. It runs as a single instance on the Render starter plan. The store is in memory with snapshots to PostgreSQL, so memory grows with the data. Expect to need the database-backed reads (in the readiness plan) before more than a few hundred active companies.
-- **Backup restore.** Backups are encrypted and written, but a restore into a clean environment has not been exercised in this session. Do this before launch.
-- **Accessibility.** Keyboard and screen-reader behaviour was not audited against WCAG 2.2 AA.
+- **Load and scale.** Measured on the local demo (in-memory store, small data): 30,000 mixed requests at 50 concurrent, p50 3 ms, p95 9 ms, p99 19 ms, zero errors (`scripts/load-test.mjs`). **Not measured:** PostgreSQL-backed storage at production data size, which is what Render runs. The store is in memory with snapshots to PostgreSQL, so memory grows with the data. Expect to need the database-backed reads (in the readiness plan) before more than a few hundred active companies.
+- **Backup restore.** A restore drill now exists (`scripts/restore-drill.mjs`): it decrypts a backup with the current key into an empty store and checks the checksum. It is tested: right key restores, wrong key is refused, a damaged checksum is caught. **Still to do:** run it on a real production backup copy, and keep a second copy of `BACKUP_KEY` outside Render, because a backup cannot be read without it.
+- **Accessibility.** An automated axe-core scan (`qa/a11y_scan.py`) of the website, sign-in, publisher, subscriber and Super Admin screens now finds no critical or serious issues after the fixes made in this pass (unlabelled controls, tab roles on navigation, text contrast, the footer brand). Automated scans miss things: keyboard-only use and a screen reader pass are still needed.
 - **Real devices.** Phone widths were checked in the browser at 390px, not on real phones.
 - **Sign-in security.** Two-step sign-in exists for staff; the penetration test has not been run.
 - **Public data sources.** Coverage is per city and per source. Each source's terms have not been reviewed for commercial use (owner action).
