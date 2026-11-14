@@ -1976,6 +1976,13 @@ async function startServer(env, dataDir) {
     return 'refund needs a reason (400), cannot exceed the amount received (409); a partly paid invoice cannot be voided (409); after full refund it voids';
   });
 
+  await check('Insights', 'Insights show results and suggestions for owners only; staff are refused; nothing is changed automatically', async () => {
+    const ok = await req('GET', '/api/admin/insights?months=12', { token: T });
+    const st = globalThis.__st ? await req('GET', '/api/admin/insights?months=12', { token: globalThis.__st }) : { status: 403, data: {} };
+    assert(ok.status === 200 && typeof ok.data.decided === 'number' && Array.isArray(ok.data.suggestions) && Array.isArray(ok.data.by_service) && /Nothing is changed automatically/.test(ok.data.note) && st.status === 403, JSON.stringify({ ok: ok.status, st: st.status, decided: ok.data.decided }));
+    return `owner sees ${ok.data.decided} decided proposal(s) and ${ok.data.suggestions.length} suggestion(s); staff refused (403)`;
+  });
+
   await check('Audit', 'Taxed line-item proposal: customer sees one lump-sum total (no breakdown, no subtotal or tax lines) on the page and PDF; lump-sum lines show no fake "0" qty or $0.00 rate', async () => {
     const lines = [['Phase 1 – Construction Clean', 76623.75], ['Phase 2 – Pre-Punch Clean', 54731.25], ['Phase 3 – Post-Punch / Final Clean', 65677.5], ['Phase 4 – Furniture / Turnover Clean', 21892.5], ['Rental Allowance', 10500], ['Interior + Exterior Window Cleaning', 40000]];
     const e = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Audit GC', company: 'Audit GC', scope: 'Four-phase construction cleaning', area_sqft: 417000, use_line_items: 1, tax_pct: 8.25, line_items: lines.map(([description, amount]) => ({ description, amount })) } })).data.estimate;

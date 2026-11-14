@@ -3385,7 +3385,20 @@
     catch (e) { $('#repAiOut').textContent = e.message; }
     b.disabled = false; b.textContent = 'Ask';
   });
+  // Insights: suggestions from proposal results and lead sources. Owners and managers only; nothing changes automatically.
+  async function loadInsights() {
+    let host = $('#repInsights');
+    if (!host) { const anchor = $('#repKpis'); if (!anchor) return; anchor.insertAdjacentHTML('beforebegin', '<div class="card" id="repInsights" style="margin-bottom:14px"></div>'); host = $('#repInsights'); }
+    try {
+      const x = await api('/api/admin/insights?months=' + ($('#repMonths').value || 12));
+      const sug = x.suggestions.map(s => `<li class="${s.kind === 'review' ? 'warn' : ''}">${esc(s.text)}</li>`).join('');
+      host.innerHTML = `<h2 style="font-size:16px">What the results suggest</h2>
+        <p class="muted">${x.decided} decided proposal(s) in this period${x.overall_win_rate != null ? `, ${x.overall_win_rate}% won` : ''}${x.avg_days_to_decision != null ? `, ${x.avg_days_to_decision} day(s) on average to decide` : ''}. ${esc(x.note)}</p>
+        <ul class="mini">${sug || '<li class="muted">No suggestions yet.</li>'}</ul>`;
+    } catch (err) { host.remove(); }
+  }
   async function loadReports() {
+    loadInsights();
     const r = await api('/api/admin/reports?months=' + $('#repMonths').value);
     const sum = a => a.reduce((t, x) => t + Number(x.v || 0), 0);
     const ex = r.executive, cnt = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
