@@ -5,7 +5,7 @@ Last updated: 2026-11-13 (blueprint review added).
 
 ## Needs your decision or access
 
-1. **Done: the 15 commits are deployed** (origin and live build match). Nothing to do here.
+1. **Done: deployed through 515d85d** (origin and the live build 717eecd1272b match). Nothing to do here.
 2. **AI lead triage is down.** The Anthropic credit balance is too low. Add credits in Anthropic billing.
 3. **GROK BOT lead key** sent five leads at 8:02 AM today and is still active. Confirm the leads are real, then keep or revoke the key.
 4. **Test accounts still have access:** "Eric Moore test" (Supervisor) and "Daniel mOORE TEST" (Inspector) in Settings. Remove them?
