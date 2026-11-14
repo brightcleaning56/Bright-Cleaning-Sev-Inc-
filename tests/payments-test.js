@@ -84,6 +84,18 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
   const rawU = Buffer.from(JSON.stringify(unpaid));
   await hook(stripeSig(rawU), rawU);
   check('webhook: unpaid session does not change the invoice', db.prepare('SELECT paid_amount FROM invoices WHERE id=?').get(inv).paid_amount === 120);
+  const ledger = db.prepare("SELECT COUNT(*) n FROM payments WHERE invoice_id=? AND recorded_by='stripe' AND note LIKE '%cs_test_1%'").get(inv).n;
+  check('webhook: the card payment is written to the payments ledger once', ledger === 1, ledger);
+  // Overpayment: the invoice is $300 with $120 paid, so $180 is owed; a $200 session exceeds the balance and must not be applied
+  const over = { type: 'checkout.session.completed', data: { object: { id: 'cs_test_3', payment_status: 'paid', amount_total: 20000, customer_email: EMAIL, metadata: { invoice_id: String(inv) } } } };
+  const rawO = Buffer.from(JSON.stringify(over));
+  const overRes = await hook(stripeSig(rawO), rawO);
+  const rowO = db.prepare('SELECT paid_amount, status FROM invoices WHERE id=?').get(inv);
+  check('webhook: overpayment is not applied to the invoice', overRes.code === 200 && rowO.paid_amount === 120, { overRes, rowO });
+  const flagged = db.prepare("SELECT status FROM online_payments WHERE stripe_session_id='cs_test_3'").get();
+  check('webhook: overpayment is flagged Needs refund', flagged && flagged.status === 'Needs refund', flagged);
+  const overLedger = db.prepare("SELECT COUNT(*) n FROM payments WHERE invoice_id=? AND note LIKE '%cs_test_3%'").get(inv).n;
+  check('webhook: overpayment is not written to the payments ledger', overLedger === 0, overLedger);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
