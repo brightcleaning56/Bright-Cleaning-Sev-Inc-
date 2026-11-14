@@ -866,13 +866,13 @@ async function startServer(env, dataDir) {
     assert(before.proposal_total === 28850 && put.status === 200 && after.proposal_total === 32850, `${before.proposal_total} -> ${after.proposal_total}`);
     return `price changed to $0.40/SF: saved estimate stayed $28,850; after edit and save: $32,850`;
   });
-  await check('Security', 'Customer proposal link shows line descriptions and amounts only, never internal rates or hours', async () => {
+  await check('Security', 'Customer proposal link shows one lump-sum total, never line items, internal rates or hours', async () => {
     const e = (await req('GET', '/api/admin/estimates/' + scopeEstId, { token: T })).data.estimate;
     const p = (await req('GET', '/api/proposal/' + e.public_token)).data.proposal;
     const keys = [...new Set(p.line_items.flatMap(Object.keys))];
     const raw = JSON.stringify(p);
-    assert(keys.join() === 'description,amount' && !/production_rate|labor_rate|"hours"|unit_price/.test(raw) && p.line_items.length === 2, raw.slice(0, 300));
-    return `public line keys: ${keys.join(', ')}; no production rate, labor rate, hours or unit price in response`;
+    assert(p.line_items.length === 0 && !/production_rate|labor_rate|"hours"|unit_price/.test(raw), raw.slice(0, 300));
+    return 'customer link carries no line items, production rates, labor rates, hours or unit prices (one lump-sum total only)';
   });
   await check('Scope pricing', 'Duplicating a scope-priced estimate keeps its lines and category', async () => {
     const d = await req('POST', `/api/admin/estimates/${scopeEstId}/duplicate`, { token: T });
@@ -1949,15 +1949,15 @@ async function startServer(env, dataDir) {
     return 'unsigned 403; no forward number → greeting + transcribed voicemail; unanswered dial → Voicemail call with today follow-up; later "completed" kept Voicemail (40 s); answered dial hangs up cleanly';
   });
 
-  await check('Audit', 'Taxed line-item proposal: customer page gets subtotal + tax; PDF shows Subtotal, Tax and Total that tie to the line items; lump-sum lines show no fake "0" qty or $0.00 rate', async () => {
+  await check('Audit', 'Taxed line-item proposal: customer sees one lump-sum total (no breakdown, no subtotal or tax lines) on the page and PDF; lump-sum lines show no fake "0" qty or $0.00 rate', async () => {
     const lines = [['Phase 1 – Construction Clean', 76623.75], ['Phase 2 – Pre-Punch Clean', 54731.25], ['Phase 3 – Post-Punch / Final Clean', 65677.5], ['Phase 4 – Furniture / Turnover Clean', 21892.5], ['Rental Allowance', 10500], ['Interior + Exterior Window Cleaning', 40000]];
     const e = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Audit GC', company: 'Audit GC', scope: 'Four-phase construction cleaning', area_sqft: 417000, use_line_items: 1, tax_pct: 8.25, line_items: lines.map(([description, amount]) => ({ description, amount })) } })).data.estimate;
     const pub = (await req('GET', '/api/proposal/' + e.public_token, { token: T })).data.proposal;
     const pdf = await fetch(B + `/api/admin/bids/${e.id}/pdf`, { headers: { Authorization: 'Bearer ' + T } }); const buf = Buffer.from(await pdf.arrayBuffer());
     const fs = require('fs'), os = require('os'), path = require('path'), f = path.join(os.tmpdir(), 'audit-' + e.id + '.pdf'); fs.writeFileSync(f, buf);
     const txt = require('child_process').execFileSync('pdftotext', ['-layout', f, '-']).toString().replace(/\s+/g, ' ');
-    assert(e.proposal_total === 291652.56 && e.line_items_total === 269425 && pub.tax_pct === 8.25 && pub.line_items_total === 269425 && /Subtotal before tax/.test(txt) && /\$269,425\.00/.test(txt) && /Tax \(8\.25%\)/.test(txt) && /\$22,227\.56/.test(txt) && /Total/.test(txt) && /\$291,652\.56/.test(txt) && /Phase 1 – Construction Clean/.test(txt.replace(/-/g, '–')) && /\$76,623\.75/.test(txt) && !/ 0 \$0\.00/.test(txt), JSON.stringify({ total: e.proposal_total, pub: [pub.tax_pct, pub.line_items_total], txt: txt.slice(txt.indexOf('Pricing'), txt.indexOf('Pricing') + 500) }));
-    return 'lines $269,425.00 + 8.25% tax $22,227.56 = $291,652.56 on the PDF and the customer feed; no fake qty/rate on lump-sum lines';
+    assert(e.proposal_total === 291652.56 && pub.tax_pct === 8.25 && pub.line_items.length === 0 && pub.line_items_total == null && !/Subtotal before tax/.test(txt) && !/Phase 1 – Construction Clean/.test(txt.replace(/-/g, '–')) && !/\$76,623\.75/.test(txt) && /lump-sum/.test(txt) && /\$291,652\.56/.test(txt) && !/ 0 \$0\.00/.test(txt), JSON.stringify({ total: e.proposal_total, pub: [pub.tax_pct, pub.line_items.length], txt: txt.slice(0, 300) }));
+    return 'one lump-sum total $291,652.56 on the PDF and the customer feed; line items and tax lines are not shown to the customer';
   });
 
   await check('Audit', 'Approval hand-off links the new project and contract to the proposal and the customer; files attach to a proposal (and its customer) and list on the proposal', async () => {

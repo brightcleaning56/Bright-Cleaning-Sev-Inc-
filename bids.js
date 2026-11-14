@@ -150,17 +150,7 @@ module.exports = function mountBids(app, ctx) {
     d.heading('Prepared for', 11); d.para([e.company, e.customer_name, e.email, e.site_address].filter(Boolean).join('\n'));
     if (e.project_name) { d.heading('Project', 11); d.para(e.project_name); }
     d.heading('Scope of work', 11); d.para(e.scope || '');
-    let items = []; try { items = JSON.parse(e.line_items || '[]'); } catch { /* none */ }
-    if (Array.isArray(items) && items.length && Number(e.use_line_items)) {
-      d.heading('Pricing', 11);
-      d.table([{ label: 'Item', w: 50 }, { label: 'Qty', w: 12, align: 'right' }, { label: 'Unit', w: 10 }, { label: 'Rate', w: 14, align: 'right' }, { label: 'Amount', w: 16, align: 'right' }],
-        items.map(i => { const q = Number(i.quantity || i.qty || 0), r = Number(i.unit_price || i.rate || 0); return [i.description || i.name || '', q ? q.toLocaleString() : '', q ? (i.unit || '') : '', r ? money(r) : '', money(i.amount != null ? i.amount : q * r)]; }));
-    }
-    const taxPct = Number(e.tax_pct) || 0;
-    if (taxPct > 0) { const sub = Math.round(Number(e.proposal_total) / (1 + taxPct / 100) * 100) / 100;
-      d.gap(4); d.text('Subtotal before tax', { size: 10 }); d.text(money(sub), { size: 10, align: 'right' }); d.y -= 15;
-      d.text(`Tax (${taxPct}%)`, { size: 10 }); d.text(money(Math.round((Number(e.proposal_total) - sub) * 100) / 100), { size: 10, align: 'right' }); d.y -= 17; }
-    d.gap(4); d.text('Total', { size: 13, bold: true }); d.text(money(e.proposal_total), { size: 13, bold: true, align: 'right' }); d.y -= 22;
+    d.gap(4); d.text(Number(e.tax_pct) > 0 ? 'Total project investment (one lump-sum price, tax included)' : 'Total project investment (one lump-sum price)', { size: 13, bold: true }); d.text(money(e.proposal_total), { size: 13, bold: true, align: 'right' }); d.y -= 22;
     if (e.assumptions) { d.heading('Assumptions', 11); d.para(e.assumptions); }
     if (e.exclusions) { d.heading('Exclusions', 11); d.para(e.exclusions); }
     if (e.terms) { d.heading('Terms', 11); d.para(e.terms, { size: 9 }); }
