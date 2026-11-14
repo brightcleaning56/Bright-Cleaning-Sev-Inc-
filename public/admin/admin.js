@@ -2011,19 +2011,24 @@
     let inv = state.invoices.find(i => i.id === id);
     if (!inv) { state.invoices = (await api('/api/admin/invoices')).invoices || []; inv = state.invoices.find(i => i.id === id); }
     if (!inv) return toast('Invoice not found.', true);
-    const bal = Math.max(0, inv.amount - inv.paid_amount);
-    const input = prompt(`Record a payment for ${inv.invoice_number}.\nBalance due: ${money(bal)}\n\nAmount received:`, bal.toFixed(2));
-    if (input === null) return;
-    const amount = Number(String(input).replace(/[$,\s]/g, ''));
-    if (!(amount > 0)) return toast('Enter an amount greater than zero.', true);
-    if (amount > bal + 0.005 && !confirm(`${money(amount)} is more than the balance of ${money(bal)}. Record it anyway?`)) return;
-    try {
-      const r = await api(`/api/admin/invoices/${id}/payment`, { method: 'POST', json: { amount } });
-      toast(`Payment recorded. Invoice is now ${r.status}.`);
-      closeDrawer(); state.invoices = []; load(state.view); if (state.view === 'customers') loadCustomerPage();
-    } catch (err) { toast(err.message, true); }
+    const bal = Math.max(0, Math.round((Number(inv.amount) - Number(inv.paid_amount || 0)) * 100) / 100);
+    openForm({
+      title: 'Record payment',
+      sub: `${inv.invoice_number} · balance due ${money(bal)}`,
+      defs: [
+        { name: 'amount', label: 'Amount received ($) *', type: 'number', hint: `Up to ${money(bal)}. Partial payments are fine.` },
+        { name: 'received_on', label: 'Date received', type: 'date' },
+        { name: 'note', label: 'Note (check number, method)', wide: true }
+      ],
+      values: { amount: bal.toFixed(2), received_on: todayISO() },
+      submit: x => {
+        const amount = Number(String(x.amount || '').replace(/[$,\s]/g, ''));
+        if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
+        return api(`/api/admin/invoices/${id}/payment`, { method: 'POST', json: { amount, received_on: x.received_on || undefined, note: x.note || undefined } });
+      },
+      after: r => { toast(`Payment recorded. Invoice is now ${r.status}.`); state.invoices = []; load(state.view); if (state.view === 'customers') loadCustomerPage(); }
+    });
   }
-
   function printInvoice(i) {
     const bal = Math.max(0, Number(i.amount || 0) - Number(i.paid_amount || 0));
     const w = window.open('', '_blank');
