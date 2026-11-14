@@ -389,6 +389,7 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 .cctile b{font-size:22px;display:block;color:var(--ink)}
 .cctile small{color:var(--muted)}
 .ccdl{margin:0;padding-left:18px}
+.pfolio{width:100%;border-collapse:collapse;font-size:14px}.pfolio th,.pfolio td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}.pfolio th{font-weight:600;white-space:nowrap}
 .pubfilters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
 .pubfilters input{max-width:340px}
 .pubfilters select{max-width:200px}
@@ -475,3 +476,7 @@ form.row input,form.row select,form.row textarea,form.row label{max-width:100%;b
 
 /* Map attribution links are underlined so they are not the only cue to tell them apart from text. */
 .leaflet-control-attribution a{text-decoration:underline}
+
+/* Keyboard focus is always visible (some controls reset their outline). */
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent,#1f5fd1)!important;outline-offset:2px}
+.insfit{margin:8px 0}.insfit-form{display:grid;gap:6px;margin-top:6px}.insfit-form input{padding:6px 8px}

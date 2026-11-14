@@ -298,6 +298,44 @@ export function publisherActivity(store, org, { limit = 100 } = {}) {
 }
 
 /**
+ * Portfolio across every project a company runs: one row per project with its package counts, bids, awards and the
+ * next bid date, so a general manager can see all work in one place. Read-only; another company sees none of it.
+ */
+export function publisherPortfolio(store, org, { at = Date.now() } = {}) {
+  const pubs = store.list('publications', p => p.publisherOrgId === org.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const rows = pubs.map(p => {
+    const pkgs = store.list('bidRequests', r => r.publicationId === p.id);
+    const ids = new Set(pkgs.map(r => r.id));
+    const subs = store.list('submissions', s => ids.has(s.requestId));
+    const invited = store.list('invitations', i => ids.has(i.requestId)).length;
+    const open = pkgs.filter(r => r.status === 'open');
+    const awarded = pkgs.filter(r => r.status === 'awarded').length;
+    const nextDue = open.map(r => r.dueDate).filter(Boolean).sort()[0] || null;
+    const pastDue = open.filter(r => r.dueDate && Date.parse(r.dueDate) < at - 864e5).length;
+    const attention = [];
+    if (p.status === 'draft') attention.push('Not published yet');
+    if (pastDue) attention.push(`${pastDue} package${pastDue === 1 ? '' : 's'} past the bid date and still open`);
+    if (open.length && !subs.length) attention.push('Open packages with no bids yet');
+    if (open.some(r => subs.some(s => s.requestId === r.id))) attention.push('Bids waiting for an award');
+    // Cost: what the owner estimated for the project, what has been awarded so far, and the lowest bid still open.
+    const awardedSubs = pkgs.filter(r => r.status === 'awarded' && r.awardedSubmissionId).map(r => store.get('submissions', r.awardedSubmissionId)).filter(Boolean);
+    const awardedTotal = awardedSubs.reduce((n, s) => n + (Number(s.total) || 0), 0);
+    const lowOpen = subs.filter(s => ids.has(s.requestId) && s.status !== 'withdrawn' && open.some(r => r.id === s.requestId)).map(s => Number(s.total) || 0).filter(x => x > 0);
+    const estimate = Number(p.estValue) || null;
+    const committed = awardedTotal || null;
+    const budget = { estimate, awarded: committed, lowestOpenBid: lowOpen.length ? Math.min(...lowOpen) : null,
+      awardedVsEstimate: estimate && committed ? Math.round((committed / estimate) * 1000) / 10 : null };
+    if (budget.awardedVsEstimate && budget.awardedVsEstimate > 100) attention.push(`Awarded work is ${budget.awardedVsEstimate}% of the estimate`);
+    return { id: p.id, title: p.title, city: p.city || null, state: p.state || null, status: p.status,
+      packages: pkgs.length, openPackages: open.length, awardedPackages: awarded, invitations: invited, bids: subs.length,
+      nextBidDate: nextDue, attention, budget };
+  });
+  return { projects: rows.length, estimatedValue: rows.reduce((n, r) => n + (r.budget.estimate || 0), 0), awardedValue: rows.reduce((n, r) => n + (r.budget.awarded || 0), 0),
+    openPackages: rows.reduce((n, r) => n + r.openPackages, 0),
+    awardedPackages: rows.reduce((n, r) => n + r.awardedPackages, 0), bids: rows.reduce((n, r) => n + r.bids, 0), rows };
+}
+
+/**
  * Copies a project's details and its trade packages into a new draft. Plans, bidders, invitations, bids, questions and
  * deadlines are NOT copied: the new draft starts clean, and each copied package gets a placeholder bid date 30 days out to set again.
  */

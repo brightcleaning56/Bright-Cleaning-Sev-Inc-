@@ -18,6 +18,7 @@ check "dead controls (rich project incl. profile tabs)"    "dead controls: 0" py
 QA_PORT=4403 check "super admin phase 3 (projects, packages, plan access, documents, mobile menu)" "PROBLEMS: \[\]" python3 qa/admin_phase3_flow.py
 reset_main; QA_PORT=4401 check "plan room + addenda flow"      "PROBLEMS: \[\]" python3 qa/planroom_flow.py
 reset_main; QA_PORT=4401 check "bid leveling + prequalification" "PROBLEMS: \[\]" python3 qa/bid_leveling_flow.py
+reset_main; QA_PORT=4401 check "bid form shows the insurance minimum and lets a bidder add a certificate there" "PROBLEMS: \[\]" python3 qa/bid_insurance_flow.py
 reset_main; QA_PORT=4401 check "super admin portal (dashboard, companies, suspend/reactivate, users, roles, audit, mobile)" "PROBLEMS: \[\]" python3 qa/admin_flow.py
 reset_main; QA_PORT=4401 check "super admin phase 5 (analytics, queue, support, incidents, privacy, jobs & health, exports)" "PROBLEMS: \[\]" python3 qa/admin_phase5_flow.py
 reset_main; QA_PORT=4401 check "super admin phase 4 + MFA (subscriptions, sources, AI limits, authenticator sign-in, phone cards)" "PROBLEMS: \[\]" python3 qa/admin_phase4_flow.py
@@ -30,7 +31,8 @@ reset_main; QA_PORT=4401 check "package questions: asked, answered by the GC, re
 reset_main; QA_PORT=4401 check "publisher command center (tiles, project search and filters, request chooser, unconfirmed banner and resend)" "PROBLEMS: \[\]" python3 qa/command_center_flow.py
 reset_main; QA_PORT=4401 check "phone width: every main screen fits a 390px phone (website, publisher, subscriber, admin)" "PROBLEMS: \[\]" python3 qa/mobile_sweep.py
 reset_main; QA_PORT=4401 check "full system: super admin, owner and subcontractor in one project, to the audit log" "PROBLEMS: \[\]" python3 qa/full_system_flow.py
-reset_main; QA_PORT=4401 check "Super Admin review screens (publisher verification, owner authority, company record)" "PROBLEMS: \[\]" python3 qa/staff_review_flow.py
+reset_main; reset_main; QA_PORT=4401 check "keyboard: every tabbed-to control shows a visible focus ring" "PROBLEMS: \[\]" python3 qa/a11y_keyboard.py
+QA_PORT=4401 check "Super Admin review screens (publisher verification, owner authority, company record)" "PROBLEMS: \[\]" python3 qa/staff_review_flow.py
 QA_PORT=4401 check "public website (homepage, every page, mobile menu, sign-in hand-off to /app, clean console)" "PROBLEMS: \[\]" python3 qa/website_flow.py
 kill "${PIDS[@]}" 2>/dev/null
 echo "mode: CORE_READS=${CORE_READS:-off} · screenshots and logs: $QA_OUT"; exit $FAIL

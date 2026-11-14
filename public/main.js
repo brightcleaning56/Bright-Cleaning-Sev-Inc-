@@ -676,7 +676,7 @@ async function leadTab(t, body) {
         <div data-inv="${i.id}">${r.documentCount ? await planRoomHtml(r.id) : ''}<div id="est-${i.id}"></div>${open ? `<button class="x-fe7b4979" data-est-manual="${i.id}" >Build estimate manually</button>` : ''}</div>
         ${r.addendumCount > i.acknowledgedThrough ? `<div class="x-c5c11f3d" ><small><strong>Addendum ${r.addendumCount} posted.</strong> ${esc(r.addenda.at(-1)?.note || '')} Review the plan room, then acknowledge before bidding.</small> <button data-ack="${i.id}">Acknowledge addenda 1–${r.addendumCount}</button></div>` : (r.addendumCount ? `<small>Addenda 1–${r.addendumCount} acknowledged.</small>` : '')}
         <div class="row x-fe7b4979" >${['will_bid', 'wont_bid', 'undecided'].map(x => `<button data-intent="${x}" data-id="${i.id}" ${i.intent === x ? 'class="primary"' : ''} ${open ? '' : 'disabled'}>${{ will_bid: 'Will bid', wont_bid: "Won't bid", undecided: 'Undecided' }[x]}</button>`).join('')}
-          ${open ? `<button data-bidform="${i.id}" data-due="${esc(r.dueDate)}">${i.myBid ? 'Revise bid' : 'Submit bid'}</button> <button type="button" data-copylink="${i.id}">Copy bid link</button>` : ''}</div>
+          ${open ? `<button data-bidform="${i.id}" data-due="${esc(r.dueDate)}" data-insreq="${esc(JSON.stringify(r.insuranceRequirements || null))}">${i.myBid ? 'Revise bid' : 'Submit bid'}</button> <button type="button" data-copylink="${i.id}">Copy bid link</button>` : ''}</div>
         ${i.myBid ? `<small>Your bid: <strong>${money(i.myBid.total)}${i.myBid.recurring ? '/mo' : ''}</strong> · ${esc(i.myBid.status.replace('_', ' '))} · revision ${i.myBid.revision} · ${ago(i.myBid.submittedAt)}${i.myBid.receiptId ? ` · receipt <b>${esc(i.myBid.receiptId)}</b> <span title="SHA-256 fingerprint of the exact bid document">(${esc(i.myBid.sha256.slice(0, 12))}…)</span>` : ''}</small>` : ''}
         <div id="bf-${i.id}"></div><div><button type="button" data-qa="${r.id}" data-open="${open ? 1 : 0}">Questions</button><div class="qa-panel" id="qa-${r.id}" hidden></div></div></div></div>`; }))).join('')
       : (me.org?.trades || []).length ? `<div class="empty">No open invitations right now. You're set up for ${esc((me.org.trades || []).map(k => (TRADES_LIST.find(t => t.key === k) || {}).label || k).join(', '))}, so a GC or property manager in your territory will invite you when work matches.</div>` : '<div class="empty">No invitations yet. Set your trades in Plan & profile, and you\'ll be invited automatically when a GC or property manager in your territory posts work you do.</div>';
@@ -710,6 +710,8 @@ async function leadTab(t, body) {
         + '<label class="x-27ac7107" >Valid for (days)<input name="validDays" type="number" min="1" max="365" placeholder="30"></label>'
         + '<div class="err x-6b99de8b" role="alert" ></div>'
         + '<div class="row"><button type="submit" class="primary">Send bid</button><span class="muted x-5e0faad2" >You can revise the bid until the due date.</span></div></form>';
+      const req = JSON.parse(b.dataset.insreq || 'null');
+      if (req) { const panel = document.createElement('div'); panel.id = 'insfit-' + id; box.prepend(panel); insuranceFit(panel, req); }
       const f = box.querySelector('form'), errBox = f.querySelector('[role=alert]'), btn = f.querySelector('button');
       const showErrors = list => { errBox.innerHTML = list.map(x => '<div>' + esc(x) + '</div>').join(''); errBox.style.display = list.length ? '' : 'none'; };
       f.scope.addEventListener('input', () => { const n = f.scope.value.trim().length; f.querySelector('.count').textContent = n + ' of 10 characters' + (n >= 10 ? '' : ' (at least 10 needed)'); });
@@ -1353,11 +1355,48 @@ async function emailBanner(verified) {
 // Publisher command center: counts across every project, and the bid deadlines in the next two weeks.
 async function publisherCommand() {
   const el = $('#pcc'); if (!el) return;
-  const s = await api('GET', '/api/publisher/summary').catch(() => null); if (!s) { el.innerHTML = ''; return; }
+  const [s, pf] = await Promise.all([api('GET', '/api/publisher/summary').catch(() => null), api('GET', '/api/publisher/portfolio').catch(() => null)]); if (!s) { el.innerHTML = ''; return; }
   const tiles = [['Total projects', s.projects.total], ['Drafts', s.projects.draft], ['Published', s.projects.published], ['Active bid packages', s.activePackages],
     ['Invitations sent', s.invitationsSent], ['Bids received', s.bidsReceived], ['Awards pending', s.awardsPending], ['Deadlines in 14 days', s.upcomingDeadlines.length]];
   el.innerHTML = `<div class="card cc"><h2>Publisher command center</h2><div class="cctiles">${tiles.map(([l, v]) => `<div class="cctile"><b>${v}</b><small>${l}</small></div>`).join('')}</div>
-    <h3>Upcoming bid deadlines</h3>${s.upcomingDeadlines.length ? `<ul class="ccdl">${s.upcomingDeadlines.map(d => `<li><b>${esc(d.title)}</b> <small>due ${fmtDate(d.dueDate)}</small></li>`).join('')}</ul>` : '<small>No bid deadlines in the next two weeks.</small>'}</div>`;
+    <h3>Upcoming bid deadlines</h3>${s.upcomingDeadlines.length ? `<ul class="ccdl">${s.upcomingDeadlines.map(d => `<li><b>${esc(d.title)}</b> <small>due ${fmtDate(d.dueDate)}</small></li>`).join('')}</ul>` : '<small>No bid deadlines in the next two weeks.</small>'}
+    <h3>Portfolio: every project</h3>${pf && pf.rows.length ? `<div class="scroll"><table class="pfolio"><thead><tr><th>Project</th><th>Status</th><th>Packages open / total</th><th>Invited</th><th>Bids</th><th>Awarded</th><th>Estimate</th><th>Awarded $</th><th>Lowest open bid</th><th>Next bid date</th><th>Needs attention</th></tr></thead><tbody>${pf.rows.map(r => `<tr><td><b>${esc(r.title)}</b>${r.city ? `<br><small>${esc(r.city)}${r.state ? ', ' + esc(r.state) : ''}</small>` : ''}</td><td>${esc(r.status)}</td><td>${r.openPackages} / ${r.packages}</td><td>${r.invitations}</td><td>${r.bids}</td><td>${r.awardedPackages}</td><td>${r.budget.estimate ? money(r.budget.estimate) : '—'}</td><td>${r.budget.awarded ? money(r.budget.awarded) + (r.budget.awardedVsEstimate ? ` <small>(${r.budget.awardedVsEstimate}%)</small>` : '') : '—'}</td><td>${r.budget.lowestOpenBid ? money(r.budget.lowestOpenBid) : '—'}</td><td>${r.nextBidDate ? fmtDate(r.nextBidDate) : '—'}</td><td>${r.attention.length ? r.attention.map(a => esc(a)).join('<br>') : '<small>Nothing</small>'}</td></tr>`).join('')}</tbody></table></div>` : '<small>No projects yet.</small>'}</div>`;
+}
+// Insurance the publisher requires, checked against this company's certificates on file, with an inline form to add one.
+// The publisher's own check at award is the official one; this shows the bidder what is missing before they send a bid.
+async function insuranceFit(panel, req) {
+  const cs = await api('GET', '/api/credentials').catch(() => null);
+  if (!cs) { panel.innerHTML = ''; return; }
+  const live = c => Date.parse(c.expiresAt) >= Date.now();
+  const cois = cs.filter(c => c.type === 'coi' && live(c));
+  const glMin = Number(req.generalLiabilityMin) || 0;
+  const glOk = !glMin || cois.some(c => (c.coverages || []).some(v => v.type === 'general_liability' && v.limit >= glMin));
+  const wcOk = !req.workersComp || cois.some(c => (c.coverages || []).some(v => v.type === 'workers_comp'));
+  const missing = [];
+  if (!glOk) missing.push(`general liability of at least ${money(glMin)}`);
+  if (!wcOk) missing.push('a current workers comp certificate');
+  panel.innerHTML = `<div class="insfit ${missing.length ? 'vnote' : ''}"><b>${missing.length ? 'Your certificates do not yet meet this package' : 'Your certificates meet this package\'s insurance'}.</b>${missing.length ? ` Missing: ${esc(missing.join(' and '))}. You can still send a bid, but the publisher will need you to meet this before an award.` : ''}
+    <details ${missing.length ? 'open' : ''}><summary>Add a certificate here</summary>
+    <form class="insfit-form">
+      <input name="carrier" placeholder="Insurance carrier" required autocomplete="off">
+      <input name="policy" placeholder="Policy number" required autocomplete="off">
+      <label><small>General liability limit (USD)</small><input name="gl" type="number" min="1" placeholder="e.g. 1000000"></label>
+      <label><small>Workers comp limit (USD, if you carry it)</small><input name="wc" type="number" min="1" placeholder="e.g. 500000"></label>
+      <label><small>Expires</small><input name="expires" type="date" required></label>
+      <div class="err" role="alert"></div>
+      <button type="submit">Save certificate</button></form></details></div>`;
+  const form = panel.querySelector('form'), err = form.querySelector('[role=alert]');
+  form.onsubmit = async ev => {
+    ev.preventDefault(); err.textContent = '';
+    const coverages = [];
+    if (form.gl.value) coverages.push({ type: 'general_liability', limit: Number(form.gl.value) });
+    if (form.wc.value) coverages.push({ type: 'workers_comp', limit: Number(form.wc.value) });
+    if (!coverages.length) { err.textContent = 'Enter the general liability limit, the workers comp limit, or both.'; return; }
+    try {
+      await api('POST', '/api/credentials', { type: 'coi', issuer: form.carrier.value, number: form.policy.value, coverages, expiresAt: form.expires.value });
+      insuranceFit(panel, req);
+    } catch (e) { err.textContent = e.message; }
+  };
 }
 async function buyerView() {
   if (!TRADES_LIST.length) TRADES_LIST = await (await fetch('/api/trades')).json().catch(() => []);

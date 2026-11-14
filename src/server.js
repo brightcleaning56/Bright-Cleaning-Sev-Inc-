@@ -33,7 +33,7 @@ import * as adminPhase5 from './admin/phase5.js';
 import { newSecret, seal, checkCode, otpauthUri } from './admin/mfa.js';
 import { parseFilters } from './leads.js';
 import { changeDeadline } from './deadline.js';
-import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, publisherSummary, publisherActivity, duplicatePublication, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
+import { PERMISSIONS, RELATIONSHIPS, can, requestVerification, decideVerification, publisherSummary, publisherActivity, publisherPortfolio, duplicatePublication, createPublication, addPackage, checklist, publish, setStatus, coverage, searchBidders, quickPublish, isVerifiedPublisher, schedulePublication, unschedulePublication, publishDue } from './publishing.js';
 import { CATALOG, PRICE_STATUS, entitlementsFor, seatCheck, usage } from './entitlements.js';
 import { syncDocument, indexDocument, syncPlanRoom, listSets, searchDocuments, compareRevisions } from './planroom.js';
 import { saveDocument, listDocuments, viewLink, openFromLink, acknowledgeAddenda, planholders } from './documents.js';
@@ -733,6 +733,7 @@ export function createServer(store, deps = {}) {
   route('POST', '/api/admin/publishers/:id/decide', 'platform', ({ params, body, user }) => R(decideVerification(store, user, params.id, body), 'publisher'));
   route('GET', '/api/publisher/activity', 'user', ({ user, query }) => publisherActivity(store, pubOrg(user), { limit: query.get('limit') }));
   route('GET', '/api/publisher/summary', 'user', ({ user }) => publisherSummary(store, pubOrg(user)));
+  route('GET', '/api/publisher/portfolio', 'user', ({ user }) => publisherPortfolio(store, pubOrg(user)));
   // Resend the confirmation email to an account that has not confirmed yet. Limited to 5 an hour per user.
   route('POST', '/api/account/resend-verification', 'user', async ({ user }) => {
     const org = store.get('orgs', user.orgId);
