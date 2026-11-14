@@ -23,7 +23,7 @@ Last updated: 2026-11-13.
 
 ## Needed to move engineering forward
 
-10. **Approve the quote request list** and send it to suppliers (or tell me which supplier groups to contact).
+10. ~~Approve the quote request list~~ **Approved (owner).** Ready-to-send emails are in `supplier-rfq-emails.md`. Send them, or ask an engineering lead to send them, after filling in the sender name.
 11. **Decide on the X-ray module** for version 1: remove it and offer it as an option (recommended, saves up to $18,000).
 12. **Name an engineering lead** for the mechanical and robotics work, if one is not already in place.
 
