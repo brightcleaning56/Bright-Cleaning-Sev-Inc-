@@ -984,7 +984,9 @@
     } else if (t === 'projects') {
       B.innerHTML = `<div class="card"><h2>Projects</h2>${rowsOr(d.projects.map(p => `<tr class="click" data-rec="projects:${p.id}"><td><b>${esc(p.name || 'Project #' + p.id)}</b><small>${esc(p.site_address || '')}</small></td><td>${badge(p.status)}</td><td>${p.progress || 0}%</td><td>${p.due_date ? fmtDate(p.due_date) : '—'}</td></tr>`), ['Project', 'Status', 'Progress', 'Due'], 'No projects.')}</div>`; bindOpeners(B);
     } else if (t === 'invoices') {
-      const invs = d.invoices.filter(i => i.status !== 'Void');
+      const all = d.invoices.filter(i => i.status !== 'Void');
+      const invs = all.filter(i => i.status !== 'Draft');
+      const drafts = all.length - invs.length;
       const invNo = id => (invs.find(i => i.id === id) || {}).invoice_number || '';
       const ev = [];
       invs.forEach(i => ev.push({ date: String(i.issue_date || i.created_at || '').slice(0, 10), kind: 'Invoice', ref: i.invoice_number || ('#' + i.id), charge: Number(i.amount) || 0, credit: 0, note: [i.status, parseInvLines(i.line_items).map(l => l.service).join(', ')].filter(Boolean).join(' · ') }));
@@ -995,10 +997,10 @@
       const billed = invs.reduce((s, i) => s + (Number(i.amount) || 0), 0), paid = invs.reduce((s, i) => s + (Number(i.paid_amount) || 0), 0), bal = Math.max(0, billed - paid);
       const overdue = invs.filter(i => i.status === 'Overdue');
       B.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Customer ledger</h2><button class="btn" id="cuNewInv">New invoice</button></div>
-        <div class="fin2" style="margin-top:12px"><div><small>Billed</small><b>${money(billed)}</b></div><div><small>Paid</small><b>${money(paid)}</b></div><div><small>Balance due</small><b>${money(bal)}</b></div><div><small>Overdue invoices</small><b>${overdue.length}</b></div></div>
+        <div class="fin2" style="margin-top:12px"><div><small>Billed</small><b>${money(billed)}</b></div><div><small>Paid</small><b>${money(paid)}</b></div><div><small>Balance due</small><b>${money(bal)}</b></div><div><small>Overdue invoices</small><b>${overdue.length}</b></div><div><small>Drafts (not sent)</small><b>${drafts}</b></div></div>
         ${ev.length ? `<table class="t" style="margin-top:12px"><thead><tr><th>Date</th><th>Entry</th><th>Invoice</th><th>Note</th><th class="num">Charged</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead><tbody>${ledgerRows}</tbody></table>` : '<p class="muted" style="margin-top:12px">No invoices yet. Create one for this customer, then record payments as they come in.</p>'}
       </div>
-      <div class="card" style="margin-top:12px"><h2>Invoices</h2>${rowsOr(invs.map(i => { const b = Math.max(0, Number(i.amount) - Number(i.paid_amount || 0)); return `<tr class="click" data-rec="invoices:${i.id}"><td><b>${esc(i.invoice_number || '#' + i.id)}</b></td><td class="num">${money(i.amount)}</td><td class="num">${money(i.paid_amount)}</td><td class="num">${money(b)}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td><td>${badge(i.status)}</td><td>${b > 0 && i.status !== 'Draft' ? `<button class="btn small ghost" data-pay="${i.id}">Record payment</button>` : ''}</td></tr>`; }), ['Invoice', 'Amount', 'Paid', 'Balance', 'Due', 'Status', ''], 'No invoices yet.')}</div>`;
+      <div class="card" style="margin-top:12px"><h2>Invoices</h2>${rowsOr(all.map(i => { const b = Math.max(0, Number(i.amount) - Number(i.paid_amount || 0)); return `<tr class="click" data-rec="invoices:${i.id}"><td><b>${esc(i.invoice_number || '#' + i.id)}</b></td><td class="num">${money(i.amount)}</td><td class="num">${money(i.paid_amount)}</td><td class="num">${money(b)}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td><td>${badge(i.status)}</td><td>${b > 0 && i.status !== 'Draft' ? `<button class="btn small ghost" data-pay="${i.id}">Record payment</button>` : ''}</td></tr>`; }), ['Invoice', 'Amount', 'Paid', 'Balance', 'Due', 'Status', ''], 'No invoices yet.')}</div>`;
       bindOpeners(B);
       $('#cuNewInv').onclick = async () => { await openRecord('invoices', null); if ($('#recForm')) fillInvoiceCustomer($('#recForm'), c); };
       $$('[data-pay]').forEach(b => b.onclick = () => recordPayment(Number(b.dataset.pay)));
