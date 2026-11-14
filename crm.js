@@ -42,7 +42,7 @@ module.exports = function mountCRM(app, ctx) {
     const kids = new Set(contracts.map(x => x.id));
     const projects = db.prepare('SELECT * FROM projects').all().filter(x => kids.has(x.contract_id) || (company && String(x.company || '').toLowerCase().trim() === company));
     const pids = new Set(projects.map(p => p.id));
-    const invoices = db.prepare('SELECT * FROM invoices').all().filter(x => mine(x.email, x.company) || pids.has(x.project_id));
+    const invoices = db.prepare('SELECT * FROM invoices').all().filter(x => x.customer_id === c.id || mine(x.email, x.company) || pids.has(x.project_id));
     // Complaint history: every case for this customer stays here after it leaves the Quality queue (open, resolved or closed).
     let complaints = []; try { complaints = db.prepare('SELECT id, status, severity, category, description, property, service_date, reported_at, response_due, resolved_at, closed_at, created_at, updated_at FROM quality_complaints WHERE customer_id=? ORDER BY id DESC').all(c.id); } catch { /* table is created by the quality module at startup */ }
     const iids = new Set(invoices.map(i => i.id));

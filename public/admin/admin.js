@@ -984,7 +984,24 @@
     } else if (t === 'projects') {
       B.innerHTML = `<div class="card"><h2>Projects</h2>${rowsOr(d.projects.map(p => `<tr class="click" data-rec="projects:${p.id}"><td><b>${esc(p.name || 'Project #' + p.id)}</b><small>${esc(p.site_address || '')}</small></td><td>${badge(p.status)}</td><td>${p.progress || 0}%</td><td>${p.due_date ? fmtDate(p.due_date) : '—'}</td></tr>`), ['Project', 'Status', 'Progress', 'Due'], 'No projects.')}</div>`; bindOpeners(B);
     } else if (t === 'invoices') {
-      B.innerHTML = `<div class="card"><h2>Invoices &amp; payments</h2>${rowsOr(d.invoices.map(i => `<tr class="click" data-rec="invoices:${i.id}"><td><b>${esc(i.invoice_number || '#' + i.id)}</b></td><td class="num">${money(i.amount)}</td><td class="num">${money(i.paid_amount)}</td><td class="num">${money(Math.max(0, i.amount - i.paid_amount))}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td><td>${badge(i.status)}</td></tr>`), ['Invoice', 'Amount', 'Paid', 'Balance', 'Due', 'Status'], 'No invoices.')}</div>`; bindOpeners(B);
+      const invs = d.invoices.filter(i => i.status !== 'Void');
+      const invNo = id => (invs.find(i => i.id === id) || {}).invoice_number || '';
+      const ev = [];
+      invs.forEach(i => ev.push({ date: String(i.issue_date || i.created_at || '').slice(0, 10), kind: 'Invoice', ref: i.invoice_number || ('#' + i.id), charge: Number(i.amount) || 0, credit: 0, note: i.status }));
+      (d.payments || []).filter(p => invs.some(i => i.id === p.invoice_id)).forEach(p => ev.push({ date: String(p.received_at || '').slice(0, 10), kind: 'Payment', ref: invNo(p.invoice_id), charge: 0, credit: Number(p.amount) || 0, note: p.note || 'Payment received' }));
+      ev.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'Invoice' ? -1 : 1));
+      let run = 0;
+      const ledgerRows = ev.map(x => { run = Math.round((run + x.charge - x.credit) * 100) / 100; return `<tr><td>${fmtDate(x.date)}</td><td>${esc(x.kind)}</td><td>${esc(x.ref)}</td><td>${esc(x.note)}</td><td class="num">${x.charge ? money(x.charge) : ''}</td><td class="num">${x.credit ? money(x.credit) : ''}</td><td class="num"><b>${money(run)}</b></td></tr>`; }).join('');
+      const billed = invs.reduce((s, i) => s + (Number(i.amount) || 0), 0), paid = invs.reduce((s, i) => s + (Number(i.paid_amount) || 0), 0), bal = Math.max(0, billed - paid);
+      const overdue = invs.filter(i => i.status === 'Overdue');
+      B.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Customer ledger</h2><button class="btn" id="cuNewInv">New invoice</button></div>
+        <div class="fin2" style="margin-top:12px"><div><small>Billed</small><b>${money(billed)}</b></div><div><small>Paid</small><b>${money(paid)}</b></div><div><small>Balance due</small><b>${money(bal)}</b></div><div><small>Overdue invoices</small><b>${overdue.length}</b></div></div>
+        ${ev.length ? `<table class="t" style="margin-top:12px"><thead><tr><th>Date</th><th>Entry</th><th>Invoice</th><th>Note</th><th class="num">Charged</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead><tbody>${ledgerRows}</tbody></table>` : '<p class="muted" style="margin-top:12px">No invoices yet. Create one for this customer, then record payments as they come in.</p>'}
+      </div>
+      <div class="card" style="margin-top:12px"><h2>Invoices</h2>${rowsOr(invs.map(i => { const b = Math.max(0, Number(i.amount) - Number(i.paid_amount || 0)); return `<tr class="click" data-rec="invoices:${i.id}"><td><b>${esc(i.invoice_number || '#' + i.id)}</b></td><td class="num">${money(i.amount)}</td><td class="num">${money(i.paid_amount)}</td><td class="num">${money(b)}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td><td>${badge(i.status)}</td><td>${b > 0 && i.status !== 'Draft' ? `<button class="btn small ghost" data-pay="${i.id}">Record payment</button>` : ''}</td></tr>`; }), ['Invoice', 'Amount', 'Paid', 'Balance', 'Due', 'Status', ''], 'No invoices yet.')}</div>`;
+      bindOpeners(B);
+      $('#cuNewInv').onclick = async () => { await openRecord('invoices', null); if ($('#recForm')) fillInvoiceCustomer($('#recForm'), c); };
+      $$('[data-pay]').forEach(b => b.onclick = () => recordPayment(Number(b.dataset.pay)));
     } else if (t === 'documents') {
       B.innerHTML = `<div class="card"><h2>Documents</h2><button class="btn" id="cpUp">Upload files</button>${rowsOr(d.documents.map(x => `<tr><td><button class="linklike" data-dl="${x.id}">${esc(x.title)}</button><small>${esc(x.file_name || '')}</small></td><td>${esc(x.kind)}</td><td>${esc(x.revision || '—')}</td><td>${fmtDate(x.created_at)}</td></tr>`), ['Document', 'Type', 'Rev', 'Uploaded'], 'No documents for this customer.')}</div>`;
       $('#cpUp').onclick = () => uploadDocs();
@@ -1316,6 +1333,34 @@
   }
   attachCustomerPicker(ef.elements.customer_name);
   attachCustomerPicker(ef.elements.company);
+  // Customer picker for any form (invoices): picks an existing customer and fills the form.
+  function attachFormPicker(input, onPick) {
+    const wrap = input && input.closest('.f'); if (!wrap) return;
+    wrap.style.position = 'relative';
+    const box = document.createElement('div'); box.className = 'cpick'; box.hidden = true; wrap.appendChild(box);
+    const show = async () => {
+      const q = input.value.trim().toLowerCase(); if (q.length < 2) { box.hidden = true; return; }
+      const hits = (await customersForPicker()).filter(c => [c.name, c.company, c.email, c.phone].join(' ').toLowerCase().includes(q)).slice(0, 8);
+      if (!hits.length) { box.hidden = true; return; }
+      box.innerHTML = hits.map(c => '<button type="button" data-cid="' + c.id + '"><b>' + esc(c.company || c.name || 'Customer') + '</b><small>' + esc([c.name, c.email, c.phone].filter(Boolean).join(' · ')) + '</small></button>').join('');
+      box.hidden = false;
+    };
+    input.addEventListener('input', show);
+    input.addEventListener('focus', show);
+    input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 150));
+    box.addEventListener('mousedown', ev => {
+      const b = ev.target.closest('[data-cid]'); if (!b) return; ev.preventDefault();
+      const c = (pickerCustomers || []).find(x => String(x.id) === b.dataset.cid); if (!c) return;
+      onPick(c); box.hidden = true;
+    });
+  }
+  // Fills an invoice form from a customer record and links the invoice to that customer.
+  function fillInvoiceCustomer(form, c) {
+    const set = (k, v) => { if (form.elements[k]) form.elements[k].value = v || ''; };
+    set('customer_name', c.name); set('company', c.company); set('email', c.email);
+    if (form.elements.customer_id) form.elements.customer_id.value = c.id;
+    toast('Linked to ' + (c.company || c.name || 'customer'));
+  }
   const DEFAULTS = { area_sqft: 0, production_rate: 0, labor_hours: 0, labor_rate: 0, supplies_cost: 0, equipment_cost: 0, other_cost: 0, overhead_pct: 10, margin_pct: 25, tax_pct: 0, visits: 1, crew_size: 1, shift_hours: 8, travel_cost: 0, mobilization_cost: 0, subcontractor_cost: 0, disposal_cost: 0, insurance_pct: 0, contingency_pct: 0, minimum_charge: 0 };
   const EXTRA_KEYS = ['visits', 'crew_size', 'shift_hours', 'travel_cost', 'mobilization_cost', 'subcontractor_cost', 'disposal_cost', 'insurance_pct', 'contingency_pct', 'minimum_charge', 'template_key', 'windows_interior_panes', 'windows_interior_rate', 'windows_exterior_panes', 'windows_exterior_rate', 'windows_cost'];
   let templates = [];
@@ -1923,6 +1968,12 @@
         <span class="grow"></span>${id ? '<button class="btn danger" id="recDel">Delete</button>' : ''}`
     });
     const form = $('#recForm');
+    if (t === 'invoices' && form) {
+      pickerCustomers = null;
+      form.insertAdjacentHTML('beforeend', '<input type="hidden" name="customer_id" value="' + esc(rec.customer_id || '') + '">');
+      attachFormPicker(form.elements.customer_name, c => fillInvoiceCustomer(form, c));
+      attachFormPicker(form.elements.company, c => fillInvoiceCustomer(form, c));
+    }
     $('#recSave').onclick = async () => {
       const v = formObj(form);
       const missing = cfg.fields.filter(f => f[3] && f[3].required && !String(v[f[0]] || '').trim()).map(f => f[1].replace(' *', ''));
@@ -1957,8 +2008,9 @@
   }
 
   async function recordPayment(id) {
-    const inv = state.invoices.find(i => i.id === id);
-    if (!inv) return;
+    let inv = state.invoices.find(i => i.id === id);
+    if (!inv) { state.invoices = (await api('/api/admin/invoices')).invoices || []; inv = state.invoices.find(i => i.id === id); }
+    if (!inv) return toast('Invoice not found.', true);
     const bal = Math.max(0, inv.amount - inv.paid_amount);
     const input = prompt(`Record a payment for ${inv.invoice_number}.\nBalance due: ${money(bal)}\n\nAmount received:`, bal.toFixed(2));
     if (input === null) return;
@@ -1968,7 +2020,7 @@
     try {
       const r = await api(`/api/admin/invoices/${id}/payment`, { method: 'POST', json: { amount } });
       toast(`Payment recorded. Invoice is now ${r.status}.`);
-      closeDrawer(); state.invoices = []; load(state.view);
+      closeDrawer(); state.invoices = []; load(state.view); if (state.view === 'customers') loadCustomerPage();
     } catch (err) { toast(err.message, true); }
   }
 
