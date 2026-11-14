@@ -1,6 +1,6 @@
 # Automated test inventory
 
-**265 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
+**285 tests.** Generated from the test files. Run: `npm test` (set TEST_DATABASE_URL for the Postgres tests).
 
 ## admin-phase2b.test.js (5)
 - the window is twelve consecutive UTC months ending at the as-of month
@@ -81,6 +81,10 @@
 - backup: encrypted, restorable with matching checksum; tampering detected
 - readiness: fresh deployment is NO-GO and every gate carries evidence + an owner
 
+## award-insurance.test.js (2)
+- awarding a company with no insurance on file needs a recorded reason, and the reason is kept on the contract
+- a package without a minimum is awarded as before
+
 ## backup-docs.test.js (6)
 - document vault: encrypted at rest, incremental, detects corrupted and missing files
 - vault verification: every record needs its file; files must decrypt to a PDF with the recorded fingerprint
@@ -89,14 +93,26 @@
 - off-site sync: uploads the newest database backup and new document blobs only, signed
 - database TLS: verified by default over the internet; opt-out is explicit; private network has no TLS
 
+## bid-breadth.test.js (6)
+- breadth counts invitations, answers and eligible companies not yet invited, and says what to do
+- a company that matches the package but were never invited are counted as a gap
+- reminders go only to companies that have not answered, and are limited to one every two days
+- inviting eligible companies adds only those that match and are not yet invited
+- an invite-only package is not opened to eligible companies
+- scheduled reminders go out only for packages closing within three days, to companies that have not answered
+
+## bid-comparison-csv.test.js (1)
+- the bid comparison exports as CSV, with formulas neutralised and commas and quotes escaped
+
 ## bid-revisions.test.js (2)
 - a revised bid keeps the original amount, scope and receipt, and the comparison shows both
 - a company that never revises shows one revision and no history
 
-## bidder-directory.test.js (3)
+## bidder-directory.test.js (4)
 - the directory lists only active companies, and filters by trade and state
 - with a package, each company shows whether it is eligible, why, and whether it is already invited
 - the limit is respected and capped
+- each company shows when it was last active, and long-inactive companies are flagged
 
 ## bidlink.test.js (5)
 - an invited company bids from its emailed link, with no sign-in
@@ -139,6 +155,9 @@
 - a deadline change is recorded as a numbered addendum with the old and new date and the reason
 - refuses a past date, the same date, a missing reason, a draft, and a request of another company
 
+## duplicate-project.test.js (1)
+- duplicating a project copies its details and packages, and nothing from the bidding
+
 ## enrichment.test.js (10)
 - license sync: looks up only names on permits, in one batched query, prefers the active license, records misses
 - license shows on project contacts and contractor pages; phone only with contact access
@@ -154,6 +173,9 @@
 ## entrypoint.test.js (1)
 - the server entry point keeps running after its periodic jobs fire
 
+## golden-path.test.js (1)
+- golden path: sign-up to countersigned contract, through the HTTP routes
+
 ## http.test.js (11)
 - auth, roles and tenant scoping over HTTP
 - login is rate limited
@@ -166,6 +188,11 @@
 - test email: explains exactly what is missing, sends when live
 - sign-in brute-force limit: 10 attempts per 15 minutes by default
 - release identifier (owner only) and honest coverage
+
+## insurance-requirements.test.js (3)
+- a package with no requirement asks for nothing
+- general liability and workers comp minimums are checked, and each shortfall is said plainly
+- a package stores its insurance minimum so invited companies can see it before they bid
 
 ## invite-by-name.test.js (1)
 - a publisher can invite a company by name to an open package, and the invitation is recorded
@@ -291,10 +318,14 @@
 - postgres core: schema v2 tables, transactional dual-write, reconcile, SQL search matches, merge, re-sync
 - linking scales linearly (regression: phase recompute was quadratic — 67 s at 10,000 permits)
 
-## publisher-verification.test.js (3)
+## publisher-activity.test.js (1)
+- publisher activity lists only this company\
+
+## publisher-verification.test.js (4)
 - a verification request keeps the contact person and records each step in the review history
 - a rejected company resubmits, and the history shows the rejection, the reason and the new request
 - approval is recorded in the history with who approved it and how it was checked
+- a project keeps its owner, developer, architect, general contractor and schedule; the dates must make sense
 
 ## publishing.test.js (8)
 - one catalog: legacy plans map onto it; publishers publish but do not get discovery; free gets invitations only; expired trial blocks
@@ -340,11 +371,18 @@
 ## sql-reads.test.js (1)
 - SQL search returns exactly the in-memory results: every filter, sort, page, both grouping modes
 
+## staff-verification-documents.test.js (1)
+- platform staff can open a publisher\
+
 ## takeoff.test.js (4)
 - takeoff only from a confirmed analysis; printed areas become lines with their sheet and room
 - estimate math checked by hand; quantity edits are flagged as adjusted; validation
 - rate-card lines price from approved cleaning rates; unapproved cards cannot price
 - submit as bid: amount = estimate total, bid lists quantities with sources; locked after submission
+
+## verification-documents.test.js (2)
+- a PDF is stored with its hash and kind; the file is written; the uploader is recorded
+- only PDFs, no duplicates, at most ten, and only the owning company can reach a document
 
 ## website.test.js (12)
 - the homepage is the public website; the workspace stays at /app and /login

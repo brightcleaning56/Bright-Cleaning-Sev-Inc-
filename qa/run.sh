@@ -29,7 +29,8 @@ reset_main; QA_PORT=4401 check "award to fully signed, then a contract change ac
 reset_main; QA_PORT=4401 check "package questions: asked, answered by the GC, read by an invited company" "PROBLEMS: \[\]" python3 qa/questions_flow.py
 reset_main; QA_PORT=4401 check "publisher command center (tiles, project search and filters, request chooser, unconfirmed banner and resend)" "PROBLEMS: \[\]" python3 qa/command_center_flow.py
 reset_main; QA_PORT=4401 check "phone width: every main screen fits a 390px phone (website, publisher, subscriber, admin)" "PROBLEMS: \[\]" python3 qa/mobile_sweep.py
-QA_PORT=4401 check "Super Admin review screens (publisher verification, owner authority, company record)" "PROBLEMS: \[\]" python3 qa/staff_review_flow.py
+reset_main; QA_PORT=4401 check "full system: super admin, owner and subcontractor in one project, to the audit log" "PROBLEMS: \[\]" python3 qa/full_system_flow.py
+reset_main; QA_PORT=4401 check "Super Admin review screens (publisher verification, owner authority, company record)" "PROBLEMS: \[\]" python3 qa/staff_review_flow.py
 QA_PORT=4401 check "public website (homepage, every page, mobile menu, sign-in hand-off to /app, clean console)" "PROBLEMS: \[\]" python3 qa/website_flow.py
 kill "${PIDS[@]}" 2>/dev/null
 echo "mode: CORE_READS=${CORE_READS:-off} · screenshots and logs: $QA_OUT"; exit $FAIL
