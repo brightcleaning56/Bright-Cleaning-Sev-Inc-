@@ -15,7 +15,7 @@ Recommended (for counsel to confirm):
 6. **[counsel]** Adopt bylaws, issue founder shares, decide on an 83(b) election for founder stock, and sign an intercompany IP assignment from DentistNow.
 7. **[counsel]** Invention-assignment and confidentiality agreements for every founder, employee, contractor and advisor.
 
-Iowa: the Iowa program requires an Iowa-based company, legally formed and registered in Iowa. Registering in Iowa is only needed if the company will actually be based in Iowa. Otherwise, this program is not available to DentistNow Robotics, and funding should rely on other sources. Decide this with counsel before any Iowa application.
+Iowa: the company will be based in Iowa. The Iowa program requires an Iowa-based company, legally formed and registered with the Iowa Secretary of State. Counsel should advise whether a domestic Iowa entity or a foreign qualification of the Delaware company is needed, then the owner registers it. Confirm eligibility with IEDA before any application.
 
 ## B. Contact and public presence (decision 2)
 
