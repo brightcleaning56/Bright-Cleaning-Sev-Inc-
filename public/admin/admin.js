@@ -987,7 +987,7 @@
       const invs = d.invoices.filter(i => i.status !== 'Void');
       const invNo = id => (invs.find(i => i.id === id) || {}).invoice_number || '';
       const ev = [];
-      invs.forEach(i => ev.push({ date: String(i.issue_date || i.created_at || '').slice(0, 10), kind: 'Invoice', ref: i.invoice_number || ('#' + i.id), charge: Number(i.amount) || 0, credit: 0, note: i.status }));
+      invs.forEach(i => ev.push({ date: String(i.issue_date || i.created_at || '').slice(0, 10), kind: 'Invoice', ref: i.invoice_number || ('#' + i.id), charge: Number(i.amount) || 0, credit: 0, note: [i.status, parseInvLines(i.line_items).map(l => l.service).join(', ')].filter(Boolean).join(' · ') }));
       (d.payments || []).filter(p => invs.some(i => i.id === p.invoice_id)).forEach(p => ev.push({ date: String(p.received_at || '').slice(0, 10), kind: 'Payment', ref: invNo(p.invoice_id), charge: 0, credit: Number(p.amount) || 0, note: p.note || 'Payment received' }));
       ev.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'Invoice' ? -1 : 1));
       let run = 0;
@@ -1635,6 +1635,7 @@
         ['issue_date', 'Invoice date', 'date'], ['due_date', 'Due date', 'date'],
         ['amount', 'Amount ($) *', 'number', { required: true }], ['paid_amount', 'Paid to date ($)', 'number'],
         ['status', 'Status', 'select', { list: STATUS.invoices }],
+        ['line_items', 'Services billed (one per line: service | amount)', 'textarea', { wide: true, hint: 'Example: Windows, interior and exterior | 1800 (new line) Hallways | 650 (new line) Flooring | 1200. The invoice total is the sum of these lines.' }],
         ['notes', 'Description / notes (shown on the printed invoice)', 'textarea', { wide: true }]
       ],
       search: r => [r.invoice_number, r.customer_name, r.company, r.notes],
@@ -1938,6 +1939,14 @@
     return `<div class="f${o.wide ? ' wide' : ''}"><label for="${id}">${esc(label)}</label>${input}${o.hint ? `<span class="hint">${esc(o.hint)}</span>` : ''}</div>`;
   }
 
+  // Services billed on an invoice: stored as JSON [{service, amount}], typed as "service | amount" lines.
+  const parseInvLines = raw => { try { const a = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []); return Array.isArray(a) ? a : []; } catch { return []; } };
+  const linesText = raw => parseInvLines(raw).map(l => `${l.service} | ${l.amount}`).join('\n');
+  const textLines = txt => String(txt || '').split('\n').map(x => x.trim()).filter(Boolean).map(x => {
+    const i = x.lastIndexOf('|'); if (i < 0) return { error: x };
+    const service = x.slice(0, i).trim(), amount = Number(x.slice(i + 1).replace(/[$,\s]/g, ''));
+    return service && amount > 0 ? { service, amount: Math.round(amount * 100) / 100 } : { error: x };
+  });
   async function openRecord(t, id) {
     if (t === 'projects' && id) return openProject(id);
     if (t === 'contracts' && id) return openContract(id);
@@ -1960,7 +1969,7 @@
     openDrawer({
       title: id ? (rec.title || rec.name || rec.invoice_number || `${cfg.label} #${id}`) : `New ${cfg.label}`,
       sub: id ? `${cfg.label[0].toUpperCase() + cfg.label.slice(1)} #${id} · created ${fmtDate(rec.created_at)}` : '',
-      body: `<form id="recForm" class="grid" novalidate>${cfg.fields.map(f => fieldHTML(f, rec[f[0]])).join('')}</form><p class="msg" id="recMsg" role="status"></p>`,
+      body: `<form id="recForm" class="grid" novalidate>${cfg.fields.map(f => fieldHTML(f, f[0] === 'line_items' ? linesText(rec.line_items) : rec[f[0]])).join('')}</form><p class="msg" id="recMsg" role="status"></p>`,
       footer: `<button class="btn" id="recSave">${id ? 'Save changes' : 'Create ' + cfg.label}</button>
         ${t === 'invoices' && id && bal && rec.status !== 'Void' ? '<button class="btn ghost" id="recPay">Record payment</button>' : ''}
         ${t === 'invoices' && id && !['Void', 'Paid'].includes(rec.status) ? `<button class="btn" id="recSend">${rec.sent_at ? 'Resend invoice' : 'Send invoice'}</button>` : ''}
@@ -1976,6 +1985,12 @@
     }
     $('#recSave').onclick = async () => {
       const v = formObj(form);
+      if (t === 'invoices' && String(v.line_items || '').trim()) {
+        const parsed = textLines(v.line_items), bad = parsed.filter(x => x.error);
+        if (bad.length) { $('#recMsg').className = 'msg err'; $('#recMsg').textContent = 'Each service line needs a name and an amount, like "Windows | 1800". Check: ' + bad[0].error; return; }
+        v.amount = String(Math.round(parsed.reduce((s, x) => s + x.amount, 0) * 100) / 100);
+        v.line_items = JSON.stringify(parsed);
+      }
       const missing = cfg.fields.filter(f => f[3] && f[3].required && !String(v[f[0]] || '').trim()).map(f => f[1].replace(' *', ''));
       if (missing.length) { $('#recMsg').className = 'msg err'; $('#recMsg').textContent = 'Required: ' + missing.join(', '); return; }
       const base = {}, extra = {};

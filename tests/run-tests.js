@@ -1952,10 +1952,10 @@ async function startServer(env, dataDir) {
   await check('Customers', 'Invoice linked to a customer shows on their profile; a payment shows in the ledger', async () => {
     const cu = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Ledger Test', company: 'Ledger Test Co', email: 'ledger.test@example.com', phone: '515-555-0199', address: '1 Ledger Way' } });
     const cid = cu.status === 201 ? cu.data.id : (await req('GET', '/api/admin/customers', { token: T })).data.customers.find(x => x.company === 'Ledger Test Co').id;
-    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'LEDGER-' + Date.now(), customer_id: cid, customer_name: 'Ledger Test', company: 'Ledger Test Co', email: 'ledger.test@example.com', amount: 500, status: 'Sent', issue_date: '2026-11-01', due_date: '2026-12-01' } });
+    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'LEDGER-' + Date.now(), customer_id: cid, customer_name: 'Ledger Test', company: 'Ledger Test Co', email: 'ledger.test@example.com', amount: 500, line_items: JSON.stringify([{ service: 'Windows', amount: 500 }]), status: 'Sent', issue_date: '2026-11-01', due_date: '2026-12-01' } });
     const pay = await req('POST', `/api/admin/invoices/${inv.data.id}/payment`, { token: T, json: { amount: 200 } });
     const prof = (await req('GET', `/api/admin/customers/${cid}/profile`, { token: T })).data;
-    assert(inv.status === 201 && pay.status === 200 && prof.invoices.some(i => i.id === inv.data.id) && prof.payments.some(p => p.invoice_id === inv.data.id && p.amount === 200), JSON.stringify({ inv: inv.data, pay: pay.data, n: prof.invoices.length }));
+    assert(inv.status === 201 && pay.status === 200 && prof.invoices.some(i => i.id === inv.data.id) && prof.payments.some(p => p.invoice_id === inv.data.id && p.amount === 200) && /Windows/.test((prof.invoices.find(i => i.id === inv.data.id) || {}).line_items || ''), JSON.stringify({ inv: inv.data, pay: pay.data, n: prof.invoices.length }));
     return 'invoice linked to the customer; a $200 payment shows on the profile ledger';
   });
 

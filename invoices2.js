@@ -21,6 +21,8 @@ module.exports = function mountInvoices(app, ctx) {
     const total = Math.round((billed + Number(inv.amount || 0)) * 100) / 100;
     return { contract: k, billed_other: billed, total, ok: total <= k.value + 0.005 };
   }
+  // Services billed: one row per service line; falls back to the description for older invoices.
+  const parseLines = inv => { let a = []; try { a = JSON.parse(inv.line_items || '[]'); } catch { a = []; } return Array.isArray(a) && a.length ? a : [{ service: inv.notes ? String(inv.notes).split('\n')[0].slice(0, 90) : 'Cleaning services', amount: inv.amount }]; };
   function pdf(inv) {
     const d = new Doc(), paid = Number(inv.paid_amount || 0), bal = Math.max(0, Number(inv.amount || 0) - paid), k = contractFor(inv);
     d.box(0, 742, 612, 50, '0.06 0.15 0.26'); d.y = 768; d.text('BRIGHT CLEANING SEV INC.', { size: 15, bold: true, color: '1 1 1' }); d.text('INVOICE', { size: 15, bold: true, color: '1 1 1', align: 'right' }); d.y = 752;
@@ -29,7 +31,7 @@ module.exports = function mountInvoices(app, ctx) {
     d.heading('Bill to', 11); d.para([inv.company, inv.customer_name, inv.email].filter(Boolean).join('\n') || '-');
     if (k) { d.heading('For', 11); d.para(`${k.title || 'Contract #' + k.id}`); }
     d.heading('Amount', 11);
-    d.table([{ label: 'Description', w: 70 }, { label: 'Amount', w: 30, align: 'right' }], [[inv.notes ? String(inv.notes).split('\n')[0].slice(0, 90) : 'Cleaning services', money(inv.amount)], ['Payments received', '-' + money(paid)]]);
+    d.table([{ label: 'Service', w: 70 }, { label: 'Amount', w: 30, align: 'right' }], [...parseLines(inv).map(l => [String(l.service || 'Cleaning services'), money(l.amount)]), ['Payments received', '-' + money(paid)]]);
     d.gap(4); d.text('Balance due', { size: 13, bold: true }); d.text(money(bal), { size: 13, bold: true, align: 'right' }); d.y -= 22;
     d.heading('Payment', 11); d.para(inv.terms || 'Payment is due by the due date shown. Please reference the invoice number with your payment. Questions: office +1 (515) 303-3024.');
     d.footer(`Bright Cleaning Sev Inc. - Invoice ${inv.invoice_number}`);
