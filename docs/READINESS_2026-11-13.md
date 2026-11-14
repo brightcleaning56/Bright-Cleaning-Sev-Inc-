@@ -26,7 +26,7 @@ Estimated time:
 | Windows pricing, archive, complaint history, lead alerts | 4, 9, 2, 7 | all pass |
 | Workflow chain and modules | 15, 10 | all pass |
 
-Total: 497 checks across 15 suites, all passing.
+Total: 497 checks across 16 suites, all passing.
 
 Fixed during this review: two suites were out of date with rules added earlier (the start-date rule and the new payment form). Their checks were updated; the app behaviour was correct. The main suite also had an intermittent failure caused by a background drafter racing the test; it is fixed.
 
@@ -37,6 +37,7 @@ Fixed during this review: two suites were out of date with rules added earlier (
 | Check | Result |
 |---|---|
 | Every admin API route requires sign-in, except the login (rate-limited to 8 tries per 15 minutes), the two-step code step (12 per 15 minutes), and the live event stream (one-time ticket). | Pass |
+| Route probe: all 338 API routes were called without signing in on a fresh local copy. Every admin route (including the generated invoice, customer and estimate routes) returned 401. The routes that answered without sign-in are public by design (health, site gallery, quote form, portal request, webhooks, which return 503 or 403 without the provider signature). | Pass |
 | Live: admin backups without sign-in | 401 |
 | Test-only routes (`/api/test/*`) | 404 on the live site |
 | Phone webhooks without a valid Twilio signature | 403 (live) |
@@ -49,6 +50,8 @@ Fixed during this review: two suites were out of date with rules added earlier (
 | Admin session | token expires after 8 hours; two-step sign-in for owners and managers |
 
 **Limits:** the admin token is kept in the browser's local storage. That is a common trade-off, and the page escapes user text, but it is a risk worth knowing about. No outside penetration test has been done.
+
+**Scope of this review:** the automated suites, the route probe, a secrets scan, the dependency audit, live probes, and targeted reading of the sign-in, webhook, upload, invoice, proposal and insights code. It is not a line-by-line read of all the code (roughly 40 server modules and a 3,800-line admin script). That review is the next step before production.
 
 ## 4. Operations
 
