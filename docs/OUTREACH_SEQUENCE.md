@@ -71,3 +71,13 @@ A lead is ready for its first email only when the system has all of these:
 The switch is the setting `auto_intro_email` (off by default; the owner turns it on after reviewing the leads it would email). Turn it off in the automation settings API (`PUT /api/admin/ai/settings` with `{"auto_intro_email": false}`). The sweep interval is `INTRO_SWEEP_MS` (default 600000).
 
 The sweep also includes staff-added contacts, as the owner asked. Each introduction still names the company, what we do and how we work, and says prices come from a person.
+
+## Who may get an automatic introduction (source filter)
+
+Automatic introductions, and the one-click button, are limited to leads that **came to us directly**: origin `website`, `portal` or `inbound_call`. They never go to:
+
+- contacts with origin `outbound`, `import` or `manual` (staff-added or imported lists),
+- leads whose details name a private person from a fire or public record ("public record", "house fire", "garage fire", "smoke damage", "fire incident"),
+- contacts whose source is a public listing or directory ("Source: weichert", "Source: public listing", and similar).
+
+Leads like these can still get a note written by a person after review. The filter is in `leadclass.js` (`autoIntroAllowed`).

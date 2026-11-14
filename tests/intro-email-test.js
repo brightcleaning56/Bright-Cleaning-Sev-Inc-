@@ -110,5 +110,17 @@ async function check(name, fn) { await fn(); passed++; console.log('PASS  ' + na
   });
 
 
+  await check('the sweep skips scraped contacts and private people named from fire reports', async () => {
+    db.prepare("INSERT INTO leads(id,kind,contact_name,company,email,phone,address,details,origin) VALUES(6,'bid','Salvador Ramos','Homeowner - Recent Fire','sr@example.com','515-555-0104','3300 2nd Ave','Recent house fire, public record.','website')").run();
+    db.prepare("INSERT INTO leads(id,kind,contact_name,company,email,phone,address,details,origin) VALUES(7,'bid','Dana Hall','Hall Realty','dana.hall@hallrealty.com','515-555-0105','5 Pine St','Source: weichert.com listing','outbound')").run();
+    const before = sent.length;
+    await lc.startIntroSweep(db, () => mailer, () => true)();
+    const mailed = sent.slice(before).map(m => m.to);
+    assert.ok(!mailed.includes('sr@example.com') && !mailed.includes('dana.hall@hallrealty.com'), 'neither lead is emailed automatically: ' + mailed.join(','));
+    const r = await run('POST /api/admin/leads/:id/intro-email', 7, { confirm: true });
+    assert.strictEqual(r.code, 409);
+  });
+
+
   console.log(`\n${passed} passed`);
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

@@ -141,9 +141,19 @@ function introIsSafe(draft) {
 const INTRO_WINDOW_DAYS = 14, INTRO_MAX_PER_RUN = 10;
 // A lead that has had an introduction is never introduced again (checked in the audit log too, so it holds even if mail logging is off).
 const introAlready = (db, id) => !!db.prepare("SELECT 1 FROM audit_log WHERE entity='lead' AND entity_id=? AND action='sent introduction email'").get(id);
+// Which leads may get an automatic introduction. Only leads that came to us directly, and never private individuals
+// named from fire or public-record reports, or contacts pulled from public listings.
+const AUTO_INTRO_ORIGINS = ['website', 'portal', 'inbound_call'];
+const NO_AUTO_INTRO = /public record|house fire|garage fire|smoke damage|fire incident|source:\s*(public|listing|directory|weichert|re\/max|keller|iowa realty|exp realty|terrus|blue sky)/i;
+function autoIntroAllowed(l) {
+  const text = [l.details, l.project_name, l.project_type, l.service, l.contact_name, l.company].map(v => String(v || '')).join(' ');
+  return AUTO_INTRO_ORIGINS.includes(l.origin) && !NO_AUTO_INTRO.test(text);
+}
+
 async function sendIntro(db, mailer, l) {
   const c = contactCheck(l);
   if (!c.complete || c.recipient_type !== 'person') return { sent: false, reason: 'contact incomplete' };
+  if (!autoIntroAllowed(l)) return { sent: false, reason: 'not an eligible source' };
   if (db.prepare("SELECT COUNT(*) n FROM email_log WHERE lower(to_addr)=lower(?) AND status='sent'").get(l.email).n > 0 || introAlready(db, l.id)) return { sent: false, reason: 'already contacted' };
   const draft = draftFor(l, segmentOf(l), intentOf(l), 'intro');
   if (!introIsSafe(draft)) return { sent: false, reason: 'price guard' };
@@ -207,6 +217,7 @@ function mount(app, ctx) {
     if (!(req.body && req.body.confirm === true)) return res.status(400).json({ error: 'Confirm the send first.' });
     const c = contactCheck(l);
     if (!c.complete) return res.status(409).json({ error: `Add the missing details first: ${c.missing.join(', ')}.`, missing: c.missing });
+    if (!autoIntroAllowed(l)) return res.status(409).json({ error: 'This lead did not come to us directly (or it names a private person from a fire or public record). A person must write to it by hand after review.' });
     if (c.recipient_type !== 'person') return res.status(409).json({ error: 'Send only to a person, not a shared or job inbox.' });
     if (priorSends(l.email) > 0 || introAlready(db, l.id)) return res.status(409).json({ error: 'This contact was already introduced. Use the follow-up note instead.' });
     const m = getMailer && getMailer();
