@@ -43,3 +43,27 @@ If a lead explicitly asks to be on a bidder list, the bidder-list note is used w
 2. **Wording check.** The sentence "We clean single-family homes, apartment and multifamily properties, and commercial buildings" and the walkthrough-then-one-price description should be checked against how you actually sell, before any note goes out.
 3. **Bidder list.** Confirm that you want the follow-up to ask for registration forms and prequalification, as written.
 4. **Opt-out wording.** Counsel should approve any footer before outreach to people outside your customer list (email rules).
+
+## Contact check and the introduction email (added)
+
+A lead is ready for its first email only when the system has all of these:
+
+- contact name (first and last)
+- company
+- email to a person (not a job inbox or a shared company inbox)
+- phone
+- site or mailing address
+
+`GET /api/admin/leads/:id/contact-check` lists anything missing and says whether the lead is ready. The lead drawer shows the same list.
+
+**Sending is a person's click, not an automatic sweep.** `POST /api/admin/leads/:id/intro-email` sends one introduction, only when:
+
+- the contact check passes,
+- the email goes to a person,
+- nothing has been sent to that address before (a second contact gets the follow-up note instead),
+- the text passes the price guard (no dollar amounts or rates),
+- the address is not opted out or bounced (the send goes through the suppression check).
+
+**Pricing is left to a person.** The introduction says what we do and how we work, then says that prices are not sent by email and that one of our people will walk the job and send a written proposal with one price. The system never quotes a price in an introduction.
+
+Automatic sending (a background sweep) is **not** on. Turning it on needs the owner's yes.

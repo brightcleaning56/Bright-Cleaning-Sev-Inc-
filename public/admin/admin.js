@@ -2387,6 +2387,20 @@
       if ($('#leadClass')) $('#leadClass').remove();
       if ($('#leadAuto')) $('#leadAuto').insertAdjacentHTML('beforeend', d);
     }).catch(() => {});
+    // First introduction: shows what is missing, or a one-click send once the contact is complete. Pricing is never in it.
+    api(`/api/admin/leads/${l.id}/contact-check`).then(c => {
+      const panel = c.ready
+        ? `<p><b>Contact is complete.</b> <button type="button" class="btn" id="leadIntro">Send introduction email</button> <small class="muted">Introduces the company and what we do. Prices are never in this email; a person sends the proposal.</small></p>`
+        : `<p class="muted"><b>Introduction not sent yet.</b> ${c.prior_sends ? 'Already introduced; use the follow-up note.' : 'Missing: ' + esc((c.missing || []).join(', ') || 'nothing')}.</p>`;
+      if ($('#leadContact')) $('#leadContact').remove();
+      if ($('#leadAuto')) $('#leadAuto').insertAdjacentHTML('beforeend', `<div id="leadContact" class="autobox">${panel}</div>`);
+      if ($('#leadIntro')) $('#leadIntro').onclick = async () => {
+        if (!confirm(`Send the introduction to ${l.email}? Only this one email goes out, and it has no prices.`)) return;
+        const b = $('#leadIntro'); b.disabled = true;
+        try { const r = await api(`/api/admin/leads/${l.id}/intro-email`, { method: 'POST', json: { confirm: true } }); toast('Introduction sent: ' + r.subject); b.remove(); }
+        catch (e) { b.disabled = false; toast(e.message, true); }
+      };
+    }).catch(() => {});
     const st = await getAI();
     let ai = null; try { ai = l.ai ? JSON.parse(l.ai) : null; } catch { ai = null; }
     if (!st.enabled && !ai) { box.innerHTML = '<div class="formsection">AI assistant</div><p class="muted">AI is off. Add ANTHROPIC_API_KEY in Render to get an automatic summary, missing-information list and a reply draft for every new lead.</p>'; return; }

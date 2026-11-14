@@ -72,6 +72,7 @@ function firstName(l) { return String(l.contact_name || '').trim().split(/\s+/)[
 //  - Follow-up ("follow_up"): sent after a first note went out to this address. Asks to be added to their bidder list for future
 //    projects and construction cleaning on single-family homes, commercial buildings and multifamily properties.
 const CO_PROFILE = 'We are a cleaning company in Des Moines, Iowa. We clean single-family homes, apartment and multifamily properties, and commercial buildings, and we handle construction cleanup: rough, final and touch-up cleaning after a build or renovation.';
+const PRICING_LINE = 'We do not send prices by email. One of our people will walk the job with you and send a written proposal with one price.';
 const HOW_WE_WORK = 'We start with a walkthrough, then send one written proposal with one price, so there are no surprises. Once you approve, we schedule the work, and our crew checks it against a written checklist before we call it done.';
 
 // The reply draft. No prices. Only asks for what is missing.
@@ -95,7 +96,7 @@ function draftFor(l, seg, intent, stage = 'intro') {
   if (seg === 'post_construction') {
     return {
       subject: `Bright Clean: post-construction cleaning for ${co}`,
-      body: `${hi}\n\n${intro} We do post-construction cleaning for general contractors and developers. ${HOW_WE_WORK}\n\nDo you have projects that need rough, final, touch-up or make-ready cleaning? Please send the project name, address, phases needed and the target dates, and we will schedule a walkthrough and send a proposal. We can also send our insurance and licensing on request.${sign}`
+      body: `${hi}\n\n${intro} We do post-construction cleaning for general contractors and developers. ${HOW_WE_WORK} ${PRICING_LINE}\n\nDo you have projects that need rough, final, touch-up or make-ready cleaning? Please send the project name, address, phases needed and the target dates, and we will schedule a walkthrough and send a proposal. We can also send our insurance and licensing on request.${sign}`
     };
   }
   const area = { multifamily: 'apartment and multifamily properties, including common areas and unit turnovers', single_family: 'single-family homes, including move-in, move-out and recurring cleaning', residential: 'residential cleaning', construction: 'construction cleanup', commercial: 'commercial cleaning' }[seg] || 'single-family homes, multifamily properties and commercial buildings';
@@ -104,7 +105,7 @@ function draftFor(l, seg, intent, stage = 'intro') {
     : 'We would like to learn about your project and what you need cleaned. Would a short call or a walkthrough work for you?';
   return {
     subject: `Bright Clean: cleaning services for ${co}`,
-    body: `${hi}\n\n${intro} For you, that means ${area}. ${HOW_WE_WORK}\n\n${ask}${sign}`
+    body: `${hi}\n\n${intro} For you, that means ${area}. ${HOW_WE_WORK} ${PRICING_LINE}\n\n${ask}${sign}`
   };
 }
 
@@ -118,16 +119,65 @@ function classify(l, stage = 'intro') {
   return { segment: seg, segment_label: SEGMENT_LABEL[seg], intent, intent_label: INTENT_LABEL[intent], recipient, action: perm.action, action_why: perm.why, notes, draft };
 }
 
+// A first email needs a real person to write to, and the job's address. Anything missing is listed for staff.
+const CONTACT_FIELDS = [['contact_name', 'Contact name'], ['company', 'Company'], ['email', 'Email'], ['phone', 'Phone'], ['address', 'Site or mailing address']];
+function contactCheck(l) {
+  const missing = CONTACT_FIELDS.filter(([k]) => !String(l[k] || '').trim()).map(([, label]) => label);
+  if ((l.contact_name || '').trim() && (l.contact_name || '').trim().split(/\s+/).length < 2) missing.push('Full name (first and last)');
+  const rec = recipientOf(l.email);
+  if (l.email && rec.type === 'job_inbox') missing.push('A person to write to (this is a job inbox)');
+  else if (l.email && rec.type === 'company_inbox') missing.push('A person to write to (this is a shared company inbox)');
+  return { complete: missing.length === 0, missing, recipient_type: rec.type };
+}
+
+// The first email must never mention a price. The check is a backstop; the template itself has no numbers.
+function introIsSafe(draft) {
+  return !!draft && !/\$\s?\d|\b\d[\d,]*(\.\d+)?\s?(\/|per)\s?(sq|sf|hour|hr|visit|month|unit)/i.test(draft.body + ' ' + draft.subject);
+}
+
 function mount(app, ctx) {
-  const { db, auth } = ctx;
+  const { db, auth, getMailer, logAction } = ctx;
+  const leadOf = id => db.prepare('SELECT * FROM leads WHERE id=?').get(Number(id));
+  const priorSends = email => email ? db.prepare("SELECT COUNT(*) n FROM email_log WHERE lower(to_addr)=lower(?) AND status='sent'").get(email).n : 0;
+
   app.get('/api/admin/leads/:id/classification', auth, (req, res) => {
-    const l = db.prepare('SELECT * FROM leads WHERE id=?').get(Number(req.params.id));
+    const l = leadOf(req.params.id);
     if (!l) return res.status(404).json({ error: 'Lead not found.' });
     // First note if nothing has been sent to this address; otherwise a follow-up. Drafts only.
-    const sent = l.email ? db.prepare("SELECT COUNT(*) n FROM email_log WHERE lower(to_addr)=lower(?) AND status='sent'").get(l.email).n : 0;
-    const stage = sent > 0 ? 'follow_up' : 'intro';
-    res.json({ ...classify(l, stage), stage, prior_sends: sent });
+    const sent = priorSends(l.email);
+    res.json({ ...classify(l, sent > 0 ? 'follow_up' : 'intro'), stage: sent > 0 ? 'follow_up' : 'intro', prior_sends: sent });
+  });
+
+  // Is this lead ready for a first email? Says what is missing, so staff can fill it in.
+  app.get('/api/admin/leads/:id/contact-check', auth, (req, res) => {
+    const l = leadOf(req.params.id);
+    if (!l) return res.status(404).json({ error: 'Lead not found.' });
+    const c = contactCheck(l), sent = priorSends(l.email);
+    res.json({ ...c, prior_sends: sent, ready: c.complete && c.recipient_type === 'person' && sent === 0 });
+  });
+
+  // One introduction email, sent only when a person clicks Send and the contact is complete. No prices in it.
+  app.post('/api/admin/leads/:id/intro-email', auth, async (req, res) => {
+    const l = leadOf(req.params.id);
+    if (!l) return res.status(404).json({ error: 'Lead not found.' });
+    if (!(req.body && req.body.confirm === true)) return res.status(400).json({ error: 'Confirm the send first.' });
+    const c = contactCheck(l);
+    if (!c.complete) return res.status(409).json({ error: `Add the missing details first: ${c.missing.join(', ')}.`, missing: c.missing });
+    if (c.recipient_type !== 'person') return res.status(409).json({ error: 'Send only to a person, not a shared or job inbox.' });
+    if (priorSends(l.email) > 0) return res.status(409).json({ error: 'This contact was already introduced. Use the follow-up note instead.' });
+    const m = getMailer && getMailer();
+    if (!m) return res.status(503).json({ error: 'Email is not set up, so nothing was sent.' });
+    const draft = draftFor(l, segmentOf(l), intentOf(l), 'intro');
+    if (!introIsSafe(draft)) return res.status(409).json({ error: 'The introduction text mentions a price, so it was not sent. A person should write that note.' });
+    try {
+      const r = await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject: draft.subject, text: draft.body, automated: true });
+      if (r && r.suppressed) return res.status(409).json({ error: `Not sent: this address is blocked (${r.reason}).` });
+      db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run(req.user?.email || 'admin', 'sent introduction email', 'lead', l.id, draft.subject, new Date().toISOString());
+      res.json({ ok: true, subject: draft.subject });
+    } catch (e) {
+      res.status(502).json({ error: 'The email could not be sent: ' + e.message });
+    }
   });
 }
 
-module.exports = { classify, segmentOf, intentOf, recipientOf, permittedAction, draftFor, JOB_INBOX, SEGMENTS, mount };
+module.exports = { classify, segmentOf, intentOf, recipientOf, permittedAction, draftFor, contactCheck, introIsSafe, JOB_INBOX, SEGMENTS, mount };
