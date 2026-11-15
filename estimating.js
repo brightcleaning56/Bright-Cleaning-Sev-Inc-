@@ -51,13 +51,20 @@ function lineItemsOf(b) {
   return out;
 }
 
+// Overtime: hours a crew works in a week beyond 40 are paid at 1.5x. The quote adds the extra half-time premium.
+const OVERTIME_AFTER = 40;
+const OVERTIME_MULTIPLIER = 1.5;
+
 function estimateMath(b) {
   const visits = Math.max(1, num(b.visits) || 1);
   const sqft = num(b.area_sqft), rate = num(b.production_rate);
   const scopeHours = lineItemsOf(b).reduce((t, i) => t + (i.scope_id ? i.hours : 0), 0);
   const perVisit = num(b.labor_hours) || (sqft && rate ? sqft / rate : 0) || scopeHours;
   const hours = perVisit * visits;
-  const labor = hours * num(b.labor_rate);
+  // weekly_hours: the crew's total hours on this job in one week (defaults to this estimate's hours).
+  const weeklyHours = num(b.weekly_hours) || hours;
+  const overtimeHours = Math.min(hours, Math.max(0, weeklyHours - OVERTIME_AFTER));
+  const labor = hours * num(b.labor_rate) + overtimeHours * num(b.labor_rate) * (OVERTIME_MULTIPLIER - 1);
   const windowsTotal = windowsCharge(b);
   const direct = labor + num(b.supplies_cost) + num(b.equipment_cost) + num(b.other_cost)
     + num(b.travel_cost) * visits + num(b.mobilization_cost) + num(b.subcontractor_cost) + num(b.disposal_cost)
@@ -79,7 +86,7 @@ function estimateMath(b) {
   const total = price * (1 + num(b.tax_pct) / 100);
   const crewHoursPerDay = Math.max(1, num(b.crew_size) || 1) * (num(b.shift_hours) || 8);
   return {
-    labor_hours: round2(hours), labor_cost: round2(labor), total_cost: round2(cost),
+    labor_hours: round2(hours), overtime_hours: round2(overtimeHours), labor_cost: round2(labor), total_cost: round2(cost),
     proposal_total: round2(total), crew_days: round2(hours / crewHoursPerDay),
     line_items_total: round2(itemsTotal), minimum_applied: minimumApplied, used_line_items: useItems,
     windows_total: round2(windowsTotal),
