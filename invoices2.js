@@ -45,8 +45,12 @@ module.exports = function mountInvoices(app, ctx) {
     const inv = get(req.params.id); if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
     res.json(contractCheck(inv));
   });
+  // Invoices with a send in flight. A double click must not email the customer twice.
+  const sendingNow = new Set();
   app.post('/api/admin/invoices/:id/send', auth, async (req, res) => {
     const inv = get(req.params.id); if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
+    if (sendingNow.has(inv.id)) return res.status(409).json({ error: 'This invoice is already being sent. Wait a moment, then check the invoice before sending again.' });
+    sendingNow.add(inv.id); res.on('close', () => sendingNow.delete(inv.id));
     const b = req.body || {};
     if (inv.status === 'Void') return res.status(409).json({ error: 'This invoice is void and cannot be sent.' });
     if (inv.status === 'Paid') return res.status(409).json({ error: 'This invoice is already paid.' });

@@ -2198,6 +2198,11 @@ async function startServer(env, dataDir) {
       ok('2 Invoice sent by email with the PDF attached; bad address refused; no payment on a Draft and no send before the contract is signed', payDraft.status === 409 && unsignedSend.status === 409 && /not signed/.test(unsignedSend.data.error || '') && noMail.status === 400 && s1.status === 200 && sm && /WFG-1/.test(sm.subject) && /application\/pdf/.test(sm.raw), JSON.stringify({ bad: noMail.status, s1: [s1.status, s1.data.error] }));
       const inv1 = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === id1);
       ok('3 Sending marks it Sent (with date + recipient) — NOT paid', inv1.status === 'Sent' && inv1.paid_amount === 0 && inv1.sent_to === 'ap@collect.test' && inv1.sent_at, JSON.stringify([inv1.status, inv1.paid_amount, inv1.sent_to]));
+      const mBefore = mail.length;
+      const [dA, dB] = await Promise.all([req('POST', `/api/admin/invoices/${id1}/send`, { token: T, json: { to: 'ap@collect.test' } }), req('POST', `/api/admin/invoices/${id1}/send`, { token: T, json: { to: 'ap@collect.test' } })]);
+      await sleep(300);
+      const sentNow = mail.slice(mBefore).filter(m => m.to.includes('ap@collect.test')).length;
+      ok('3b A double click sends the invoice email once; the second request is refused while the first is in flight', [dA.status, dB.status].sort().join() === '200,409' && sentNow === 1, JSON.stringify({ codes: [dA.status, dB.status], sentNow }));
       const pdf = await fetch(B + `/api/admin/invoices/${id1}/pdf`, { headers: { Authorization: 'Bearer ' + T } }); const pt = Buffer.from(await pdf.arrayBuffer()).toString('latin1');
       ok('4 Invoice PDF downloads with balance due', pdf.status === 200 && pt.startsWith('%PDF') && pt.includes('WFG-1') && pt.includes('3,000.00'), pdf.status);
       const i2 = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'WFG-2', project_id: p.id, customer_name: 'Cora Lect', company: 'Collect Co', email: 'ap@collect.test', amount: 2500, due_date: addD(bdate, 30), status: 'Draft' } })).data;
