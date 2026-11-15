@@ -38,7 +38,7 @@ body{background:#fff}
 .pg-band.dark .pg-lede{color:#c6d3e4}
 .pg-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
 .pg-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px;display:grid;gap:10px;align-content:start;box-shadow:0 8px 24px rgba(11,29,53,.05)}
-.pg-card h3{font:800 18px 'Manrope',sans-serif;color:var(--navy);margin:4px 0 0}
+.pg-card h2,.pg-card h3{font:800 18px 'Manrope',sans-serif;color:var(--navy);margin:4px 0 0}
 .pg-card p{margin:0;color:var(--muted);font-size:14.5px}
 .pg-card a.more{color:var(--blue);font-weight:700;font-size:14px;margin-top:4px}
 .pg-card .pg-ico{width:52px;height:52px;border-radius:14px;background:#eaf1fb;display:grid;place-items:center}
