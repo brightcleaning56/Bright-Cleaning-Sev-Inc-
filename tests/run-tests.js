@@ -1504,11 +1504,10 @@ async function startServer(env, dataDir) {
     const staff = await req('POST', `/api/admin/pm/projects/${p.id}/approve-dispatch`, { token: st });
     await req('PATCH', `/api/admin/pm/projects/${p.id}`, { token: T, json: { start_date: '2026-11-10' } });
     const ok = await req('POST', `/api/admin/pm/projects/${p.id}/approve-dispatch`, { token: T });
-    const go = await req('POST', `/api/admin/pm/projects/${p.id}/status`, { token: T, json: { status: 'In Progress' } });
     const det = (await req('GET', '/api/admin/pm/projects/' + p.id, { token: T })).data;
     globalThis.__pmId = p.id;
-    assert(p.status === 'Planning' && p.estimate_id === e.id && p.number.startsWith('PJT-') && tryActive.status === 409 && /contract/.test(tryActive.data.error) && /readiness/.test(tryActive.data.error) && noContract.status === 409 && staff.status === 403 && ok.status === 200 && ok.data.project.status === 'Ready to mobilize' && go.status === 200 && det.project.status === 'In Progress' && det.project.actual_start && det.readiness.items.every(i => i.by && i.at) && det.estimate && det.estimate.id === e.id, JSON.stringify({ p: p.status, tryActive: tryActive.data, noContract: noContract.data, staff: staff.status, ok: ok.data }));
-    return `${p.number} linked to proposal #${e.id}; In Progress blocked ("${tryActive.data.error.slice(0, 90)}…"); unsigned contract 409; staff 403; owner approved → Ready to mobilize → In Progress (actual start ${det.project.actual_start}); readiness has who + when`;
+    assert(p.status === 'Planning' && p.estimate_id === e.id && p.number.startsWith('PJT-') && tryActive.status === 409 && /changes by itself/.test(tryActive.data.error) && tryActive.data.next.some(s => /contract/.test(s)) && noContract.status === 409 && staff.status === 403 && ok.status === 200 && ok.data.project.status === 'Ready to mobilize' && det.project.status === 'Ready to mobilize' && !det.project.actual_start &&det.readiness.items.every(i => i.by && i.at) && det.estimate && det.estimate.id === e.id, JSON.stringify({ p: p.status, tryActive: tryActive.data, noContract: noContract.data, staff: staff.status, ok: ok.data }));
+    return `${p.number} linked to proposal #${e.id}; hand-set "In Progress" refused ("${tryActive.data.error.slice(0, 90)}…"); unsigned contract 409; staff 403; owner approved → Ready to mobilize, and it moves on by itself when the work starts; readiness has who + when`;
   });
   await check('Projects', 'Work plan from the service template; progress comes only from done (half) and verified (full) weighted tasks; same person cannot verify own work; work orders generated', async () => {
     const id = globalThis.__pmId;
@@ -1537,23 +1536,24 @@ async function startServer(env, dataDir) {
     await req('POST', `/api/admin/pm/projects/${id}/costs`, { token: T, json: { category: 'Labor', amount: '1,200.50', description: 'Crew A 3 days' } });
     await req('POST', `/api/admin/pm/projects/${id}/costs`, { token: T, json: { category: 'Supplies', amount: 300 } });
     await req('POST', `/api/admin/pm/projects/${id}/signoff`, { token: T, json: { name: 'Pat Proj', title: 'Facilities' } });
-    const blocked = await req('POST', `/api/admin/pm/projects/${id}/status`, { token: T, json: { status: 'Completed' } });
+    const blocked = await req('POST', `/api/admin/pm/projects/${id}/status`, { token: T, json: { status: 'Completed' } }); // completion is set by the work, never by hand
     let det = (await req('GET', '/api/admin/pm/projects/' + id, { token: T })).data;
     for (const t of det.tasks) { await req('PATCH', '/api/admin/pm/tasks/' + t.id, { token: T, json: { status: 'Done' } }); }
     const certEarly = await fetch(B + `/api/admin/pm/projects/${id}/certificate`, { headers: { Authorization: 'Bearer ' + T } });
-    const noInspP = await req('POST', `/api/admin/pm/projects/${id}/status`, { token: T, json: { status: 'Completed' } });
+    // Tasks are done and the customer has signed off, but no inspection has passed yet: the work stays in Quality Review.
+    const noInspP = { status: (await req('GET', '/api/admin/pm/projects/' + id, { token: T })).data.project.status === 'Quality Review' ? 409 : 200, data: { error: 'inspection' } };
     const tplP = (await req('GET', '/api/admin/qc/templates', { token: T })).data.templates[0];
     const insPr = (await req('POST', '/api/admin/qc/inspections', { token: T, json: { template_id: tplP.id, area: 'Office', date: require('../bizdate').today(), project_id: id, crew: 'A', itype: 'Internal' } })).data.inspection;
     await req('PATCH', `/api/admin/qc/inspections/${insPr.id}`, { token: T, json: { items: insPr.items.map(i => ({ ...i, result: 'Pass' })) } });
     await req('POST', `/api/admin/qc/inspections/${insPr.id}/sign`, { token: T, json: { name: 'Eric Moore' } });
-    const comp = await req('POST', `/api/admin/pm/projects/${id}/status`, { token: T, json: { status: 'Completed' } });
+    const compStatus = (await req('GET', '/api/admin/pm/projects/' + id, { token: T })).data.project.status;
     if (noInspP.status !== 409 || !/inspection/.test(noInspP.data.error || '')) throw new Error('Completion without an inspection should be refused: ' + JSON.stringify(noInspP.data));
     const cert = await fetch(B + `/api/admin/pm/projects/${id}/certificate`, { headers: { Authorization: 'Bearer ' + T } }); const ctext = Buffer.from(await cert.arrayBuffer()).toString('latin1');
     const h1 = await req('POST', `/api/admin/pm/projects/${id}/billing-handoff`, { token: T });
     const h2 = await req('POST', `/api/admin/pm/projects/${id}/billing-handoff`, { token: T });
     const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === h1.data.invoice_id);
     det = (await req('GET', '/api/admin/pm/projects/' + id, { token: T })).data;
-    assert(bad.status === 400 && det.project.actual_cost === 1500.5 && det.project.cost_by.Labor === 1200.5 && blocked.status === 409 && /task/.test(blocked.data.error) && certEarly.status === 409 && comp.status === 200 && det.project.actual_end && ctext.startsWith('%PDF') && ctext.includes('Pat Proj') && h1.status === 201 && h2.status === 409 && inv.status === 'Draft' && Math.abs(inv.amount - det.project.contract_value) < 0.01 && det.project.progress === 50, JSON.stringify({ cost: det.project.actual_cost, blocked: blocked.data, h1: h1.data, inv, prog: det.project.progress }));
+    assert(bad.status === 400 && det.project.actual_cost === 1500.5 && det.project.cost_by.Labor === 1200.5 && blocked.status === 409 && /changes by itself/.test(blocked.data.error) && certEarly.status === 409 && compStatus === 'Completed' && det.project.actual_end && ctext.startsWith('%PDF') && ctext.includes('Pat Proj') && h1.status === 201 && h2.status === 409 && inv.status === 'Draft' && Math.abs(inv.amount - det.project.contract_value) < 0.01 && det.project.progress === 50, JSON.stringify({ cost: det.project.actual_cost, blocked: blocked.data, h1: h1.data, inv, prog: det.project.progress }));
     return `costs $${det.project.actual_cost} (labor $1,200.50 + supplies $300) vs budget $5,000; completion blocked while tasks open; certificate only after completion (PDF names the signer); one draft invoice $${inv.amount} (second handoff 409); progress ${det.project.progress}% since tasks are done, not verified`;
   });
 
@@ -2057,8 +2057,8 @@ async function startServer(env, dataDir) {
     for (const key of ['staffing', 'dates', 'access', 'equipment', 'supplies', 'safety']) await req('POST', `/api/admin/pm/projects/${p0.id}/readiness`, { token: T, json: { key } });
     await req('PATCH', `/api/admin/pm/projects/${p0.id}`, { token: T, json: { start_date: '2026-11-10' } });
     const ad = await req('POST', `/api/admin/pm/projects/${p0.id}/approve-dispatch`, { token: T });
-    const go = await req('POST', `/api/admin/pm/projects/${p0.id}/status`, { token: T, json: { status: 'In Progress' } });
-    ok('10 Readiness confirmed, owner authorizes dispatch, project In Progress', ad.status === 200 && go.status === 200, JSON.stringify({ ad: [ad.status, ad.data.error], go: [go.status, go.data.error] }));
+    const afterDispatch = (await req('GET', '/api/admin/pm/projects/' + p0.id, { token: T })).data.project.status;
+    ok('10 Readiness confirmed, owner authorizes dispatch, project Ready to mobilize (it moves on by itself when the work starts)', ad.status === 200 && afterDispatch === 'Ready to mobilize', JSON.stringify({ ad: [ad.status, ad.data.error], afterDispatch }));
     // 11 schedule + crew + field work
     const emp = (await req('POST', '/api/admin/employees', { token: T, json: { name: 'Flo Crew', email: 'flo@crew.test', role: 'Lead', crew: 'A', skills: 'final clean', hourly_rate: 24, max_week_hours: 40 } })).data.employee;
     const v = (await req('POST', '/api/admin/visits', { token: T, json: { title: 'WFA final clean', date: require('../bizdate').today(), start_time: '08:00', end_time: '12:00', project_id: p0.id, customer_id: cid } })).data;
@@ -2079,7 +2079,8 @@ async function startServer(env, dataDir) {
     // 13 completion + billing hand-off
     const pd = (await req('GET', '/api/admin/pm/projects/' + p0.id, { token: T })).data;
     for (const t of (pd.tasks || [])) { await req('PATCH', `/api/admin/pm/tasks/${t.id}`, { token: T, json: { approved: true, status: 'Done' } }); await req('PATCH', `/api/admin/pm/tasks/${t.id}`, { token: T, json: { status: 'Verified' } }); }
-    const done = await req('POST', `/api/admin/pm/projects/${p0.id}/status`, { token: T, json: { status: 'Completed' } });
+    const doneStatus = (await req('GET', '/api/admin/pm/projects/' + p0.id, { token: T })).data.project.status;
+    const done = { status: doneStatus === 'Completed' ? 200 : 409, data: { error: doneStatus } };
     const bh = await req('POST', `/api/admin/pm/projects/${p0.id}/billing-handoff`, { token: T });
     const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.project_id === p0.id);
     ok('13 Project completed (customer sign-off) and billing hand-off creates ONE draft invoice for the contract value', done.status === 200 && [200, 201].includes(bh.status) && inv && inv.status === 'Draft' && Math.abs(inv.amount - 4815) < 0.01, JSON.stringify({ done: [done.status, done.data.error], bh: [bh.status, bh.data.error], inv: inv && [inv.status, inv.amount] }));

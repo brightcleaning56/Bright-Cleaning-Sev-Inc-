@@ -77,10 +77,36 @@ module.exports = function mountPM(app, ctx) {
   app.locals.projectHasTasks = id => !!db.prepare('SELECT 1 FROM project_tasks WHERE project_id=? AND approved=1').get(id);
   app.locals.projectGuard = (id, to) => { const p = get(id); return p ? guard(p, to) : null; };
 
-  function summary(p) {
+  // Status is read from the work, not chosen. Facts come from the record; the decision is in projectstatus.js.
+  const { deriveStatus, nextSteps } = require('./projectstatus');
+  function factsOf(p) {
+    const k = contractOf(p), r = readinessOf(p);
+    const tasks = db.prepare('SELECT status FROM project_tasks WHERE project_id=? AND approved=1').all(p.id);
+    return {
+      status: p.status, executed: executed(k) || !!p.contract_waiver, readiness: r.complete, dispatchApproved: !!p.dispatch_approved_by,
+      started: !!p.actual_start || tasks.some(t => t.status !== 'Open') || !!db.prepare('SELECT 1 FROM time_entries WHERE project_id=? LIMIT 1').get(p.id),
+      tasksTotal: tasks.length, tasksOpen: tasks.filter(t => t.status === 'Open').length, completeReasons: completeBlock(p),
+    };
+  }
+  function syncStatus(p, persist = true) {
+    const f = factsOf(p), status = deriveStatus(f);
+    if (persist) {
+      // The dates the old buttons used to set now follow the work: first activity starts the project, completion ends it.
+      const sets = [], vals = [];
+      if (status !== p.status) { sets.push('status=?'); vals.push(status); }
+      if (f.started && !p.actual_start) { sets.push('actual_start=?'); vals.push(today()); }
+      if (status === 'Completed' && !p.actual_end) { sets.push('actual_end=?'); vals.push(today()); }
+      if (sets.length) db.prepare(`UPDATE projects SET ${sets.join(', ')}, updated_at=? WHERE id=?`).run(...vals, now(), p.id);
+    }
+    return { status, next: nextSteps({ ...f, status }) };
+  }
+  // Keep stored statuses in step with the work, even for projects nobody opens.
+  setInterval(() => { try { for (const p of db.prepare("SELECT * FROM projects WHERE status NOT IN ('Archived','On Hold')").all()) syncStatus(p); } catch (e) { console.error('Project status sweep failed:', e.message); } }, 60000).unref();
+  function summary(p0) {
+    const sync = syncStatus(p0), p = { ...get(p0.id), status: sync.status };
     const k = contractOf(p), c = costs(p.id), r = readinessOf(p);
     const behind = ['In Progress', 'Mobilization', 'Ready to mobilize'].includes(p.status) && ((p.due_date && p.due_date < today() && (p.progress || 0) < 100) || !!db.prepare("SELECT 1 FROM project_tasks WHERE project_id=? AND status='Open' AND due_date IS NOT NULL AND due_date<>'' AND due_date<?").get(p.id, today()));
-    return { ...p, number: number(p), service_label: (SERVICES[p.service] || {}).label || null, contract: k ? { id: k.id, title: k.title, value: k.value, signature_status: k.signature_status, status: k.status } : null,
+    return { ...p, status_next: sync.next, number: number(p), service_label: (SERVICES[p.service] || {}).label || null, contract: k ? { id: k.id, title: k.title, value: k.value, signature_status: k.signature_status, status: k.status } : null,
       contract_value: k ? Number(k.value) || 0 : 0, contract_signed: executed(k), actual_cost: c.total, cost_by: c.by, readiness_complete: r.complete, readiness_missing: r.missing, behind,
       awaiting_approval: ['Planning', 'Contracted'].includes(p.status) && r.complete && (executed(k) || !!p.contract_waiver) && !p.dispatch_approved_by,
       tasks_open: db.prepare("SELECT COUNT(*) n FROM project_tasks WHERE project_id=? AND approved=1 AND status='Open'").get(p.id).n,
@@ -124,6 +150,8 @@ module.exports = function mountPM(app, ctx) {
   app.patch('/api/admin/pm/projects/:id', auth, (req, res) => {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
     const b = req.body || {}, set = {};
+    // Link the project to an existing customer record (a link only; it does not create a customer).
+    if ('customer_id' in b) { const cid = Number(b.customer_id) || null; if (cid && !db.prepare('SELECT 1 FROM customers WHERE id=?').get(cid)) return res.status(400).json({ error: 'That customer was not found.' }); set.customer_id = cid; }
     if ('service' in b) { if (b.service && !SERVICES[b.service]) return res.status(400).json({ error: 'Choose a valid service.' }); set.service = b.service || null; }
     for (const k of ['frequency', 'hold_reason', 'contract_waiver', 'signoff_waiver', 'manager', 'site_address', 'name']) if (k in b) set[k] = clean(b[k], 1000);
     for (const k of ['start_date', 'due_date', 'actual_start', 'actual_end']) if (k in b) { const d = clean(b[k], 10); if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: 'Dates must be dates.' }); set[k] = d || null; }
@@ -256,14 +284,21 @@ module.exports = function mountPM(app, ctx) {
   // Status changes go through the same guard as the register route.
   app.post('/api/admin/pm/projects/:id/status', auth, (req, res) => {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
-    const to = (req.body || {}).status, ok = ['Planning', 'Contracted', 'Ready to mobilize', 'In Progress', 'Quality Review', 'On Hold', 'Completed', 'Archived'];
-    if (!ok.includes(to)) return res.status(400).json({ error: 'Choose a valid status.' });
-    if (p.status === 'Completed' && !['Completed', 'Archived'].includes(to)) return res.status(409).json({ error: 'A completed project cannot be reopened here. Record a change order for new work.' });
-    const g = guard(p, to); if (g) return res.status(409).json({ error: g });
-    if (to === 'On Hold' && !clean((req.body || {}).reason, 500) && !p.hold_reason) return res.status(400).json({ error: 'Give a reason for putting the project on hold.' });
-    const extra = to === 'In Progress' && !p.actual_start ? ', actual_start=?' : to === 'Completed' ? ', actual_end=?' : '';
-    db.prepare(`UPDATE projects SET status=?, hold_reason=COALESCE(?,hold_reason), updated_at=?${extra} WHERE id=?`).run(to, to === 'On Hold' ? clean(req.body.reason, 500) || null : null, now(), ...(extra ? [today()] : []), p.id);
-    logAction(req, 'moved to ' + to, 'project', p.id, number(p));
+    // Only a hold, a resume and an archive are set by hand. Every other status follows the work.
+    const to = (req.body || {}).status;
+    if (!['On Hold', 'Resume', 'Archived'].includes(to)) return res.status(409).json({ error: 'The status changes by itself as the work moves. Only On Hold, Resume and Archived are set by hand.', next: summary(p).status_next });
+    if (p.status === 'Archived') return res.status(409).json({ error: 'An archived project stays archived.' });
+    if (to === 'On Hold') {
+      const reason = clean((req.body || {}).reason, 500);
+      if (!reason) return res.status(400).json({ error: 'Give a reason for putting the project on hold.' });
+      db.prepare("UPDATE projects SET status='On Hold', hold_reason=?, updated_at=? WHERE id=?").run(reason, now(), p.id);
+    } else if (to === 'Archived') {
+      db.prepare("UPDATE projects SET status='Archived', updated_at=? WHERE id=?").run(now(), p.id);
+    } else {
+      db.prepare("UPDATE projects SET status='Planning', hold_reason=NULL, updated_at=? WHERE id=?").run(now(), p.id);
+      syncStatus(get(p.id)); // resume: the work decides the status again
+    }
+    logAction(req, 'status: ' + to, 'project', p.id, number(p));
     res.json({ ok: true, project: summary(get(p.id)) });
   });
   // Customer sign-off and completion; billing handoff creates a DRAFT invoice for the unbilled contract value.

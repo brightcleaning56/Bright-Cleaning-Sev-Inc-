@@ -183,13 +183,15 @@ async function waitHealthy() {
   });
 
   await check('12 Project moves to In Progress; then the open task blocks completion', async () => {
-    const ip = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'In Progress' });
-    assert(ip.status === 200, 'In Progress ' + ip.status + ' ' + JSON.stringify(ip.body).slice(0, 200));
+    const started = await req('PATCH', `/api/admin/pm/projects/${prj.id}`, owner, { actual_start: '2026-12-01' });
+    assert(started.status === 200, 'start ' + started.status + ' ' + JSON.stringify(started.body).slice(0, 200));
+    const ip = await req('GET', `/api/admin/pm/projects/${prj.id}`, owner);
+    assert(ip.body.project.status === 'In Progress', 'status should follow the work: ' + ip.body.project.status);
     const t = await req('POST', `/api/admin/pm/projects/${prj.id}/tasks`, owner, { title: 'Final clean and punch list', phase: 'Execution', weight: 5 });
     assert(t.status === 201, 'task ' + t.status + ' ' + JSON.stringify(t.body).slice(0, 160));
     taskId = (t.body.task || t.body).id;
-    const early = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'Completed' });
-    assert(early.status === 409 && /task/i.test(early.body.error || ''), 'complete with open task ' + early.status + ' ' + JSON.stringify(early.body).slice(0, 200));
+    const early = await req('GET', `/api/admin/pm/projects/${prj.id}`, owner);
+    assert(early.body.project.status === 'In Progress' && (early.body.project.status_next || []).some(x => /open task/.test(x)), 'open task should block completion: ' + JSON.stringify(early.body.project.status_next));
     return 'In Progress; completion blocked by the open task';
   });
 
@@ -215,10 +217,11 @@ async function waitHealthy() {
   });
 
   await check('14 Project completes; the draft billing invoice is created for the contract value and not sent', async () => {
-    const q = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'Quality Review' });
-    assert(q.status === 200, 'Quality Review ' + q.status + ' ' + JSON.stringify(q.body).slice(0, 200));
-    const done = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'Completed' });
-    assert(done.status === 200, 'Completed ' + done.status + ' ' + JSON.stringify(done.body).slice(0, 260));
+    const handSet = await req('POST', `/api/admin/pm/projects/${prj.id}/status`, owner, { status: 'Completed' });
+    assert(handSet.status === 409 && /changes by itself/.test(handSet.body.error || ''), 'hand-set Completed refused ' + handSet.status);
+    const doneNow = await req('GET', `/api/admin/pm/projects/${prj.id}`, owner);
+    const done = { status: doneNow.body.project.status === 'Completed' ? 200 : 409, body: { error: doneNow.body.project.status } };
+    assert(done.status === 200, 'Completed by the work ' + done.status + ' ' + JSON.stringify(done.body).slice(0, 260));
     const b = await req('POST', `/api/admin/pm/projects/${prj.id}/billing-handoff`, owner, {});
     assert(b.status === 200 || b.status === 201, 'billing ' + b.status + ' ' + JSON.stringify(b.body).slice(0, 200));
     const cv = await req('GET', '/api/admin/contracts2', owner);

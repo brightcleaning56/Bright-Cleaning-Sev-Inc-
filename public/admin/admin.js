@@ -3535,7 +3535,7 @@
     const o = issState.options, isNew = !it;
     let det = null;
     if (!isNew) { try { det = await api('/api/admin/issues/' + it.id); it = det.issue; } catch (e) { return toast(e.message, true); } }
-    it = it || { type: 'complaint', priority: 'Normal', status: 'Open', customer_comms: 'Needs update', customer_id: cust ? cust.id : '', source: '' };
+    it = it || { type: 'complaint', priority: 'Normal', status: 'Open', customer_comms: 'Needs update', customer_id: cust && cust.id ? cust.id : '', project_id: cust && cust.project_id ? cust.project_id : '', source: '' };
     let type = it.type, pri = it.priority;
     const opt = (list, sel, labels) => list.map(v => `<option value="${esc(v)}"${String(v) === String(sel ?? '') ? ' selected' : ''}>${esc(labels ? labels[v] : v)}</option>`).join('');
     const v = k => esc(it[k] == null ? '' : it[k]);
@@ -3717,13 +3717,22 @@
         <div class="cpmeta2"><div><span class="chip blue">${ic('pin')}</span><div><span>Site</span><b>${esc(p.site_address || '—')}</b></div></div><div><span class="chip blue">${ic('user')}</span><div><span>Project manager</span><b>${esc(p.manager || '—')}</b></div></div><div><span class="chip blue">${ic('cal')}</span><div><span>Planned</span><b>${p.start_date ? fmtDate(p.start_date) : '—'} – ${p.due_date ? fmtDate(p.due_date) : '—'}</b></div></div><div><span class="chip blue">${ic('clock')}</span><div><span>Actual</span><b>${p.actual_start ? fmtDate(p.actual_start) : 'not started'}${p.actual_end ? ' – ' + fmtDate(p.actual_end) : ''}</b></div></div></div></div>
         <div class="cpbtns"><button class="btn" id="pjStatus">Change status</button><button class="btn ghost" id="pjEdit">Edit project</button></div></div>
       <div class="fin2">${kt('check', 'blue', 'Progress', (p.progress || 0) + '%', 'from verified tasks')}${kt('contracts', 'purple', 'Contract value', money(p.contract_value), p.contract ? p.contract.signature_status || 'Not sent' : 'No contract')}${kt('reports', 'navy', 'Budget', money(p.budget), '')}${kt('money', 'teal', 'Actual cost', money(p.actual_cost), 'recorded')}${kt('check', 'green', 'Gross profit', p.actual_cost ? money(p.contract_value - p.actual_cost) : '—', p.actual_cost ? 'actual' : 'no costs yet')}${kt('cal', 'amber', 'Open tasks', p.tasks_open, p.tasks_review ? `${p.tasks_review} to review` : '')}${kt('issues', 'red', 'Open issues', d.issues.filter(i => !['Resolved', 'Verified', 'Closed'].includes(i.status)).length, '')}</div>
+      ${p.customer_id ? '' : `<div class="card" style="border-left:4px solid #d1382f"><b>No customer record is linked to this project yet.</b> Issues, inspections and documents attach to the customer record. <button class="btn small" id="pjLinkCust">Link customer</button></div>`}
       <div class="ctabs2 ctabs" role="tablist">${WTABS.map(([k, l, i]) => `<button role="tab" data-wt="${k}" class="${pj.wtab === k ? 'on' : ''}">${ic(i)}<span>${l}</span></button>`).join('')}</div><div id="pjBody"></div>`;
     $('#pjBack').onclick = () => { $('#pjWork').hidden = true; $('#pjList').hidden = false; loadProjects(); };
+    // Links the project to a customer record, created once from the project's own details. A link only, after the owner clicks.
+    if ($('#pjLinkCust')) $('#pjLinkCust').onclick = () => openForm({ title: 'Link a customer to this project', sub: 'Creates the customer record once, from this project. After that, its issues, inspections and documents attach to the customer.',
+      defs: [{ name: 'name', label: 'Contact name' }, { name: 'company', label: 'Company' }, { name: 'email', label: 'Email' }, { name: 'phone', label: 'Phone' }, { name: 'address', label: 'Address', wide: true }],
+      values: { name: p.customer_name || '', company: p.company || '', address: p.site_address || '' },
+      submit: async b => { const c = await api('/api/admin/customers', { method: 'POST', json: b }); await api('/api/admin/pm/projects/' + p.id, { method: 'PATCH', json: { customer_id: c.id } }); },
+      after: () => { toast('Customer linked'); state.customers = []; openProject(p.id); } });
     $$('#pjWork [data-wt]').forEach(b => b.onclick = () => { pj.wtab = b.dataset.wt; drawWork(); });
     $('#pjEdit').onclick = () => openForm({ title: 'Edit project', defs: [{ name: 'name', label: 'Project name', wide: true }, { name: 'service', label: 'Cleaning service', type: 'select', options: [['', 'Not set'], ...Object.entries(d.services)] }, { name: 'manager', label: 'Project manager' }, { name: 'site_address', label: 'Site address', wide: true }, { name: 'start_date', label: 'Planned start', type: 'date' }, { name: 'due_date', label: 'Planned completion', type: 'date' }, { name: 'budget', label: 'Budget ($)' }, { name: 'frequency', label: 'Service frequency', type: 'select', options: [['', '—'], 'once', 'daily', 'weekly', 'biweekly', 'monthly'] }],
       values: p, submit: b => api('/api/admin/pm/projects/' + p.id, { method: 'PATCH', json: b }), after: () => { toast('Saved'); openProject(p.id); } });
-    $('#pjStatus').onclick = () => openForm({ title: 'Change status', sub: d.guard_next && p.status === 'Planning' ? d.guard_next : '', defs: [{ name: 'status', label: 'Status', type: 'select', options: ['Planning', 'Ready to mobilize', 'In Progress', 'Quality Review', 'On Hold', 'Completed', 'Archived'] }, { name: 'reason', label: 'Reason (required for On Hold)', wide: true }],
-      values: { status: p.status }, submit: b => api(`/api/admin/pm/projects/${p.id}/status`, { method: 'POST', json: b }), after: () => { toast('Status updated'); openProject(p.id); } });
+    // Status moves by itself as the work is done. A person only puts the project on hold, resumes it, or archives it.
+    $('#pjStatus').onclick = () => openForm({ title: 'Project status', sub: `Now: ${p.status}. It changes by itself as the work moves.${(p.status_next || []).length ? ' Next: ' + p.status_next.join('; ') + '.' : ''}`,
+      defs: [{ name: 'status', label: 'Set by hand (optional)', type: 'select', options: [['', 'Nothing: let the work set the status'], ['On Hold', 'Put on hold'], ['Resume', 'Resume (the work sets the status again)'], ['Archived', 'Archive']] }, { name: 'reason', label: 'Reason (required for On Hold)', wide: true }],
+      values: { status: '' }, submit: b => (b.status ? api(`/api/admin/pm/projects/${p.id}/status`, { method: 'POST', json: b }) : Promise.resolve({})), after: () => { toast('Status updated'); openProject(p.id); } });
     const B = $('#pjBody'), t = pj.wtab, act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     const reload = () => openProject(p.id);
     if (t === 'overview') {
@@ -3765,18 +3774,27 @@
     } else if (t === 'documents' || t === 'photos') {
       const docs = d.documents.filter(x => t === 'photos' ? x.kind === 'Photos' : x.kind !== 'Photos');
       B.innerHTML = `<div class="card"><h2>${t === 'photos' ? 'Photos &amp; evidence' : 'Documents &amp; drawings'}</h2><button class="btn" id="pjUp">Upload</button>${rowsOr(docs.map(x => `<tr><td><button class="linklike" data-dl="${x.id}">${esc(x.title)}</button></td><td>${esc(x.kind)}</td><td>${esc(x.revision || '—')}</td><td>${fmtDate(x.created_at)}</td></tr>`), ['File', 'Type', 'Rev', 'Uploaded'], t === 'photos' ? 'No photos yet. Upload before-and-after photos as evidence.' : 'No documents yet.')}</div>`;
-      $('#pjUp').onclick = () => uploadDocs({ project_id: p.id, kind: t === 'photos' ? 'Photos' : 'Drawings' });
+      $('#pjUp').onclick = () => uploadDocs({ project_id: p.id, customer_id: p.customer_id || '', kind: t === 'photos' ? 'Photos' : 'Drawings' });
       $$('#pjBody [data-dl]').forEach(b => b.onclick = () => { const x = d.documents.find(y => y.id === Number(b.dataset.dl)); downloadFile({ name: x.file_name || x.title, url: x.file_url }); });
     } else if (t === 'site') {
       const si = d.site, F = [['contact', 'Site contact (name / phone)'], ['hours', 'Working hours'], ['access', 'Access instructions (gate, keys, codes)'], ['parking', 'Parking & staging'], ['safety', 'Safety requirements (PPE, orientation)'], ['utilities', 'Water / power / disposal']];
       B.innerHTML = `<div class="card"><h2>Site information</h2><p class="muted">Internal only. Crews see this on their work orders.</p><form class="ig" id="siteForm">${F.map(([k, l]) => `<div class="wide"><label>${l}</label><textarea name="${k}" rows="2">${esc(si[k] || '')}</textarea></div>`).join('')}<div class="wide"><button class="btn">Save site information</button></div></form></div>`;
       $('#siteForm').onsubmit = async ev => { ev.preventDefault(); try { await api('/api/admin/pm/projects/' + p.id, { method: 'PATCH', json: { site_info: formObj(ev.target) } }); toast('Site information saved'); reload(); } catch (e) { toast(e.message, true); } };
     } else if (t === 'quality') {
-      B.innerHTML = `<div class="card"><h2>Quality inspections</h2>${rowsOr(d.inspections.map(x => `<tr><td>${fmtDate(x.date)}</td><td>${esc(x.area)}</td><td>${esc(x.inspector || '—')}</td><td>${x.score == null ? '—' : x.score + '%'}</td><td>${x.passed ? '<span class="badge green">Passed</span>' : '<span class="badge red">Failed</span>'}</td></tr>`), ['Date', 'Area', 'Inspector', 'Score', 'Result'], 'No inspections yet.')}<button class="btn" id="pjInsp">Go to Quality &amp; inspections</button></div>`;
+      B.innerHTML = `<div class="card"><h2>Quality inspections</h2>${rowsOr(d.inspections.map(x => `<tr><td>${fmtDate(x.date)}</td><td>${esc(x.area)}</td><td>${esc(x.inspector || '—')}</td><td>${x.score == null ? '—' : x.score + '%'}</td><td>${x.passed ? '<span class="badge green">Passed</span>' : '<span class="badge red">Failed</span>'}</td></tr>`), ['Date', 'Area', 'Inspector', 'Score', 'Result'], 'No inspections yet.')}<button class="btn" id="pjNewInsp">New inspection</button> <button class="btn ghost" id="pjInsp">All inspections</button></div>`;
       $('#pjInsp').onclick = () => go('quality');
+      // The inspection opens on this project and its customer; the checklist is the only thing to choose.
+      $('#pjNewInsp').onclick = async () => {
+        let tpls = []; try { tpls = (await api('/api/admin/qc/templates')).templates || []; } catch (e) { return toast(e.message, true); }
+        openForm({ title: 'New quality inspection', sub: `For ${p.name || p.number}${p.customer_id ? '' : '. Link a customer to this project first so the inspection is on their record.'}`,
+          defs: [{ name: 'template_id', label: 'Checklist', type: 'select', options: [['', 'Choose a checklist'], ...tpls.map(x => [x.id, x.name])] }, { name: 'area', label: 'Area inspected', wide: true }, { name: 'date', label: 'Date', type: 'date' }, { name: 'inspector', label: 'Inspector' }],
+          values: { area: p.name || p.number, date: new Date().toISOString().slice(0, 10) },
+          submit: b => api('/api/admin/qc/inspections', { method: 'POST', json: { ...b, project_id: p.id, customer_id: p.customer_id || null } }),
+          after: () => { toast('Inspection started'); reload(); } });
+      };
     } else if (t === 'issues') {
       B.innerHTML = `<div class="card"><h2>Issues &amp; risks</h2>${rowsOr(d.issues.map(i => `<tr class="click" data-iss="${i.id}"><td>${esc(i.title)}</td><td>${esc(i.type)}</td><td>${badge(i.priority)}</td><td>${badge(i.status)}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td></tr>`), ['Item', 'Type', 'Priority', 'Status', 'Due'], 'No issues linked to this project.')}<button class="btn" id="pjIss">Create issue</button></div>`;
-      $('#pjIss').onclick = () => openIssue(null, p.customer_id ? { id: p.customer_id } : null);
+      $('#pjIss').onclick = () => openIssue(null, { id: p.customer_id || '', project_id: p.id });
       $$('#pjBody [data-iss]').forEach(r => r.onclick = () => openIssue({ id: Number(r.dataset.iss) }, null));
     } else if (t === 'costs') {
       B.innerHTML = `<div class="card"><h2>Costs &amp; budget</h2><dl class="stat"><dt>Budget</dt><dd>${money(p.budget)}</dd><dt>Actual cost (recorded)</dt><dd>${money(p.actual_cost)}</dd><dt>Variance</dt><dd style="color:${p.budget && p.actual_cost > p.budget ? '#d1382f' : 'inherit'}">${p.budget ? money(p.budget - p.actual_cost) : '—'}</dd>${Object.entries(p.cost_by).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${money(v)}</dd>`).join('')}</dl>
