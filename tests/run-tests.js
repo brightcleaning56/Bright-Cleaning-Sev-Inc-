@@ -2929,6 +2929,19 @@ async function startServer(env, dataDir) {
     return 'owner adds and deletes certificates; expired status shows; bad input and staff access refused';
   });
 
+  await check('Insurance', 'Expiry check emails the owner once per certificate and status change', async () => {
+    const past = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10);
+    const made = await req('POST', '/api/admin/insurance', { token: T, json: { holder: 'Alert Sub Co', kind: 'subcontractor', expires_on: past } });
+    const first = await req('POST', '/api/admin/insurance/check-expiry', { token: T });
+    const second = await req('POST', '/api/admin/insurance/check-expiry', { token: T });
+    const staff = await req('POST', '/api/admin/insurance/check-expiry', { token: globalThis.__st });
+    await req('DELETE', '/api/admin/insurance/' + made.data.id, { token: T });
+    const chk = { created: made.status === 200, firstSent: first.status === 200 && first.data.sent >= 1, secondSilent: second.status === 200 && second.data.sent === 0, staffRefused: staff.status === 403 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ first: first.data, second: second.data, staff: staff.status }));
+    return 'first check sends one alert, a repeat check stays silent, staff cannot run it';
+  });
+
   await check('Employees', 'Onboarding checklist: items tick and untick once each; the payroll item follows the employee record; unknown items refused; staff cannot see or change it', async () => {
     const e = (await req('POST', '/api/admin/employees', { token: T, json: { name: 'Olive Onboard', phone: '515-555-0720', role: 'Cleaner' } })).data.employee;
     const start = (await req('GET', `/api/admin/employees/${e.id}/onboarding`, { token: T })).data;
