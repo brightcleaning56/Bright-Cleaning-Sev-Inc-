@@ -324,6 +324,48 @@ module.exports = function mountPM(app, ctx) {
     logAction(req, 'handed off to billing', 'project', p.id, `${number(p)}: draft invoice #${id} for $${due.toFixed(2)} (not sent)`);
     res.status(201).json({ invoice_id: id, amount: due });
   });
+  // ---- Milestone billing: a share of the contract is billed when its milestone is done. Billing is for owners and managers.
+  db.exec('CREATE TABLE IF NOT EXISTS project_milestones(id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, name TEXT NOT NULL, percent REAL NOT NULL, done_at TEXT, billed_invoice_id INTEGER, created_at TEXT NOT NULL)');
+  const moneyRole = req => ['owner', 'manager'].includes(roleOf(req));
+  const milestoneAmount = (k, percent) => Math.round((k ? Number(k.value) || 0 : 0) * Number(percent)) / 100;
+  app.get('/api/admin/pm/projects/:id/milestones', auth, (req, res) => {
+    const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
+    const k = contractOf(p);
+    const milestones = db.prepare('SELECT * FROM project_milestones WHERE project_id=? ORDER BY id').all(p.id).map(m => ({ ...m, amount: milestoneAmount(k, m.percent) }));
+    res.json({ milestones, contract_value: k ? Number(k.value) || 0 : 0, planned_percent: milestones.reduce((s, m) => s + m.percent, 0) });
+  });
+  app.post('/api/admin/pm/projects/:id/milestones', auth, (req, res) => {
+    const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
+    const b = req.body || {}, name = clean(b.name, 120), percent = Number(b.percent);
+    if (!name) return res.status(400).json({ error: 'Name the milestone, for example "Rough clean done".' });
+    if (!(percent > 0 && percent <= 100)) return res.status(400).json({ error: 'The share must be a percent from 1 to 100.' });
+    const planned = db.prepare('SELECT COALESCE(SUM(percent),0) v FROM project_milestones WHERE project_id=?').get(p.id).v;
+    if (planned + percent > 100 + 1e-9) return res.status(409).json({ error: `Milestones would add up to ${planned + percent}% of the contract. The total must stay within 100%.` });
+    const id = db.prepare('INSERT INTO project_milestones(project_id,name,percent,created_at) VALUES(?,?,?,?)').run(p.id, name, percent, now()).lastInsertRowid;
+    logAction(req, 'added milestone', 'project', p.id, `${number(p)}: ${name} ${percent}%`);
+    res.status(201).json({ id });
+  });
+  app.post('/api/admin/pm/milestones/:mid/done', auth, (req, res) => {
+    const m = db.prepare('SELECT * FROM project_milestones WHERE id=?').get(Number(req.params.mid)); if (!m) return res.status(404).json({ error: 'Milestone not found.' });
+    if (!m.done_at) db.prepare('UPDATE project_milestones SET done_at=? WHERE id=?').run(now(), m.id);
+    logAction(req, 'milestone done', 'project', m.project_id, m.name);
+    res.json({ ok: true });
+  });
+  app.post('/api/admin/pm/milestones/:mid/bill', auth, (req, res) => {
+    if (!moneyRole(req)) return res.status(403).json({ error: 'Only an owner or manager can bill a milestone.' });
+    const m = db.prepare('SELECT * FROM project_milestones WHERE id=?').get(Number(req.params.mid)); if (!m) return res.status(404).json({ error: 'Milestone not found.' });
+    if (m.billed_invoice_id) return res.status(409).json({ error: 'This milestone is already billed.', invoice_id: m.billed_invoice_id });
+    if (!m.done_at) return res.status(409).json({ error: 'Mark the milestone done before billing it.' });
+    const p = get(m.project_id), k = contractOf(p), amount = milestoneAmount(k, m.percent);
+    if (!(amount > 0)) return res.status(409).json({ error: 'There is no contract value to bill. Check the contract first.' });
+    const y = new Date().getFullYear(), mx = db.prepare('SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?').all(`BC-${y}-%`).reduce((acc, r) => Math.max(acc, Number(String(r.invoice_number).split('-')[2]) || 0), 0);
+    const cust = p.customer_id ? db.prepare('SELECT * FROM customers WHERE id=?').get(p.customer_id) : null;
+    const invId = db.prepare("INSERT INTO invoices(invoice_number,project_id,customer_name,company,email,amount,paid_amount,due_date,status,created_at,terms) VALUES(?,?,?,?,?,?,0,?,'Draft',?,?)")
+      .run(`BC-${y}-${String(mx + 1).padStart(4, '0')}`, p.id, p.customer_name || (cust && cust.name) || (k && k.customer_name) || '', p.company || (cust && cust.company) || (k && k.company) || '', (cust && cust.email) || (k && k.email) || '', amount, new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), now(), `Milestone: ${m.name} (${m.percent}% of the contract)`).lastInsertRowid;
+    db.prepare('UPDATE project_milestones SET billed_invoice_id=? WHERE id=?').run(invId, m.id);
+    logAction(req, 'billed milestone', 'project', p.id, `${number(p)}: ${m.name} → draft invoice #${invId} for $${amount.toFixed(2)} (not sent)`);
+    res.status(201).json({ invoice_id: invId, amount });
+  });
   app.get('/api/admin/pm/projects/:id/certificate', auth, (req, res) => {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
     if (p.status !== 'Completed') return res.status(409).json({ error: 'The certificate is available once the project is completed.' });

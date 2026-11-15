@@ -2883,6 +2883,24 @@ async function startServer(env, dataDir) {
     return 'a repeated offline check-in and check-out is applied once; the repeat is answered with duplicate';
   });
 
+  await check('Projects', 'Milestone billing: a share of the contract bills once, only after the milestone is done; shares stay within 100%', async () => {
+    const pid = globalThis.__pmId;
+    const pr = (await req('GET', '/api/admin/pm/projects/' + pid, { token: T })).data.project;
+    const value = Number(pr.contract_value) || 0;
+    const m1 = await req('POST', `/api/admin/pm/projects/${pid}/milestones`, { token: T, json: { name: 'Rough clean done', percent: 40 } });
+    const over = await req('POST', `/api/admin/pm/projects/${pid}/milestones`, { token: T, json: { name: 'Too much', percent: 70 } });
+    const early = await req('POST', `/api/admin/pm/milestones/${m1.data.id}/bill`, { token: T, json: {} });
+    await req('POST', `/api/admin/pm/milestones/${m1.data.id}/done`, { token: T, json: {} });
+    const bill = await req('POST', `/api/admin/pm/milestones/${m1.data.id}/bill`, { token: T, json: {} });
+    const again = await req('POST', `/api/admin/pm/milestones/${m1.data.id}/bill`, { token: T, json: {} });
+    const list = await req('GET', `/api/admin/pm/projects/${pid}/milestones`, { token: T });
+    const expected = Math.round(value * 40) / 100;
+    const chk = { created: m1.status === 201, overRefused: over.status === 409, earlyRefused: early.status === 409 && /done/.test(early.data.error || ''), billed: bill.status === 201 && Math.abs(bill.data.amount - expected) < 0.005, billedOnce: again.status === 409, listed: list.status === 200 && list.data.milestones.some(x => x.billed_invoice_id === bill.data.invoice_id) };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ value, expected, bill: bill.data, early: early.data, over: over.data }));
+    return `40% of $${value.toFixed(2)} billed as a draft once ($${expected.toFixed(2)}); over-100% and early billing refused`;
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));
