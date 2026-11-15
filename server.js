@@ -156,6 +156,7 @@ require('./issues')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer
 require('./bids')(app,{db,auth,logAction,clean});
 require('./pm')(app,{db,auth,logAction,clean,adminEmail});
 require('./insurance')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
+require('./setup-gate').sync(db, process.env);
 require('./sched')(app,{db,auth,logAction,clean,adminEmail,uploadDir,getMailer:()=>mailer});
 require('./qc')(app,{db,auth,logAction,clean,adminEmail});
 require('./docs2')(app,{db,auth,logAction,clean,adminEmail,upload,uploadDir});

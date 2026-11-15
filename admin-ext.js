@@ -255,6 +255,7 @@ module.exports = function mountAdminExt(app, ctx) {
     db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
     db.prepare("INSERT INTO settings(key,value,updated_at) VALUES('labor_assumptions',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(JSON.stringify(next), new Date().toISOString());
     db.prepare("INSERT INTO settings(key,value,updated_at) VALUES('labor_confirmed','1',?) ON CONFLICT(key) DO UPDATE SET value='1', updated_at=excluded.updated_at").run(new Date().toISOString());
+    require('./setup-gate').sync(db, process.env);
     logAction(req, 'changed labor assumptions', 'settings', 0, JSON.stringify(next).slice(0, 400));
     res.json({ ok: true, labor: next });
   });
