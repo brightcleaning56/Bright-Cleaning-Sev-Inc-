@@ -2854,6 +2854,13 @@ async function startServer(env, dataDir) {
     return 'staff delete refused with a clear message; owner delete reaches the record';
   });
 
+  await check('Health', 'Public status page is served and reads the health check', async () => {
+    const st = await req('GET', '/status.html', {});
+    const body = Buffer.isBuffer(st.data) ? st.data.toString('utf8') : String(st.data);
+    assert(st.status === 200 && /\/api\/health/.test(body) && /System status/.test(body), 'status page ' + st.status);
+    return 'status page is public and reads /api/health';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));
