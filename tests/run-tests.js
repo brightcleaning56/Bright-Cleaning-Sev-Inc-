@@ -2863,6 +2863,26 @@ async function startServer(env, dataDir) {
     return 'status page is public, loads its script, and the script reads /api/health';
   });
 
+  await check('Crew offline', 'A queued check-in and check-out sent twice (same client id) are applied once; a refused repeat is answered, not repeated', async () => {
+    const emp = globalThis.__sch.a;
+    const vis = (await req('POST', '/api/admin/visits', { token: T, json: { title: 'Offline replay check', date: '2027-01-12', start_time: '08:00', end_time: '10:00' } })).data;
+    const vid = (vis.visit || vis).id;
+    const asg = await req('POST', `/api/admin/dispatch/visits/${vid}/crew`, { token: T, json: { employee_id: emp.id } });
+    const dsp = await req('POST', `/api/admin/dispatch/visits/${vid}/dispatch`, { token: T });
+    if (asg.status !== 200) throw new Error('assign ' + asg.status + ' ' + JSON.stringify(asg.data));
+    const ltok = (await req('GET', `/api/admin/employees/${emp.id}/link`, { token: T })).data.url.split('/').pop();
+    const inId = 'replay-in-' + Date.now(), outId = 'replay-out-' + Date.now();
+    const c1 = await req('POST', `/api/crew/${ltok}/jobs/${vid}/checkin`, { json: { client_id: inId } });
+    const c2 = await req('POST', `/api/crew/${ltok}/jobs/${vid}/checkin`, { json: { client_id: inId } });
+    const o1 = await req('POST', `/api/crew/${ltok}/jobs/${vid}/checkout`, { json: { client_id: outId } });
+    const o2 = await req('POST', `/api/crew/${ltok}/jobs/${vid}/checkout`, { json: { client_id: outId } });
+    const rows = ((await req('GET', '/api/admin/time?from=2026-01-01&to=2030-01-01', { token: T })).data.entries || []).filter(x => x.visit_id === vid);
+    const chk = { firstIn: c1.status === 200, repeatIn: c2.status === 200 && c2.data.duplicate === true, firstOut: o1.status === 200, repeatOut: o2.status === 200 && o2.data.duplicate === true, oneEntry: rows.length === 1 && !!rows[0].clock_out };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ c1: c1.status, c2: c2.data, o1: o1.status, o2: o2.data, rows: rows.length }));
+    return 'a repeated offline check-in and check-out is applied once; the repeat is answered with duplicate';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));

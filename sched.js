@@ -70,6 +70,7 @@ module.exports = function mountSched(app, ctx) {
     res.json({ employees: list, roles: ROLES, timeoff: db.prepare('SELECT t.*, e.name FROM employee_timeoff t JOIN employees e ON e.id=t.employee_id WHERE t.end_date>=? ORDER BY t.start_date').all(addDays(d, -30)), holidays: db.prepare('SELECT * FROM company_holidays WHERE date>=? ORDER BY date').all(addDays(d, -30)) });
   });
   try { db.exec('ALTER TABLE employees ADD COLUMN payroll_id TEXT'); } catch { /* already added */ }
+  db.exec('CREATE TABLE IF NOT EXISTS crew_actions(client_id TEXT PRIMARY KEY, employee_id INTEGER, action TEXT, visit_id INTEGER, created_at TEXT)');
   function empValidate(b, cur) {
     const out = {}, errs = [];
     if (!cur || 'name' in b) { const n = clean(b.name, 120); if (!n) errs.push('Enter the employee name.'); else out.name = n; }
@@ -267,6 +268,13 @@ module.exports = function mountSched(app, ctx) {
     const e = crewAuth(req, res); if (!e) return;
     const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' });
     const a = req.params.action, t = now();
+    // Offline changes carry a client_id. A repeat of an action that already went through is answered, not applied again.
+    const cid = clean((req.body || {}).client_id, 80);
+    if (cid) {
+      if (db.prepare('SELECT 1 FROM crew_actions WHERE client_id=?').get(cid)) return res.json({ ok: true, duplicate: true });
+      const sendOnce = res.json.bind(res);
+      res.json = body => { if (res.statusCode < 300) { try { db.prepare('INSERT OR IGNORE INTO crew_actions(client_id,employee_id,action,visit_id,created_at) VALUES(?,?,?,?,?)').run(cid, e.id, a, v.id, t); } catch { /* recorded best effort */ } } return sendOnce(body); };
+    }
     if (a === 'checkin') {
       if (db.prepare('SELECT 1 FROM time_entries WHERE employee_id=? AND clock_out IS NULL').get(e.id)) return res.status(409).json({ error: 'You are already checked in. Check out of the other job first.' });
       db.prepare('INSERT INTO time_entries(employee_id,visit_id,project_id,clock_in,source,created_at) VALUES(?,?,?,?,?,?)').run(e.id, v.id, v.project_id, t, 'crew', t);
