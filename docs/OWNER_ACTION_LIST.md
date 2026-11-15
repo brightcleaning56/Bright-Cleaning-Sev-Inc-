@@ -8,7 +8,7 @@ Last updated: 2026-11-13 (blueprint review added).
 1. **Done: everything is pushed and deployed.** Origin and the live build match the latest commit (checked 2026-11-14 at d064c94; the live build fingerprint is a48357679c74). Nothing to do here.
 2. **AI lead triage is down.** The Anthropic credit balance is too low. Add credits in Anthropic billing.
 3. **GROK BOT lead key** sent five leads at 8:02 AM today and is still active. Confirm the leads are real, then keep or revoke the key.
-4. **Test accounts still have access:** "Eric Moore test" (Supervisor) and "Daniel mOORE TEST" (Inspector) in Settings. Remove them?
+4. **Done 2026-11-14: test accounts removed.** "Eric Moore test" (Supervisor) and "Daniel mOORE TEST" (Inspector) were deleted from the live site at your request. Only the owner account remains.
 5. **QC-1001 and QC-1002 are overdue.** Approve the corrective-cleaning visits, and approve the customer reply for QC-1001. QC-1002 is linked to a ZZ TEST customer and needs the real customer.
 6. **Two customers left Active on purpose:** "Eric Moore" (info@compass.com) and "Cutler Construction". Set them Inactive?
 7. **Cleaning scopes:** 40 of 86 items have no price. Price them or archive them. Estimates using them can be wrong until then.
