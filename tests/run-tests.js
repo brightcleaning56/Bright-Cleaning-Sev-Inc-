@@ -2940,6 +2940,25 @@ async function startServer(env, dataDir) {
     return '9 items; tick, untick and payroll link checked; unknown items and staff refused';
   });
 
+  await check('Employees', 'Dispatch gate: a new employee cannot be assigned until required onboarding is done; the optional background check does not hold dispatch', async () => {
+    const e = (await req('POST', '/api/admin/employees', { token: T, json: { name: 'Gate Tester', phone: '515-555-0730', role: 'Cleaner' } })).data.employee;
+    const dd = new Date(); dd.setDate(dd.getDate() + 20); const date = dd.toISOString().slice(0, 10);
+    const v = (await req('POST', '/api/admin/visits', { token: T, json: { title: 'Gate test clean', type: 'Cleaning', date, start_time: '08:00', end_time: '10:00', address: '5 Gate Rd, Des Moines, IA' } })).data; const vid = v.id || (v.visit && v.visit.id);
+    const tryAssign = () => req('POST', `/api/admin/dispatch/visits/${vid}/crew`, { token: T, json: { employee_id: e.id } });
+    await req('POST', `/api/admin/employees/${e.id}/onboarding/contact`, { token: T, json: { done: true } });
+    const blocked = await tryAssign();
+    const items = ['contact', 'eligibility', 'tax', 'safety', 'chemicals', 'equipment', 'crewlink'];
+    for (const k of items.slice(0, -1)) await req('POST', `/api/admin/employees/${e.id}/onboarding/${k}`, { token: T, json: { done: true } });
+    const stillBlocked = await tryAssign();
+    await req('POST', `/api/admin/employees/${e.id}/onboarding/crewlink`, { token: T, json: { done: true } });
+    await req('PATCH', `/api/admin/employees/${e.id}`, { token: T, json: { payroll_id: 'ADP-7730' } });
+    const allowed = await tryAssign();
+    const chk = { blockedAtStart: blocked.status === 409 && /onboarding/.test(blocked.data.error || ''), blockedUntilRequiredDone: stillBlocked.status === 409, allowedWhenRequiredDone: allowed.status === 200, visitCreated: !!vid };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ blocked: blocked.data, stillBlocked: stillBlocked.data, allowed: allowed.status }));
+    return 'assignment blocked until all required items are done; background check not required';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));

@@ -36,6 +36,8 @@ module.exports = function mountSched(app, ctx) {
   function check(emp, v) {
     const block = [], warn = [];
     if (!emp.active) block.push(`${emp.name} is inactive`);
+    const open = onboardingGate(emp);
+    if (open.length) block.push(`${emp.name} needs onboarding first: ${open.slice(0, 3).join('; ')}${open.length > 3 ? ' and more' : ''}`);
     const off = db.prepare('SELECT * FROM employee_timeoff WHERE employee_id=? AND start_date<=? AND end_date>=?').get(emp.id, v.date, v.date);
     if (off) block.push(`${emp.name} is off on ${v.date}${off.reason ? ' (' + off.reason + ')' : ''}`);
     const a1 = mins(v.start_time), b1 = mins(v.end_time) ?? (a1 != null ? a1 + 240 : null);
@@ -113,7 +115,7 @@ module.exports = function mountSched(app, ctx) {
     ['contact', 'Contact details and emergency contact on file'],
     ['eligibility', 'Work eligibility form on file'],
     ['tax', 'Tax withholding form on file'],
-    ['background', 'Background check completed (only where your policy requires it)'],
+    ['background', 'Background check completed (optional: only where your policy requires it; does not block dispatch)'],
     ['safety', 'Safety orientation and site rules'],
     ['chemicals', 'Chemical and SDS training'],
     ['equipment', 'Equipment and uniform issued'],
@@ -126,7 +128,16 @@ module.exports = function mountSched(app, ctx) {
     const items = ONBOARD.map(([key, label]) => ({ key, label, done: done.has(key), done_at: done.has(key) ? done.get(key).done_at : null, done_by: done.has(key) ? done.get(key).done_by : null }));
     // The payroll file number is recorded on the employee record, so it counts as done when it is set.
     items.push({ key: 'payroll', label: 'Payroll file number set (ADP)', done: !!(e && e.payroll_id), auto: true, done_at: null, done_by: null });
-    return { items, done: items.filter(i => i.done).length, total: items.length, ready: items.every(i => i.done) };
+    return { items, done: items.filter(i => i.done).length, total: items.length, ready: items.filter(i => i.key !== 'background').every(i => i.done) };
+  };
+  // Dispatch gate: required items must be done before an employee can be assigned to a job. The background check is optional.
+  // It applies to employees added on or after ONBOARD_FROM, and to anyone whose checklist has been started.
+  // Employees already on the team before that date are not blocked until someone starts their checklist.
+  const ONBOARD_FROM = '2026-11-16T00:00:00.000Z';
+  const onboardingGate = emp => {
+    const started = db.prepare('SELECT 1 FROM employee_onboarding WHERE employee_id=? LIMIT 1').get(emp.id);
+    if (!(String(emp.created_at || '') >= ONBOARD_FROM || started)) return [];
+    return onboardingOf(emp.id).items.filter(i => i.key !== 'background' && !i.done).map(i => i.label);
   };
   app.get('/api/admin/employees/:id/onboarding', auth, (req, res) => {
     if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can see onboarding.' });
