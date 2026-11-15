@@ -231,20 +231,21 @@ A scalable national cleaning and facility maintenance business with multiple rev
 
 ## Appendix A — How the system applies this plan
 
+Status as of 2026-11-15, checked against the code on branch `claude/bright-cleaning-rebuild-nt1y6e`.
+
 | Plan element | System today | Gap / action |
 |---|---|---|
 | Price formula: cost ÷ (1 − margin) | Implemented in estimating (`estimating.js`): direct + insurance + contingency + overhead, divided by (1 − margin %), with a minimum job charge | None |
-| Target contribution margin 30% | Estimates use the margin entered on each estimate. Approval rule minimum is **15%** (`approvals.js`) | **Decide:** set the approval minimum to 30% to match this plan. This changes which quotes need approval. Not changed yet. |
-| Labor: $20 wage, 20% burden, $24 loaded, $30 productive | Labor rate is entered per scope item (cleaning scopes). The burden and utilization figures are not stored as system settings | **Add** these as settings so the engine calculates from them |
+| Target contribution margin 30% | Estimates use the margin entered on each estimate. The approval minimum is **30%** (`approvals.js`), matching this plan. Owners can change it on the Approval rules form | Done. Review the value when pricing is validated |
+| Labor: $20 wage, 20% burden, $24 loaded, $30 productive | Labor assumptions are stored as settings (wage, burden, loaded and productive costs, utilization, target contribution) and the estimate reads them (`admin-ext.js`, labor-assumptions route, owner/manager only) | Done. Confirm the values against real payroll before lender use |
 | National price catalog and regional adjustments | Price book and cleaning scopes exist. The residential, apartment, office and regional tables above are not loaded as a catalog | **Load** the catalog as a draft for review, then approve it. Not loaded yet. |
-| Residential and apartment subscriptions (monthly, biweekly, weekly) | Invoices and payment reminders exist. Subscription plans with visit allowances and recurring billing are not built | **Build** a subscription record with visits per month and extra-visit pricing |
+| Residential and apartment subscriptions (monthly, biweekly, weekly) | Built: subscriptions with a visits-per-month allowance and a monthly bill run that creates one draft invoice per active subscription (`subscriptions.js`) | **Add** extra-visit pricing beyond the allowance. Not built |
 | Post-construction and other specialty work | DECIDED: priced from labor (scope items with production rates, labor hours, supplies, insurance, margin). No per-square-foot rates until the owner sets them. NOT in the monthly tables. Priced per project from cleaning scopes (square footage, production rates, labor hours, insurance, margin) |
 | Office pricing by size and frequency | Estimates can be built from square footage and production rates in cleaning scopes. Frequency-based monthly pricing is not built | **Load** the office table into scopes |
 | Insurance directory, expiry alerts, cost in pricing | Insurance expense is in the estimate math; the directory and expiry alerts are not built | **Build** the directory and alerts |
-| Workforce: onboarding, time clock, GPS, payroll | Crew scheduling, dispatch and crew pages exist. Time clock, payroll integration and GPS are not built | Planned; GPS needs a privacy review first |
-| Consolidated portfolio billing | Not built | Planned |
-| Customer self-service portal | Not built | Planned |
-| Financial scenarios and lender model | Not in the system | Build separately |
+| Workforce: onboarding, time clock, GPS, payroll | Built: employee onboarding checklist that gates dispatch for new hires, crew scheduling and dispatch, a phone crew page with clock in/out and time entries that works offline, and ADP-style payroll totals and CSV export with overtime (`sched.js`, `payrollsummary.js`, `admin-ext.js`). Not built: a live payroll provider connection and GPS | Planned; GPS needs a privacy review first. Payroll file format awaits ADP details (owner list item 16) |
+| Consolidated portfolio billing | Not built. Milestone billing for project contracts is built (`pm.js`), but it is per project, not per portfolio | Planned |
+| Customer self-service portal | Built in part: customers see their proposals, contracts and invoices by link, exchange messages with the office, and can pay online (`portal.js`, `payments.js`). Not a full account login | Planned: a full customer login if needed || Financial scenarios and lender model | Not in the system | Build separately |
 
 ## Appendix B — Items to review before lenders or investors
 
