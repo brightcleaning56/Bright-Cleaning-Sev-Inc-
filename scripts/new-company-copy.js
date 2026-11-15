@@ -89,7 +89,7 @@ Target: one day once the setup script exists. Business plan, Operations and supp
 
 ## Setup steps
 4. Deploy the copy from the repository and wait for /api/health to show the expected build.
-5. Import customers, pricebook, staff and crew.
+5. Enter the company's own pricebook, labor rates and margins. Never copy Bright Clean's prices. Then import customers, staff and crew.
 6. Turn on two-step sign-in for owners and managers.
 7. Train the owner and office in one session. Set the AI receptionist greeting and the recording notice.
 8. Run a test call, a test estimate and a test invoice.

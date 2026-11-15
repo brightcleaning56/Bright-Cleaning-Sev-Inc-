@@ -129,6 +129,7 @@ module.exports = function mountScopes(app, ctx) {
   // One-click import of the Bright Clean price book. Safe to repeat: existing items keep any price
   // the owner has already set; only missing items are created and blank prices filled in.
   app.post('/api/admin/scopes/import-pricebook', auth, (req, res) => {
+    if (process.env.PRICEBOOK_IMPORT !== 'on') return res.status(403).json({ error: 'Bright Clean prices are not copied into other companies. Enter your own prices in Cleaning scopes.' });
     const book = require('./pricebook');
     let created = 0, filled = 0, kept = 0;
     db.transaction(() => {

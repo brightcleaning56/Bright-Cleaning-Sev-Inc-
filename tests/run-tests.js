@@ -88,7 +88,7 @@ async function startServer(env, dataDir) {
     NODE_ENV: 'staging', JWT_SECRET: (globalThis.__jwtSecret = crypto.randomBytes(40).toString('hex')), ADMIN_EMAIL: OWNER,
     ADMIN_PASSWORD_HASH: await bcrypt.hash(OWNER_PW, 10), RATE_LIMIT_PUBLIC: '5000', TWILIO_AUTH_TOKEN: 'tw-test-token', SMTP_HOST: '127.0.0.1', SMTP_PORT: String(SMTP_PORT), SMTP_SECURE: 'false',
     SMTP_USER: 'info@brightclean.net', SMTP_PASS: 'test', FROM_EMAIL: 'info@brightclean.net', NOTIFY_EMAIL: 'info@brightclean.net', AUTOBID_SWEEP_MS: '500',
-    PUBLIC_BASE_URL: 'https://brightclean.net', MONITORING_TEST_ROUTE: '1', MS365_CLIENT_ID: 'test-client', MS365_CLIENT_SECRET: 'test-secret', MS365_TENANT_ID: 'tenant1', MS365_LOGIN_BASE: TW_API, MS365_GRAPH_BASE: TW_API, TWILIO_API_BASE: TW_API, TWILIO_API_KEY: 'SK' + 'b'.repeat(32), TWILIO_API_SECRET: 'test-api-secret', DISABLE_SCHEDULER: '1', DOTENV_CONFIG_PATH: '/nonexistent'
+    PUBLIC_BASE_URL: 'https://brightclean.net', MONITORING_TEST_ROUTE: '1', PRICEBOOK_IMPORT: 'on', MS365_CLIENT_ID: 'test-client', MS365_CLIENT_SECRET: 'test-secret', MS365_TENANT_ID: 'tenant1', MS365_LOGIN_BASE: TW_API, MS365_GRAPH_BASE: TW_API, TWILIO_API_BASE: TW_API, TWILIO_API_KEY: 'SK' + 'b'.repeat(32), TWILIO_API_SECRET: 'test-api-secret', DISABLE_SCHEDULER: '1', DOTENV_CONFIG_PATH: '/nonexistent'
   };
   const dataDir = path.join(work, 'data');
 
