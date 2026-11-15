@@ -20,6 +20,9 @@ Last updated: 2026-11-13 (blueprint review added).
 
 12. **Blueprint upload limit.** The Goldfinch Lofts drawing set is 128 MB; uploads are capped at 30 MB. Split the PDF into sets (e.g., architectural, structural, civil), or approve raising the cap for drawings.
 13. **Window access.** The drawings show no permanent window-washing davit or BMU. Confirm with the architect whether exterior glass is done from ladders or a lift, and whether a contractor system is needed.
+14. **Onboarding gate is live (build 2bbb1452ca5d).** New employees (added from 2026-11-16) and anyone whose checklist has been started cannot be assigned to a job until the required items are done. Existing team members are not blocked until their checklist is started. Confirm this is the rule you want, and confirm with counsel which items the background check applies to. Its wording says it is optional.
+15. **Route ordering needs an address service.** Ordering the day's stops needs address coordinates from a lookup service. Pick the service (and whether its cost is acceptable), or say to keep manual ordering.
+16. **ADP payroll file.** Send the company code, the file-number format, and whether you run RUN or Workforce Now, so the export can match ADP's import template.
 
 ## Verify after the 6 PM deploy
 
