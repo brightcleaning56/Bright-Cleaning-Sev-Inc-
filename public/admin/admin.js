@@ -3531,7 +3531,8 @@
   const SAVE_LABEL = { complaint: 'Create issue', service_request: 'Create request', incident: 'Log incident', task: 'Create task', follow_up: 'Create follow-up', note: 'Save note' };
   async function openIssue(it, cust) {
     if (!issState.options) { try { const r = await api('/api/admin/issues?status=open'); issState.options = r.options; } catch (e) { return toast(e.message, true); } }
-    if (!state.customers || !state.customers.length) { try { state.customers = (await api('/api/admin/customers')).customers; } catch { state.customers = []; } }
+    // Reload the customer list when it is empty or does not yet include the customer this form opens for (a customer added after the list was cached).
+    if (!state.customers || !state.customers.length || (cust && cust.id && !state.customers.some(c => String(c.id) === String(cust.id)))) { try { state.customers = (await api('/api/admin/customers')).customers; } catch { state.customers = []; } }
     const o = issState.options, isNew = !it;
     let det = null;
     if (!isNew) { try { det = await api('/api/admin/issues/' + it.id); it = det.issue; } catch (e) { return toast(e.message, true); } }
