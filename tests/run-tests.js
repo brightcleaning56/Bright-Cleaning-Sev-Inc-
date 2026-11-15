@@ -2839,6 +2839,21 @@ async function startServer(env, dataDir) {
     return 'payroll totals export has the ADP columns; the file number saves on the employee; anonymous refused';
   });
 
+  await check('Security', 'Only owners and managers can delete: a staff token is refused on delete routes, the owner is not', async () => {
+    const jwt = require('../node_modules/jsonwebtoken');
+    const rdb = new Database(path.join(globalThis.__dataDir, 'brightclean.db'), { readonly: true });
+    const sv = rdb.prepare("SELECT token_ver FROM admin_users WHERE lower(email)=?").get('sess@brightclean.test');
+    rdb.close();
+    const staff = jwt.sign({ role: 'admin', email: 'sess@brightclean.test', tv: sv ? sv.token_ver || 0 : 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const owner = jwt.sign({ role: 'admin', email: OWNER, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const sDel = await req('DELETE', '/api/admin/leads/999999', { token: staff });
+    const oDel = await req('DELETE', '/api/admin/leads/999999', { token: owner });
+    const chk = { staffRefused: sDel.status === 403 && /owner or manager/.test((sDel.data && sDel.data.error) || ''), ownerAllowed: oDel.status !== 403 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ staff: sDel.status, owner: oDel.status }));
+    return 'staff delete refused with a clear message; owner delete reaches the record';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));

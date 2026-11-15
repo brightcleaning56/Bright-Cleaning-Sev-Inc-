@@ -46,6 +46,8 @@ const INSPECTOR_ALLOW = [
   [/^(PUT)$/, /^\/api\/admin\/prefs\/[a-z_]+$/], [/^POST$/, /^\/api\/admin\/(events\/ticket|account\/password|account\/sign-out-everywhere)$/]
 ];
 function check(role, method, path) {
+  // Deleting records is for owners and managers only, on every delete route.
+  if (method === 'DELETE' && !['owner', 'manager'].includes(role)) return 'Only an owner or manager can delete records.';
   if (role === 'supervisor') {
     for (const r of SUPERVISOR_DENY) { const [m, p] = Array.isArray(r) ? r : [null, r]; if ((!m || m.test(method)) && p.test(path)) return 'Supervisors do not have access to this (pricing, sales, finance and system settings stay with managers).'; }
     return null;

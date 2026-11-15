@@ -72,7 +72,7 @@ module.exports = function mountBids(app, ctx) {
       proposed_value: sum(live.filter(e => ['Sent', 'Viewed', 'Approved', 'Declined'].includes(e.status)), e => e.proposal_total),
       contracted_value: signed.v, contracted_n: signed.n,
       projected_gp: { v: sum(costed, e => e.proposal_total - e.total_cost), of: approved.length, costed: costed.length, pct: costed.length ? Math.round(sum(costed, e => e.proposal_total - e.total_cost) / sum(costed, e => e.proposal_total) * 1000) / 10 : null },
-      win: { rate: decided ? Math.round(approved.length / decided * 1000) / 10 : null, won: approved.length, decided },
+      win: { rate: decided >= 5 ? Math.round(approved.length / decided * 1000) / 10 : null, won: approved.length, decided, needed: 5 }, // a rate from fewer than five decisions says little
       note: 'Approved proposals are not revenue. Revenue is recorded when invoices are paid.'
     });
   });
