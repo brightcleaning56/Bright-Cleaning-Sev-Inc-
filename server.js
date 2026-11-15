@@ -27,13 +27,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_users(id INTEGER PRIMARY KEY AUTOINCRE
 // Session versions: a token is valid only while its version matches the user's (bumped on password change / "sign out everywhere").
 if(!db.prepare('PRAGMA table_info(admin_users)').all().some(c=>c.name==='token_ver'))db.exec('ALTER TABLE admin_users ADD COLUMN token_ver INTEGER NOT NULL DEFAULT 0');
 db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
+// Tokens signed after this change carry a unique id (jti); signing out of a device records that id here so the token stops working at once.
+db.exec('CREATE TABLE IF NOT EXISTS revoked_tokens(jti TEXT PRIMARY KEY, exp INTEGER NOT NULL)');
 const tvFor=email=>{const e=String(email||'').toLowerCase();const r=db.prepare('SELECT token_ver FROM admin_users WHERE lower(email)=?').get(e);if(r)return r.token_ver||0;const s=db.prepare("SELECT value FROM settings WHERE key='owner_token_ver'").get();return s?Number(s.value)||0:0};
 const bumpTv=email=>{const e=String(email||'').toLowerCase();const r=db.prepare('SELECT id FROM admin_users WHERE lower(email)=?').get(e);if(r)db.prepare('UPDATE admin_users SET token_ver=token_ver+1 WHERE id=?').run(r.id);else db.prepare("INSERT INTO settings(key,value,updated_at) VALUES('owner_token_ver',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(String(tvFor(e)+1),new Date().toISOString());return tvFor(e)};
 // Tokens carry an mfa claim. Owners and managers must hold a token with mfa:true (issued only after their authenticator code)
 // to use any admin route, except the few needed to set two-step sign-in up.
-const signToken=(email,mfa=false)=>jwt.sign({role:'admin',email,tv:tvFor(email),mfa:!!mfa},process.env.JWT_SECRET,{expiresIn:'8h'});
+const signToken=(email,mfa=false)=>jwt.sign({role:'admin',email,tv:tvFor(email),mfa:!!mfa,jti:crypto.randomUUID()},process.env.JWT_SECRET,{expiresIn:'8h'});
 const mfaRequired=email=>['owner','manager'].includes(roleFor(email));
-const MFA_OPEN=new Set(['/api/admin/me','/api/admin/mfa','/api/admin/mfa/setup','/api/admin/mfa/enable','/api/admin/mfa/cancel']);
+const MFA_OPEN=new Set(['/api/admin/me','/api/admin/mfa','/api/admin/mfa/setup','/api/admin/mfa/enable','/api/admin/mfa/cancel','/api/admin/logout']);
 for(const [table,col,type] of [['leads','notes','TEXT'],['leads','updated_at','TEXT'],['invoices','notes','TEXT'],['invoices','issue_date','TEXT'],['invoices','customer_id','INTEGER'],['invoices','line_items','TEXT'],['contracts','notes','TEXT']]){const cols=db.prepare(`PRAGMA table_info(${table})`).all().map(c=>c.name);if(!cols.includes(col))db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`)}
 const storage=multer.diskStorage({destination:(req,file,cb)=>cb(null,uploadDir),filename:(req,file,cb)=>{const ext=path.extname(file.originalname).slice(0,10).toLowerCase();cb(null,crypto.randomUUID()+ext)}});
 const upload=require('./filecheck').guard(multer({storage,limits:{fileSize:30*1024*1024,files:8},fileFilter:(req,file,cb)=>{const ok=/\.(pdf|doc|docx|xls|xlsx|png|jpe?g|zip)$/i.test(file.originalname);cb(ok?null:new Error('Unsupported file type'),ok)}}));
@@ -53,7 +55,7 @@ async function notify(subject,textBody,to,automated){
 
 function clean(v,max=5000){return String(v||'').trim().slice(0,max)}
 function required(v){return !!String(v||'').trim()}
-function auth(req,res,next){try{const t=(req.headers.authorization||'').replace(/^Bearer /,'');const p=jwt.verify(t,process.env.JWT_SECRET);if(p.role!=='admin')throw Error();if(p.email!==adminEmail&&!db.prepare('SELECT id FROM admin_users WHERE email=?').get(p.email))throw Error();if((p.tv||0)!==tvFor(p.email))throw Error();req.user=p;if(p.mfa!==true&&mfaRequired(p.email)&&!MFA_OPEN.has(req.path))return res.status(403).json({error:'Two-step sign-in is required for your account. Set it up under Settings → Security.',mfa_setup_required:true});next()}catch(e){res.status(401).json({error:'Authentication required'})}}
+function auth(req,res,next){try{const t=(req.headers.authorization||'').replace(/^Bearer /,'');const p=jwt.verify(t,process.env.JWT_SECRET);if(p.role!=='admin')throw Error();if(p.email!==adminEmail&&!db.prepare('SELECT id FROM admin_users WHERE email=?').get(p.email))throw Error();if((p.tv||0)!==tvFor(p.email))throw Error();if(p.jti&&db.prepare('SELECT 1 FROM revoked_tokens WHERE jti=?').get(p.jti))throw Error();req.user=p;if(p.mfa!==true&&mfaRequired(p.email)&&!MFA_OPEN.has(req.path))return res.status(403).json({error:'Two-step sign-in is required for your account. Set it up under Settings → Security.',mfa_setup_required:true});next()}catch(e){res.status(401).json({error:'Authentication required'})}}
 const monitoring={};require('./monitoring')(app,Object.assign(monitoring,{db,auth,adminEmail,getMailer:()=>mailer}));
 
 // ---- Central server-side permission gate (audit D-08). Roles: owner (main account or role=owner), manager, staff.

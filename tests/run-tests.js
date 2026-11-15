@@ -2779,6 +2779,23 @@ async function startServer(env, dataDir) {
     return 'password change: other sessions 401, this device keeps working; sign-out-everywhere: other session 401; pre-version tokens valid until the first bump';
   });
 
+  await check('Security', 'Sign out of this device: the token used stops working at once; other devices keep working; a copied token is refused', async () => {
+    const jwt = require('../node_modules/jsonwebtoken');
+    const em = 'sess@brightclean.test';
+    const rdb = new Database(path.join(globalThis.__dataDir, 'brightclean.db'), { readonly: true });
+    const tv = rdb.prepare('SELECT token_ver FROM admin_users WHERE lower(email)=?').get(em).token_ver || 0; rdb.close();
+    const mint = jti => jwt.sign({ role: 'admin', email: em, tv, mfa: true, jti }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const dev1 = mint('dev-1-' + Date.now()), dev2 = mint('dev-2-' + Date.now());
+    const before = (await req('GET', '/api/admin/leads', { token: dev1 })).status;
+    const out = await req('POST', '/api/admin/logout', { token: dev1, json: {} });
+    const after1 = (await req('GET', '/api/admin/leads', { token: dev1 })).status;
+    const after2 = (await req('GET', '/api/admin/leads', { token: dev2 })).status;
+    const chk = { before: before === 200, logout: out.status === 200, dev1Refused: after1 === 401, dev2Works: after2 === 200 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ tv, before, logout: out.status, after1, after2 }));
+    return 'signed-out token refused (401); the same user on another device still works (200)';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));

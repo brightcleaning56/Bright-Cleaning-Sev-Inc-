@@ -273,6 +273,16 @@ module.exports = function mountAdminExt(app, ctx) {
     ctx.bumpTv(email); // every other session ends now; this device gets a fresh token
     res.json({ ok: true, token: ctx.signToken(email, req.user && req.user.mfa === true), message: 'Password changed. Other devices have been signed out.' });
   });
+  // Sign out of this device: the token just used stops working at once (other devices are not affected).
+  app.post('/api/admin/logout', auth, (req, res) => {
+    const u = req.user || {};
+    if (u.jti) {
+      db.prepare('INSERT OR IGNORE INTO revoked_tokens(jti,exp) VALUES(?,?)').run(u.jti, Number(u.exp) || Math.floor(Date.now() / 1000) + 8 * 3600);
+      db.prepare('DELETE FROM revoked_tokens WHERE exp<?').run(Math.floor(Date.now() / 1000));
+    }
+    logAction(req, 'signed out this device', 'account', 0);
+    res.json({ ok: true });
+  });
   app.post('/api/admin/account/sign-out-everywhere', auth, (req, res) => {
     const email = req.user && req.user.email; ctx.bumpTv(email);
     logAction(req, 'signed out other sessions', 'account', 0);

@@ -232,6 +232,8 @@
 
   // ---------- Auth ----------
   function signOut(message) { try { if (es) { es.close(); es = null; } } catch { /* */ }
+    // Revoke this device's token on the server too, so a copy of it stops working. Best effort: the browser forgets it either way.
+    if (token) { try { fetch('/api/admin/logout', { method: 'POST', keepalive: true, headers: { Authorization: 'Bearer ' + token } }).catch(() => { /* */ }); } catch { /* */ } }
     // A signed-out browser must stop receiving calls: release the phone device.
     try { if (device) { device.destroy(); device = null; } } catch { /* */ }
     token = null;
@@ -3383,7 +3385,10 @@
     };
     const body = () => ({ ...formObj(f), document_id: cur.document_id, lines: lines.map(l => ({ ...l, quantity: String(l.quantity) })) });
     const fail = e => { $('#toMsg').className = 'msg err'; $('#toMsg').textContent = e.message; };
-    const save = async () => { const r = t ? await api('/api/admin/takeoffs/' + t.id, { method: 'PATCH', json: body() }) : await api('/api/admin/takeoffs', { method: 'POST', json: body() }); t = r.takeoff; return t; };
+    // Save and estimate share one request in flight, so a double click cannot create the takeoff twice.
+    let saving = null;
+    const save = () => saving || (saving = doSaveTakeoff().finally(() => { saving = null; }));
+    const doSaveTakeoff = async () => { const r = t ? await api('/api/admin/takeoffs/' + t.id, { method: 'PATCH', json: body() }) : await api('/api/admin/takeoffs', { method: 'POST', json: body() }); t = r.takeoff; return t; };
     $('#toSave').onclick = async () => { try { await save(); toast('Takeoff saved'); closeDrawer(); go('takeoffs'); loadTakeoffs(); } catch (e) { fail(e); } };
     $('#toEst').onclick = async () => {
       try {
@@ -3598,7 +3603,10 @@
       const r = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
     }
-    async function save(extra) {
+    // A second click while a save is in flight does nothing, so a double click cannot create the issue twice.
+    let saving = false;
+    async function save(extra) { if (saving) return; saving = true; try { await doSave(extra); } finally { saving = false; } }
+    async function doSave(extra) {
       const b = { ...payload(), ...(extra || {}) };
       if (!b.title || !b.title.trim()) return msg('Add a short title.');
       if (!isNew || type === 'note') { /* ok */ } else if (!b.description || !b.description.trim()) return msg('Add the details.');
@@ -3728,7 +3736,7 @@
     } else if (t === 'schedule') {
       B.innerHTML = `<div class="card"><h2>Schedule &amp; work orders</h2><form class="inl" id="woForm"><div><label>Frequency</label><select name="frequency">${['once', 'daily', 'weekly', 'biweekly', 'monthly'].map(f => `<option${(p.frequency || 'once') === f ? ' selected' : ''}>${f}</option>`).join('')}</select></div><div><label>First date</label><input type="date" name="start" value="${esc(p.start_date || todayISO())}"></div><div><label>How many</label><input name="count" value="4" inputmode="numeric"></div><div><label>Start time</label><input type="time" name="start_time" value="08:00"></div><div><label>End time</label><input type="time" name="end_time" value="16:00"></div><div><label>Crew / lead</label><input name="assigned_to" value="${esc(p.manager || '')}"></div><div class="wide"><button class="btn">Generate work orders</button> <small class="muted">${p.dispatch_approved_by ? 'They will be Scheduled.' : 'They stay Tentative until dispatch is approved.'}</small></div></form>
         ${rowsOr(d.visits.map(v => `<tr><td>${fmtDate(v.date)}</td><td>${esc(v.start_time || '')}–${esc(v.end_time || '')}</td><td>${esc(v.title)}</td><td>${esc(v.type)}</td><td>${esc(v.assigned_to || '—')}</td><td>${badge(v.status)}</td></tr>`), ['Date', 'Time', 'Work', 'Type', 'Crew', 'Status'], 'Nothing scheduled yet.')}</div>`;
-      $('#woForm').onsubmit = async ev => { ev.preventDefault(); try { const r = await api(`/api/admin/pm/projects/${p.id}/work-orders`, { method: 'POST', json: formObj(ev.target) }); toast(`${r.created} work order(s) created (${r.status})`); reload(); } catch (e) { toast(e.message, true); } };
+      $('#woForm').onsubmit = async ev => { ev.preventDefault(); if (ev.target.dataset.busy) return; ev.target.dataset.busy = '1'; try { const r = await api(`/api/admin/pm/projects/${p.id}/work-orders`, { method: 'POST', json: formObj(ev.target) }); toast(`${r.created} work order(s) created (${r.status})`); reload(); } catch (e) { toast(e.message, true); } finally { delete ev.target.dataset.busy; } };
     } else if (t === 'crew') {
       const crew = [...new Set([p.manager, ...d.tasks.map(x => x.assigned_to), ...d.visits.map(v => v.assigned_to)].filter(Boolean))];
       B.innerHTML = `<div class="card"><h2>Crew &amp; staffing</h2>${crew.length ? '<ul class="mini">' + crew.map(c => `<li><span class="avs"><i>${initials(c)}</i>${esc(c)}</span></li>`).join('') + '</ul>' : '<p class="muted">No one assigned yet. Assign a manager, task owners or work-order crews.</p>'}<p class="muted">Employee availability, shifts and time tracking are part of Scheduling &amp; Dispatch.</p></div>`;
