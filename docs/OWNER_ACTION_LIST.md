@@ -11,8 +11,8 @@ Last updated: 2026-11-15.
 4. **Counsel review.** Send `docs/TERMS_DRAFT_FOR_COUNSEL.md` to counsel. Every bracketed value needs a decision. Required before the first paying customer.
 5. **Insurance and legal quotes.** Get quotes for general liability and a legal retainer. The software budget uses placeholders ($200 a month insurance, $300 a month legal, $4,000 one-time counsel) until these come in.
 6. **Uptime monitor.** Create a free external monitor (for example UptimeRobot) that checks https://brightclean.net/api/health every five minutes. Point a second check at the operator console once it is running.
-7. **Pricing per company.** Each company enters its own pricebook, labor rates and margins. Bright Clean's own prices are not copied into other companies. For Bright Clean itself: price or archive the unpriced items on the live Cleaning scopes page.
-8. **Labor and margin starting values.** The code starts with a $20 wage, 20% payroll burden and a 30% minimum margin. Bright Clean should confirm or change these on the Labor assumptions page. New company copies will be blocked from quoting until they save their own.
+7. **Pricing per company. Approved 2026-11-15.** Each company enters its own pricebook, labor rates and margins. Bright Clean’s prices are never copied into another company. **Still to do for Bright Clean:** price or archive the unpriced items on the live Cleaning scopes page. This needs you to sign in to the live site; I can’t do it without your sign-in.
+8. **Labor and margin starting values. Approved 2026-11-15.** The starting values (0 wage, 20% burden, 30% minimum margin) stay for Bright Clean until you change them. **Still to do:** confirm or change them on the live Labor assumptions page (you save the page; that also confirms it). New company copies stay blocked from quoting until they save their own.
 9. **Crew phone test.** Run `docs/CREW_PHONE_TEST.md` on one real phone with a crew member before any pilot.
 10. **Route ordering address service.** Plan: keep manual ordering until phase 2. Confirm, or pick a lookup service and its cost.
 
