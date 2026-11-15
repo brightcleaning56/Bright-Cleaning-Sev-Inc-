@@ -43,5 +43,16 @@ check('rejects a missing name', () => {
   assert.strictEqual(run(['--slug', 'noname', '--domain', 'x.com', '--admin-email', 'a@x.com', '--out', out]).status, 1);
 });
 
+check('adds the company to the operator registry when asked', () => {
+  const reg = path.join(out, 'registry.json');
+  fs.writeFileSync(reg, JSON.stringify({ companies: [] }));
+  const r = run([...base, '--slug', 'regco', '--registry', reg]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const list = JSON.parse(fs.readFileSync(reg, 'utf8')).companies;
+  assert.strictEqual(list.length, 1);
+  assert.strictEqual(list[0].health_url, 'https://acmeclean.com/api/health');
+  assert.strictEqual(list[0].expected_build, '');
+});
+
 fs.rmSync(out, { recursive: true, force: true });
 console.log(`\n${passed} checks passed`);
