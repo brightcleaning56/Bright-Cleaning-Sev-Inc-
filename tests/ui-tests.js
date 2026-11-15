@@ -518,6 +518,17 @@ async function check(area, name, fn) {
     assert(/Invoiced/.test(out.pl) && /Not yet due/.test(out.aging) && /Hours worked/.test(out.labor) && /Project/.test(out.projects) && /Scheduled report/.test(out.sched) && alt && !$('#v-reports').classList.contains('alt'), JSON.stringify(out));
     return '5 report tabs render; overview hidden while on them and restored';
   });
+
+  await check('Reports UI', 'Accounting exports (invoices, payments, payroll hours) show on the Reports overview and hide on report tabs', async () => {
+    await nav('reports'); await sleep(800);
+    d.querySelector('#repTabs [data-rt="overview"]').click(); await sleep(300);
+    const show = d.defaultView.getComputedStyle(d.querySelector('#repAcct')).display;
+    d.querySelector('#repTabs [data-rt="pl"]').click(); await sleep(500);
+    const hide = d.defaultView.getComputedStyle(d.querySelector('#repAcct')).display;
+    d.querySelector('#repTabs [data-rt="overview"]').click(); await sleep(300);
+    assert(show !== 'none' && hide === 'none' && !!d.querySelector('#acctInv') && !!d.querySelector('#acctPay') && !!d.querySelector('#acctHrs'), JSON.stringify({ show, hide }));
+    return 'three export buttons show on Reports overview, hidden on report tabs';
+  });
   await check('Contracts UI', 'Contract workspace: editable terms, send for signature creates a link, customer signs on the public page, Countersign executes it, KPIs update', async () => {
     const k = await api('POST', '/api/admin/contracts', { company: 'UI Contract Co', customer_name: 'Una Contract', title: 'UI contract', value: 1000, status: 'Draft' }, T);
     const kid = k.id || (k.contract && k.contract.id);

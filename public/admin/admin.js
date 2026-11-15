@@ -3412,6 +3412,11 @@
   // ---------- Reports ----------
   $('#repMonths').addEventListener('change', () => loadReports());
   $('#repCsv').addEventListener('click', () => downloadFile({ name: `bright-clean-report.csv`, url: '/api/admin/reports/export.csv?months=' + $('#repMonths').value }));
+  // Accounting and payroll exports use the same period as the report selector.
+  const acctRange = () => { const m = Number($('#repMonths').value) || 12, f = new Date(); f.setMonth(f.getMonth() - m); return `from=${f.toISOString().slice(0, 10)}&to=${new Date().toISOString().slice(0, 10)}`; };
+  $('#acctInv').addEventListener('click', () => downloadFile({ name: 'invoices-quickbooks.csv', url: '/api/admin/exports/accounting/invoices?' + acctRange() }));
+  $('#acctPay').addEventListener('click', () => downloadFile({ name: 'payments-quickbooks.csv', url: '/api/admin/exports/accounting/payments?' + acctRange() }));
+  $('#acctHrs').addEventListener('click', () => downloadFile({ name: 'payroll-hours.csv', url: '/api/admin/exports/payroll/time?' + acctRange() }));
   const RQ = ['Which customers owe us money?', 'How much work is in the sales pipeline?', 'What are our top services?', 'Which proposals should we follow up on?', 'Show revenue and collections by month.'];
   $('#repAiChips').innerHTML = RQ.map(q => `<button type="button">${esc(q)}</button>`).join('');
   $$('#repAiChips button').forEach(b => b.onclick = () => { $('#repAiQ').value = b.textContent; $('#repAiGo').click(); });
