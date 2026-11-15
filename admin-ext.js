@@ -315,11 +315,12 @@ module.exports = function mountAdminExt(app, ctx) {
     if (!isDay(from) || !isDay(to)) return res.status(400).json({ error: 'Enter a from and to date, like 2026-11-01.' });
     const bz = require('./bizdate');
     const [ws, we] = bz.window(from, to);
-    const rows = db.prepare(`SELECT t.employee_id, t.clock_in, t.minutes, e.name, e.hourly_rate, e.payroll_id FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.clock_out IS NOT NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(ws, we);
-    const shifts = rows.map(r => ({ employee_id: r.employee_id, name: r.name, payroll_id: r.payroll_id, rate: r.hourly_rate, day: bz.today(new Date(r.clock_in)), minutes: r.minutes }));
+    const rows = db.prepare(`SELECT t.employee_id, t.clock_in, t.minutes, t.approved_at, e.name, e.hourly_rate, e.payroll_id FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.clock_out IS NOT NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(ws, we);
+    const shifts = rows.map(r => ({ employee_id: r.employee_id, name: r.name, payroll_id: r.payroll_id, rate: r.hourly_rate, day: bz.today(new Date(r.clock_in)), minutes: r.minutes, approved: !!r.approved_at }));
     const totals = require('./payrollsummary').totals(shifts);
-    sendCsv(res, `payroll-totals-${from}-to-${to}.csv`, ['Company Code', 'File #', 'Employee', 'Regular Hours', 'Overtime Hours', 'Hourly Rate', 'Check'],
-      totals.map(t => ['', t.payroll_id || '', t.name, t.reg.toFixed(2), t.ot.toFixed(2), t.rate != null ? (+t.rate).toFixed(2) : '', t.payroll_id ? '' : 'Add the file # on the employee record before importing']));
+    sendCsv(res, `payroll-totals-${from}-to-${to}.csv`, ['Company Code', 'File #', 'Employee', 'Regular Hours', 'Overtime Hours', 'Hourly Rate', 'Gross Pay (before taxes)', 'Unapproved Shifts (not paid)', 'Check'],
+      totals.map(t => ['', t.payroll_id || '', t.name, t.reg.toFixed(2), t.ot.toFixed(2), t.rate != null ? (+t.rate).toFixed(2) : '', t.gross.toFixed(2), t.unapproved || 0,
+        [t.payroll_id ? '' : 'Add the file # on the employee record.', t.unapproved ? 'Approve the open shifts on the Time tab, or they are not paid.' : ''].filter(Boolean).join(' ')]));
   });
   // Sign out of this device: the token just used stops working at once (other devices are not affected).
   app.post('/api/admin/logout', auth, (req, res) => {
