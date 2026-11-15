@@ -354,8 +354,38 @@
     go((location.hash || '#overview').slice(1).split('/')[0] || 'overview', true);
   }
 
+  // ---------- Insurance certificates ----------
+  const INS_KINDS = { general_liability: 'General liability', workers_comp: 'Workers’ comp', auto: 'Auto', umbrella: 'Umbrella', bond: 'Bond', subcontractor: 'Subcontractor', other: 'Other' };
+  const INS_BADGE = { expired: ['Expired', 'red'], expiring: ['Expires within 30 days', 'amber'], ok: ['Current', 'green'], no_date: ['No expiry date', 'blue'] };
+  function insRow(r) {
+    const [label, tone] = INS_BADGE[r.status] || INS_BADGE.no_date;
+    const detail = [INS_KINDS[r.kind] || r.kind, r.carrier, r.policy_no ? 'policy ' + r.policy_no : ''].filter(Boolean).map(esc).join(' · ');
+    return `<div class="insrow"><div><strong>${esc(r.holder)}</strong><div class="hint">${detail}</div>${r.notes ? `<div class="hint">${esc(r.notes)}</div>` : ''}</div>` +
+      `<div class="insright"><span class="badge ${tone}">${label}</span> <span class="hint">${r.expires_on ? 'until ' + esc(r.expires_on) : ''}</span> ` +
+      `<button class="btn ghost small danger" data-insdel="${r.id}">Remove</button></div></div>`;
+  }
+  async function loadInsurance() {
+    const rows = (await api('/api/admin/insurance')) || [];
+    $('#insNew').onclick = () => openForm({ title: 'Add certificate', sub: 'A policy the company holds, or a subcontractor certificate', defs: [
+        { name: 'holder', label: 'Holder (company or person)' },
+        { name: 'kind', label: 'Type', type: 'select', options: Object.entries(INS_KINDS) },
+        { name: 'carrier', label: 'Carrier' }, { name: 'policy_no', label: 'Policy number' },
+        { name: 'expires_on', label: 'Expires on', type: 'date' },
+        { name: 'notes', label: 'Notes', type: 'textarea', wide: true }],
+      submit: b => api('/api/admin/insurance', { method: 'POST', json: b }),
+      after: () => { toast('Certificate saved'); loadInsurance(); } });
+    const order = { expired: 0, expiring: 1, no_date: 2, ok: 3 };
+    rows.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+    $('#insRows').innerHTML = rows.length ? rows.map(insRow).join('') : '<p class="empty">No certificates yet. Add the company policies first, then subcontractor certificates.</p>';
+    $$('#insRows [data-insdel]').forEach(btn => btn.onclick = async () => {
+      if (!confirm('Remove this certificate?')) return;
+      try { await api('/api/admin/insurance/' + btn.dataset.insdel, { method: 'DELETE' }); toast('Certificate removed'); loadInsurance(); }
+      catch (err) { toast(err.message, true); }
+    });
+  }
+
   // ---------- Navigation ----------
-  const VIEWS = ['website', 'overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings'];
+  const VIEWS = ['website', 'overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings', 'insurance'];
   function go(view, replace) {
     view = String(view || '').split('/')[0];
     if (view === 'customer') view = 'customers';
@@ -405,6 +435,7 @@
       if (view === 'website') await loadWebsite();
       if (view === 'activity') await loadActivity();
       if (view === 'settings') await loadSettings();
+      if (view === 'insurance') await loadInsurance();
     } catch (err) { if (err.message !== 'Signed out') toast(err.message, true); }
     refreshNewCount();
   }

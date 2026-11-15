@@ -45,11 +45,11 @@ async function check(area, name, fn) {
   const $$rows = () => d.querySelectorAll('#slRows tr').length;
   const nav = async v => { d.querySelector(`#nav [data-view="${v}"]`).click(); await sleep(600); };
 
-  await check('Admin UI', 'Signed-in portal loads with all 23 sections', async () => {
+  await check('Admin UI', 'Signed-in portal loads with all 24 sections', async () => {
     const views = [...d.querySelectorAll('.view')].map(v => v.id);
-    assert(!$('#app').hidden && views.length === 23, views.join(',')); return views.join(', ');
+    assert(!$('#app').hidden && views.length === 24, views.join(',')); return views.join(', ');
   });
-  for (const v of ['overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'takeoffs', 'schedule', 'quality', 'documents', 'website', 'reports', 'proposals', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'settings']) {
+  for (const v of ['overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'takeoffs', 'schedule', 'quality', 'documents', 'website', 'reports', 'proposals', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'insurance', 'settings']) {
     await check('Admin UI', `Section "${v}" opens and renders`, async () => {
       await nav(v); const el = $('#v-' + v);
       assert(el.classList.contains('active') && el.textContent.trim().length > 20, 'not active'); return el.querySelector('h1').textContent;
@@ -832,6 +832,19 @@ async function check(area, name, fn) {
     await api('PUT', '/api/admin/approval-rules', { min_margin_pct: 0, max_total: 0, flag_pre_pricing: false }, T);
     return `rules saved (20%); drawer showed "${box.slice(0, 70)}"; after approving: "${box2.slice(-60)}"`;
   });
+  await check('Insurance page', 'Insurance page lists certificates with an expiry badge and the expired one shows first', async () => {
+    const past = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10);
+    const created = await api('POST', '/api/admin/insurance', { holder: 'UI Sub Co', kind: 'subcontractor', carrier: 'UI Carrier', policy_no: 'UI-1', expires_on: past }, T);
+    await nav('insurance'); await sleep(900);
+    const rows = txt('#insRows');
+    const badge = d.querySelector('#insRows .insrow .badge');
+    const chk = { shown: /UI Sub Co/.test(rows), expiredBadge: !!badge && /Expired/.test(badge.textContent) };
+    // Clean up the test record so the live list stays tidy.
+    if (created && created.id) await api('DELETE', '/api/admin/insurance/' + created.id, null, T);
+    assert(chk.shown && chk.expiredBadge, JSON.stringify(chk) + ' ' + rows.slice(0, 200));
+    return 'certificate shows with an Expired badge';
+  });
+
   await check('Admin UI', 'No JavaScript errors on any screen', async () => { assert(!errors.length, errors.join(' | ')); return '0 errors'; });
 
   child.kill();

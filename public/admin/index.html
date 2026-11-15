@@ -543,6 +543,7 @@
       <button data-view="scopes">Cleaning scopes <span class="count" id="navScopes" hidden></span></button>
       <button data-view="website">Website photos &amp; video</button>
       <button data-view="activity">Activity log</button>
+      <button data-view="insurance">Insurance</button>
       <button data-view="settings">Settings</button>
     </nav>
     <div class="who"><span id="whoEmail"></span><button id="logout">Sign out</button></div>
@@ -884,6 +885,11 @@
       <div class="kpis6" id="actKpis"></div>
       <div class="toolbar"><input type="search" id="actSearch" placeholder="Search activity (person, action, record)…" aria-label="Search activity"></div>
       <div class="card activity" id="activityRows"></div>
+    </section>
+
+    <section class="view" id="v-insurance">
+      <div class="pagehead"><div><h1>Insurance</h1><p>Company policies and subcontractor certificates, with expiry dates. Expired or expiring items show first.</p></div><button class="btn" id="insNew">Add certificate</button></div>
+      <div class="card" id="insRows"></div>
     </section>
 
     <section class="view" id="v-settings">
