@@ -10,5 +10,7 @@ function offsetMin(d) {
   return (Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - d.getTime()) / 60000;
 }
 exports.startUTC = ds => { const g = new Date(ds + 'T00:00:00Z'); let t = g.getTime() - offsetMin(g) * 60000; t = g.getTime() - offsetMin(new Date(t)) * 60000; return new Date(t).toISOString(); };
+// The business day an invoice counts toward: its issue date if one is set, else the day it was sent, else the day it was created.
+exports.invoiceDay = i => (i.issue_date ? String(i.issue_date).slice(0, 10) : i.sent_at ? exports.today(new Date(i.sent_at)) : exports.today(new Date(i.created_at)));
 // [from, to] business dates → [startISO, endISO) for filtering ISO timestamps.
 exports.window = (from, to) => { const n = new Date(to + 'T12:00:00Z'); n.setUTCDate(n.getUTCDate() + 1); return [exports.startUTC(from), exports.startUTC(n.toISOString().slice(0, 10))]; };

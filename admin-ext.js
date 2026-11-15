@@ -283,7 +283,9 @@ module.exports = function mountAdminExt(app, ctx) {
     const from = String(req.query.from || '0000-01-01'), to = String(req.query.to || '9999-12-31');
     if (!isDay(from) || !isDay(to)) return res.status(400).json({ error: 'Dates must look like 2026-11-14.' });
     if (req.params.kind === 'invoices') {
-      const rows = db.prepare(`SELECT invoice_number, COALESCE(issue_date, substr(created_at,1,10)) d, due_date, customer_name, company, email, amount, paid_amount, status FROM invoices WHERE COALESCE(issue_date, substr(created_at,1,10)) BETWEEN ? AND ? ORDER BY d, id`).all(from, to);
+      const bz = require('./bizdate');
+      const rows = db.prepare(`SELECT id, invoice_number, issue_date, sent_at, created_at, due_date, customer_name, company, email, amount, paid_amount, status FROM invoices WHERE status NOT IN ('Draft','Void') ORDER BY id`).all()
+        .map(r => ({ ...r, d: bz.invoiceDay(r) })).filter(r => r.d >= from && r.d <= to).sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : a.id - b.id));
       return sendCsv(res, `invoices-${from}-to-${to}.csv`, ['Invoice No', 'Invoice Date', 'Due Date', 'Customer', 'Company', 'Email', 'Amount', 'Paid', 'Balance', 'Status'],
         rows.map(r => [r.invoice_number, r.d, r.due_date || '', r.customer_name || '', r.company || '', r.email || '', (+r.amount).toFixed(2), (+r.paid_amount).toFixed(2), Math.max(0, +r.amount - +r.paid_amount).toFixed(2), r.status]));
     }

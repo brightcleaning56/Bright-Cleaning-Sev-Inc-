@@ -23,7 +23,9 @@ module.exports = function mountReports2(app, ctx) {
   const daysBetween = (a, b) => Math.floor((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 864e5);
 
   function finance({ from, to }) {
-    const inv = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void') AND i.created_at >= ? AND i.created_at < ?`).all(...require('./bizdate').window(from, to));
+    // Invoices count in the month they were issued (or sent), not the month they were created.
+    const bz = require('./bizdate');
+    const inv = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void')`).all().filter(i => { const d = bz.invoiceDay(i); return d >= from && d <= to; });
     const invoiced = r2(inv.reduce((s, i) => s + (i.amount || 0), 0)), collected = r2(inv.reduce((s, i) => s + Math.min(i.paid_amount || 0, i.amount || 0), 0));
     const costRows = has('project_costs') ? db.prepare(`SELECT c.*, p.name project_name FROM project_costs c LEFT JOIN projects p ON p.id=c.project_id WHERE c.cost_date BETWEEN ? AND ?`).all(from, to) : [];
     const byCat = {}; for (const c of costRows) byCat[c.category] = r2((byCat[c.category] || 0) + c.amount);
