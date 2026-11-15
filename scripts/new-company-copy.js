@@ -46,6 +46,7 @@ const lines = [
   '# Lines marked SET-IN-PROVIDER are secrets or account IDs the owner creates; they are never written here.',
   '',
   'NODE_ENV=production',
+  'COMPANY_SETUP_PENDING=on',
   'NODE_VERSION=22',
   'TRUST_PROXY=1',
   'JWT_SECRET=' + jwt,
