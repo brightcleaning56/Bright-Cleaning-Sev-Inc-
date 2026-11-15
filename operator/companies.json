@@ -1,0 +1,21 @@
+{
+  "_comment": "Company registry for the operator console. Add one entry per company copy. Never put passwords, keys or tokens here. expected_build is the 12-character build fingerprint the copy should run (from /api/health).",
+  "companies": [
+    {
+      "slug": "brightclean-production",
+      "name": "Bright Clean (production)",
+      "health_url": "https://brightclean.net/api/health",
+      "expected_build": "ddb0ad73a1cb",
+      "render_service": "brightclean-web",
+      "subscription": "internal"
+    },
+    {
+      "slug": "brightclean-staging",
+      "name": "Bright Clean (staging)",
+      "health_url": "https://brightclean-staging.onrender.com/api/health",
+      "expected_build": "ddb0ad73a1cb",
+      "render_service": "brightclean-staging",
+      "subscription": "internal"
+    }
+  ]
+}

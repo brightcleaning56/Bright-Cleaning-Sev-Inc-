@@ -1,0 +1,32 @@
+# Operator console (read-only, Phase A). A separate Render service from the customer apps.
+# Create it in Render: New > Blueprint > this repository > render-operator.yaml.
+# Cost: Starter web service, about $7/month. It stores nothing on disk.
+# Secrets marked sync: false are entered in the Render dashboard, never in this file.
+services:
+  - type: web
+    name: brightclean-operator
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: node operator/server.js
+    healthCheckPath: /ops/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: OPS_SESSION_SECRET
+        generateValue: true
+      - key: OPS_ADMIN_EMAIL
+        sync: false
+      - key: OPS_PASSWORD_HASH
+        sync: false
+      - key: OPS_TOTP_SECRET
+        sync: false
+      - key: OPS_ALERT_EMAIL
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+      - key: POSTMARK_TOKEN
+        sync: false
