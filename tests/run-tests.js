@@ -2857,8 +2857,10 @@ async function startServer(env, dataDir) {
   await check('Health', 'Public status page is served and reads the health check', async () => {
     const st = await req('GET', '/status.html', {});
     const body = Buffer.isBuffer(st.data) ? st.data.toString('utf8') : String(st.data);
-    assert(st.status === 200 && /\/api\/health/.test(body) && /System status/.test(body), 'status page ' + st.status);
-    return 'status page is public and reads /api/health';
+    const script = await req('GET', '/assets/status.js', {});
+    const js = Buffer.isBuffer(script.data) ? script.data.toString('utf8') : String(script.data);
+    assert(st.status === 200 && /System status/.test(body) && /\/assets\/status\.js/.test(body) && script.status === 200 && /\/api\/health/.test(js), 'status page ' + st.status + ' script ' + script.status);
+    return 'status page is public, loads its script, and the script reads /api/health';
   });
 
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
