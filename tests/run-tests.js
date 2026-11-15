@@ -2914,6 +2914,32 @@ async function startServer(env, dataDir) {
     return 'unbilled milestone removed; billed milestone kept';
   });
 
+  await check('Employees', 'Onboarding checklist: items tick and untick once each; the payroll item follows the employee record; unknown items refused; staff cannot see or change it', async () => {
+    const e = (await req('POST', '/api/admin/employees', { token: T, json: { name: 'Olive Onboard', phone: '515-555-0720', role: 'Cleaner' } })).data.employee;
+    const start = (await req('GET', `/api/admin/employees/${e.id}/onboarding`, { token: T })).data;
+    const tick = await req('POST', `/api/admin/employees/${e.id}/onboarding/contact`, { token: T, json: { done: true } });
+    const again = await req('POST', `/api/admin/employees/${e.id}/onboarding/contact`, { token: T, json: { done: true } });
+    const unknown = await req('POST', `/api/admin/employees/${e.id}/onboarding/nope`, { token: T, json: { done: true } });
+    const autoItem = await req('POST', `/api/admin/employees/${e.id}/onboarding/payroll`, { token: T, json: { done: true } });
+    await req('PATCH', `/api/admin/employees/${e.id}`, { token: T, json: { payroll_id: 'ADP-7721' } });
+    const withPayroll = (await req('GET', `/api/admin/employees/${e.id}/onboarding`, { token: T })).data;
+    const untick = await req('POST', `/api/admin/employees/${e.id}/onboarding/contact`, { token: T, json: { done: false } });
+    const staffView = await req('GET', `/api/admin/employees/${e.id}/onboarding`, { token: globalThis.__st });
+    const staffEdit = await req('POST', `/api/admin/employees/${e.id}/onboarding/safety`, { token: globalThis.__st, json: { done: true } });
+    const chk = {
+      startsAtZero: start.done === 0 && start.total === 9 && !start.ready,
+      tickedOnce: tick.status === 200 && tick.data.done === 1 && again.data.done === 1,
+      unknownRefused: unknown.status === 400,
+      autoItemRefused: autoItem.status === 400,
+      payrollFollowsRecord: withPayroll.items.find(i => i.key === 'payroll').done === true && withPayroll.done === 2,
+      unticked: untick.status === 200 && untick.data.done === 1,
+      staffRefused: staffView.status === 403 && staffEdit.status === 403,
+    };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ start: start.done, tick: tick.data, unknown: unknown.status, autoItem: autoItem.status, withPayroll: withPayroll.done, untick: untick.data.done, sv: staffView.status, se: staffEdit.status }));
+    return '9 items; tick, untick and payroll link checked; unknown items and staff refused';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));

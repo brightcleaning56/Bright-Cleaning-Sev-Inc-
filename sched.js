@@ -107,6 +107,43 @@ module.exports = function mountSched(app, ctx) {
     const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
     res.json({ url: `/crew/${e.token}` });
   });
+  // ---------- Onboarding checklist ----------
+  // Each item is a fact an office person confirms (paperwork on file, training done). The checklist tracks progress; it does not block dispatch.
+  const ONBOARD = [
+    ['contact', 'Contact details and emergency contact on file'],
+    ['eligibility', 'Work eligibility form on file'],
+    ['tax', 'Tax withholding form on file'],
+    ['background', 'Background check completed (only where your policy requires it)'],
+    ['safety', 'Safety orientation and site rules'],
+    ['chemicals', 'Chemical and SDS training'],
+    ['equipment', 'Equipment and uniform issued'],
+    ['crewlink', 'Crew page link sent and tested on their phone'],
+  ];
+  db.exec('CREATE TABLE IF NOT EXISTS employee_onboarding(employee_id INTEGER NOT NULL, item_key TEXT NOT NULL, done_at TEXT NOT NULL, done_by TEXT, PRIMARY KEY(employee_id, item_key))');
+  const onboardingOf = empId => {
+    const done = new Map(db.prepare('SELECT item_key, done_at, done_by FROM employee_onboarding WHERE employee_id=?').all(empId).map(r => [r.item_key, r]));
+    const e = getEmp(empId);
+    const items = ONBOARD.map(([key, label]) => ({ key, label, done: done.has(key), done_at: done.has(key) ? done.get(key).done_at : null, done_by: done.has(key) ? done.get(key).done_by : null }));
+    // The payroll file number is recorded on the employee record, so it counts as done when it is set.
+    items.push({ key: 'payroll', label: 'Payroll file number set (ADP)', done: !!(e && e.payroll_id), auto: true, done_at: null, done_by: null });
+    return { items, done: items.filter(i => i.done).length, total: items.length, ready: items.every(i => i.done) };
+  };
+  app.get('/api/admin/employees/:id/onboarding', auth, (req, res) => {
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can see onboarding.' });
+    const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
+    res.json({ employee: { id: e.id, name: e.name }, ...onboardingOf(e.id) });
+  });
+  app.post('/api/admin/employees/:id/onboarding/:key', auth, (req, res) => {
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can change onboarding.' });
+    const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
+    const key = String(req.params.key || '');
+    if (!ONBOARD.some(([k]) => k === key)) return res.status(400).json({ error: 'Unknown onboarding item.' });
+    const done = !!(req.body || {}).done;
+    if (done) db.prepare('INSERT OR REPLACE INTO employee_onboarding(employee_id,item_key,done_at,done_by) VALUES(?,?,?,?)').run(e.id, key, now(), who(req));
+    else db.prepare('DELETE FROM employee_onboarding WHERE employee_id=? AND item_key=?').run(e.id, key);
+    logAction(req, done ? 'onboarding done' : 'onboarding reopened', 'employee', e.id, `${e.name}: ${key}`);
+    res.json(onboardingOf(e.id));
+  });
   app.post('/api/admin/employees/:id/timeoff', auth, (req, res) => {
     const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
     const s = clean((req.body || {}).start_date, 10), en = clean(req.body.end_date, 10) || s;
