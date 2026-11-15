@@ -351,6 +351,14 @@ module.exports = function mountPM(app, ctx) {
     logAction(req, 'milestone done', 'project', m.project_id, m.name);
     res.json({ ok: true });
   });
+  // Removes a mistaken milestone. A billed milestone stays, because its invoice points back to it.
+  app.delete('/api/admin/pm/milestones/:mid', auth, (req, res) => {
+    const m = db.prepare('SELECT * FROM project_milestones WHERE id=?').get(Number(req.params.mid)); if (!m) return res.status(404).json({ error: 'Milestone not found.' });
+    if (m.billed_invoice_id) return res.status(409).json({ error: 'This milestone is already billed, so it cannot be removed.' });
+    db.prepare('DELETE FROM project_milestones WHERE id=?').run(m.id);
+    logAction(req, 'removed milestone', 'project', m.project_id, m.name);
+    res.json({ ok: true });
+  });
   app.post('/api/admin/pm/milestones/:mid/bill', auth, (req, res) => {
     if (!moneyRole(req)) return res.status(403).json({ error: 'Only an owner or manager can bill a milestone.' });
     const m = db.prepare('SELECT * FROM project_milestones WHERE id=?').get(Number(req.params.mid)); if (!m) return res.status(404).json({ error: 'Milestone not found.' });

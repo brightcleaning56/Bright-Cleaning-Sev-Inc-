@@ -2901,6 +2901,19 @@ async function startServer(env, dataDir) {
     return `40% of $${value.toFixed(2)} billed as a draft once ($${expected.toFixed(2)}); over-100% and early billing refused`;
   });
 
+  await check('Projects', 'Milestone removal: an unbilled milestone can be removed and its share is freed; a billed one cannot be removed', async () => {
+    const pid = globalThis.__pmId;
+    const m2 = await req('POST', `/api/admin/pm/projects/${pid}/milestones`, { token: T, json: { name: 'Mistake', percent: 10 } });
+    const del = await req('DELETE', `/api/admin/pm/milestones/${m2.data.id}`, { token: T });
+    const list = (await req('GET', `/api/admin/pm/projects/${pid}/milestones`, { token: T })).data;
+    const billed = list.milestones.find(x => x.billed_invoice_id);
+    const delBilled = billed ? await req('DELETE', `/api/admin/pm/milestones/${billed.id}`, { token: T }) : { status: 0 };
+    const chk = { created: m2.status === 201, removed: del.status === 200, freed: !list.milestones.some(x => x.id === m2.data.id), billedKept: delBilled.status === 409 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ del: del.data, delBilled: delBilled.data }));
+    return 'unbilled milestone removed; billed milestone kept';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));
