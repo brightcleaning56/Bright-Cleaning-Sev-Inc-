@@ -482,3 +482,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .insfit{margin:8px 0}.insfit-form{display:grid;gap:6px;margin-top:6px}.insfit-form input{padding:6px 8px}
 .leaflet-container .leaflet-control-attribution a{text-decoration:underline}
 .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.brand h1.brandh{margin:0;font:800 21px/1 Inter,sans-serif;letter-spacing:.03em;color:inherit}
+#pcc,.cc{min-width:0;max-width:100%}.cc .scroll{max-width:100%}
+th{position:relative}

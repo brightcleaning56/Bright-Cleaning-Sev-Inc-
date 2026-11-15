@@ -168,7 +168,7 @@ async function commandWorkspace(body, mapFirst) {
 
 async function drawLeft() {
   const box = $('#cc-left'); const seg = CC.seg;
-  box.innerHTML = `<h3 class="x-5351578d" >Project Discovery</h3><div class="seg">${[['search', 'Search'], ['map', 'Map'], ['saved', 'Saved'], ['alerts', 'Alerts']].map(([k2, l]) => `<button data-seg="${k2}" class="${seg === k2 ? 'on' : ''}">${l}</button>`).join('')}</div><div id="cc-seg"></div>`;
+  box.innerHTML = `<h2 class="x-5351578d" >Project Discovery</h2><div class="seg">${[['search', 'Search'], ['map', 'Map'], ['saved', 'Saved'], ['alerts', 'Alerts']].map(([k2, l]) => `<button data-seg="${k2}" class="${seg === k2 ? 'on' : ''}">${l}</button>`).join('')}</div><div id="cc-seg"></div>`;
   box.querySelectorAll('[data-seg]').forEach(b => b.onclick = () => { CC.seg = b.dataset.seg; drawLeft(); });
   const el = $('#cc-seg');
   if (seg === 'search' || seg === 'map') {
@@ -1598,7 +1598,7 @@ async function render() {
     : (it => it.length ? `<div class="grp ${CLOSED.has(n.group) ? 'closed' : ''}" data-grp="${esc(n.group)}"><span>${ICON[n.icon]}${n.group}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="sub">` + it.map(([k, l]) => `<button data-t="${k}" aria-current="${sel(k) ? 'page' : 'false'}">${l}</button>`).join('') + '</div>' : '')(n.items.filter(([k]) => ok(k)))).join('');
   const TOP = [['command', 'Projects'], ['projects:permits', 'Permits'], ['planroom:drawing', 'Drawings'], ['contractors', 'GCs'], ['estimates', 'Takeoff'], ['estimates:estimating', 'Estimating'], ['invitations:bids', 'Bidding']].filter(([k]) => ok(k));
   const initials = String(me.org?.name || 'BI').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  $('#app').innerHTML = `<div class="app"><aside class="side"><div class="brand">${ICON.logo}<div><b>BUILDINTEL<sup class="x-fb2957a3" >®</sup></b><small>Commercial Construction Intelligence</small></div></div><nav aria-label="Main">${navHtml}</nav></aside>
+  $('#app').innerHTML = `<div class="app"><aside class="side"><div class="brand">${ICON.logo}<div><h1 class="brandh">BUILDINTEL<sup class="x-fb2957a3" >®</sup></h1><small>Commercial Construction Intelligence</small></div></div><nav aria-label="Main">${navHtml}</nav></aside>
     <div class="main"><div class="top"><div class="links">${TOP.map(([k, l]) => `<button data-tl="${k}" class="${k === navKey ? 'on' : ''}">${l}</button>`).join('')}</div>
       <form class="search" id="gs">${ICON.search}<input id="gq" placeholder="Search projects, companies, contacts, permits, or addresses…" aria-label="Search"></form>
       <div class="right"><span class="bell" id="bell" title="Bid invitations waiting">${ICON.bell}<i id="bellN" hidden></i></span><span class="iconbtn" id="help" title="How BUILDINTEL works">${ICON.help}</span><span class="iconbtn" id="apps" title="Quick links">${ICON.apps}</span>
