@@ -49,6 +49,11 @@ module.exports = function mountSubscriptions(app, ctx) {
     const plan = PLANS.includes(b.plan_type) ? b.plan_type : null;
     const visits = b.visits_per_month === undefined || b.visits_per_month === '' ? null : Number(b.visits_per_month);
     if (visits !== null && !(visits > 0 && visits <= 31)) return res.status(400).json({ error: 'Visits per month must be a number from 1 to 31.' });
+    // One active plan per customer and service: a second one would be billed twice in the monthly run.
+    const dupEmail = clean(b.email, 200).toLowerCase(), svc = clean(b.service, 200);
+    const dup = db.prepare("SELECT id FROM subscriptions WHERE status='Active' AND COALESCE(service,'')=? AND ((customer_id IS NOT NULL AND customer_id=?) OR (?<>'' AND lower(email)=?)) LIMIT 1")
+      .get(svc, b.customer_id ? Number(b.customer_id) : -1, dupEmail, dupEmail);
+    if (dup) return res.status(409).json({ error: `This customer already has an active plan for this service (subscription #${dup.id}). Pause or cancel it before adding another.` });
     const t = now();
     const id = db.prepare(`INSERT INTO subscriptions(customer_id,customer_name,company,email,project_id,service,frequency,monthly_amount,start_date,end_date,status,notes,created_by,created_at,updated_at,plan_type,visits_per_month,included)
       VALUES(?,?,?,?,?,?,?,?,?,?, 'Active', ?,?,?,?,?,?,?)`).run(

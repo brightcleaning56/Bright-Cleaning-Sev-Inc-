@@ -2359,7 +2359,11 @@
     const r = await api('/api/admin/users'), users = r.users || [], canRoles = !!r.can_manage_roles;
     const me = $('#whoEmail').textContent;
     $('#userList').innerHTML = users.map(u => `<div class="userrow"><span class="uav">${esc(nameInitials(u.name || u.email))}</span><span><b>${esc(u.name || u.email)}</b><small>${esc(u.email)} · ${esc(u.role ? u.role[0].toUpperCase() + u.role.slice(1) : (u.owner ? 'Owner' : 'Staff'))}${['owner', 'manager'].includes(u.role) ? ' (can approve proposals)' : ''}${u.last_login_at ? ' · last signed in ' + esc(ago(u.last_login_at)) : ''}</small></span>${u.id && !u.env_owner ? `<select data-role="${u.id}" aria-label="Role for ${esc(u.email)}"${canRoles ? '' : ' disabled'}>${['owner', 'manager', 'supervisor', 'inspector', 'sales', 'staff'].map(r => `<option value="${r}"${u.role === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select>` : ''}${!u.owner && u.email !== me && u.id ? `<button class="btn small danger" data-deluser="${u.id}" data-email="${esc(u.email)}">Remove</button>` : ''}</div>`).join('');
-    $$('[data-role]').forEach(sel => sel.onchange = async () => { try { await api(`/api/admin/users/${sel.dataset.role}/role`, { method: 'PATCH', json: { role: sel.value } }); toast('Role updated'); loadUsers(); } catch (err) { toast(err.message, true); loadUsers(); } });
+    // A role change takes effect at once, so confirm first; cancelling puts the old role back on screen.
+    $$('[data-role]').forEach(sel => sel.onchange = async () => {
+      if (!confirm(`Change ${sel.dataset.role}'s role to ${sel.options[sel.selectedIndex].text}? Their access changes right away.`)) { loadUsers(); return; }
+      try { await api(`/api/admin/users/${sel.dataset.role}/role`, { method: 'PATCH', json: { role: sel.value } }); toast('Role updated'); loadUsers(); } catch (err) { toast(err.message, true); loadUsers(); }
+    });
     $$('[data-deluser]').forEach(b => b.onclick = async () => {
       if (!confirm(`Remove access for ${b.dataset.email}?`)) return;
       try { await api('/api/admin/users/' + b.dataset.deluser, { method: 'DELETE' }); toast('Access removed'); loadUsers(); }

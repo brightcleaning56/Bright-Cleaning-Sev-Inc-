@@ -73,7 +73,11 @@ async function waitHealthy() {
     assert(bad2.status === 400, 'end before start refused ' + bad2.status);
     const bad3 = await req('POST', '/api/admin/subscriptions', owner, { customer_name: 'X', monthly_amount: 100, start_date: '2026-10-01', visits_per_month: 40 });
     assert(bad3.status === 400, 'too many visits refused ' + bad3.status);
-    return `id ${ok.body.id}; 3 bad inputs refused`;
+    const dupSame = await req('POST', '/api/admin/subscriptions', owner, { customer_name: 'Riverside Apartments', email: 'PM@riverside.example.test', monthly_amount: 450, start_date: '2026-10-01', service: 'Common areas' });
+    assert(dupSame.status === 409, 'second active plan for the same customer and service refused ' + dupSame.status);
+    const otherSvc = await req('POST', '/api/admin/subscriptions', owner, { customer_name: 'Riverside Apartments', email: 'pm@riverside.example.test', monthly_amount: 200, start_date: '2026-10-01', service: 'Unit turnovers' });
+    assert(otherSvc.status === 201, 'a different service for the same customer is allowed ' + otherSvc.status);
+    return `id ${ok.body.id}; 3 bad inputs refused; duplicate plan refused; a different service allowed`;
   });
 
   await check('Subscriptions: sales cannot set up a subscription (managers and owners only)', async () => {
@@ -87,14 +91,16 @@ async function waitHealthy() {
     const first = await req('POST', '/api/admin/subscriptions/bill-run', owner, { period: '2026-11' });
     assert(first.status === 200, 'bill-run ' + first.status + ' ' + JSON.stringify(first.body).slice(0, 200));
     const created = first.body.created || (first.body.result && first.body.result.created) || [];
-    assert(created.length === 1, 'created ' + created.length + ' ' + JSON.stringify(first.body).slice(0, 300));
-    assert(created[0].amount === 450, 'amount ' + created[0].amount);
-    runId = created[0].invoice_id;
+    // Two active plans now: the apartment common-areas plan ($450) and a second service for the same customer ($200).
+    assert(created.length === 2, 'created ' + created.length + ' ' + JSON.stringify(first.body).slice(0, 300));
+    const plan450 = created.find(c => c.amount === 450);
+    assert(plan450, 'the $450 plan is billed');
+    runId = plan450.invoice_id;
     const second = await req('POST', '/api/admin/subscriptions/bill-run', owner, { period: '2026-11' });
     const skipped = second.body.skipped || (second.body.result && second.body.result.skipped) || [];
     const again = second.body.created || (second.body.result && second.body.result.created) || [];
-    assert(again.length === 0 && skipped.length === 1, 'repeat run should skip: ' + JSON.stringify(second.body).slice(0, 300));
-    return `invoice ${created[0].invoice_number} for $450; repeat run skipped`;
+    assert(again.length === 0 && skipped.length === 2, 'repeat run should skip both plans: ' + JSON.stringify(second.body).slice(0, 300));
+    return `invoice ${plan450.invoice_number} for $450; both plans billed once; repeat run skipped`;
   });
 
   await check('Billing run: sales cannot run billing; a bad period is refused', async () => {

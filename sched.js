@@ -212,8 +212,11 @@ module.exports = function mountSched(app, ctx) {
   }
   app.get('/api/admin/time', auth, (req, res) => {
     const from = clean(req.query.from, 10) || addDays(today(), -14), to = clean(req.query.to, 10) || today();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return res.status(400).json({ error: 'Dates must look like 2026-11-14.' });
+    // A clock-in belongs to the business day it happens on (Central time), not the UTC day: an evening shift must not move to tomorrow.
+    const [winStart, winEnd] = require('./bizdate').window(from, to);
     const rows = db.prepare(`SELECT t.*, e.name, e.hourly_rate, v.title visit_title, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN visits v ON v.id=t.visit_id LEFT JOIN projects p ON p.id=t.project_id
-      WHERE substr(t.clock_in,1,10) BETWEEN ? AND ? ORDER BY t.clock_in DESC`).all(from, to).map(t => ({ ...t, cost: t.minutes ? Math.round(t.minutes / 60 * (t.hourly_rate || 0) * 100) / 100 : 0 }));
+      WHERE t.clock_in >= ? AND t.clock_in < ? ORDER BY t.clock_in DESC`).all(winStart, winEnd).map(t => ({ ...t, cost: t.minutes ? Math.round(t.minutes / 60 * (t.hourly_rate || 0) * 100) / 100 : 0 }));
     res.json({ entries: rows, totals: { minutes: rows.reduce((s, t) => s + (t.minutes || 0), 0), cost: Math.round(rows.reduce((s, t) => s + t.cost, 0) * 100) / 100, open: rows.filter(t => !t.clock_out).length, unapproved: rows.filter(t => t.clock_out && !t.approved_by).length } });
   });
   app.post('/api/admin/time', auth, (req, res) => {
