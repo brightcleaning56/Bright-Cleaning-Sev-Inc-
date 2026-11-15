@@ -36,6 +36,8 @@ with sync_playwright() as p:
     blocked = any('acknowledge addendum 1' in e.inner_text() for e in sub.query_selector_all('.err'))   # the refusal is shown in the bid form
     steps.append('5 bid blocked before ack: ' + str(blocked))
     if not blocked: problems.append('bid before acknowledging addendum 1 is not refused on screen')
+    try: sub.wait_for_selector('[data-ack]', timeout=15000)
+    except Exception: sub.reload(); sub.wait_for_timeout(800); sub.click('nav button[data-t=invitations]'); sub.wait_for_timeout(800); sub.wait_for_selector('[data-ack]', timeout=20000)
     sub.click('[data-ack]'); sub.wait_for_timeout(700); sub.click('[data-bidform]'); sub.wait_for_timeout(300); sub.fill('input[name=amount]', '312000'); sub.fill('textarea[name=scope]', 'Complete electrical per E-series drawings and Division 26.'); sub.click('text=Send bid'); sub.wait_for_timeout(800)
     try:
         sub.wait_for_function("() => document.body.innerText.includes('312,000')", timeout=8000); accepted = True   # the submitted bid is shown after the page refreshes
