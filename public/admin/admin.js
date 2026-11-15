@@ -683,6 +683,7 @@
         { name: 'visits_per_month', label: 'Visits a month (for example 4)' },
         { name: 'frequency', label: 'Frequency', type: 'select', options: ['Monthly', 'Biweekly', 'Weekly'] },
         { name: 'included', label: 'What is included (one item per line)', type: 'textarea' },
+        { name: 'extra_visit_price', label: 'Price per extra visit (blank = not billed)' },
         { name: 'monthly_amount', label: 'Price per month' }, { name: 'start_date', label: 'Start date', type: 'date' },
         { name: 'end_date', label: 'End date (optional)', type: 'date' }, { name: 'notes', label: 'Notes', type: 'textarea' }],
       values: { frequency: 'Monthly' },

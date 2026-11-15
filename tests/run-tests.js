@@ -2942,6 +2942,21 @@ async function startServer(env, dataDir) {
     return 'first check sends one alert, a repeat check stays silent, staff cannot run it';
   });
 
+  await check('Subscriptions', 'Extra visits: visits above the monthly allowance are billed at the extra-visit price in the bill run', async () => {
+    const cust = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Extra Visit Co', company: 'Extra Visit Co', email: 'extra.visits@example.test', phone: '515-555-0199' } });
+    const cid = (cust.data && (cust.data.id || (cust.data.customer && cust.data.customer.id))) || null;
+    const sub = await req('POST', '/api/admin/subscriptions', { token: T, json: { customer_id: cid, customer_name: 'Extra Visit Co', email: 'extra.visits@example.test', service: 'Extra visit test', frequency: 'Monthly', monthly_amount: 200, start_date: '2026-01-01', visits_per_month: 2, extra_visit_price: 50 } });
+    const visit = (date, status) => req('POST', '/api/admin/visits', { token: T, json: { title: 'Extra visit ' + date, type: 'Cleaning phase', date, start_time: '09:00', end_time: '10:00', customer_id: cid, address: '1 Test St', ...(status ? { status } : {}) } });
+    await visit('2026-11-03'); await visit('2026-11-10'); await visit('2026-11-17');
+    await visit('2026-11-24', 'Cancelled');
+    const run = await req('POST', '/api/admin/subscriptions/bill-run', { token: T, json: { period: '2026-11' } });
+    const row = ((run.data && run.data.created) || []).find(x => x.subscription_id === (sub.data && sub.data.id));
+    const chk = { subCreated: (sub.status === 200 || sub.status === 201) && !!(sub.data && sub.data.id), billRan: run.status === 200, oneExtra: !!row && row.extra_visits === 1, billedAmount: !!row && row.amount === 250 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ sub: sub.data, row, run: run.status }));
+    return 'three counted visits against an allowance of two: one extra visit billed at 50, total 250';
+  });
+
   await check('Employees', 'Onboarding checklist: items tick and untick once each; the payroll item follows the employee record; unknown items refused; staff cannot see or change it', async () => {
     const e = (await req('POST', '/api/admin/employees', { token: T, json: { name: 'Olive Onboard', phone: '515-555-0720', role: 'Cleaner' } })).data.employee;
     const start = (await req('GET', `/api/admin/employees/${e.id}/onboarding`, { token: T })).data;

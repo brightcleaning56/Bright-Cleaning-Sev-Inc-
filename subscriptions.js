@@ -11,7 +11,7 @@ module.exports = function mountSubscriptions(app, ctx) {
     created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT)`);
   const icols = db.prepare('PRAGMA table_info(invoices)').all().map(c => c.name);
   const scols = db.prepare('PRAGMA table_info(subscriptions)').all().map(c => c.name);
-  for (const [c, t] of [['plan_type', 'TEXT'], ['visits_per_month', 'REAL'], ['included', 'TEXT']])
+  for (const [c, t] of [['plan_type', 'TEXT'], ['visits_per_month', 'REAL'], ['included', 'TEXT'], ['extra_visit_price', 'REAL']])
     if (!scols.includes(c)) db.exec(`ALTER TABLE subscriptions ADD COLUMN ${c} ${t}`);
   for (const [c, t] of [['subscription_id', 'INTEGER'], ['billing_period', 'TEXT']])
     if (!icols.includes(c)) db.exec(`ALTER TABLE invoices ADD COLUMN ${c} ${t}`);
@@ -54,11 +54,13 @@ module.exports = function mountSubscriptions(app, ctx) {
     const dup = db.prepare("SELECT id FROM subscriptions WHERE status='Active' AND COALESCE(service,'')=? AND ((customer_id IS NOT NULL AND customer_id=?) OR (?<>'' AND lower(email)=?)) LIMIT 1")
       .get(svc, b.customer_id ? Number(b.customer_id) : -1, dupEmail, dupEmail);
     if (dup) return res.status(409).json({ error: `This customer already has an active plan for this service (subscription #${dup.id}). Pause or cancel it before adding another.` });
+    const extraPrice = b.extra_visit_price === undefined || b.extra_visit_price === '' ? null : Number(b.extra_visit_price);
+    if (extraPrice !== null && !(extraPrice >= 0)) return res.status(400).json({ error: 'The price per extra visit must be 0 or more.' });
     const t = now();
-    const id = db.prepare(`INSERT INTO subscriptions(customer_id,customer_name,company,email,project_id,service,frequency,monthly_amount,start_date,end_date,status,notes,created_by,created_at,updated_at,plan_type,visits_per_month,included)
-      VALUES(?,?,?,?,?,?,?,?,?,?, 'Active', ?,?,?,?,?,?,?)`).run(
+    const id = db.prepare(`INSERT INTO subscriptions(customer_id,customer_name,company,email,project_id,service,frequency,monthly_amount,start_date,end_date,status,notes,created_by,created_at,updated_at,plan_type,visits_per_month,included,extra_visit_price)
+      VALUES(?,?,?,?,?,?,?,?,?,?, 'Active', ?,?,?,?,?,?,?,?)`).run(
       Number(b.customer_id) || null, name, clean(b.company, 200), clean(b.email, 254), Number(b.project_id) || null, clean(b.service, 120), frequency,
-      amount, b.start_date, b.end_date || null, clean(b.notes, 2000), who(req), t, t, plan, visits, clean(b.included, 3000)).lastInsertRowid;
+      amount, b.start_date, b.end_date || null, clean(b.notes, 2000), who(req), t, t, plan, visits, clean(b.included, 3000), extraPrice).lastInsertRowid;
     logAction(req, 'created', 'subscription', id, `${name}: ${amount}/${frequency.toLowerCase()} from ${b.start_date}`);
     res.status(201).json({ id });
   });
@@ -79,6 +81,7 @@ module.exports = function mountSubscriptions(app, ctx) {
     if ('plan_type' in b) { if (b.plan_type && !PLANS.includes(b.plan_type)) return res.status(400).json({ error: 'Plan must be Home, Apartment or Office.' }); set.plan_type = b.plan_type || null; }
     if ('visits_per_month' in b) { const v = b.visits_per_month === '' || b.visits_per_month === null ? null : Number(b.visits_per_month); if (v !== null && !(v > 0 && v <= 31)) return res.status(400).json({ error: 'Visits per month must be a number from 1 to 31.' }); set.visits_per_month = v; }
     if ('included' in b) set.included = clean(b.included, 3000);
+    if ('extra_visit_price' in b) { const v = b.extra_visit_price === '' || b.extra_visit_price === null ? null : Number(b.extra_visit_price); if (v !== null && !(v >= 0)) return res.status(400).json({ error: 'The price per extra visit must be 0 or more.' }); set.extra_visit_price = v; }
     const keys = Object.keys(set);
     if (!keys.length) return res.json({ ok: true });
     db.prepare(`UPDATE subscriptions SET ${keys.map(k => k + '=?').join(',')}, updated_at=? WHERE id=?`).run(...keys.map(k => set[k]), now(), s.id);
@@ -98,10 +101,14 @@ module.exports = function mountSubscriptions(app, ctx) {
       for (const s of subs) {
         const exists = db.prepare('SELECT id, invoice_number FROM invoices WHERE subscription_id=? AND billing_period=?').get(s.id, period);
         if (exists) { skipped.push({ subscription_id: s.id, customer: s.customer_name, reason: `already billed for ${period} (${exists.invoice_number})` }); continue; }
+        const visitsUsed = s.customer_id ? db.prepare("SELECT COUNT(*) n FROM visits WHERE customer_id=? AND date>=? AND date<=? AND COALESCE(status,'')<>'Cancelled'").get(s.customer_id, start, end).n : 0;
+        const extra = s.visits_per_month ? Math.max(0, visitsUsed - Math.floor(s.visits_per_month)) : 0;
+        const extraCharge = s.extra_visit_price > 0 ? Math.round(extra * s.extra_visit_price * 100) / 100 : 0;
+        const billed = Math.round((s.monthly_amount + extraCharge) * 100) / 100;
         const number = nextInvoiceNumber();
         const id = db.prepare(`INSERT INTO invoices(project_id,customer_name,company,email,invoice_number,amount,due_date,status,paid_amount,subscription_id,billing_period,created_at,terms)
-          VALUES(?,?,?,?,?,?,?,'Draft',0,?,?,?,?)`).run(s.project_id, s.customer_name, s.company, s.email, number, s.monthly_amount, due, s.id, period, now(), `${s.plan_type ? s.plan_type + ' plan' : (s.service || 'Cleaning service')} · ${s.visits_per_month ? s.visits_per_month + ' visits a month' : s.frequency} · ${period}`).lastInsertRowid;
-        created.push({ subscription_id: s.id, invoice_id: id, invoice_number: number, customer: s.customer_name, amount: s.monthly_amount });
+          VALUES(?,?,?,?,?,?,?,'Draft',0,?,?,?,?)`).run(s.project_id, s.customer_name, s.company, s.email, number, billed, due, s.id, period, now(), `${s.plan_type ? s.plan_type + ' plan' : (s.service || 'Cleaning service')} · ${s.visits_per_month ? s.visits_per_month + ' visits a month' : s.frequency} · ${period}${extra ? ' · ' + extra + ' extra visit' + (extra === 1 ? '' : 's') + (extraCharge ? ' at ' + s.extra_visit_price + ' each' : ' (not billed)') : ''}`).lastInsertRowid;
+        created.push({ subscription_id: s.id, invoice_id: id, invoice_number: number, customer: s.customer_name, amount: billed, extra_visits: extra, extra_charge: extraCharge });
       }
     })();
     logAction(req, 'ran billing', 'subscription', 0, `${period}: ${created.length} drafted, ${skipped.length} skipped`);
