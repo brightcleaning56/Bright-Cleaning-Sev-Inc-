@@ -69,10 +69,12 @@ module.exports = function mountSched(app, ctx) {
     });
     res.json({ employees: list, roles: ROLES, timeoff: db.prepare('SELECT t.*, e.name FROM employee_timeoff t JOIN employees e ON e.id=t.employee_id WHERE t.end_date>=? ORDER BY t.start_date').all(addDays(d, -30)), holidays: db.prepare('SELECT * FROM company_holidays WHERE date>=? ORDER BY date').all(addDays(d, -30)) });
   });
+  try { db.exec('ALTER TABLE employees ADD COLUMN payroll_id TEXT'); } catch { /* already added */ }
   function empValidate(b, cur) {
     const out = {}, errs = [];
     if (!cur || 'name' in b) { const n = clean(b.name, 120); if (!n) errs.push('Enter the employee name.'); else out.name = n; }
     for (const k of ['phone', 'crew', 'skills']) if (k in b) out[k] = clean(b[k], 300);
+    if ('payroll_id' in b) out.payroll_id = clean(b.payroll_id, 40) || null; // the file number the payroll provider uses for this person
     if ('email' in b) { const e = clean(b.email, 254).toLowerCase(); if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) errs.push('Enter a valid email.'); else out.email = e; }
     if ('role' in b) out.role = ROLES.includes(b.role) ? b.role : 'Cleaner';
     for (const k of ['hourly_rate', 'max_week_hours']) if (k in b && b[k] !== '') { const v = Number(b[k]); if (!(v >= 0 && v < 1000)) errs.push(`${k === 'hourly_rate' ? 'Hourly rate' : 'Weekly hour limit'} must be a number.`); else out[k] = v; }

@@ -2736,7 +2736,7 @@
     }
   }
   function editEmployee(e) {
-    openForm({ title: e ? 'Edit employee' : 'Add employee', defs: [{ name: 'name', label: 'Name' }, { name: 'role', label: 'Role', type: 'select', options: ['Cleaner', 'Lead', 'Supervisor', 'Window tech', 'Driver', 'Inspector'] }, { name: 'phone', label: 'Mobile phone' }, { name: 'email', label: 'Email (for dispatch notices)' }, { name: 'crew', label: 'Crew (e.g. A)' }, { name: 'skills', label: 'Skills / certifications (comma separated)', wide: true }, { name: 'hourly_rate', label: 'Hourly rate ($)' }, { name: 'max_week_hours', label: 'Weekly hour limit' }, { name: 'day_start', label: 'Usual start', type: 'time' }, { name: 'day_end', label: 'Usual end', type: 'time' }, { name: 'work_days', label: 'Work days (1=Mon … 7=Sun)' }],
+    openForm({ title: e ? 'Edit employee' : 'Add employee', defs: [{ name: 'name', label: 'Name' }, { name: 'role', label: 'Role', type: 'select', options: ['Cleaner', 'Lead', 'Supervisor', 'Window tech', 'Driver', 'Inspector'] }, { name: 'phone', label: 'Mobile phone' }, { name: 'email', label: 'Email (for dispatch notices)' }, { name: 'crew', label: 'Crew (e.g. A)' }, { name: 'payroll_id', label: 'Payroll file number (ADP)' }, { name: 'skills', label: 'Skills / certifications (comma separated)', wide: true }, { name: 'hourly_rate', label: 'Hourly rate ($)' }, { name: 'max_week_hours', label: 'Weekly hour limit' }, { name: 'day_start', label: 'Usual start', type: 'time' }, { name: 'day_end', label: 'Usual end', type: 'time' }, { name: 'work_days', label: 'Work days (1=Mon … 7=Sun)' }],
       values: e || { role: 'Cleaner', max_week_hours: 40, day_start: '07:00', day_end: '17:00', work_days: '1,2,3,4,5' }, submit: b => api(e ? '/api/admin/employees/' + e.id : '/api/admin/employees', { method: e ? 'PATCH' : 'POST', json: b }), after: () => { toast('Saved'); loadDispatch(); if (disp.tab === 'emp') drawDispTab(); } });
   }
   async function openJob(id) {
@@ -3417,6 +3417,7 @@
   $('#acctInv').addEventListener('click', () => downloadFile({ name: 'invoices-quickbooks.csv', url: '/api/admin/exports/accounting/invoices?' + acctRange() }));
   $('#acctPay').addEventListener('click', () => downloadFile({ name: 'payments-quickbooks.csv', url: '/api/admin/exports/accounting/payments?' + acctRange() }));
   $('#acctHrs').addEventListener('click', () => downloadFile({ name: 'payroll-hours.csv', url: '/api/admin/exports/payroll/time?' + acctRange() }));
+  $('#acctTot').addEventListener('click', () => downloadFile({ name: 'payroll-totals-adp.csv', url: '/api/admin/exports/payroll/summary?' + acctRange() }));
   const RQ = ['Which customers owe us money?', 'How much work is in the sales pipeline?', 'What are our top services?', 'Which proposals should we follow up on?', 'Show revenue and collections by month.'];
   $('#repAiChips').innerHTML = RQ.map(q => `<button type="button">${esc(q)}</button>`).join('');
   $$('#repAiChips button').forEach(b => b.onclick = () => { $('#repAiQ').value = b.textContent; $('#repAiGo').click(); });

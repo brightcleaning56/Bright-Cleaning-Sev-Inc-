@@ -2823,6 +2823,22 @@ async function startServer(env, dataDir) {
     return 'invoices, payments and payroll hours export with QuickBooks-style columns; anonymous and bad-date refused';
   });
 
+  await check('Exports', 'Payroll totals for ADP: one row per person with regular and overtime hours and the file number', async () => {
+    const jwt = require('../node_modules/jsonwebtoken');
+    const tok = jwt.sign({ role: 'admin', email: OWNER, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const emp = await req('POST', '/api/admin/employees', { token: tok, json: { name: 'ADP Test Worker', email: 'adp.test@brightclean.test', role: 'Cleaner', hourly_rate: 20, payroll_id: 'ADP-7741' } });
+    const eid = emp.data.employee && emp.data.employee.id;
+    const back = await req('GET', '/api/admin/employees', { token: tok });
+    const saved = (back.data.employees || []).find(x => x.id === eid);
+    const sum = await req('GET', '/api/admin/exports/payroll/summary?from=2000-01-01&to=2100-12-31', { token: tok });
+    const text = Buffer.isBuffer(sum.data) ? sum.data.toString('utf8') : String(sum.data);
+    const anon = await req('GET', '/api/admin/exports/payroll/summary?from=2000-01-01&to=2100-12-31', {});
+    const chk = { created: emp.status === 201 && !!eid, savedFileNo: !!saved && saved.payroll_id === 'ADP-7741', summary: sum.status === 200 && /"Company Code","File #","Employee","Regular Hours","Overtime Hours"/.test(text), anonRefused: anon.status === 401 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ emp: emp.status, sum: sum.status, anon: anon.status }));
+    return 'payroll totals export has the ADP columns; the file number saves on the employee; anonymous refused';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));
