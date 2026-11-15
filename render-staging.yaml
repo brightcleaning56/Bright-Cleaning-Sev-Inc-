@@ -1,0 +1,39 @@
+# Staging copy for rehearsing company setups before a pilot. Same build as production.
+# Create it in Render: New > Blueprint > this repository > render-staging.yaml.
+# Cost: Starter web service $7/month + 5 GB disk at $0.25/GB/month = about $8.25/month.
+# Deploys are manual (autoDeploy: false) so staging only changes when you choose.
+# Secrets marked sync: false are entered in the Render dashboard, never in this file.
+services:
+  - type: web
+    name: brightclean-staging
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://brightclean-staging.onrender.com
+      - key: SMTP_PASS
+        sync: false
+      - key: DATA_DIR
+        value: /opt/render/project/src/persist/data
+      - key: UPLOAD_DIR
+        value: /opt/render/project/src/persist/uploads
+    disk:
+      name: brightclean-staging-persist
+      mountPath: /opt/render/project/src/persist
+      sizeGB: 5
