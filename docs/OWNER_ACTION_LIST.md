@@ -27,3 +27,12 @@ Last updated: 2026-11-13 (blueprint review added).
 - Customer profile shows Complaint history with closed cases.
 - Command Center and Reports totals match the walkthrough numbers.
 - Windows section on the New estimate form computes.
+
+## Competitive gaps (from the business plan, 2026-11-14)
+
+1. **Direct QuickBooks Online sync.** The system now exports invoices, payments and payroll hours as CSV in QuickBooks-style columns. A live sync needs an Intuit developer account and an app review. Decide whether to start that. Until then, import the CSV files into QuickBooks and test the import with the bookkeeper first.
+2. **Payroll provider.** Choose the payroll provider the first customers use, so the payroll-hours CSV can be matched to its import format.
+3. **External uptime monitor.** Create a free monitor (for example UptimeRobot) that checks https://brightclean.net/api/health every five minutes and emails you when it fails. The system cannot report its own outages.
+4. **Public status page.** Decide whether a status page is published for pilot customers. Pilots will ask for one.
+5. **Reviews and references.** Reviews need real customers. Ask each pilot company for a reference and a review after its first month. Each request is a message to a customer, so approve the wording first.
+6. **Crew phone access.** The crew page now opens full screen from the phone's home screen. Test it on one real phone with a crew member before pilots, since a native app is not planned.

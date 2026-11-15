@@ -273,6 +273,39 @@ module.exports = function mountAdminExt(app, ctx) {
     ctx.bumpTv(email); // every other session ends now; this device gets a fresh token
     res.json({ ok: true, token: ctx.signToken(email, req.user && req.user.mfa === true), message: 'Password changed. Other devices have been signed out.' });
   });
+  // ---- Accounting and payroll exports (CSV). Columns use QuickBooks-style names; money records stay with managers and office staff.
+  const csvCell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
+  const sendCsv = (res, name, header, rows) => { res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${name}"`); res.send('﻿' + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n'); };
+  const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+  const moneyGuard = (req, res) => { if (!require('./roles').seesMoney(roleOf(req.user && req.user.email))) { res.status(403).json({ error: 'Only managers and office staff can export money records.' }); return false; } return true; };
+  app.get('/api/admin/exports/accounting/:kind', auth, (req, res) => {
+    if (!moneyGuard(req, res)) return;
+    const from = String(req.query.from || '0000-01-01'), to = String(req.query.to || '9999-12-31');
+    if (!isDay(from) || !isDay(to)) return res.status(400).json({ error: 'Dates must look like 2026-11-14.' });
+    if (req.params.kind === 'invoices') {
+      const rows = db.prepare(`SELECT invoice_number, COALESCE(issue_date, substr(created_at,1,10)) d, due_date, customer_name, company, email, amount, paid_amount, status FROM invoices WHERE COALESCE(issue_date, substr(created_at,1,10)) BETWEEN ? AND ? ORDER BY d, id`).all(from, to);
+      return sendCsv(res, `invoices-${from}-to-${to}.csv`, ['Invoice No', 'Invoice Date', 'Due Date', 'Customer', 'Company', 'Email', 'Amount', 'Paid', 'Balance', 'Status'],
+        rows.map(r => [r.invoice_number, r.d, r.due_date || '', r.customer_name || '', r.company || '', r.email || '', (+r.amount).toFixed(2), (+r.paid_amount).toFixed(2), Math.max(0, +r.amount - +r.paid_amount).toFixed(2), r.status]));
+    }
+    if (req.params.kind === 'payments') {
+      const rows = db.prepare(`SELECT substr(p.received_at,1,10) d, i.invoice_number, COALESCE(NULLIF(i.customer_name,''), i.company, '') customer, p.amount, p.note, p.recorded_by FROM payments p LEFT JOIN invoices i ON i.id=p.invoice_id WHERE substr(p.received_at,1,10) BETWEEN ? AND ? ORDER BY p.received_at, p.id`).all(from, to);
+      return sendCsv(res, `payments-${from}-to-${to}.csv`, ['Payment Date', 'Invoice No', 'Customer', 'Amount', 'Note', 'Recorded By'],
+        rows.map(r => [r.d, r.invoice_number || '', r.customer, (+r.amount).toFixed(2), r.note || '', r.recorded_by || '']));
+    }
+    return res.status(404).json({ error: 'Unknown export. Use invoices or payments.' });
+  });
+  // Payroll hours: one row per finished shift, in the business time zone, with hours to two decimals.
+  app.get('/api/admin/exports/payroll/time', auth, (req, res) => {
+    if (!moneyGuard(req, res)) return;
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (!isDay(from) || !isDay(to)) return res.status(400).json({ error: 'Enter a from and to date, like 2026-11-01.' });
+    const bz = require('./bizdate');
+    const [ws, we] = bz.window(from, to);
+    const hm = new Intl.DateTimeFormat('en-US', { timeZone: bz.TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+    const rows = db.prepare(`SELECT t.clock_in, t.clock_out, t.minutes, t.note, e.name, e.hourly_rate, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN projects p ON p.id=t.project_id WHERE t.clock_out IS NOT NULL AND t.clock_in >= ? AND t.clock_in < ? ORDER BY e.name, t.clock_in`).all(ws, we);
+    sendCsv(res, `payroll-hours-${from}-to-${to}.csv`, ['Employee', 'Work Date', 'Clock In', 'Clock Out', 'Hours', 'Hourly Rate', 'Project', 'Note'],
+      rows.map(r => [r.name, bz.today(new Date(r.clock_in)), hm.format(new Date(r.clock_in)), hm.format(new Date(r.clock_out)), (Math.max(0, +r.minutes || 0) / 60).toFixed(2), r.hourly_rate != null ? (+r.hourly_rate).toFixed(2) : '', r.project_name || '', r.note || '']));
+  });
   // Sign out of this device: the token just used stops working at once (other devices are not affected).
   app.post('/api/admin/logout', auth, (req, res) => {
     const u = req.user || {};

@@ -2801,6 +2801,27 @@ async function startServer(env, dataDir) {
     return 'signed-out token refused (401); the same user on another device still works (200)';
   });
 
+  await check('Exports', 'Accounting and payroll CSV: invoices, payments and payroll hours download with their columns; signed-out and bad-date requests are refused', async () => {
+    const jwt = require('../node_modules/jsonwebtoken');
+    const tok = jwt.sign({ role: 'admin', email: OWNER, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const anon = await req('GET', '/api/admin/exports/accounting/invoices', {});
+    const bad = await req('GET', '/api/admin/exports/accounting/invoices?from=yesterday', { token: tok });
+    const inv = await req('GET', '/api/admin/exports/accounting/invoices?from=2000-01-01&to=2100-12-31', { token: tok });
+    const pay = await req('GET', '/api/admin/exports/accounting/payments?from=2000-01-01&to=2100-12-31', { token: tok });
+    const hrs = await req('GET', '/api/admin/exports/payroll/time?from=2000-01-01&to=2100-12-31', { token: tok });
+    const text = d => Buffer.isBuffer(d) ? d.toString('utf8') : String(d);
+    const chk = {
+      anon: anon.status === 401,
+      badDate: bad.status === 400,
+      invoices: inv.status === 200 && /"Invoice No","Invoice Date","Due Date"/.test(text(inv.data)) && /text\/csv/.test(inv.headers.get('content-type') || ''),
+      payments: pay.status === 200 && /"Payment Date","Invoice No"/.test(text(pay.data)),
+      hours: hrs.status === 200 && /"Employee","Work Date","Clock In","Clock Out","Hours"/.test(text(hrs.data)),
+    };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ anon: anon.status, bad: bad.status, inv: inv.status, pay: pay.status, hrs: hrs.status }));
+    return 'invoices, payments and payroll hours export with QuickBooks-style columns; anonymous and bad-date refused';
+  });
+
   await check('Health', '/health reports the build fingerprint, and it equals the fingerprint computed over the running files (so a release archive can be matched to the live server)', async () => {
     const h = (await req('GET', '/health')).data, b = require('../buildinfo').compute(require('path').join(__dirname, '..'));
     assert(h.build === b.fingerprint.slice(0, 12) && h.build_files === b.files && b.files > 50, JSON.stringify({ h, b: [b.fingerprint.slice(0, 12), b.files] }));
