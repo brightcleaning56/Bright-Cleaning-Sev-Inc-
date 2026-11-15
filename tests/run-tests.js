@@ -2914,6 +2914,21 @@ async function startServer(env, dataDir) {
     return 'unbilled milestone removed; billed milestone kept';
   });
 
+  await check('Insurance', 'Certificate directory: owner adds a certificate, expiry status shows, bad input refused, staff refused, delete works', async () => {
+    const past = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10);
+    const ok = await req('POST', '/api/admin/insurance', { token: T, json: { holder: 'Bright Clean', kind: 'general_liability', carrier: 'Test Carrier', policy_no: 'GL-1', expires_on: past } });
+    const badKind = await req('POST', '/api/admin/insurance', { token: T, json: { holder: 'X', kind: 'nonsense' } });
+    const badDate = await req('POST', '/api/admin/insurance', { token: T, json: { holder: 'X', kind: 'auto', expires_on: '2026-13-45' } });
+    const list = await req('GET', '/api/admin/insurance', { token: T });
+    const row = (list.data || []).find(r => r.id === ok.data.id);
+    const staffView = await req('GET', '/api/admin/insurance', { token: globalThis.__st });
+    const del = await req('DELETE', '/api/admin/insurance/' + ok.data.id, { token: T });
+    const chk = { added: ok.status === 200, expiredShown: !!row && row.status === 'expired', badKindRefused: badKind.status === 400, badDateRefused: badDate.status === 400, staffRefused: staffView.status === 403, deleted: del.status === 200 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ ok: ok.data, badKind: badKind.status, badDate: badDate.status, staff: staffView.status }));
+    return 'owner adds and deletes certificates; expired status shows; bad input and staff access refused';
+  });
+
   await check('Employees', 'Onboarding checklist: items tick and untick once each; the payroll item follows the employee record; unknown items refused; staff cannot see or change it', async () => {
     const e = (await req('POST', '/api/admin/employees', { token: T, json: { name: 'Olive Onboard', phone: '515-555-0720', role: 'Cleaner' } })).data.employee;
     const start = (await req('GET', `/api/admin/employees/${e.id}/onboarding`, { token: T })).data;

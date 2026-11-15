@@ -66,6 +66,7 @@ const ROLE_RULES=[
   {m:/^GET$/,p:/^\/api\/admin\/integrity$/,roles:['owner'],why:'Only an owner can run the data integrity report.'},
   {m:/^(PUT|PATCH|POST)$/,p:/^\/api\/admin\/(settings|ai\/settings|automation\/ai-settings|issues\/config)$/,roles:['owner','manager'],why:'Only an owner or manager can change system settings.'},
   {m:/^GET$/,p:/^\/api\/admin\/users$/,roles:['owner','manager'],why:'Only an owner or manager can view the user list.'},
+  {m:/^(GET|POST|DELETE)$/,p:/^\/api\/admin\/insurance(\/\d+)?$/,roles:['owner','manager'],why:'Insurance certificates are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/invoices\/\d+\/payment$/,roles:['owner','manager'],why:'Only an owner or manager can record payments.'},
   {m:/^GET$/,p:/^\/api\/admin\/reports\/(finance|aging|labor|pdf)$/,roles:['owner','manager'],why:'Financial reports are limited to owners and managers.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/reports\/schedules(\/.*)?$/,roles:['owner','manager'],why:'Report schedules are limited to owners and managers.'},
@@ -154,6 +155,7 @@ require('./crm')(app,{db,auth,logAction,clean,isEmail,adminEmail,getMailer:()=>m
 require('./issues')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./bids')(app,{db,auth,logAction,clean});
 require('./pm')(app,{db,auth,logAction,clean,adminEmail});
+require('./insurance')(app,{db,auth,logAction,clean});
 require('./sched')(app,{db,auth,logAction,clean,adminEmail,uploadDir,getMailer:()=>mailer});
 require('./qc')(app,{db,auth,logAction,clean,adminEmail});
 require('./docs2')(app,{db,auth,logAction,clean,adminEmail,upload,uploadDir});
