@@ -518,6 +518,18 @@ async function check(area, name, fn) {
     assert(/Invoiced/.test(out.pl) && /Not yet due/.test(out.aging) && /Hours worked/.test(out.labor) && /Project/.test(out.projects) && /Scheduled report/.test(out.sched) && alt && !$('#v-reports').classList.contains('alt'), JSON.stringify(out));
     return '5 report tabs render; overview hidden while on them and restored';
   });
+  await check('Reports UI', 'P&L project filter: choosing a project limits the figures and says it is one project', async () => {
+    await nav('reports'); await sleep(800);
+    d.querySelector('#repTabs [data-rt="pl"]').click(); await sleep(900);
+    const sel = d.querySelector('#repPl'); assert(sel, 'project filter is on the P&L tab');
+    const opt = [...sel.options].find(o => o.value);
+    if (!opt) return 'no projects in this test database, so the filter could not be exercised';
+    sel.value = opt.value; sel.dispatchEvent(new w.Event('change', { bubbles: true })); await sleep(1200);
+    const body = txt('#repBody');
+    assert(/Showing one project/.test(body) && d.querySelector('#repPl') && d.querySelector('#repPl').value === opt.value, body.slice(0, 200));
+    d.querySelector('#repTabs [data-rt="overview"]').click(); await sleep(300);
+    return 'filter to ' + opt.text.slice(0, 40) + ' shows the one-project note';
+  });
 
   await check('Reports UI', 'Accounting exports (invoices, payments, payroll hours) show on the Reports overview and hide on report tabs', async () => {
     await nav('reports'); await sleep(800);

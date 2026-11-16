@@ -2931,12 +2931,12 @@
               ${checks.length ? checks.map(c => `<p style="margin:6px 0;color:#a46a00">⚠ ${esc(c)}</p>`).join('') : '<p>✅ Checks run: revenue, costs, drafts, project links and unapproved labor. None of these found a gap. Other data (for example, costs not yet entered) is not checked.</p>'}
               <h3 class="secth">How these numbers are calculated</h3><p class="muted">${esc(f.basis)}</p></div>
           </div>`;
+        const plSel = $('#repPl'); if (plSel) plSel.onchange = e => { rep2.project = e.target.value; drawRep2(); };
       } else if (t === 'aging') {
         const a = await api('/api/admin/reports/aging');
         B.innerHTML = `<div class="kpis6">${['Current', '1–30', '31–60', '61–90', '90+'].map((k, i) => kt(i < 2 ? 'clock' : 'issues', i === 0 ? 'green' : i < 3 ? 'amber' : 'red', k === 'Current' ? 'Not yet due' : k + ' days late', money(a.buckets[k]), '')).join('')}${kt('money', 'navy', 'Total open', money(a.total), 'as of ' + fmtDate(a.as_of))}</div>
           <div class="tablewrap card" style="padding:0"><table class="t"><thead><tr><th>Customer</th><th class="num">Not due</th><th class="num">1–30</th><th class="num">31–60</th><th class="num">61–90</th><th class="num">90+</th><th class="num">Total</th></tr></thead><tbody>${a.customers.map(c => `<tr><td><b>${esc(c.customer)}</b></td>${['Current', '1–30', '31–60', '61–90', '90+'].map(k => `<td class="num"${k === '90+' && c[k] ? ' style="color:#c0362d;font-weight:700"' : ''}>${c[k] ? money(c[k]) : '—'}</td>`).join('')}<td class="num"><b>${money(c.total)}</b></td></tr>`).join('') || '<tr><td class="emptyrow" colspan="7">No open invoices. 🎉</td></tr>'}</tbody></table></div>
           ${a.invoices.length ? `<div class="tablewrap card" style="padding:0"><table class="t"><thead><tr><th>Invoice</th><th>Customer</th><th>Project</th><th>Due</th><th class="num">Days late</th><th class="num">Balance</th></tr></thead><tbody>${a.invoices.map(i => `<tr class="click" data-rec="invoices:${i.id}"><td>${esc(i.number || '#' + i.id)}</td><td>${esc(i.customer)}</td><td>${esc(i.project || '—')}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td><td class="num">${i.days_late || '—'}</td><td class="num">${money(i.balance)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
-        const plSel = $('#repPl'); if (plSel) plSel.onchange = e => { rep2.project = e.target.value; drawRep2(); };
         bindOpeners(B);
       } else if (t === 'labor') {
         const l = await api('/api/admin/reports/labor?' + q);
