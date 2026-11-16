@@ -2859,9 +2859,30 @@
     try {
       if (t === 'pl') {
         const f = await api('/api/admin/reports/finance?' + q);
-        B.innerHTML = `<div class="kpis6">${kt('money', 'blue', 'Invoiced (revenue)', money(f.invoiced), `${f.invoices} invoice(s)`)}${kt('check', 'green', 'Collected on those', money(f.collected), '')}${kt('reports', 'amber', 'Recorded costs', money(f.costs), '')}${kt('money', 'teal', 'Gross profit', money(f.gross_profit), '')}${kt('scopes', 'navy', 'Gross margin', f.margin == null ? '—' : f.margin + '%', '')}${kt('cal', 'blue', 'Period', fmtDate(f.from), 'to ' + fmtDate(f.to))}</div>
-          <div class="two"><div class="card"><h2 style="font-size:16px">Costs by category</h2>${Object.keys(f.cost_by_category).length ? `<dl class="stat">${Object.entries(f.cost_by_category).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${money(v)}</dd>`).join('')}<dt style="font-weight:700">Total</dt><dd style="font-weight:800">${money(f.costs)}</dd></dl>` : '<p class="muted">No costs recorded in this period. Record costs on projects, or approve crew time.</p>'}</div>
-          <div class="card"><h2 style="font-size:16px">How these numbers are calculated</h2><p class="muted">${esc(f.basis)}</p>${f.checks.length ? `<h3 class="secth" style="color:#a46a00">Data needs review before you rely on these numbers</h3>${f.checks.map(c => `<p style="margin:4px 0">⚠ ${esc(c)}</p>`).join('')}` : '<p>✅ Checks run: revenue, costs, drafts, project links and unapproved labor. None of these found a gap. Other data (for example, costs not yet entered) is not checked.</p>'}</div></div>`;
+        // Same figures as before. This page only lays them out; the calculations are on the server (reports2.js).
+        const pct = v => (v == null || Number.isNaN(v) ? '—' : v + '%');
+        const costRows = Object.entries(f.cost_by_category || {}).sort((a, b) => b[1] - a[1]);
+        const maxCost = Math.max(1, ...costRows.map(([, v]) => v));
+        const projRows = (f.projects || []).filter(p => p.invoiced > 0 || p.cost > 0).sort((a, b) => Math.abs(b.profit || 0) - Math.abs(a.profit || 0)).slice(0, 5);
+        const checks = f.checks || [];
+        B.innerHTML = `<div class="kpis6">${kt('money', 'blue', 'Invoiced (revenue)', money(f.invoiced), `${f.invoices} invoice(s)`)}${kt('check', 'green', 'Collected on those', money(f.collected), '')}${kt('reports', 'amber', 'Recorded costs', money(f.costs), '')}${kt('money', 'teal', 'Gross profit', money(f.gross_profit), '')}${kt('scopes', 'navy', 'Gross margin', pct(f.margin), '')}${kt('cal', 'blue', 'Period', fmtDate(f.from), 'to ' + fmtDate(f.to))}</div>
+          <div class="two">
+            <div class="card"><h2 style="font-size:16px">Profit and loss</h2>
+              <table class="t"><tbody>
+                <tr><td>Revenue (invoiced)</td><td class="num">${money(f.invoiced)}</td><td class="num">100%</td></tr>
+                <tr><td>Recorded costs</td><td class="num">${money(f.costs)}</td><td class="num">${f.invoiced > 0 ? Math.round(f.costs / f.invoiced * 1000) / 10 + '%' : '—'}</td></tr>
+                <tr><td><b>Gross profit</b></td><td class="num"><b>${money(f.gross_profit)}</b></td><td class="num"><b>${pct(f.margin)}</b></td></tr>
+              </tbody></table>
+              <p class="muted">Net profit is not calculated here: operating expenses are not recorded in this system yet.</p></div>
+            <div class="card"><h2 style="font-size:16px">Cost breakdown</h2>${costRows.length ? costRows.map(([k, v]) => `<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;gap:12px"><span>${esc(k)}</span><span>${money(v)}</span></div><div style="background:#eef2f6;border-radius:4px;height:8px;margin-top:4px"><div style="background:#1f6fd1;height:8px;border-radius:4px;width:${Math.round(v / maxCost * 100)}%"></div></div></div>`).join('') : '<p class="muted">No costs recorded in this period. Record costs on projects, or approve crew time.</p>'}</div>
+          </div>
+          <div class="two">
+            <div class="card"><h2 style="font-size:16px">Project profitability (largest five)</h2>
+              ${projRows.length ? `<table class="t"><thead><tr><th>Project</th><th class="num">Invoiced</th><th class="num">Cost</th><th class="num">Profit</th><th class="num">Margin</th></tr></thead><tbody>${projRows.map(p => `<tr><td><b>${esc(p.name || '')}</b><div class="muted">${esc(p.customer_name || '')}</div></td><td class="num">${money(p.invoiced)}</td><td class="num">${money(p.cost)}</td><td class="num">${p.profit == null ? '—' : money(p.profit)}</td><td class="num">${pct(p.margin)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No project has invoices or costs in this period.</p>'}</div>
+            <div class="card"><h2 style="font-size:16px">${checks.length ? 'Data needs review before you rely on these numbers' : 'Data checks'}</h2>
+              ${checks.length ? checks.map(c => `<p style="margin:6px 0;color:#a46a00">⚠ ${esc(c)}</p>`).join('') : '<p>✅ Checks run: revenue, costs, drafts, project links and unapproved labor. None of these found a gap. Other data (for example, costs not yet entered) is not checked.</p>'}
+              <h3 class="secth">How these numbers are calculated</h3><p class="muted">${esc(f.basis)}</p></div>
+          </div>`;
       } else if (t === 'aging') {
         const a = await api('/api/admin/reports/aging');
         B.innerHTML = `<div class="kpis6">${['Current', '1–30', '31–60', '61–90', '90+'].map((k, i) => kt(i < 2 ? 'clock' : 'issues', i === 0 ? 'green' : i < 3 ? 'amber' : 'red', k === 'Current' ? 'Not yet due' : k + ' days late', money(a.buckets[k]), '')).join('')}${kt('money', 'navy', 'Total open', money(a.total), 'as of ' + fmtDate(a.as_of))}</div>
