@@ -1126,6 +1126,30 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(none.status === 400, 'no customer or lead should be refused, got ' + none.status);
     return 'note and call attempt appear in the lead history with counts; a request with no customer or lead is refused (400)';
   });
+  await check('Call center', 'Calls are grouped into queues; a missed call gets a callback date; a call is linked to a lead; the caller context loads; texts are refused until Twilio is set up', async () => {
+    const phone = '5155550177';
+    const unknown = await req('POST', '/api/admin/calls', { token: T, json: { phone: '5155559999', contact_name: 'Stranger', direction: 'Inbound', outcome: 'Answered', purpose: 'Other', summary: 'Asked about prices' } });
+    assert(unknown.status === 201, 'unknown call should save, got ' + unknown.status + ' ' + JSON.stringify(unknown.data));
+    const missed = await req('POST', '/api/admin/calls', { token: T, json: { phone, contact_name: 'Missed Caller', direction: 'Inbound', outcome: 'Missed', purpose: 'Other' } });
+    assert(missed.status === 201, 'missed call should save, got ' + missed.status);
+    const cc = await req('GET', '/api/admin/calls-center', { token: T });
+    assert(cc.status === 200 && Array.isArray(cc.data.queues) && cc.data.queues.length === 5, 'queues should load');
+    assert((cc.data.outcomes || []).includes('Transferred') && (cc.data.outcomes || []).includes('Completed'), 'outcomes should include Transferred and Completed');
+    const mrow = cc.data.calls.find(c => c.id === missed.data.call.id);
+    assert(mrow && mrow.queue === 'Missed / callbacks' && mrow.callback_open, 'missed call should be in Missed / callbacks: ' + JSON.stringify(mrow));
+    assert(mrow.follow_up_date, 'missed call should get a callback date');
+    const urow = cc.data.calls.find(c => c.id === unknown.data.call.id);
+    assert(urow && urow.queue === 'Unknown caller', 'unmatched answered call should be Unknown caller: ' + (urow && urow.queue));
+    const lead = await req('POST', '/api/admin/leads', { token: T, json: { contact_name: 'Call Lead', kind: 'inquiry', phone, details: 'From test.' } });
+    const lid = lead.data.id || (lead.data.lead && lead.data.lead.id);
+    const linked = await req('POST', '/api/admin/calls/' + missed.data.call.id + '/lead', { token: T, json: { lead_id: lid } });
+    assert(linked.status === 200, 'link should save, got ' + linked.status);
+    const ctx = await req('GET', '/api/admin/calls/' + missed.data.call.id + '/context', { token: T });
+    assert(ctx.status === 200 && ctx.data.lead && ctx.data.lead.id === lid && ctx.data.match && ctx.data.match.type === 'lead', 'context should show the linked lead: ' + ctx.status);
+    const txt = await req('POST', '/api/admin/messages/sms', { token: T, json: { lead_id: lid, body: 'Hi, checking in.' } });
+    assert(txt.status === 400 && /not set up/.test(txt.data.error || ''), 'text should be refused until set up, got ' + txt.status + ' ' + JSON.stringify(txt.data));
+    return 'queues load (5); missed call gets a callback and sits in Missed / callbacks; unmatched call is Unknown caller; call links to a lead; caller context returns the lead; text refused until set up';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

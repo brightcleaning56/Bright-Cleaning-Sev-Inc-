@@ -861,7 +861,7 @@
     } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
   }
   // ---------- Lead history: who worked this lead, what happened, what is next ----------
-  const LEAD_KIND_UI = { note: 'Note', email: 'Email sent', meeting: 'Meeting', status: 'Status change', assigned: 'Assigned', follow_up: 'Follow-up', call: 'Call', estimate: 'Estimate', converted: 'Converted', viewed: 'Opened', received: 'Received', call_attempt: 'Call attempt', conversation: 'Conversation with the customer', voicemail: 'Voicemail left' };
+  const LEAD_KIND_UI = { note: 'Note', email: 'Email sent', meeting: 'Meeting', status: 'Status change', assigned: 'Assigned', follow_up: 'Follow-up', call: 'Call', estimate: 'Estimate', converted: 'Converted', viewed: 'Opened', received: 'Received', call_attempt: 'Call attempt', conversation: 'Conversation with the customer', voicemail: 'Voicemail left', text_out: 'Text sent' };
   // One communication history for a customer or a lead (see comms.js): calls, texts, emails, notes, proposal events, follow-ups.
   async function loadComms(q, boxId = 'commsList', sumId = null) {
     const box = $('#' + boxId); if (!box) return;
@@ -2814,6 +2814,7 @@
   async function loadCalls() {
     if (!document.getElementById('dialPadBtn')) { const h = document.querySelector('#v-calls .pagehead'); if (h) { const btn = document.createElement('button'); btn.className = 'btn'; btn.id = 'dialPadBtn'; btn.type = 'button'; btn.textContent = '📞 Call a number'; btn.onclick = () => openDialPad(); const wrap = h.querySelector('.headact') || h; wrap.appendChild(btn); } }
     const r = await api('/api/admin/calls'); Object.assign(callState, r);
+    try { callState.cc = await api('/api/admin/calls-center'); } catch { callState.cc = null; }
     kpiTiles('#callsKpis', [{ label: "Today's calls", value: r.today.total }, { label: 'Answered', value: r.today.answered }, { label: 'Missed / voicemail', value: r.today.missed, alert: r.today.missed > 0 }, { label: 'Follow-ups due', value: r.follow_ups_due, alert: r.follow_ups_due > 0 }]);
     const callFilter = (follow, vm) => { $('#callFollow').checked = follow; $('#callVm').checked = vm; renderCalls(); };
     wireTiles('#callsKpis', { "Today's calls": () => callFilter(false, false), 'Answered': () => callFilter(false, false), 'Missed / voicemail': () => callFilter(false, true), 'Follow-ups due': () => callFilter(true, false) });
@@ -2824,12 +2825,94 @@
         ${x.receptionist ? `<div class="st" style="cursor:pointer" data-go-settings title="Change in Settings → Phone"><span>AI receptionist</span><b style="font-size:15px;color:${x.receptionist.answering_now ? '#17904c' : '#a06a00'}">${x.receptionist.mode === 'off' ? 'Off' : !x.receptionist.key ? 'Needs AI key' : x.receptionist.answering_now ? 'On' : 'Waiting (business hours)'}</b><small>${esc({ off: 'people and voicemail only', no_answer: 'answers when no one picks up', after_hours: 'answers after hours', always: 'answers every call first' }[x.receptionist.mode] || '')}</small></div>` : ''}        <div class="st"><span>Last 30 days</span><b>${x.total_30}</b><small>${x.missed_30} missed</small></div>${x.by_intent.slice(0, 3).map(i => `<div class="st"><span>${esc(i.k)}</span><b>${i.n}</b><small>calls (AI)</small></div>`).join('')}
         <div class="st"><span>Hot leads (score 70+)</span><b>${x.hot_leads.length}</b><small>${x.hot_leads.slice(0, 2).map(h => esc(h.company || h.contact_name || '')).join(', ')}</small></div>`; el.querySelectorAll('[data-go-settings]').forEach(b => b.onclick = () => { location.hash = '#settings'; }); }).catch(() => {});
   }
+  const CC_QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks'];
+  const outcomeBadge = o => '<span class="badge ' + (o === 'Missed' ? 'red' : o === 'Voicemail' ? 'amber' : o === 'Answered' ? 'green' : '') + '">' + esc(o || '—') + '</span>';
+  function callerLabel(c) {
+    const m = c.match;
+    return m ? (m.type === 'customer' ? custBtn({ customer_id: m.id, company: m.company, customer_name: m.name, email: '' }, m.company || m.name) : '<button type="button" class="linklike" data-cc-lead="' + m.id + '">' + esc(m.company || m.name || 'Lead') + '</button>') : esc(c.contact_name || c.company || 'Unknown caller');
+  }
   function renderCalls() {
+    const cc = callState.cc || { calls: [], queue_counts: {}, queues: CC_QUEUES, outcomes: [] };
     const q = $('#callSearch').value.trim().toLowerCase(), due = $('#callFollow').checked, vm = !!($('#callVm') && $('#callVm').checked), t = todayISO();
-    const rows = callState.calls.filter(c => (!q || [c.contact_name, c.company, c.phone, c.summary, c.customer_company].join(' ').toLowerCase().includes(q)) && (!due || (!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t)) && (!vm || c.outcome === 'Voicemail'));
-    $('#callsRows').innerHTML = rows.length ? rows.map(c => `<tr class="click" data-call="${c.id}"><td>${esc(fmtWhen(c.created_at))}<small>${esc(c.direction)}</small></td><td>${custBtn(c, c.company || c.customer_company || c.contact_name || '—')} <span class="pill" style="font-size:11px" title="How this call was handled">${esc(handlingOf(c))}</span><small>${esc([c.contact_name, c.phone].filter(Boolean).join(' · '))}</small></td><td>${badge(c.purpose)}</td><td>${c.outcome === 'Answered' ? esc(c.outcome) : `<span class="badge amber">${esc(c.outcome)}</span>`}</td><td>${esc((c.summary || '').slice(0, 90))}</td><td class="${!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t ? 'late' : ''}">${c.follow_up_date ? (c.follow_up_done ? 'Done' : fmtDate(c.follow_up_date)) : '—'}</td></tr>`).join('')
-      : `<tr><td class="emptyrow" colspan="6">No calls logged${q || due || vm ? ' match' : ' yet'}.</td></tr>`;
-    $$('[data-call]').forEach(r => r.onclick = () => openCall(callState.calls.find(c => c.id === Number(r.dataset.call))));
+    const sel = callState.queue || 'All';
+    const qbtn = (label, n, key) => '<button type="button" class="ccq' + (sel === key ? ' on' : '') + '" data-cq="' + esc(key) + '"><span>' + esc(label) + '</span><b>' + n + '</b></button>';
+    $('#ccQueues').innerHTML = qbtn('All calls', cc.calls.length, 'All') + CC_QUEUES.map(name => qbtn(name, cc.queue_counts[name] || 0, name)).join('');
+    $$('#ccQueues [data-cq]').forEach(b => b.onclick = () => { callState.queue = b.dataset.cq; renderCalls(); });
+    const rows = cc.calls.filter(c => (sel === 'All' || c.queue === sel)
+      && (!q || [c.contact_name, c.company, c.phone, c.summary, c.customer_company, c.match && c.match.name].join(' ').toLowerCase().includes(q))
+      && (!due || (!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t))
+      && (!vm || c.outcome === 'Voicemail'));
+    $('#callsRows').innerHTML = rows.length ? rows.map(c => '<tr class="click' + (callState.selId === c.id ? ' on' : '') + '" data-call="' + c.id + '"><td>' + esc(fmtWhen(c.created_at)) + '<small>' + esc(c.direction) + '</small></td>'
+      + '<td>' + callerLabel(c) + ' <span class="pill" style="font-size:11px">' + esc(c.queue) + '</span><small>' + esc(c.phone || '') + '</small></td>'
+      + '<td>' + outcomeBadge(c.outcome) + '</td><td>' + esc((c.summary || '').slice(0, 90)) + '</td>'
+      + '<td>' + (c.callback_open ? '<span class="badge amber">Callback due</span>' : c.follow_up_date ? esc(fmtDate(c.follow_up_date)) + (c.follow_up_done ? ' <small class="muted">done</small>' : '') : '—') + '</td></tr>').join('')
+      : '<tr><td class="emptyrow" colspan="5">No calls in this queue' + (q || due || vm ? ' match' : ' yet') + '.</td></tr>';
+    $$('#callsRows [data-call]').forEach(r => r.onclick = () => { callState.selId = Number(r.dataset.call); renderCalls(); });
+    $$('#callsRows [data-cc-lead]').forEach(b => b.onclick = () => openLead(Number(b.dataset.ccLead)));
+    const picked = cc.calls.find(c => c.id === callState.selId);
+    if (picked) renderCallPanel(picked); else if ($('#callPanel')) $('#callPanel').innerHTML = '<p class="muted">Select a call to see who called and what is open for them.</p>';
+  }
+  async function renderCallPanel(c) {
+    const box = $('#callPanel'); if (!box) return;
+    box.innerHTML = '<p class="muted">Loading the caller…</p>';
+    let x; try { x = await api('/api/admin/calls/' + c.id + '/context'); } catch (err) { box.innerHTML = '<p class="err">' + esc(err.message) + '</p>'; return; }
+    if (callState.selId !== c.id) return; // another call was picked while this loaded
+    const cu = x.customer, ld = x.lead, m = x.match;
+    const name = m ? m.name : (c.contact_name || 'Unknown caller');
+    const outcomes = (callState.cc && callState.cc.outcomes) || ['Answered', 'Missed', 'Voicemail', 'Transferred', 'Completed', 'Callback requested'];
+    const tomorrow = localISO(new Date(Date.now() + 864e5));
+    const who = m ? (m.type === 'customer' ? 'Existing customer' : 'Lead') : 'Unknown caller';
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><span class="badge blue">${esc(who)}</span><h3 style="margin:6px 0 0;overflow-wrap:anywhere">${esc(name)}</h3><p class="muted" style="margin:2px 0">${esc((m && m.company) || c.company || '')}</p></div></div>
+      <p style="margin:8px 0"><b>${esc(c.phone || 'No number recorded')}</b> ${c.phone ? `<button type="button" class="btn small ghost" data-dial="${esc(c.phone)}" data-cust="${m && m.type === 'customer' ? m.id : ''}" data-lead="${m && m.type === 'lead' ? m.id : ''}" data-name="${esc(name)}">Return call</button>` : ''}</p>
+      ${cu ? `<dl class="facts"><dt>Active projects</dt><dd>${cu.active_projects}${cu.last_project ? ' · latest: ' + esc(cu.last_project) : ''}</dd><dt>Open invoices</dt><dd>${cu.open_invoices} · $${Number(cu.open_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} owed</dd><dt>Open tasks</dt><dd>${cu.open_tasks} <small class="muted">(${cu.open_issues} issues, ${cu.open_callbacks} callbacks)</small></dd></dl><p>${custBtn(cu, 'Open customer profile', 'btn ghost')}</p>` : ''}
+      ${ld ? `<dl class="facts"><dt>Lead status</dt><dd>${esc(ld.status || '—')}</dd><dt>Next follow-up</dt><dd>${ld.follow_up_date ? esc(fmtDate(ld.follow_up_date)) : 'Not set'}</dd><dt>Assigned to</dt><dd>${esc(ld.assigned_to || 'Nobody yet')}</dd></dl><p><button type="button" class="btn ghost" data-open-lead="${ld.id}">Open lead record</button></p>` : ''}
+      ${!m ? `<p class="muted">No customer or lead has this number yet.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small" id="ccNewLead">Create lead</button><button type="button" class="btn small ghost" id="ccNewCust">Create customer</button></div>` : ''}
+      <div class="formsection">Outcome</div>
+      <select id="ccOutcome" aria-label="Call outcome">${outcomes.map(o => `<option value="${esc(o)}"${c.outcome === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>
+      <div class="formsection">Quick actions</div>
+      ${c.phone ? `<label for="ccSms">Text ${esc(c.phone)}</label><textarea id="ccSms" rows="2" placeholder="Short, clear message"></textarea><button type="button" class="btn small" id="ccSend" style="margin:6px 0">Send SMS</button>` : ''}
+      <label for="ccNote">Add note</label><textarea id="ccNote" rows="2" placeholder="Internal note"></textarea><button type="button" class="btn small ghost" id="ccNoteSave" style="margin:6px 0">Save note</button>
+      <label for="ccTask">Callback task (due)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="date" id="ccTask" value="${esc(c.follow_up_date || tomorrow)}"><button type="button" class="btn small ghost" id="ccTaskSave">Save callback task</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${m ? '<button type="button" class="btn small ghost" id="ccEst">Build estimate</button>' : ''}<button type="button" class="btn small ghost" id="ccDetails">Full call details</button></div>`;
+    box.querySelectorAll('[data-open-lead]').forEach(b => b.onclick = () => openLead(Number(b.dataset.openLead)));
+    $('#ccOutcome').onchange = async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { outcome: $('#ccOutcome').value } }); toast('Outcome saved'); await loadCalls(); } catch (err) { toast(err.message, true); } };
+    if ($('#ccSend')) $('#ccSend').onclick = async () => {
+      const body = $('#ccSms').value.trim(); if (body.length < 2) return toast('Write the text first.', true);
+      if (!confirm('Send this text to ' + name + ' now?')) return;
+      try { await api('/api/admin/messages/sms', { method: 'POST', json: { customer_id: m && m.type === 'customer' ? m.id : undefined, lead_id: m && m.type === 'lead' ? m.id : undefined, to: c.phone, body } }); toast('Text sent'); renderCallPanel(c); }
+      catch (err) { toast(err.message, true); }
+    };
+    $('#ccNoteSave').onclick = async () => {
+      const note = $('#ccNote').value.trim(); if (!note) return toast('Write the note first.', true);
+      try {
+        if (m && m.type === 'customer') await api('/api/admin/customers/' + m.id + '/notes', { method: 'POST', json: { body: note } });
+        else if (m && m.type === 'lead') await api('/api/admin/leads/' + m.id + '/activity', { method: 'POST', json: { kind: 'note', summary: note.slice(0, 200), detail: note.length > 200 ? note : undefined } });
+        else await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { summary: (c.summary ? c.summary + '\n' : '') + note } });
+        toast('Note saved'); loadCalls();
+      } catch (err) { toast(err.message, true); }
+    };
+    $('#ccTaskSave').onclick = async () => {
+      const d = $('#ccTask').value; if (!d) return toast('Pick the callback date.', true);
+      try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_date: d, follow_up_done: 0 } }); toast('Callback task set for ' + fmtDate(d)); loadCalls(); }
+      catch (err) { toast(err.message, true); }
+    };
+    if ($('#ccEst')) $('#ccEst').onclick = () => { if (ld) openEstimator(null, ld); else openEstimator(null, { contact_name: name, company: cu.company, email: cu.email }); };
+    $('#ccDetails').onclick = () => openCall(c);
+    if ($('#ccNewLead')) $('#ccNewLead').onclick = async () => {
+      const who2 = prompt('Who is calling? (name or company)'); if (!who2 || !who2.trim()) return;
+      try {
+        const r = await api('/api/admin/leads', { method: 'POST', json: { contact_name: who2.trim(), phone: c.phone, kind: 'inquiry', details: 'Source: phone call #' + c.id } });
+        const lid = r.id || (r.lead && r.lead.id);
+        await api('/api/admin/calls/' + c.id + '/lead', { method: 'POST', json: { lead_id: lid } });
+        toast('Lead created from this call'); loadCalls();
+      } catch (err) { toast(err.message, true); }
+    };
+    if ($('#ccNewCust')) $('#ccNewCust').onclick = () => openForm({ title: 'Create customer from this call', defs: [
+      { name: 'name', label: 'Contact name' }, { name: 'company', label: 'Company' }, { name: 'email', label: 'Email', type: 'email' }],
+      values: { name: c.contact_name || '' },
+      submit: b => api('/api/admin/calls/' + c.id + '/customer', { method: 'POST', json: { name: b.name, company: b.company, email: b.email } }),
+      after: () => { toast('Customer created and linked to this call'); loadCalls(); } });
   }
   async function logCall(prefill) {
     if (!callState.options) { try { Object.assign(callState, await api('/api/admin/calls')); } catch { /* */ } }

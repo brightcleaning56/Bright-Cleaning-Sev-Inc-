@@ -13,6 +13,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     CREATE TABLE IF NOT EXISTS sms_messages(id INTEGER PRIMARY KEY AUTOINCREMENT, estimate_id INTEGER, customer_id INTEGER, to_number TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, provider_sid TEXT, error TEXT, created_by TEXT, created_at TEXT NOT NULL);
   `);
 
+  try { db.exec('ALTER TABLE sms_messages ADD COLUMN lead_id INTEGER'); } catch { /* already there */ }
   const me = req => String((req.user && req.user.email) || '');
   const isEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || ''));
   const estOf = id => db.prepare('SELECT * FROM estimates WHERE id=?').get(Number(id));
@@ -142,6 +143,30 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     logAction(req, 'sent follow-up now', 'estimate', f.estimate_id, 'follow-up ' + f.id);
     const after = db.prepare('SELECT * FROM proposal_followups WHERE id=?').get(f.id);
     res.json({ ok: after.status === 'Sent', status: after.status, result: after.result });
+  });
+
+  // Text a customer or a lead from anywhere (Call & Message Center, customer and lead records). Every text is logged to the
+  // customer or lead it belongs to.
+  app.post('/api/admin/messages/sms', auth, async (req, res) => {
+    const b = req.body || {};
+    const body = clean(b.body, 600);
+    if (!body || body.length < 2) return res.status(400).json({ error: 'Write the text message first.' });
+    const cust = b.customer_id ? db.prepare('SELECT * FROM customers WHERE id=?').get(Number(b.customer_id)) : null;
+    const lead = b.lead_id ? db.prepare('SELECT * FROM leads WHERE id=?').get(Number(b.lead_id)) : null;
+    if (b.customer_id && !cust) return res.status(404).json({ error: 'That customer was not found.' });
+    if (b.lead_id && !lead) return res.status(404).json({ error: 'That lead was not found.' });
+    const to = normPhone((cust && cust.phone) || (lead && lead.phone) || b.to || '');
+    if (!to) return res.status(400).json({ error: 'No phone number on file. Add one on the customer or lead record first.' });
+    if (!smsReady()) return res.status(400).json({ error: 'Texting is not set up yet. The owner needs to add TWILIO_ACCOUNT_SID and TWILIO_SMS_FROM in Render.' });
+    const now = new Date().toISOString();
+    let status = 'Sent', sid = null, error = null;
+    try { sid = await sendSms(to, body); } catch (err) { status = 'Failed'; error = err.message; }
+    db.prepare('INSERT INTO sms_messages(estimate_id,customer_id,lead_id,to_number,body,status,provider_sid,error,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+      .run(null, cust ? cust.id : null, lead ? lead.id : null, to, body, status, sid, error, me(req), now);
+    if (lead) { try { require('./leadlog').record(db, lead.id, 'text_out', status === 'Sent' ? 'Text sent: ' + body.slice(0, 120) : 'Text not sent: ' + error, me(req), body, now); } catch { /* history is best effort */ } }
+    logAction(req, 'texted ' + (cust ? 'customer' : lead ? 'lead' : 'number'), cust ? 'customer' : lead ? 'lead' : 'call', cust ? cust.id : lead ? lead.id : null, status === 'Sent' ? 'text sent' : 'text failed: ' + error);
+    if (status === 'Failed') return res.status(502).json({ error });
+    res.json({ ok: true, sid });
   });
 
   app.post('/api/admin/estimates/:id/sms', auth, async (req, res) => {

@@ -75,7 +75,7 @@ module.exports = function mountSuite(app, ctx) {
   });
 
   // ---------- Call log ----------
-  const CALL = { direction: ['Inbound', 'Outbound'], outcome: ['Answered', 'Missed', 'Voicemail', 'Callback requested'],
+  const CALL = { direction: ['Inbound', 'Outbound'], outcome: ['Answered', 'Missed', 'Voicemail', 'Transferred', 'Completed', 'Callback requested'],
     purpose: ['New business', 'Bid request', 'Existing customer', 'Complaint', 'Invoice question', 'Pricing question', 'Other'] };
   const callRow = id => db.prepare(`SELECT c.*, cu.company customer_company, cu.name customer_name FROM calls c LEFT JOIN customers cu ON cu.id=c.customer_id WHERE c.id=?`).get(id);
   app.get('/api/admin/calls', auth, (req, res) => {
@@ -114,6 +114,7 @@ module.exports = function mountSuite(app, ctx) {
     if ('summary' in b) set.summary = clean(b.summary, 4000);
     if ('follow_up_date' in b) { if (b.follow_up_date && !isDate(b.follow_up_date)) return res.status(400).json({ error: 'Follow-up date must be a date.' }); set.follow_up_date = b.follow_up_date || null; }
     if ('outcome' in b) set.outcome = pick(b.outcome, CALL.outcome, cur.outcome);
+    if (set.outcome === 'Missed' && !cur.follow_up_done && !('follow_up_date' in set) && !cur.follow_up_date) set.follow_up_date = require('./bizdate').today();
     const cols = Object.keys(set);
     if (cols.length) db.prepare(`UPDATE calls SET ${cols.map(c => c + '=?').join(',')} WHERE id=?`).run(...cols.map(c => set[c]), cur.id);
     if (cur.lead_id && app.locals.touchLead && ('follow_up_date' in b || 'outcome' in b)) app.locals.touchLead(cur.lead_id, set.follow_up_date, cur.summary, who(req));

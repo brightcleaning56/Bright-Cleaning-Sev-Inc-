@@ -6,7 +6,7 @@
 //
 // Accountability rule: opening a lead ('viewed') is recorded but is NOT counted as work. Only the meaningful kinds
 // below count toward "last worked" and "days since contact".
-const MEANINGFUL = ['note', 'email', 'meeting', 'status', 'follow_up', 'call', 'call_attempt', 'conversation', 'voicemail', 'estimate', 'converted'];
+const MEANINGFUL = ['note', 'email', 'meeting', 'status', 'follow_up', 'call', 'call_attempt', 'conversation', 'voicemail', 'text_out', 'estimate', 'converted'];
 const READY = new WeakSet();
 
 function init(db) {

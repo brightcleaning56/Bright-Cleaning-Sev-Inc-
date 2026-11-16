@@ -651,7 +651,12 @@
       <div class="pagehead"><div><h1>Calls</h1><p>Log every call so nothing falls through. Calls about new work can create a lead in one step. Automatic call capture needs a phone provider.</p></div><button class="btn" id="callsAdd">Log call</button></div>
       <div class="kpis small" id="callsKpis"></div><div class="card pipe" id="callsIntel"></div>
       <div class="toolbar"><input type="search" id="callSearch" placeholder="Search calls…" aria-label="Search calls"><label class="chk"><input type="checkbox" id="callFollow"> Follow-ups due</label><label class="chk"><input type="checkbox" id="callVm"> Voicemails</label></div>
-      <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>When</th><th>Caller</th><th>Purpose</th><th>Outcome</th><th>Summary</th><th>Follow-up</th></tr></thead><tbody id="callsRows"></tbody></table></div>
+      <style>.ccwrap{display:grid;grid-template-columns:200px minmax(0,1fr) 340px;gap:14px;align-items:start}.ccq{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:8px 10px;cursor:pointer;color:inherit;font:inherit}.ccq.on,.ccq:hover{background:#eef4fb}.ccq b{font-size:15px}@media (max-width:1100px){.ccwrap{grid-template-columns:1fr}}</style>
+      <div class="ccwrap">
+        <aside class="card" aria-label="Call queues" style="padding:10px"><h3 class="secth" style="margin:4px 6px 8px">Queues</h3><div id="ccQueues"></div></aside>
+        <div style="min-width:0"><div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>When</th><th>Caller</th><th>Outcome</th><th>Summary</th><th>Callback</th></tr></thead><tbody id="callsRows"></tbody></table></div></div>
+        <aside class="card" id="callPanel" aria-label="Caller" style="position:sticky;top:12px"><p class="muted">Select a call to see who called and what is open for them.</p></aside>
+      </div>
     </section>
     <section class="view" id="v-schedule">
       <div class="pagehead"><div><h1>Scheduling &amp; Dispatch Center</h1><p>Schedule crews, manage jobs, dispatch work and keep cleaning operations on track.</p></div>

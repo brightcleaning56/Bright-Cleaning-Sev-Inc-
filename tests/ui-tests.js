@@ -631,7 +631,7 @@ async function check(area, name, fn) {
     await api('POST', '/api/admin/calls', { contact_name: 'Ui Caller', company: 'UI Call Co', phone: '515-555-0333', purpose: 'New business', summary: 'Wants a quote', follow_up_date: '2026-11-10' }, T);
     await nav('calls'); await sleep(1300);
     const strip = txt('#callsIntel');
-    d.querySelector('#callsRows [data-call]').click(); await sleep(1200);
+    d.querySelector('#callsRows [data-call]').click(); await sleep(700); d.querySelector('#ccDetails').click(); await sleep(1200);
     const hasTr = !!$('#callTr'), hasAn = !!$('#callAnalyze'), hasDone = !!$('#callDone');
     d.querySelector('#drawerRoot [data-close]').click(); await sleep(200);
     await nav('scopes'); await sleep(900); const sk = d.querySelectorAll('#scopeKpis .ktile').length;
@@ -645,7 +645,7 @@ async function check(area, name, fn) {
     const cu = (await api('POST', '/api/admin/customers', { company: 'UI Complaint Co', name: 'Uma Plain', email: 'uma@uicomplaint.test' }, T)).id;
     const call = (await api('POST', '/api/admin/calls', { contact_name: 'Uma Plain', phone: '515-555-0911', customer_id: cu, purpose: 'Complaint', summary: 'Restroom supplies not restocked on 2nd floor' }, T)).call;
     await nav('calls'); await sleep(1100);
-    d.querySelector(`#callsRows [data-call="${call.id}"]`).click(); await sleep(1100);
+    d.querySelector(`#callsRows [data-call="${call.id}"]`).click(); await sleep(700); d.querySelector('#ccDetails').click(); await sleep(1100);
     const hasBtn = !!$('#callIssue'); $('#callIssue').click(); await sleep(1600);
     const issueOpen = /Restroom supplies/.test(txt('#drawerRoot'));
     const custUpd = !!$('#iCustUpd'), visitBtn = !!$('#iVisit');
@@ -662,7 +662,7 @@ async function check(area, name, fn) {
     const cu = (await api('POST', '/api/admin/customers', { company: 'Dialable Co', name: 'Dee Able', phone: '515-555-0166' }, T)).id;
     const call = (await api('POST', '/api/admin/calls', { contact_name: 'Dee Able', phone: '515-555-0166', customer_id: cu, purpose: 'Other', summary: 'x' }, T)).call;
     await nav('calls'); await sleep(1000);
-    d.querySelector(`#callsRows [data-call="${call.id}"]`).click(); await sleep(1100);
+    d.querySelector(`#callsRows [data-call="${call.id}"]`).click(); await sleep(700); d.querySelector('#ccDetails').click(); await sleep(1100);
     const inCall = !!d.querySelector('#drawerRoot [data-dial]');
     d.querySelector('#drawerRoot [data-dial]').click(); await sleep(900);
     const msg = [...d.querySelectorAll('.toast')].map(t => t.textContent).join(' ');
@@ -677,7 +677,7 @@ async function check(area, name, fn) {
     const typed = $('#dpNum').value; $('#dpGo').click(); await sleep(500);
     const short = [...d.querySelectorAll('.toast')].map(t => t.textContent).join(' ');
     d.querySelector('#drawerRoot [data-close]') && d.querySelector('#drawerRoot [data-close]').click(); await sleep(300);
-    d.querySelector(`#callsRows [data-call="${call.id}"]`).click(); await sleep(1100);
+    d.querySelector(`#callsRows [data-call="${call.id}"]`).click(); await sleep(700); d.querySelector('#ccDetails').click(); await sleep(1100);
     $('#callSaveCust').click(); await sleep(1100);
     $('#scName').value = 'Uma Unknown'; $('#scGo').click(); await sleep(1500);
     const linked = (await api('GET', `/api/admin/calls/${call.id}/detail`, null, T)).call;

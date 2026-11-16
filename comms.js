@@ -27,10 +27,10 @@ module.exports = function (app, { db, auth }) {
       const ids = [...estIds];
       const fus = db.prepare('SELECT * FROM proposal_followups WHERE estimate_id IN (' + ids.map(() => '?').join(',') + ')').all(...ids);
       for (const f of fus) out.push({ at: f.sent_at || f.due_date + 'T00:00:00Z', channel: 'followup', title: (f.status === 'Sent' ? 'Follow-up sent' : 'Follow-up ' + f.status.toLowerCase()) + ' (' + (f.channel === 'sms' ? 'text' : 'email') + ')', detail: f.status === 'Scheduled' ? 'Due ' + f.due_date : (f.result || ''), actor: f.auto ? 'Automatic' : (f.created_by || ''), ref: 'followup:' + f.id });
-      const sms = db.prepare('SELECT * FROM sms_messages ORDER BY id DESC LIMIT 2000').all().filter(m => estIds.has(m.estimate_id) || (phone && digits(m.to_number) === phone));
+      const sms = db.prepare('SELECT * FROM sms_messages ORDER BY id DESC LIMIT 2000').all().filter(m => estIds.has(m.estimate_id) || (phone && digits(m.to_number) === phone) || (cid && m.customer_id === cid) || (lid && m.lead_id === lid));
       for (const m of sms) out.push({ at: m.created_at, channel: 'sms', title: 'Text ' + (m.status === 'Sent' ? 'sent' : 'failed'), detail: m.body + (m.error ? ' (' + m.error + ')' : ''), actor: m.created_by || '', ref: 'sms:' + m.id });
-    } else if (phone) {
-      const sms = db.prepare('SELECT * FROM sms_messages ORDER BY id DESC LIMIT 2000').all().filter(m => digits(m.to_number) === phone);
+    } else if (phone || cid || lid) {
+      const sms = db.prepare('SELECT * FROM sms_messages ORDER BY id DESC LIMIT 2000').all().filter(m => (phone && digits(m.to_number) === phone) || (cid && m.customer_id === cid) || (lid && m.lead_id === lid));
       for (const m of sms) out.push({ at: m.created_at, channel: 'sms', title: 'Text ' + (m.status === 'Sent' ? 'sent' : 'failed'), detail: m.body + (m.error ? ' (' + m.error + ')' : ''), actor: m.created_by || '', ref: 'sms:' + m.id });
     }
 
