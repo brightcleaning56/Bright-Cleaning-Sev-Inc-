@@ -43,6 +43,11 @@ module.exports = function mountReports2(app, ctx) {
     const checks = [];
     const noCost = projects.filter(p => p.invoiced > 0 && p.cost === 0); if (noCost.length) checks.push(`${noCost.length} invoiced project(s) have no recorded costs, so their profit is not shown: ${noCost.slice(0, 5).map(p => p.name || '#' + p.id).join(', ')}.`);
     const noProj = inv.filter(i => !i.project_id).length; if (noProj) checks.push(`${noProj} invoice(s) in this period are not linked to a project.`);
+    // Reconciliation: say what does not add up, so the report never looks complete when it is not.
+    if (costs > 0 && invoiced === 0) checks.push(`Costs of $${costs.toFixed(2)} are recorded in this period, but no invoice counts as revenue. Revenue may be missing: check drafts and invoices not yet issued.`);
+    const drafts = db.prepare("SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE status='Draft'").get();
+    if (drafts.n) checks.push(`${drafts.n} draft invoice(s) worth $${Number(drafts.v).toFixed(2)} are not counted as revenue until they are issued.`);
+    const unlinked = costRows.filter(c => !c.project_id).length; if (unlinked) checks.push(`${unlinked} cost entr${unlinked === 1 ? 'y is' : 'ies are'} not linked to a project, so project profit may be overstated.`);
     if (has('time_entries')) { const pend = db.prepare("SELECT COUNT(*) n FROM time_entries WHERE approved_by IS NULL AND clock_out IS NOT NULL AND clock_in >= ? AND clock_in < ?").get(...require('./bizdate').window(from, to)).n; if (pend) checks.push(`${pend} time entr${pend === 1 ? 'y is' : 'ies are'} not approved yet, so that labor is not in the costs.`); }
     return { from, to, invoiced, collected, costs, cost_by_category: byCat, gross_profit: r2(invoiced - costs), margin: invoiced > 0 ? Math.round((invoiced - costs) / invoiced * 1000) / 10 : null,
       basis: 'Revenue = invoices issued in the period (not drafts or void). Costs = actual costs recorded on projects in the period plus approved labor not tied to a project. Collected = amount paid on the invoices issued in the period.',
