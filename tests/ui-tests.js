@@ -59,7 +59,7 @@ async function check(area, name, fn) {
     await nav('leads'); d.querySelector('#leadKinds [data-kind="inquiry"]').click(); await sleep(200);
     assert(!w.__xss && txt('#leadRows').includes('<img src=x'), 'xss executed or missing');
     d.querySelector('#leadRows [data-lead]').click(); await sleep(500);
-    assert(!w.__xss && !$('#drawerRoot img'), 'xss in drawer'); d.querySelector('[data-close]').click();
+    assert(!w.__xss && !$('#leadWorkspace img'), 'xss in lead record'); d.querySelector('#lwBack').click();
     return 'payload visible as text in list and detail; no script ran';
   });
   await check('Estimating UI', 'Template fills scope; extra fields present; live total matches the server', async () => {
@@ -453,9 +453,9 @@ async function check(area, name, fn) {
     const row = [...d.querySelectorAll('#leadRows [data-lead]')].find(r => r.dataset.lead === String(lead.id));
     assert(row, 'row not listed: ' + [...d.querySelectorAll('#leadRows [data-lead]')].map(r => r.dataset.lead).join(','));
     row.click(); await sleep(600);
-    const needs = txt('#drawerRoot .needs') || txt('#drawerRoot');
+    const needs = txt('#leadWorkspace .needs') || txt('#leadWorkspace');
     $('#lQuote').click(); await sleep(800);
-    assert(/Needed before pricing/.test(txt('#drawerRoot') + needs) || /site visit|count|Nothing flagged/i.test(needs), needs.slice(0, 200));
+    assert(/Needed before pricing/.test(txt('#leadWorkspace') + needs) || /site visit|count|Nothing flagged/i.test(needs), needs.slice(0, 200));
     const cat = $('#slCat').value;
     assert(cat === 'construction', 'category ' + cat);
     return `drawer lists pre-pricing needs; estimator opened with category "${cat}"`;
@@ -488,8 +488,8 @@ async function check(area, name, fn) {
     $('#gSearch').value = 'UI Towers'; $('#gSearch').dispatchEvent(new w.Event('input')); await sleep(800);
     const hits = d.querySelectorAll('#gResults [data-g]').length;
     const lb = [...d.querySelectorAll('#gResults [data-g]')].find(b => /Bid request|Inquiry/.test(b.textContent)); lb.click(); await sleep(900);
-    assert(hits >= 2 && /UI Towers|UI Caller/.test(txt('#drawerRoot')), `${hits} ${txt('#drawerRoot').slice(0, 80)}`);
-    $('#drawerRoot [data-close]') && $('#drawerRoot [data-close]').click();
+    assert(hits >= 2 && /UI Towers|UI Caller/.test(txt('#leadWorkspace')), `${hits} ${txt('#leadWorkspace').slice(0, 80)}`);
+    $('#lwBack') && $('#lwBack').click();
     return `${hits} results; lead drawer opened`;
   });
   await check('Suite UI', 'Inspection (mockup layout): 6 KPIs, charts, 8 tabs; new inspection from a template; failed item needs a comment; signed with score; details panel shows rooms and actions', async () => {

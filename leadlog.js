@@ -6,7 +6,7 @@
 //
 // Accountability rule: opening a lead ('viewed') is recorded but is NOT counted as work. Only the meaningful kinds
 // below count toward "last worked" and "days since contact".
-const MEANINGFUL = ['note', 'email', 'meeting', 'status', 'follow_up', 'call', 'estimate', 'converted'];
+const MEANINGFUL = ['note', 'email', 'meeting', 'status', 'follow_up', 'call', 'call_attempt', 'conversation', 'voicemail', 'estimate', 'converted'];
 const READY = new WeakSet();
 
 function init(db) {
@@ -34,7 +34,7 @@ function timeline(db, lead, today) {
   const recorded = db.prepare('SELECT id, kind, summary, detail, actor, created_at FROM lead_activity WHERE lead_id=? ORDER BY created_at, id').all(lead.id)
     .map(r => ({ ...r, source: 'history' }));
   const calls = db.prepare("SELECT id, direction, outcome, summary, contact_name, created_at FROM calls WHERE lead_id=?").all(lead.id)
-    .map(c => ({ id: 'call-' + c.id, kind: 'call', summary: `${c.direction || ''} call: ${c.outcome || 'logged'}`.trim(), detail: c.summary || null, actor: 'Call log', created_at: c.created_at, source: 'call' }));
+    .map(c => ({ id: 'call-' + c.id, kind: 'call', summary: `${c.direction || ''} call: ${c.outcome || 'logged'}`.trim(), detail: c.summary || null, actor: 'Call log', created_at: c.created_at, source: 'call', outcome: c.outcome || null }));
   const estimates = db.prepare('SELECT id, version, status, proposal_total, created_at FROM estimates WHERE lead_id=?').all(lead.id)
     .map(e => ({ id: 'estimate-' + e.id, kind: 'estimate', summary: `Estimate #${e.id} (${e.status || 'draft'}) $${Number(e.proposal_total || 0).toFixed(2)}`, detail: null, actor: 'Estimates', created_at: e.created_at, source: 'estimate' }));
   // Emails are matched by address, because the mail log does not record which lead an email was about.
@@ -56,7 +56,30 @@ function timeline(db, lead, today) {
   const days = lastAt ? Math.floor((Date.parse(today + 'T23:59:59Z') - Date.parse(lastAt)) / 86400000) : null;
   const open = !['Won', 'Lost', 'Archived', 'converted'].includes(lead.status) && !lead.customer_id;
   const overdue = !!(open && lead.follow_up_date && lead.follow_up_date < today);
+  // What the team has actually recorded. A call attempt is not a conversation: only a logged conversation, or a call
+  // that was answered, counts as one. Promises and objections are shown only when someone wrote them down.
+  const isConv = e => e.kind === 'conversation' || (e.kind === 'call' && e.outcome === 'Answered');
+  const isAttempt = e => e.kind === 'call_attempt' || e.kind === 'call';
+  const isVm = e => e.kind === 'voicemail' || (e.kind === 'call' && /voicemail/i.test(String(e.outcome || '')));
+  const conversations = entries.filter(isConv);
+  const lastConv = conversations[conversations.length - 1] || null;
+  const attempts = entries.filter(isAttempt).length;
+  let next = null;
+  if (!entries.length) next = 'Make the first contact.';
+  else if (open && overdue) next = 'The follow-up is overdue: contact the lead today.';
+  else if (open && attempts > 0 && !conversations.length) next = 'No conversation yet. Try again at another time, or send a short email.';
+  else if (open && lead.follow_up_date) next = 'Next follow-up on ' + lead.follow_up_date + '.';
+  else if (open) next = 'Set the next follow-up date.';
+  const briefing = {
+    source_entries: entries.length, attempts, conversations: conversations.length, voicemails: entries.filter(isVm).length,
+    emails_sent: entries.filter(e => e.kind === 'email').length,
+    last_conversation: lastConv ? { at: lastConv.created_at, text: lastConv.summary, detail: lastConv.detail || null, by: lastConv.actor } : null,
+    notes: entries.filter(e => e.kind === 'note').slice(-3).map(e => ({ at: e.created_at, text: e.summary, detail: e.detail || null, by: e.actor })),
+    next_action: next,
+    note: 'Built only from the records logged for this lead. Nothing is inferred. Promises and objections appear only if someone wrote them down.'
+  };
   return {
+    briefing,
     lead: {
       id: lead.id, status: lead.status, assigned_to: lead.assigned_to || null,
       follow_up_date: lead.follow_up_date || null, follow_up_overdue: overdue,
@@ -88,9 +111,9 @@ function mount(app, { db, auth, roleOf, touchLead, logAction }) {
     const lead = db.prepare('SELECT * FROM leads WHERE id=?').get(Number(req.params.id));
     if (!lead) return res.status(404).json({ error: 'Lead not found.' });
     const b = req.body || {};
-    const kind = ['note', 'email', 'meeting'].includes(b.kind) ? b.kind : null;
+    const kind = ['note', 'email', 'meeting', 'call_attempt', 'conversation', 'voicemail'].includes(b.kind) ? b.kind : null;
     const summary = String(b.summary || '').trim();
-    if (!kind) return res.status(400).json({ error: 'Choose what this is: a note, an email or a meeting.' });
+    if (!kind) return res.status(400).json({ error: 'Choose what happened: a note, email, meeting, call attempt, voicemail or conversation.' });
     if (summary.length < 3) return res.status(400).json({ error: 'Describe what happened (a few words).' });
     record(db, lead.id, kind, summary.slice(0, 500), who(req), b.detail ? String(b.detail) : null);
     if (b.follow_up_date && /^\d{4}-\d{2}-\d{2}$/.test(b.follow_up_date) && touchLead) touchLead(lead.id, b.follow_up_date, 'Next step: ' + summary.slice(0, 200), who(req));

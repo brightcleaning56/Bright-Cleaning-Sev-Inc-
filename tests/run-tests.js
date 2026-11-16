@@ -1094,6 +1094,23 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(cancel.status === 200 && row && row.status === 'Cancelled', 'cancel should mark it Cancelled');
     return 'follow-up scheduled, listed, cancelled; bad date refused (400); text refused until Twilio is set up (400)';
   });
+  await check('Lead workspace', 'A call attempt is not a conversation; the briefing says so until a conversation is logged', async () => {
+    const made = await req('POST', '/api/admin/leads', { token: T, json: { contact_name: 'Brief Test', kind: 'inquiry', email: 'brief@t.test', phone: '5155550100', details: 'Test lead for the briefing.' } });
+    const id = made.data.id || (made.data.lead && made.data.lead.id);
+    assert(id, 'lead not created: ' + made.status + ' ' + JSON.stringify(made.data));
+    const tried = await req('POST', '/api/admin/leads/' + id + '/activity', { token: T, json: { kind: 'call_attempt', summary: 'Called, no answer' } });
+    assert(tried.status === 200, 'call attempt should save, got ' + tried.status + ' ' + JSON.stringify(tried.data));
+    const b1 = (await req('GET', '/api/admin/leads/' + id + '/activity', { token: T })).data.briefing;
+    assert(b1.attempts === 1 && b1.conversations === 0, 'one attempt, no conversation expected: ' + JSON.stringify(b1));
+    assert(/No conversation yet/.test(b1.next_action || ''), 'next step should say no conversation yet: ' + b1.next_action);
+    const talked = await req('POST', '/api/admin/leads/' + id + '/activity', { token: T, json: { kind: 'conversation', summary: 'Spoke with the customer; wants a walkthrough' } });
+    assert(talked.status === 200, 'conversation should save, got ' + talked.status);
+    const b2 = (await req('GET', '/api/admin/leads/' + id + '/activity', { token: T })).data.briefing;
+    assert(b2.conversations === 1 && b2.last_conversation && /walkthrough/.test(b2.last_conversation.text), 'conversation should be counted and shown: ' + JSON.stringify(b2));
+    const bad = await req('POST', '/api/admin/leads/' + id + '/activity', { token: T, json: { kind: 'invented', summary: 'something' } });
+    assert(bad.status === 400, 'unknown kind should be refused, got ' + bad.status);
+    return 'attempt counted separately from the conversation; briefing updates when a conversation is logged; unknown kinds refused';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

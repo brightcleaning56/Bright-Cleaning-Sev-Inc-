@@ -409,6 +409,7 @@
   function go(view, replace) {
     view = String(view || '').split('/')[0];
     if (view === 'customer') view = 'customers';
+    if (leadWsOpen && view !== 'leads') closeLeadWorkspace();
     if (!VIEWS.includes(view)) view = 'overview';
     if (state.me && Array.isArray(state.me.views) && !state.me.views.includes(view)) view = state.me.home || state.me.views[0];
     state.view = view;
@@ -860,12 +861,39 @@
     } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
   }
   // ---------- Lead history: who worked this lead, what happened, what is next ----------
-  const LEAD_KIND_UI = { note: 'Note', email: 'Email sent', meeting: 'Meeting', status: 'Status change', assigned: 'Assigned', follow_up: 'Follow-up', call: 'Call', estimate: 'Estimate', converted: 'Converted', viewed: 'Opened', received: 'Received' };
+  const LEAD_KIND_UI = { note: 'Note', email: 'Email sent', meeting: 'Meeting', status: 'Status change', assigned: 'Assigned', follow_up: 'Follow-up', call: 'Call', estimate: 'Estimate', converted: 'Converted', viewed: 'Opened', received: 'Received', call_attempt: 'Call attempt', conversation: 'Conversation with the customer', voicemail: 'Voicemail left' };
+  // Briefing and accountability for the lead, built only from logged records (see leadlog.js).
+  function renderLeadBrief(h) {
+    const el = $('#leadBrief'); if (!el || !h || !h.briefing) return;
+    const B = h.briefing, L = h.lead;
+    const tile = (label, value, hint) => `<div style="background:#fff;border:1px solid #e3e8ef;border-radius:8px;padding:8px 10px"><b style="font-size:20px">${value}</b><div>${esc(label)}</div>${hint ? `<small class="muted">${esc(hint)}</small>` : ''}</div>`;
+    const last = L.no_work_yet ? 'None yet' : `${esc(fmtDate(L.last_activity_at))}`;
+    el.innerHTML = `<div class="card" style="margin:12px 0;background:#f7f9fc">
+      <h3 class="secth" style="margin-top:0">Before you follow up</h3>
+      <p class="muted" style="margin:0 0 8px">Built only from the ${B.source_entries} record${B.source_entries === 1 ? '' : 's'} logged for this lead. Nothing is guessed.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">
+        ${tile('Call attempts', B.attempts, 'calls tried, answered or not')}
+        ${tile('Conversations', B.conversations, 'customer actually spoke with us')}
+        ${tile('Voicemails', B.voicemails)}
+        ${tile('Emails sent', B.emails_sent)}
+        ${tile('Last worked', last, L.last_worked_by ? 'by ' + L.last_worked_by : '')}
+        ${tile('Follow-up', L.follow_up_date ? esc(fmtDate(L.follow_up_date)) : 'Not set', L.follow_up_overdue ? 'overdue' : '')}
+      </div>
+      <p style="margin:6px 0"><b>Last conversation:</b> ${B.last_conversation
+        ? `${esc(fmtWhen(B.last_conversation.at))} by ${esc(B.last_conversation.by || '')}. ${esc(B.last_conversation.text)}${B.last_conversation.detail ? '<br><span class="muted" style="white-space:pre-wrap">' + esc(B.last_conversation.detail) + '</span>' : ''}`
+        : '<span class="muted">No conversation recorded yet. Call attempts do not count as conversations.</span>'}</p>
+      ${B.notes.length ? `<p style="margin:6px 0"><b>Logged notes:</b></p><ul class="mini" style="margin:0 0 6px">${B.notes.map(n => `<li>${esc(fmtWhen(n.at))} · ${esc(n.text)}${n.detail ? '<br><span class="muted">' + esc(n.detail) + '</span>' : ''}</li>`).join('')}</ul>` : ''}
+      ${B.next_action ? `<p style="margin:6px 0"><b>Suggested next step:</b> ${esc(B.next_action)}</p>` : ''}
+      <p class="muted" style="margin:6px 0 0;font-size:12px">${esc(B.note)}</p>
+    </div>`;
+  }
+
   async function loadLeadHistory(id) {
     const box = $('#leadHist'); if (!box) return;
     let h;
     try { h = await api('/api/admin/leads/' + id + '/activity'); } catch (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; return; }
     const L = h.lead;
+    renderLeadBrief(h);
     const worked = L.no_work_yet
       ? '<span class="badge amber">No work recorded yet</span>'
       : `<span class="badge ${L.days_since_contact > 7 ? 'red' : 'green'}">Last worked ${esc(fmtWhen(L.last_activity_at))} by ${esc(L.last_worked_by || 'someone')} (${L.days_since_contact} day${L.days_since_contact === 1 ? '' : 's'} ago)</span>`;
@@ -875,7 +903,7 @@
       <p style="margin:4px 0">${worked} <span class="muted">Assigned to: ${esc(L.assigned_to || 'nobody')}</span></p>
       ${overdue}
       <ul class="plain" style="margin:8px 0;max-height:260px;overflow:auto">${h.entries.map(e => `<li style="margin:6px 0"><b>${esc(LEAD_KIND_UI[e.kind] || e.kind)}</b> · ${esc(e.summary)}${e.detail ? `<div class="muted" style="white-space:pre-wrap">${esc(e.detail)}</div>` : ''}<div class="muted">${esc(fmtWhen(e.created_at))} · ${esc(e.actor || '')}</div></li>`).join('') || '<li class="muted">Nothing recorded yet.</li>'}</ul>
-      <div class="f"><label for="lhKind">What did you do?</label><select id="lhKind"><option value="note">Note</option><option value="email">Email sent</option><option value="meeting">Meeting</option></select></div>
+      <div class="f"><label for="lhKind">What did you do?</label><select id="lhKind"><option value="call_attempt">Call attempt, no answer</option><option value="voicemail">Voicemail left</option><option value="conversation">Conversation, spoke with the customer</option><option value="email">Email sent</option><option value="meeting">Meeting</option><option value="note">Note</option></select></div>
       <div class="f"><label for="lhSummary">What happened</label><input id="lhSummary" placeholder="For example: Left a voicemail; sent walkthrough times"></div>
       <div class="f"><label for="lhNext">Next follow-up (optional)</label><input id="lhNext" type="date"></div>
       <button class="btn small" id="lhSave">Save to lead history</button> <span class="muted">Opening a lead does not count as work. Each entry is saved with your name and the time.</span>`;
@@ -887,6 +915,30 @@
     };
   }
 
+  // Full-page lead record. Opening a lead replaces the list with the whole record: details, briefing, history, actions.
+  let leadWsOpen = false;
+  function openLeadWorkspace({ title, sub, body, footer }) {
+    leadWsOpen = true;
+    ['leadKpis', 'leadPipe', 'leadKinds', 'leadCount'].forEach(id => { const el = $('#' + id); if (el) el.hidden = true; });
+    const tb = $('#leadRows') && $('#leadRows').closest('.tablewrap'); if (tb) tb.hidden = true;
+    const tbar = $('#leadSearch') && $('#leadSearch').closest('.toolbar'); if (tbar) tbar.hidden = true;
+    const ws = $('#leadWorkspace'); ws.hidden = false;
+    ws.innerHTML = `<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:0"><button type="button" class="linklike" id="lwBack">← All leads</button><h1 style="margin:6px 0 2px;font-size:22px;overflow-wrap:anywhere">${esc(title)}</h1><p class="muted" style="margin:0">${esc(sub)}</p></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">${footer}</div>
+      <div class="lwbody">${body}</div>`;
+    $('#lwBack').onclick = () => closeLeadWorkspace();
+    window.scrollTo(0, 0);
+  }
+  function closeLeadWorkspace() {
+    if (!leadWsOpen) return;
+    leadWsOpen = false;
+    const ws = $('#leadWorkspace'); if (ws) { ws.hidden = true; ws.innerHTML = ''; }
+    ['leadKpis', 'leadPipe', 'leadKinds', 'leadCount'].forEach(id => { const el = $('#' + id); if (el) el.hidden = false; });
+    const tb = $('#leadRows') && $('#leadRows').closest('.tablewrap'); if (tb) tb.hidden = false;
+    const tbar = $('#leadSearch') && $('#leadSearch').closest('.toolbar'); if (tbar) tbar.hidden = false;
+    loadLeads().catch(() => { /* list refreshes on next visit */ });
+  }
   async function openLead(id) {
     let l;
     try { l = (await api('/api/admin/leads/' + id)).lead; } catch (err) { return toast(err.message, true); }
@@ -903,12 +955,13 @@
     const flagBox = intake && intake.flags && intake.flags.length ? `<div class="formsection">Needed before pricing</div><ul class="needs">${intake.flags.map(f => `<li>${esc(f.text)}</li>`).join('')}</ul>` : (intake ? '<div class="formsection">Needed before pricing</div><p class="muted">Nothing flagged. The answers cover what is needed to price this service.</p>' : '');
     setTimeout(() => { if (l.email) loadConversation('leadConv', [l.email]); }, 0);
     setTimeout(() => loadLeadHistory(l.id), 0);
-    openDrawer({
+    openLeadWorkspace({
       title: l.contact_name || 'Lead #' + l.id,
       sub: `${KIND_LABEL[l.kind] || 'Lead'} #${l.id}${l.company ? ' · ' + l.company : ''}`,
       body: `
         <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
         ${flagBox}
+        <div id="leadBrief"></div>
         <div id="leadHist"></div>
         <div id="leadAI"></div>
         ${l.email ? '<div class="formsection">Conversation</div><div id="leadConv"><p class="muted">Loading…</p></div>' : ''}
@@ -4246,6 +4299,7 @@
     if (first) first.focus();
   }
   function closeDrawer() {
+    if (leadWsOpen) closeLeadWorkspace();
     $('#drawerRoot').innerHTML = '';
     if (lastFocus && document.body.contains(lastFocus)) lastFocus.focus();
   }
