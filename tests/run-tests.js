@@ -1078,6 +1078,22 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(got.data.estimate.contract_id === made.data.contract_id, 'proposal should show its contract');
     return 'draft refused (400); approved creates contract #' + made.data.contract_id + ' with no second approval; repeat refused (409)';
   });
+  await check('Follow-ups', 'A proposal follow-up can be scheduled, listed and cancelled; bad input is refused; texting is refused until Twilio is set up', async () => {
+    const e = await est({});
+    const badDate = await req('POST', '/api/admin/estimates/' + e.id + '/followups', { token: T, json: { due_date: 'soon', channel: 'email', message: 'Checking in on the proposal.' } });
+    const made = await req('POST', '/api/admin/estimates/' + e.id + '/followups', { token: T, json: { due_date: '2099-01-15', channel: 'email', message: 'Checking in on the proposal.' } });
+    const list = await req('GET', '/api/admin/estimates/' + e.id + '/followups', { token: T });
+    const text = await req('POST', '/api/admin/estimates/' + e.id + '/sms', { token: T, json: { body: 'Hi, checking in.' } });
+    const cancel = await req('POST', '/api/admin/estimates/' + e.id + '/followups/' + made.data.id + '/cancel', { token: T, json: {} });
+    const after = await req('GET', '/api/admin/estimates/' + e.id + '/followups', { token: T });
+    const row = (after.data.followups || []).find(f => f.id === made.data.id);
+    assert(badDate.status === 400, 'bad date should be 400, got ' + badDate.status);
+    assert(made.status === 201, 'follow-up should be created, got ' + made.status + ' ' + JSON.stringify(made.data));
+    assert(list.status === 200 && list.data.followups.some(f => f.id === made.data.id && f.status === 'Scheduled'), 'follow-up should be listed as Scheduled');
+    assert(text.status === 400 && /not set up/.test(text.data.error || ''), 'text should be refused until set up, got ' + text.status + ' ' + JSON.stringify(text.data));
+    assert(cancel.status === 200 && row && row.status === 'Cancelled', 'cancel should mark it Cancelled');
+    return 'follow-up scheduled, listed, cancelled; bad date refused (400); text refused until Twilio is set up (400)';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

@@ -692,7 +692,7 @@
     const active = subs.filter(x => x.status === 'Active');
     const mo = new Date().toISOString().slice(0, 7);
     box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><h2 style="margin:0">Monthly subscriptions</h2><small class="muted">${active.length} active · ${money(active.reduce((t, x) => t + Number(x.monthly_amount || 0), 0))} a month. Billing creates one draft invoice per subscription per month. Drafts are reviewed and sent from the list below.</small></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="month" id="subsPeriod" value="${mo}" aria-label="Billing month"><button class="btn ghost" id="subsRun" type="button">Create draft invoices</button><button class="btn" id="subsNew" type="button">New subscription</button></div></div>
-      <table class="t" style="margin-top:10px"><thead><tr><th>Customer</th><th>Plan</th><th>Visits a month</th><th>Per month</th><th>Start</th><th>Status</th><th></th></tr></thead><tbody>${subs.map(x => `<tr><td><b>${esc(x.customer_name)}</b><small>${esc(x.company || '')}</small></td><td>${esc(x.plan_type || x.service || '—')}</td><td>${x.visits_per_month ? esc(x.visits_per_month) : esc(x.frequency)}</td><td>${money(x.monthly_amount)}</td><td>${esc(x.start_date)}</td><td>${badge(x.status)}</td><td>${x.status === 'Active' ? `<button class="btn small ghost" data-subs="${x.id}" data-to="Paused" type="button">Pause</button> <button class="btn small ghost" data-subs="${x.id}" data-to="Cancelled" type="button">Cancel</button>` : x.status === 'Paused' ? `<button class="btn small ghost" data-subs="${x.id}" data-to="Active" type="button">Resume</button>` : ''}</td></tr>`).join('') || '<tr><td class="emptyrow" colspan="7">No subscriptions yet.</td></tr>'}</tbody></table>`;
+      <table class="t" style="margin-top:10px"><thead><tr><th>Customer</th><th>Plan</th><th>Visits a month</th><th>Per month</th><th>Start</th><th>Status</th><th></th></tr></thead><tbody>${subs.map(x => `<tr><td>${custBtn(x, x.customer_name || x.company || '—')}<small>${esc(x.company || '')}</small></td><td>${esc(x.plan_type || x.service || '—')}</td><td>${x.visits_per_month ? esc(x.visits_per_month) : esc(x.frequency)}</td><td>${money(x.monthly_amount)}</td><td>${esc(x.start_date)}</td><td>${badge(x.status)}</td><td>${x.status === 'Active' ? `<button class="btn small ghost" data-subs="${x.id}" data-to="Paused" type="button">Pause</button> <button class="btn small ghost" data-subs="${x.id}" data-to="Cancelled" type="button">Cancel</button>` : x.status === 'Paused' ? `<button class="btn small ghost" data-subs="${x.id}" data-to="Active" type="button">Resume</button>` : ''}</td></tr>`).join('') || '<tr><td class="emptyrow" colspan="7">No subscriptions yet.</td></tr>'}</tbody></table>`;
     box.querySelectorAll('[data-subs]').forEach(b => b.onclick = async () => {
       const to = b.dataset.to; if (!confirm(`${to} this subscription?`)) return;
       try { await api('/api/admin/subscriptions/' + b.dataset.subs, { method: 'PATCH', json: { status: to } }); toast('Updated'); loadSubscriptions(); } catch (e) { toast(e.message, true); }
@@ -1014,7 +1014,7 @@
   };
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-open-cust]'); if (!b) return;
-    e.preventDefault();
+    e.preventDefault(); e.stopPropagation();
     if (!leaveContract()) return; // unsaved contract edits: stay put
     let id = Number(b.dataset.openCust) || null;
     if (!id) {
@@ -1026,7 +1026,7 @@
     if (!id) return toast('No customer record matches yet. Add the customer under Customers first.', true);
     closeDrawer();
     go('customers'); setTimeout(() => openCustomerPage(id), 350);
-  });
+  }, true);
   function openCustomerPage(id) { cp.id = id; cp.tab = 'overview'; sessionStorage.setItem('bc_cust', id); if (state.view !== 'customers') go('customers'); else { renderCustomers(); loadCustomerPage(); } }
   async function loadCustomerPage() {
     if (!cp.id) return;
@@ -1251,7 +1251,7 @@
       const expired = e.expires_on && e.expires_on < todayISO() && !['Approved', 'Declined', 'Withdrawn'].includes(e.status);
       const act = e.status === 'Approved' ? `Accepted<small>${e.signer_name ? 'by ' + esc(e.signer_name) : fmtDate(e.decided_at)}</small>` : e.view_count ? `Viewed (${e.view_count})<small>${fmtDate(e.last_viewed_at || e.viewed_at)}</small>` : e.sent_at ? 'Not opened yet' : '—';
       const warn = e.flags && e.flags.some(f => f.level !== 'info') ? ` <span title="${esc(e.flags.filter(f => f.level !== 'info').map(f => f.text).join('\n'))}" style="color:#c26a00">⚠</span>` : '';
-      return `<tr class="click" data-est="${e.id}"><td><b style="color:#1f6fd1">${esc(pnum(e))}</b><small>v${e.version || 1}${e.bid_type === 'gc_bid' ? ' · GC bid' : ''}</small></td><td><b>${esc(e.company || e.customer_name)}</b><small>${esc(e.project_name || '')}</small></td>
+      return `<tr class="click" data-est="${e.id}"><td><b style="color:#1f6fd1">${esc(pnum(e))}</b><small>v${e.version || 1}${e.bid_type === 'gc_bid' ? ' · GC bid' : ''}</small></td><td>${custBtn(e, e.company || e.customer_name)}<small>${esc(e.project_name || '')}</small></td>
         <td>${e.scope_category ? `<span class="pill t-task">${esc(SVC[e.scope_category] || e.scope_category)}</span>` : '<span class="muted">Not set</span>'}</td><td class="num"><b>${money(e.proposal_total)}</b>${warn}</td>
         <td>${fmtDate(e.created_at)}</td><td>${e.sent_at ? fmtDate(e.sent_at) : '—'}</td><td class="${expired ? 'due-late' : ''}">${e.expires_on ? fmtDate(e.expires_on) : '—'}</td><td>${act}</td>
         <td><span class="pill st-${esc(e.status)}">${esc(e.status === 'Approved' ? 'Accepted' : e.status)}</span>${e.archived_at ? ' <span class="badge">Archived</span>' : ''}</td><td><button class="btn small ghost" data-det="${e.id}" title="Details, versions and history">Details</button> <button class="btn small ghost" data-edit="${e.id}">Edit</button></td></tr>`;
@@ -1312,6 +1312,49 @@
     $('#bWithdraw') && ($('#bWithdraw').onclick = async () => { const reason = prompt('Why are you withdrawing this proposal? (kept on record; the customer link will close)'); if (!reason) return; try { await api(`/api/admin/bids/${e.id}/withdraw`, { method: 'POST', json: { reason } }); toast('Withdrawn'); await loadEstimates(); openBid(e.id); } catch (err) { toast(err.message, true); } });
   }
 
+  // Proposal follow-ups and customer texts. The office sees whether the customer opened the proposal, what follow-ups are
+  // scheduled or sent, and can text the customer from the same place.
+  async function loadEstFollow(id, custName) {
+    const box = $('#estFollow'); if (!box) return;
+    let d; try { d = await api(`/api/admin/estimates/${id}/followups`); } catch (err) { box.innerHTML = `<p class="muted">Could not load follow-ups: ${esc(err.message)}</p>`; return; }
+    const v = d.viewed;
+    const viewedTxt = v.count
+      ? `Reviewed: opened ${v.count} time${v.count === 1 ? '' : 's'}. First ${esc(fmtWhen(v.first))}${v.count > 1 && v.last ? ', last ' + esc(fmtWhen(v.last)) : ''}.`
+      : (d.sent_at ? 'Not opened yet. The customer has not viewed this proposal.' : 'Not sent yet, so there is nothing to review.');
+    const defMsg = `Hello ${custName || ''}, this is Bright Clean checking that our proposal reached you. Have you had a chance to look it over? Reply here or call (515) 303-3024 with any questions, and we will help you decide.`;
+    const rows = d.followups.map(f => `<tr><td>${fmtDate(f.due_date)}</td><td>${f.channel === 'sms' ? 'Text' : 'Email'}${f.auto ? ' <small class="muted">automatic</small>' : ''}</td><td>${badge(f.status)}<small>${esc(f.result || '')}</small></td><td class="num">${f.status === 'Scheduled' ? `<button class="btn small ghost" type="button" data-fcancel="${f.id}">Cancel</button> <button class="btn small ghost" type="button" data-fsend="${f.id}">Send now</button>` : f.status === 'Failed' ? `<button class="btn small ghost" type="button" data-fsend="${f.id}">Try again</button>` : ''}</td></tr>`).join('');
+    const texts = d.texts.map(t => `<li><b>${esc(fmtWhen(t.created_at))}</b> · ${esc(t.status)}${t.error ? ' <span class="err">' + esc(t.error) + '</span>' : ''}<br><small>${esc(t.body)}</small></li>`).join('');
+    const d2 = new Date(todayISO() + 'T12:00:00'); d2.setDate(d2.getDate() + 2);
+    box.innerHTML = `<h3 class="secth" style="margin-top:0">Follow-up &amp; reviews</h3>
+      <p>${viewedTxt}</p>
+      ${d.followups.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Due</th><th>By</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">No follow-ups scheduled. A follow-up is set automatically two days after the proposal is sent.</p>'}
+      <div class="formsection">Schedule a follow-up</div>
+      <div class="grid"><div class="f"><label for="fuDate">Send on</label><input id="fuDate" type="date" value="${localISO(d2)}"></div>
+      <div class="f"><label for="fuChan">By</label><select id="fuChan"><option value="email"${d.email ? '' : ' disabled'}>Email${d.email ? '' : ' (no address on proposal)'}</option><option value="sms"${d.phone ? '' : ' disabled'}>Text${d.phone ? '' : ' (no phone on file)'}</option></select></div>
+      <div class="f wide"><label for="fuMsg">Message</label><textarea id="fuMsg" rows="4">${esc(defMsg)}</textarea></div></div>
+      <button class="btn small" type="button" id="fuAdd">Schedule follow-up</button>
+      <div class="formsection">Text the customer</div>
+      ${d.text_ready
+        ? (d.phone ? `<div class="f wide"><label for="smsBody">Message to ${esc(d.phone)}</label><textarea id="smsBody" rows="2" placeholder="Short, clear message"></textarea></div><button class="btn small" type="button" id="smsSend">Send text</button>` : '<p class="muted">No phone number on file. Add one on the customer record.</p>')
+        : '<p class="muted">Texting is not set up yet. Texting needs Twilio settings added in Render (owner item).</p>'}
+      ${d.texts.length ? `<div class="formsection">Texts sent</div><ul class="mini">${texts}</ul>` : ''}`;
+    const again = () => loadEstFollow(id, custName);
+    $('#fuAdd').onclick = async () => {
+      try { await api(`/api/admin/estimates/${id}/followups`, { method: 'POST', json: { due_date: $('#fuDate').value, channel: $('#fuChan').value, message: $('#fuMsg').value } }); toast('Follow-up scheduled'); again(); }
+      catch (err) { toast(err.message, true); }
+    };
+    box.querySelectorAll('[data-fcancel]').forEach(b => b.onclick = async () => { try { await api(`/api/admin/estimates/${id}/followups/${b.dataset.fcancel}/cancel`, { method: 'POST', json: {} }); toast('Follow-up cancelled'); again(); } catch (err) { toast(err.message, true); } });
+    box.querySelectorAll('[data-fsend]').forEach(b => b.onclick = async () => {
+      if (!confirm('Send this follow-up to the customer now?')) return;
+      try { const r = await api(`/api/admin/estimates/${id}/followups/${b.dataset.fsend}/send`, { method: 'POST', json: {} }); toast(r.ok ? 'Follow-up sent' : 'Not sent: ' + (r.result || 'see the status'), !r.ok); again(); } catch (err) { toast(err.message, true); }
+    });
+    if ($('#smsSend')) $('#smsSend').onclick = async () => {
+      const body = $('#smsBody').value.trim(); if (!body) return toast('Write the text first.', true);
+      if (!confirm('Send this text to the customer now?')) return;
+      try { await api(`/api/admin/estimates/${id}/sms`, { method: 'POST', json: { body } }); toast('Text sent'); again(); } catch (err) { toast(err.message, true); again(); }
+    };
+  }
+
   async function openEstimate(id) {
     let e;
     try { e = (await api('/api/admin/estimates/' + id)).estimate; } catch (err) { return toast(err.message, true); }
@@ -1344,6 +1387,7 @@
         <div class="card" id="estIns" style="margin:10px 0"></div>
         <div class="card" id="estFiles" style="margin:10px 0"><h3 class="secth" style="margin-top:0">Attached files</h3><p class="muted">Loading…</p></div>
         <div id="apprBox"></div>
+        <div class="card" id="estFollow" style="margin:10px 0"></div>
         <div class="grid"><div class="f"><label for="es">Status</label><select id="es"${e.decision_ip ? ' disabled' : ''}>${options(STATUS.estimates.filter(x => x !== 'Approved' || e.status === 'Approved'), e.status)}</select><span class="hint">${e.decision_ip ? 'Locked: the customer made this decision online. Duplicate the proposal to revise it.' : 'Updates automatically when the customer views, approves or declines.'}</span></div></div>
         <div class="formsection">Scope</div><div class="pre">${esc(e.scope)}</div>
         ${items.length ? `<div class="formsection">Line items</div><table class="t"><tbody>${items.map(i => `<tr><td>${esc(i.description)}</td><td class="num">${money(i.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
@@ -1374,6 +1418,7 @@
     };
     loadEstFiles();
     loadEstIns(e.id);
+    loadEstFollow(e.id, e.customer_name);
     bindOpeners($('#drawerRoot'));
     api(`/api/admin/estimates/${e.id}/approval`).then(ap => {
       const box = $('#apprBox'); if (!box) return;
@@ -1748,7 +1793,7 @@
         ['scope', 'Scope / agreement summary', 'textarea', { wide: true }], ['notes', 'Notes (PO numbers, insurance, contacts)', 'textarea', { wide: true }]
       ],
       search: r => [r.title, r.customer_name, r.company, r.scope, r.notes],
-      row: r => `<td><b>${esc(r.title || 'Contract #' + r.id)}</b>${r.estimate_id ? `<small>From proposal #${esc(r.estimate_id)}</small>` : ''}</td><td>${esc(r.company || r.customer_name || '—')}${r.company && r.customer_name ? `<small>${esc(r.customer_name)}</small>` : ''}</td><td>${r.start_date || r.end_date ? `${fmtDate(r.start_date)}<small>to ${fmtDate(r.end_date)}</small>` : '<small>No dates set</small>'}</td><td class="num">${money(r.value)}</td><td>${badge(r.signature_status)}</td><td>${badge(r.status)}${r.archived_at ? ' <span class="badge">Archived</span>' : ''}</td>`,
+      row: r => `<td><b>${esc(r.title || 'Contract #' + r.id)}</b>${r.estimate_id ? `<small>From proposal #${esc(r.estimate_id)}</small>` : ''}</td><td>${custBtn(r, r.company || r.customer_name || '—')}${r.company && r.customer_name ? `<small>${esc(r.customer_name)}</small>` : ''}</td><td>${r.start_date || r.end_date ? `${fmtDate(r.start_date)}<small>to ${fmtDate(r.end_date)}</small>` : '<small>No dates set</small>'}</td><td class="num">${money(r.value)}</td><td>${badge(r.signature_status)}</td><td>${badge(r.status)}${r.archived_at ? ' <span class="badge">Archived</span>' : ''}</td>`,
       cols: 6
     },
     projects: {
@@ -1765,7 +1810,7 @@
       search: r => [r.name, r.customer_name, r.company, r.site_address, r.manager, r.notes],
       row: r => {
         const late = r.due_date && r.due_date < todayISO() && !['Completed', 'On Hold'].includes(r.status);
-        return `<td><b>${esc(r.name || 'Project #' + r.id)}</b><small>${esc(r.site_address || '')}</small></td><td>${esc(r.company || r.customer_name || '—')}</td><td>${esc(r.manager || '—')}</td><td>${fmtDate(r.start_date)}<small>Due ${fmtDate(r.due_date)}${late ? ' · <span class="badge red">Past due</span>' : ''}</small></td><td>${Number(r.progress || 0)}%<div class="bar"><i style="width:${Math.min(100, Number(r.progress || 0))}%"></i></div></td><td>${badge(r.status)}</td>`;
+        return `<td><b>${esc(r.name || 'Project #' + r.id)}</b><small>${esc(r.site_address || '')}</small></td><td>${custBtn(r, r.company || r.customer_name || '—')}</td><td>${esc(r.manager || '—')}</td><td>${fmtDate(r.start_date)}<small>Due ${fmtDate(r.due_date)}${late ? ' · <span class="badge red">Past due</span>' : ''}</small></td><td>${Number(r.progress || 0)}%<div class="bar"><i style="width:${Math.min(100, Number(r.progress || 0))}%"></i></div></td><td>${badge(r.status)}</td>`;
       },
       cols: 6
     },
@@ -1784,7 +1829,7 @@
       search: r => [r.invoice_number, r.customer_name, r.company, r.notes],
       row: r => {
         const bal = Math.max(0, Number(r.amount || 0) - Number(r.paid_amount || 0));
-        return `<td><b>${esc(r.invoice_number)}</b>${r.project_id ? `<small>Project #${esc(r.project_id)}</small>` : ''}</td><td>${esc(r.company || r.customer_name || '—')}</td><td>${fmtDate(r.due_date)}</td><td class="num">${money(r.amount)}</td><td class="num">${bal ? `<b>${money(bal)}</b>` : money(0)}</td><td>${badge(invoiceState(r))}</td><td><div class="rowactions">${bal && !['Void', 'Draft'].includes(r.status) ? `<button class="btn small ghost" data-pay="${r.id}">Record payment</button>` : ''}</div></td>`;
+        return `<td><b>${esc(r.invoice_number)}</b>${r.project_id ? `<small>Project #${esc(r.project_id)}</small>` : ''}</td><td>${custBtn(r, r.company || r.customer_name || '—')}</td><td>${fmtDate(r.due_date)}</td><td class="num">${money(r.amount)}</td><td class="num">${bal ? `<b>${money(bal)}</b>` : money(0)}</td><td>${badge(invoiceState(r))}</td><td><div class="rowactions">${bal && !['Void', 'Draft'].includes(r.status) ? `<button class="btn small ghost" data-pay="${r.id}">Record payment</button>` : ''}</div></td>`;
       },
       cols: 7
     }
@@ -2713,7 +2758,7 @@
   function renderCalls() {
     const q = $('#callSearch').value.trim().toLowerCase(), due = $('#callFollow').checked, vm = !!($('#callVm') && $('#callVm').checked), t = todayISO();
     const rows = callState.calls.filter(c => (!q || [c.contact_name, c.company, c.phone, c.summary, c.customer_company].join(' ').toLowerCase().includes(q)) && (!due || (!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t)) && (!vm || c.outcome === 'Voicemail'));
-    $('#callsRows').innerHTML = rows.length ? rows.map(c => `<tr class="click" data-call="${c.id}"><td>${esc(fmtWhen(c.created_at))}<small>${esc(c.direction)}</small></td><td><b>${esc(c.company || c.customer_company || c.contact_name || '—')}</b> <span class="pill" style="font-size:11px" title="How this call was handled">${esc(handlingOf(c))}</span><small>${esc([c.contact_name, c.phone].filter(Boolean).join(' · '))}</small></td><td>${badge(c.purpose)}</td><td>${c.outcome === 'Answered' ? esc(c.outcome) : `<span class="badge amber">${esc(c.outcome)}</span>`}</td><td>${esc((c.summary || '').slice(0, 90))}</td><td class="${!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t ? 'late' : ''}">${c.follow_up_date ? (c.follow_up_done ? 'Done' : fmtDate(c.follow_up_date)) : '—'}</td></tr>`).join('')
+    $('#callsRows').innerHTML = rows.length ? rows.map(c => `<tr class="click" data-call="${c.id}"><td>${esc(fmtWhen(c.created_at))}<small>${esc(c.direction)}</small></td><td>${custBtn(c, c.company || c.customer_company || c.contact_name || '—')} <span class="pill" style="font-size:11px" title="How this call was handled">${esc(handlingOf(c))}</span><small>${esc([c.contact_name, c.phone].filter(Boolean).join(' · '))}</small></td><td>${badge(c.purpose)}</td><td>${c.outcome === 'Answered' ? esc(c.outcome) : `<span class="badge amber">${esc(c.outcome)}</span>`}</td><td>${esc((c.summary || '').slice(0, 90))}</td><td class="${!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t ? 'late' : ''}">${c.follow_up_date ? (c.follow_up_done ? 'Done' : fmtDate(c.follow_up_date)) : '—'}</td></tr>`).join('')
       : `<tr><td class="emptyrow" colspan="6">No calls logged${q || due || vm ? ' match' : ' yet'}.</td></tr>`;
     $$('[data-call]').forEach(r => r.onclick = () => openCall(callState.calls.find(c => c.id === Number(r.dataset.call))));
   }
@@ -2760,7 +2805,7 @@
         ${a.follow_up_date ? `<p>Suggested follow-up: <b>${esc(a.follow_up_date)}</b> <button class="btn small ghost" id="callUseFu" type="button">Set as follow-up</button></p>` : ''}
         ${a.reply_draft ? `<p><b>Reply draft</b> <button class="btn small ghost" id="callCopy" type="button">Copy</button></p><div class="pre" style="white-space:pre-wrap;background:#f6f9fc;border-radius:8px;padding:10px">${esc(a.reply_draft)}</div>` : ''}</div>` : '';
     openDrawer({ title: c.company || c.customer_company || c.contact_name || c.phone || 'Call', sub: `${esc(c.direction)} · ${fmtWhen(c.created_at)}${c.source === 'Twilio' ? ' · captured automatically' : c.created_by ? ' · logged by ' + esc(c.created_by) : ''}`,
-      body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd><dt>Handled by</dt><dd>${esc(handlingOf(c))}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a> <button type="button" class="btn small ghost" data-dial="${esc(c.phone)}" data-cust="${c.customer_id || ''}" data-name="${esc(c.company || c.contact_name || '')}">📞 Call back</button>` : '—'}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || 'Not linked')}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}${c.duration_s ? ` · ${Math.round(c.duration_s / 60 * 10) / 10} min` : ''}</dd>
+      body: `<dl class="facts"><dt>Caller</dt><dd>${esc(c.contact_name || '—')}</dd>${c.customer_id || c.company || c.customer_company ? `<dt>Customer</dt><dd>${custBtn(c, c.company || c.customer_company || 'Open profile')}</dd>` : ''}<dt>Handled by</dt><dd>${esc(handlingOf(c))}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a> <button type="button" class="btn small ghost" data-dial="${esc(c.phone)}" data-cust="${c.customer_id || ''}" data-name="${esc(c.company || c.contact_name || '')}">📞 Call back</button>` : '—'}</dd><dt>Customer</dt><dd>${esc(c.customer_company || c.customer_name || 'Not linked')}</dd><dt>Purpose</dt><dd>${esc(c.purpose)}</dd><dt>Outcome</dt><dd>${esc(c.outcome)}${c.duration_s ? ` · ${Math.round(c.duration_s / 60 * 10) / 10} min` : ''}</dd>
         <dt>Follow-up</dt><dd>${c.follow_up_date ? esc(c.follow_up_date) + (c.follow_up_done ? ' (done)' : '') : '—'}</dd>${c.issue_id ? `<dt>Issue</dt><dd>Issue #${c.issue_id} created from this call</dd>` : ''}${c.lead_id ? `<dt>Lead</dt><dd><button class="linklike" id="callLead">Open lead #${c.lead_id}</button></dd>` : ''}${c.recording_url ? `<dt>${c.outcome === 'Voicemail' ? 'Voicemail' : 'Recording'}</dt><dd id="recBox"><button type="button" class="btn small" id="recPlay">▶ Play ${c.outcome === 'Voicemail' ? 'voicemail' : 'recording'}</button></dd>` : ''}</dl>
         ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}${aiHtml}
         <label for="callTr"><b>Transcript or detailed notes</b></label><textarea id="callTr" rows="6" style="width:100%" placeholder="Paste the call transcript or write what was said…">${esc(c.transcript || '')}</textarea>
@@ -3700,7 +3745,7 @@
     const rows = all.slice((issState.page - 1) * per, issState.page * per);
     $('#issRows').innerHTML = rows.length ? rows.map(i => { const [icn, tone] = ITYPE[i.type] || ITYPE.task; return `<tr class="click" data-issue="${i.id}">
       <td><div class="itm"><span class="chip ${tone}">${ic(icn)}</span><span><b>${esc(i.title)}</b><small>${esc(i.number)}${i.escalated ? ' · <span style="color:#d1382f">escalated</span>' : ''}</small></span></div></td>
-      <td><b>${esc(i.customer_company || i.customer_name || '—')}</b><small>${esc(i.contact_name || '')}</small></td>
+      <td>${custBtn({ customer_id: i.customer_id, company: i.customer_company, customer_name: i.customer_name }, i.customer_company || i.customer_name || '—')}<small>${esc(i.contact_name || '')}</small></td>
       <td>${esc(i.property_name || i.property || '—')}<small>${esc(i.project_name || i.work_order || '')}</small></td>
       <td><span class="pill t-${i.type}">${esc((ITYPE[i.type] || [])[2] || o.types[i.type])}</span></td><td>${esc(i.category || '—')}</td>
       <td><span class="pill p-${i.priority}">${esc(i.priority)}</span></td>
