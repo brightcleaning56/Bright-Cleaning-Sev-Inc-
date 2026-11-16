@@ -88,7 +88,7 @@
         <div class="muted" style="margin-top:6px">Crew: ${esc(j.crew.join(', '))}</div>
         ${j.checklist.length ? `<div class="sec">Checklist</div><ul class="check">${j.checklist.map((c, i) => `<li><input type="checkbox" data-ck="${i}" ${checked(i) ? 'checked' : ''} ${done ? 'disabled' : ''} aria-label="${esc(c.text || c.title || '')}"><span>${esc(c.text || c.title || '')}</span></li>`).join('')}</ul>` : ''}
         ${done ? '' : `<div class="row">${inHere ? '<button class="ghost" data-a="checkout">Check out</button>' : '<button class="primary" data-a="checkin">Check in</button>'}<button class="ok" data-a="complete">Mark job complete</button></div>
-        <div class="row"><label class="btn ghost">Before photos<input type="file" accept="image/*" capture="environment" multiple hidden data-ph="Before"></label><label class="btn ghost">After photos<input type="file" accept="image/*" capture="environment" multiple hidden data-ph="After"></label></div>
+        <div class="row"><style>.ph-up:focus-within{outline:3px solid #1f6fb2;outline-offset:2px}</style><label class="btn ghost ph-up">Before photos<input type="file" accept="image/*" capture="environment" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label><label class="btn ghost ph-up">After photos<input type="file" accept="image/*" capture="environment" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label></div>
         <div class="row"><button class="danger" data-a="incident">Report an incident</button></div>`}</div>`;
     }).join('');
     wire();
