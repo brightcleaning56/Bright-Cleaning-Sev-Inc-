@@ -116,6 +116,8 @@ module.exports = function mountAdminExt(app, ctx) {
       if (table === 'contracts' && (r.signature_status === 'Signed' || ['Active', 'Completed'].includes(r.status))) return res.status(409).json({ error: 'A signed or active contract cannot be deleted. Close or archive it instead so its history is kept.' });
       if (table === 'invoices' && (Number(r.paid_amount) > 0 || ['Sent', 'Paid', 'Partially Paid', 'Overdue'].includes(r.status) || r.sent_at)) return res.status(409).json({ error: 'An invoice that was sent or has payments cannot be deleted. Void it instead.' });
       if (table === 'projects' && db.prepare('SELECT COUNT(*) n FROM invoices WHERE project_id=?').get(r.id).n) return res.status(409).json({ error: 'This project has invoices. Archive it instead of deleting.' });
+      if (table === 'contracts' && db.prepare('SELECT COUNT(*) n FROM projects WHERE contract_id=?').get(r.id).n) return res.status(409).json({ error: 'A project is linked to this contract. Archive the contract or the project instead of deleting it.' });
+      if (table === 'projects') { const kids = ['project_tasks', 'project_costs', 'project_updates', 'project_milestones', 'visits', 'inspections', 'complaints'].filter(t => { try { return db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE project_id=?`).get(r.id).n > 0; } catch { return false; } }); if (kids.length) return res.status(409).json({ error: 'This project still has ' + kids.map(t => t.replace(/_/g, ' ')).join(', ') + '. Archive it instead of deleting so its history is kept.' }); }
       const x = db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id(req));
       if (!x.changes) return res.status(404).json({ error: 'Not found' });
       logAction(req, 'deleted', table.slice(0, -1), id(req));
@@ -125,10 +127,12 @@ module.exports = function mountAdminExt(app, ctx) {
 
   // Extra editable fields that the original register routes don't cover.
   app.patch('/api/admin/extra/:table/:id', auth, (req, res) => {
-    const allowed = { contracts: ['notes'], invoices: ['notes', 'issue_date'] }[req.params.table];
+    const EXTRA_FIELDS = { contracts: ['notes'], invoices: ['notes', 'issue_date'] };
+    const allowed = Object.prototype.hasOwnProperty.call(EXTRA_FIELDS, req.params.table) ? EXTRA_FIELDS[req.params.table] : null;
     if (!allowed) return res.status(404).json({ error: 'Not found' });
     const keys = allowed.filter(k => Object.prototype.hasOwnProperty.call(req.body || {}, k));
     if (!keys.length) return res.json({ ok: true });
+    if (req.params.table === 'invoices' && keys.includes('issue_date')) { const cur = db.prepare('SELECT * FROM invoices WHERE id=?').get(id(req)); if (cur && String(req.body.issue_date || '').slice(0, 10) !== require('./bizdate').invoiceDay(cur) && (cur.sent_at || cur.status !== 'Draft')) return res.status(409).json({ error: 'The issue date is locked once an invoice is sent, because it sets the business day its revenue is reported in. Void it and issue a new invoice instead.' }); }
     db.prepare(`UPDATE ${req.params.table} SET ${keys.map(k => k + '=?').join(',')} WHERE id=?`).run(...keys.map(k => clean(req.body[k], 10000)), id(req));
     res.json({ ok: true });
   });

@@ -2251,15 +2251,6 @@
         } catch (e) { failNote($('#bizMsg'), e.message); }
       };
     }
-    const ai = $('#aiModeForm');
-    if (ai) {
-      watchForm(ai, $('#aiModeMsg'));
-      ai.onsubmit = async ev => {
-        ev.preventDefault(); $('#aiModeMsg').textContent = 'Saving…';
-        try { await api('/api/admin/phone/settings', { method: 'PUT', json: { ai_mode: $('#aiMode').value } }); savedNote($('#aiModeMsg'), 'Receptionist saved.'); loadSettingsOverview(); }
-        catch (e) { failNote($('#aiModeMsg'), e.message); }
-      };
-    }
     const so = $('#secSignOutAll');
     if (so) so.onclick = async () => {
       if (!confirm('Sign out every other device and browser using your account? This device stays signed in.')) return;

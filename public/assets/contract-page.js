@@ -5,7 +5,9 @@
   const say = (t, ok) => { $('#msg').innerHTML = t ? `<div class="msg ${ok ? 'ok' : 'err'}">${esc(t)}</div>` : ''; if (t) scrollTo(0, 0); };
   const post = async (u, j) => { const r = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(j) }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Something went wrong'); return d; };
   async function load() {
-    const r = await fetch('/api/contract/' + token); const d = await r.json().catch(() => ({}));
+    let r, d;
+    try { r = await fetch('/api/contract/' + token); d = await r.json().catch(() => ({})); }
+    catch (e) { $('#app').innerHTML = '<div class="card"><h1>Could not load this contract</h1><p>Check your connection and try again. If it keeps happening, email info@brightclean.net.</p></div>'; return; }
     if (!r.ok) { $('#app').innerHTML = `<div class="card"><h1>Contract unavailable</h1><p>${esc(d.error || 'This link is not valid.')}</p></div>`; return; }
     const k = d.contract, open = ['Sent', 'Viewed'].includes(k.signature_status);
     $('#app').innerHTML = `<div class="card"><h1>${esc(k.title || 'Services contract')}</h1><div class="muted">${esc(k.kind || 'Contract')} ${esc(k.number)} · ${esc(k.company || k.customer_name || '')}</div>

@@ -1052,6 +1052,26 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   await req('PUT', '/api/admin/approval-rules', { token: T, json: { min_margin_pct: 15, max_total: 25000, flag_pre_pricing: true, approve_all: false } });
   const est = async extra => (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Approval Test', email: 'appr@t.test', scope: 'Final clean', area_sqft: 20000, production_rate: 400, labor_rate: 30, tax_pct: 0, overhead_pct: 0, ...extra } })).data.estimate;
   let lowId;
+  await check('Audit fixes', 'A sent invoice keeps its issue date: saving the same date is fine, changing it is refused', async () => {
+    const c = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'AUD-' + Date.now(), customer_name: 'Lock Test', email: 'lock@test.invalid', amount: 500, paid_amount: 0, status: 'Sent', due_date: '2026-12-31' } });
+    assert(c.status === 201 || c.status === 200, 'create failed ' + c.status + ' ' + JSON.stringify(c.data));
+    const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(x => x.id === c.data.id);
+    const day = require('../bizdate').invoiceDay(inv);
+    const same = await req('PATCH', '/api/admin/extra/invoices/' + c.data.id, { token: T, json: { notes: 'checked', issue_date: day } });
+    const moved = await req('PATCH', '/api/admin/extra/invoices/' + c.data.id, { token: T, json: { issue_date: '2026-01-01' } });
+    assert(same.status === 200, 'same date should save, got ' + same.status);
+    assert(moved.status === 409, 'moving the date of a sent invoice should be refused, got ' + moved.status);
+    return 'same date saved; a changed date on a sent invoice is refused (409)';
+  });
+  await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
+    const e = await est({});
+    const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
+    const mark = await req('PATCH', '/api/admin/estimates/' + e.id, { token: T, json: { status: 'Sent' } });
+    const bogus = await req('PATCH', '/api/admin/extra/constructor/1', { token: T, json: { notes: 'x' } });
+    assert(put.status === 200 && mark.status === 409 && mark.data.insurance === true, JSON.stringify({ put: put.status, mark: mark.status, data: mark.data }));
+    assert(bogus.status === 404, 'unknown table should be 404, got ' + bogus.status);
+    return 'insurance required: marking Sent by hand is refused (409) like Send; unknown extra table answers 404';
+  });
   await check('Approvals', 'Low-margin proposal is held: cannot email, mark Sent, or be opened/approved by the customer', async () => {
     const e = await est({ margin_pct: 5 }); lowId = e.id;
     const ap = (await req('GET', `/api/admin/estimates/${e.id}/approval`, { token: T })).data;

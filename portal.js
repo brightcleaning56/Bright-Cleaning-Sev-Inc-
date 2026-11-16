@@ -2,11 +2,13 @@
 // proposals, contracts, invoices and project status. Read-only. Signing and payment use the existing secure links.
 // Nothing reveals whether an email is on file: the sign-in request always answers the same way.
 const crypto = require('crypto');
+// Used only when JWT_SECRET is missing: a random per-process key, so tokens can never be forged from a public default.
+const PORTAL_FALLBACK_SECRET = crypto.randomBytes(32).toString('hex');
 const fs = require('fs'), path = require('path');
 module.exports = function mountPortal(app, ctx) {
   const { db, getMailer, auth, syncLead, ops, afterDecision, upload, uploadDir } = ctx;
   // One proposal as the customer sees it in the portal. Only this customer's own proposal, never internal notes.
-  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const todayStr = () => require('./bizdate').today();
   const numberOf = p => 'P-' + (String(p.created_at || '').slice(0, 4) || '2026') + '-' + String(1000 + p.id);
   function portalProposal(p) {
     let items = []; try { items = JSON.parse(p.line_items || '[]'); } catch { items = []; }
@@ -23,7 +25,7 @@ module.exports = function mountPortal(app, ctx) {
     };
   }
   db.exec(`CREATE TABLE IF NOT EXISTS portal_logins(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, token_hash TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL)`);
-  const SECRET = () => (process.env.JWT_SECRET || 'dev-portal') + ':client-portal';
+  const SECRET = () => (process.env.JWT_SECRET || PORTAL_FALLBACK_SECRET) + ':client-portal';
   const now = () => new Date().toISOString();
   const norm = e => String(e || '').trim().toLowerCase().slice(0, 254);
   const isEmail = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
@@ -55,12 +57,12 @@ module.exports = function mountPortal(app, ctx) {
     if (!onFile) return done();
     const token = crypto.randomBytes(24).toString('base64url');
     db.prepare('INSERT INTO portal_logins(email,token_hash,expires_at,created_at) VALUES(?,?,?,?)').run(email, sha(token), new Date(Date.now() + 30 * 60000).toISOString(), now());
+    done(); // answer the same way whether or not the email is on file; the send happens after the reply
     const m = getMailer && getMailer();
     if (m) {
       try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: email, subject: 'Your Bright Clean client portal sign-in link', text: `Use this link to open your Bright Clean client portal. It expires in 30 minutes and works once.\n\n${base()}/portal.html#${token}\n\nIf you did not ask for this, you can ignore this email.\n\nBright Cleaning Sev Inc.` }); }
       catch (e) { console.error('portal link not sent', e.message); try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','sign-in link not delivered','portal',0,?,?)").run((email + ' — ' + e.message).slice(0, 300), now()); } catch { /* */ } }
     }
-    done();
   });
 
   // Step 2: the link becomes a session (valid 8 hours), used once.

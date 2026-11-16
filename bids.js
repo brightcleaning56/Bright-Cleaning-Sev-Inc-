@@ -180,7 +180,7 @@ module.exports = function mountBids(app, ctx) {
   });
   app.get('/api/proposal/:token/pdf', (req, res) => {
     const e = db.prepare('SELECT * FROM estimates WHERE public_token=?').get(clean(req.params.token, 100));
-    if (!e || ['Draft', 'Ready'].includes(e.status)) return res.status(404).send('Not found');
+    if (!e || ['Draft', 'Ready', 'Withdrawn', 'Superseded'].includes(e.status)) return res.status(404).send('Not found');
     res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', `inline; filename="${number(e)}.pdf"`);
     res.send(proposalPdf(e));
   });

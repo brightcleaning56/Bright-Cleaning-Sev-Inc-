@@ -2,6 +2,8 @@
 // A customer pays only their own invoice. The invoice is marked paid only when Stripe confirms the payment through a
 // signed webhook, and each Stripe payment is recorded once.
 const crypto = require('crypto');
+// Used only when JWT_SECRET is missing: a random per-process key, so tokens can never be forged from a public default.
+const PORTAL_FALLBACK_SECRET = crypto.randomBytes(32).toString('hex');
 module.exports = function mountPayments(app, ctx) {
   const { db, logAction } = ctx;
   // Same definition as command.js, so this module also works on its own (the card-payment ledger rows go here).
@@ -11,7 +13,7 @@ module.exports = function mountPayments(app, ctx) {
   db.exec(`CREATE TABLE IF NOT EXISTS online_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, stripe_session_id TEXT UNIQUE NOT NULL, amount REAL NOT NULL, email TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, paid_at TEXT)`);
   db.exec(`CREATE TABLE IF NOT EXISTS portal_profiles(email TEXT PRIMARY KEY, name TEXT, company TEXT, phone TEXT, notify TEXT, valid_after TEXT, updated_at TEXT)`);
   const now = () => new Date().toISOString();
-  const SECRET = () => process.env.JWT_SECRET ? process.env.JWT_SECRET + ':client-portal' : 'dev-portal:client-portal';
+  const SECRET = () => (process.env.JWT_SECRET || PORTAL_FALLBACK_SECRET) + ':client-portal';
   const unsign = tok => {
     const [body, sig] = String(tok || '').split('.'); if (!body || !sig) return null;
     const good = crypto.createHmac('sha256', SECRET()).update(body).digest('base64url');
@@ -82,7 +84,7 @@ module.exports = function mountPayments(app, ctx) {
       const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(invId);
       if (!inv) return 'no-invoice';
       const balanceNow = money2(Number(inv.amount || 0) - Number(inv.paid_amount || 0));
-      if (amount > balanceNow + 0.005) {
+      if (amount > balanceNow + 0.005 || ['Void', 'Draft'].includes(inv.status)) {
         // Two payment pages were paid, or the invoice was paid another way first. Do not apply it; the owner refunds the extra.
         if (prev) db.prepare("UPDATE online_payments SET status='Needs refund', paid_at=? WHERE stripe_session_id=?").run(now(), s.id);
         else db.prepare("INSERT INTO online_payments(invoice_id,stripe_session_id,amount,email,status,created_at,paid_at) VALUES(?,?,?,?,?,?,?)").run(inv.id, s.id, amount, s.customer_email || inv.email || '', 'Needs refund', now(), now());

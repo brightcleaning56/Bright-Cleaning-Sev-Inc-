@@ -750,7 +750,7 @@
         <aside class="propside">
           <div class="card"><h2 style="display:flex;gap:8px;align-items:center;font-size:17px">AI Estimating Assistant <span class="badge" id="propAiState">…</span></h2>
             <p class="muted">Describe the project: square footage or unit counts and the cleaning needed. The AI only uses your approved price book and never guesses quantities.</p>
-            <textarea id="propAiDesc" rows="5" placeholder="e.g. Final construction clean for a 24,000 sq ft two-story office, rough + final + touch-up, needs to be done by Dec 1." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #ccd5df;border-radius:10px;font:inherit"></textarea>
+            <textarea id="propAiDesc" aria-label="Describe the project for the AI estimate" rows="5" placeholder="e.g. Final construction clean for a 24,000 sq ft two-story office, rough + final + touch-up, needs to be done by Dec 1." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #ccd5df;border-radius:10px;font:inherit"></textarea>
             <input id="propAiCo" placeholder="Customer company (optional)" style="width:100%;box-sizing:border-box;margin-top:8px;padding:10px 12px;border:1px solid #ccd5df;border-radius:10px;font:inherit">
             <button class="btn" id="propAiGo" type="button" style="width:100%;margin-top:10px">Generate estimate with AI</button><div id="propAiOut" class="aiout"></div></div>
           <div class="card"><h2 style="font-size:17px">Proposal workflow</h2><ol class="wflow" id="propFlow"></ol><p class="muted" id="propFlowFor">Select a proposal to see where it is.</p></div>

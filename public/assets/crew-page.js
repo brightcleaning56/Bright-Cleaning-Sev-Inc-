@@ -38,13 +38,15 @@
 
   // Sends queued changes in the order they were made. A change the server refuses is dropped and the reason is shown.
   async function flush() {
-    if (flushing) return; flushing = true;
+    let lastRefusal = '';
+    if (flushing) return lastRefusal; flushing = true;
     try {
       while (queue().length) {
         const item = queue()[0];
         try { await post(item.url, item.body); }
         catch (e) {
           if (isOffline(e)) break; // still no signal: keep the queue and try again later
+          lastRefusal = e.message;
           say(`Could not send one change: ${e.message}`);
         }
         store.set(KEY_Q, queue().slice(1));
@@ -52,6 +54,7 @@
     } finally { flushing = false; }
     if (!queue().length) store.set(KEY_OV, {});
     banner();
+    return lastRefusal;
   }
 
   function queueChange(visitId, action, body) {
@@ -108,9 +111,10 @@
           b.disabled = false; return;
         }
         queueChange(id, a, {});
-        await flush();
+        const refusal = await flush();
         const done = { checkin: 'Checked in.', checkout: 'Checked out.', complete: 'Job marked complete. Thank you!' }[a];
         const saved = { checkin: 'Check-in', checkout: 'Check-out', complete: 'Job completion' }[a];
+        if (refusal) { if (!queue().length) await refresh(); else render(); return; } // keep the refusal message on screen
         say(queue().length ? `${saved} saved on this phone. It will send when you have signal.` : done, true);
         if (!queue().length) await refresh(); else render();
       });
