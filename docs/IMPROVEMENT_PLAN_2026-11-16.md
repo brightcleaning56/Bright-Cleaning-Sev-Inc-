@@ -36,7 +36,7 @@ Live: `https://brightclean.net/api/health` reports build `d036183f73da`, the fir
 | # | Item | Why not changed | Suggested fix |
 |---|------|-----------------|---------------|
 | A | Plans page (Home, Apartment, Office) links to the commercial-only bid form. | Business decision: a residential intake or wording change. | Add a residential request path, or reword the plans page to say commercial only. |
-| B | `request-a-quote-new.html` and `quote.html` are not linked from any page. | Looks like review or spare copies; deleting is your call. | Delete both, or keep one and link it. |
+| B | ~~`request-a-quote-new.html` and `quote.html` are not linked from any page.~~ **Partly fixed:** `request-a-quote-new.html` (unlinked, noindex) is deleted. `quote.html` is NOT an orphan: the admin portal links to it and the sitemap lists it, so it is kept. | — | — |
 | C | Public duplicate-bid merge writes new text into an existing lead when email, project name and address match. | A design choice; the merge is still open to anyone who knows those three details. | Send matches to a review queue instead of appending to the lead. |
 | D | ~~`GET /api/admin/events` (live event feed) has no role check.~~ **Fixed:** the ticket is now refused (403) for a role the role table denies on the feed. | — | — |
 | E | Admin contract view: pressing Back with unsaved edits leaves the address bar showing the other contract. | Needs a careful change to the router. | Restore the previous hash when the user cancels the unsaved-changes prompt. |
