@@ -384,6 +384,26 @@
     });
   }
 
+  // ---------- Client insurance on a proposal ----------
+  const INS_TYPES_UI = { general_liability: 'General liability', workers_comp: 'Workers comp', auto: 'Auto', umbrella: 'Umbrella', bond: 'Bond', subcontractor: 'Subcontractor', other: 'Other' };
+  async function loadEstIns(id) {
+    const box = $('#estIns'); if (!box) return;
+    let req = { required: [], attached: [], missing: [] }, certs = [];
+    try { [req, certs] = await Promise.all([api('/api/admin/estimates/' + id + '/insurance'), api('/api/admin/insurance')]); } catch (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; return; }
+    const attachedIds = new Set(req.attached.map(c => c.id));
+    box.innerHTML = '<h3 class="secth" style="margin-top:0">Client insurance requirements</h3>' +
+      '<p class="muted">Tick what the client requires. Sending is blocked until a current certificate is attached for each.</p>' +
+      '<div style="margin:6px 0">' + Object.keys(INS_TYPES_UI).map(t => '<label style="display:inline-block;margin:0 14px 6px 0"><input type="checkbox" data-insreq="' + t + '"' + (req.required.includes(t) ? ' checked' : '') + '> ' + esc(INS_TYPES_UI[t]) + '</label>').join('') + '</div>' +
+      '<button class="btn ghost small" id="insReqSave">Save requirements</button>' +
+      '<h3 class="secth">Attached certificates</h3>' +
+      (req.attached.length ? '<ul class="plain">' + req.attached.map(c => '<li style="margin:4px 0">' + esc(INS_TYPES_UI[c.kind] || c.kind) + ' · ' + esc(c.holder) + ' · ' + esc(c.status === 'expired' ? 'EXPIRED ' + (c.expires_on || '') : (c.expires_on ? 'until ' + c.expires_on : 'no expiry date')) + ' <button class="btn ghost small danger" data-insrem="' + c.id + '">Remove</button></li>').join('') + '</ul>' : '<p class="muted">No certificate attached yet.</p>') +
+      '<div class="f"><label for="insAdd">Attach a certificate</label><select id="insAdd"><option value="">Choose…</option>' + certs.filter(c => !attachedIds.has(c.id)).map(c => '<option value="' + c.id + '">' + esc(INS_TYPES_UI[c.kind] || c.kind) + ' · ' + esc(c.holder) + ' · ' + esc(c.expires_on || 'no expiry') + (c.status === 'expired' ? ' (expired)' : '') + '</option>').join('') + '</select> <button class="btn ghost small" id="insAttach">Attach</button></div>' +
+      (req.missing.length ? '<p class="warn" style="display:block;padding:6px 10px;border-radius:8px">Sending is blocked until these are attached and current: ' + esc(req.missing.join(', ')) + '.</p>' : '');
+    $('#insReqSave').onclick = async () => { const required = [...box.querySelectorAll('[data-insreq]:checked')].map(x => x.dataset.insreq); try { await api('/api/admin/estimates/' + id + '/insurance', { method: 'PUT', json: { required } }); toast('Requirements saved'); loadEstIns(id); } catch (err) { toast(err.message, true); } };
+    $('#insAttach').onclick = async () => { const cid = $('#insAdd').value; if (!cid) return; try { await api('/api/admin/estimates/' + id + '/insurance/' + cid, { method: 'POST' }); toast('Certificate attached'); loadEstIns(id); } catch (err) { toast(err.message, true); } };
+    box.querySelectorAll('[data-insrem]').forEach(b => b.onclick = async () => { try { await api('/api/admin/estimates/' + id + '/insurance/' + b.dataset.insrem, { method: 'DELETE' }); toast('Certificate removed'); loadEstIns(id); } catch (err) { toast(err.message, true); } });
+  }
+
   // ---------- Navigation ----------
   const VIEWS = ['website', 'overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings', 'insurance'];
   function go(view, replace) {
@@ -1254,6 +1274,7 @@
           ${e.decided_at ? `<dt>Decision</dt><dd>${badge(e.status)} ${esc(fmtWhen(e.decided_at))}${e.decision_ip ? ' · by the customer online' : ' · set in admin'}</dd>` : ''}
           ${e.lead_id ? `<dt>From lead</dt><dd><button class="linklike" data-lead="${e.lead_id}">Lead #${e.lead_id}</button></dd>` : ''}
         </dl>
+        <div class="card" id="estIns" style="margin:10px 0"></div>
         <div class="card" id="estFiles" style="margin:10px 0"><h3 class="secth" style="margin-top:0">Attached files</h3><p class="muted">Loading…</p></div>
         <div id="apprBox"></div>
         <div class="grid"><div class="f"><label for="es">Status</label><select id="es"${e.decision_ip ? ' disabled' : ''}>${options(STATUS.estimates.filter(x => x !== 'Approved' || e.status === 'Approved'), e.status)}</select><span class="hint">${e.decision_ip ? 'Locked: the customer made this decision online. Duplicate the proposal to revise it.' : 'Updates automatically when the customer views, approves or declines.'}</span></div></div>
@@ -1281,6 +1302,7 @@
         try { const r = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd }); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed'); toast(`${files.length} file(s) attached`); loadEstFiles(); } catch (err) { toast(err.message, true); } };
     };
     loadEstFiles();
+    loadEstIns(e.id);
     bindOpeners($('#drawerRoot'));
     api(`/api/admin/estimates/${e.id}/approval`).then(ap => {
       const box = $('#apprBox'); if (!box) return;
