@@ -37,7 +37,19 @@ function timeline(db, lead, today) {
     .map(c => ({ id: 'call-' + c.id, kind: 'call', summary: `${c.direction || ''} call: ${c.outcome || 'logged'}`.trim(), detail: c.summary || null, actor: 'Call log', created_at: c.created_at, source: 'call' }));
   const estimates = db.prepare('SELECT id, version, status, proposal_total, created_at FROM estimates WHERE lead_id=?').all(lead.id)
     .map(e => ({ id: 'estimate-' + e.id, kind: 'estimate', summary: `Estimate #${e.id} (${e.status || 'draft'}) $${Number(e.proposal_total || 0).toFixed(2)}`, detail: null, actor: 'Estimates', created_at: e.created_at, source: 'estimate' }));
-  const entries = [...recorded, ...calls, ...estimates].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  // Emails are matched by address, because the mail log does not record which lead an email was about.
+  // Mail sent before the sender was recorded shows "Email Center" as the sender.
+  const address = String(lead.email || '').trim().toLowerCase();
+  let sent = [], received = [];
+  if (address) {
+    try { sent = db.prepare("SELECT id, subject, status, created_at FROM email_log WHERE lower(to_addr)=? AND status='sent' ORDER BY created_at").all(address); } catch { sent = []; }
+  }
+  try { received = db.prepare('SELECT id, subject, received_at AS created_at FROM inbox_messages WHERE lead_id=? OR (? <> \'\' AND lower(from_addr)=?) ORDER BY received_at').all(lead.id, address, address); } catch { received = []; }
+  const emails = [
+    ...sent.map(m => ({ id: 'email-out-' + m.id, kind: 'email', summary: 'Email sent: ' + (m.subject || '(no subject)'), detail: null, actor: 'Email Center', created_at: m.created_at, source: 'email' })),
+    ...received.map(m => ({ id: 'email-in-' + m.id, kind: 'email_in', summary: 'Email received: ' + (m.subject || '(no subject)'), detail: null, actor: 'Customer', created_at: m.received_at, source: 'email' }))
+  ];
+  const entries = [...recorded, ...calls, ...estimates, ...emails].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
   const meaningful = entries.filter(e => MEANINGFUL.includes(e.kind));
   const last = meaningful[meaningful.length - 1] || null;
   const lastAt = last ? last.created_at : null;

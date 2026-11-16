@@ -84,6 +84,8 @@ module.exports = function mountCRM(app, ctx) {
   app.get('/api/admin/customers/:id/profile', auth, (req, res) => {
     const c = getCust(req.params.id); if (!c) return res.status(404).json({ error: 'Customer not found.' });
     const p = profile(c); p.role = roleOf(req); p.users = db.prepare('SELECT email FROM admin_users ORDER BY email').all().map(u => u.email).concat(adminEmail ? [adminEmail] : []).filter((v, i, a) => a.indexOf(v) === i);
+    // The lead history of the leads this customer came from, so the history stays with the customer after conversion.
+    p.lead_history = db.prepare('SELECT * FROM leads WHERE customer_id=? ORDER BY id').all(c.id).map(l => require('./leadlog').timeline(db, l, require('./bizdate').today()));
     res.json(p);
   });
   app.get('/api/admin/customers/:id/links', auth, (req, res) => {
