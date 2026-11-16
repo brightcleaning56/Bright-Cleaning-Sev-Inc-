@@ -579,6 +579,26 @@ async function check(area, name, fn) {
     assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, tabs }));
     return 'route #contracts/' + kid + '; ' + tabs.length + ' section tabs; tab switch keeps the form; Back returns to the register';
   });
+  await check('Contracts UI', 'Back with unsaved contract edits: cancelling keeps the open contract and the address bar in step', async () => {
+    const a = await api('POST', '/api/admin/contracts', { company: 'Nav A Co', customer_name: 'Nav A', title: 'Nav test A', value: 700, status: 'Draft' }, T);
+    const b = await api('POST', '/api/admin/contracts', { company: 'Nav B Co', customer_name: 'Nav B', title: 'Nav test B', value: 800, status: 'Draft' }, T);
+    const aid = a.id || (a.contract && a.contract.id), bid = b.id || (b.contract && b.contract.id);
+    await nav('contracts'); await sleep(900);
+    d.querySelector(`#rows-contracts [data-rec="contracts:${aid}"]`).click(); await sleep(1200);
+    d.querySelector('#cwWrap [data-cwtab="terms"]').click(); await sleep(100);
+    const terms = d.getElementById('cw_terms'); if (terms) { terms.value = terms.value + ' (edited)'; terms.dispatchEvent(new w.Event('input', { bubbles: true })); }
+    const realConfirm = w.confirm; let asked = 0; w.confirm = () => { asked++; return false; };
+    try {
+      w.history.pushState(null, '', '#contracts/' + bid);
+      w.dispatchEvent(new w.Event('popstate'));
+      await sleep(600);
+      const hashKept = w.location.hash === '#contracts/' + aid;
+      const screenKept = d.getElementById('cwWrap').textContent.includes('Nav test A');
+      const chk = { asked: asked === 1, hashKept, screenKept };
+      assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, hash: w.location.hash }));
+      return 'cancelling the leave prompt keeps contract A open and the address bar on #contracts/' + aid;
+    } finally { w.confirm = realConfirm; }
+  });
   await check('Contracts UI', 'Contract list: search narrows the cards, sort by value puts the highest first, Export CSV builds the filtered list', async () => {
     await api('POST', '/api/admin/contracts', { company: 'SortLo Co', customer_name: 'Lo Sort', title: 'Sort low', value: 111, status: 'Draft' }, T);
     await api('POST', '/api/admin/contracts', { company: 'SortHi Co', customer_name: 'Hi Sort', title: 'Sort high', value: 999999, status: 'Draft' }, T);

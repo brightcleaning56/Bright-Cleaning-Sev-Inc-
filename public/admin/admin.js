@@ -421,7 +421,14 @@
     window.scrollTo(0, 0);
     load(view);
   }
-  window.addEventListener('popstate', () => go((location.hash || '#overview').slice(1)));
+  // Back/Forward: the address bar has already changed when this runs. If the open contract has unsaved edits and the
+  // user is leaving it, ask first; if they cancel, put the address bar back on the contract still on screen.
+  window.addEventListener('popstate', () => {
+    const to = location.hash || '';
+    const toId = to.startsWith('#contracts/') ? Number(to.split('/')[1]) : null;
+    if (cwDirty && cwData && cwData.contract.id !== toId && !leaveContract()) { history.pushState(null, '', '#contracts/' + cwData.contract.id); return; }
+    go((location.hash || '#overview').slice(1));
+  });
   $$('#nav button').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'contracts') { if (!leaveContract()) return; history.replaceState(null, '', '#contracts'); } go(b.dataset.view); }));
   document.addEventListener('click', e => {
     const link = e.target.closest('[data-view-link]');
