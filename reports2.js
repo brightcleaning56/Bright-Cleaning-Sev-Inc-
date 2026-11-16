@@ -22,16 +22,17 @@ module.exports = function mountReports2(app, ctx) {
   };
   const daysBetween = (a, b) => Math.floor((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 864e5);
 
-  function finance({ from, to }) {
+  function finance({ from, to, project_id }) {
     // Invoices count in the month they were issued (or sent), not the month they were created.
     const bz = require('./bizdate');
-    const inv = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void')`).all().filter(i => { const d = bz.invoiceDay(i); return d >= from && d <= to; });
+    const inv = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void')`).all().filter(i => { const d = bz.invoiceDay(i); return d >= from && d <= to && (!project_id || i.project_id === project_id); });
     const invoiced = r2(inv.reduce((s, i) => s + (i.amount || 0), 0)), collected = r2(inv.reduce((s, i) => s + Math.min(i.paid_amount || 0, i.amount || 0), 0));
-    const costRows = has('project_costs') ? db.prepare(`SELECT c.*, p.name project_name FROM project_costs c LEFT JOIN projects p ON p.id=c.project_id WHERE c.cost_date BETWEEN ? AND ?`).all(from, to) : [];
+    let costRows = has('project_costs') ? db.prepare(`SELECT c.*, p.name project_name FROM project_costs c LEFT JOIN projects p ON p.id=c.project_id WHERE c.cost_date BETWEEN ? AND ?`).all(from, to) : [];
+    if (project_id) costRows = costRows.filter(c => c.project_id === project_id);
     const byCat = {}; for (const c of costRows) byCat[c.category] = r2((byCat[c.category] || 0) + c.amount);
     // Approved time that is not tied to a project (so it was not posted as a project cost) still costs money.
     let unposted = 0; if (has('time_entries')) unposted = r2(db.prepare(`SELECT COALESCE(SUM(t.minutes/60.0*e.hourly_rate),0) v FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).get(...require('./bizdate').window(from, to)).v);
-    if (unposted) byCat['Labor (not tied to a project)'] = unposted;
+    if (unposted && !project_id) byCat['Labor (not tied to a project)'] = unposted;
     const costs = r2(Object.values(byCat).reduce((s, v) => s + v, 0));
     // Project profitability: everything recorded against each project, all time (projects span periods).
     const projects = has('project_costs') ? db.prepare(`SELECT p.id, p.name, p.status, p.company, p.customer_name, COALESCE(k.value,0) contract,
@@ -41,6 +42,7 @@ module.exports = function mountReports2(app, ctx) {
         (SELECT COALESCE(SUM(amount),0) FROM project_costs WHERE project_id=p.id AND category='Labor') labor
       FROM projects p LEFT JOIN contracts k ON k.id=p.contract_id WHERE p.status<>'Archived' ORDER BY p.id DESC`).all().map(p => ({ ...p, profit: p.cost > 0 ? r2(p.invoiced - p.cost) : null, margin: p.cost > 0 && p.invoiced > 0 ? Math.round((p.invoiced - p.cost) / p.invoiced * 1000) / 10 : null })) : [];
     const checks = [];
+    if (project_id) checks.push('Showing one project only. Overhead and labor not tied to a project are left out, so this is not the whole company.');
     const noCost = projects.filter(p => p.invoiced > 0 && p.cost === 0); if (noCost.length) checks.push(`${noCost.length} invoiced project(s) have no recorded costs, so their profit is not shown: ${noCost.slice(0, 5).map(p => p.name || '#' + p.id).join(', ')}.`);
     const noProj = inv.filter(i => !i.project_id).length; if (noProj) checks.push(`${noProj} invoice(s) in this period are not linked to a project.`);
     // Reconciliation: say what does not add up, so the report never looks complete when it is not.
@@ -51,7 +53,7 @@ module.exports = function mountReports2(app, ctx) {
     if (has('time_entries')) { const pend = db.prepare("SELECT COUNT(*) n FROM time_entries WHERE approved_by IS NULL AND clock_out IS NOT NULL AND clock_in >= ? AND clock_in < ?").get(...require('./bizdate').window(from, to)).n; if (pend) checks.push(`${pend} time entr${pend === 1 ? 'y is' : 'ies are'} not approved yet, so that labor is not in the costs.`); }
     return { from, to, invoiced, collected, costs, cost_by_category: byCat, gross_profit: r2(invoiced - costs), margin: invoiced > 0 ? Math.round((invoiced - costs) / invoiced * 1000) / 10 : null,
       basis: 'Revenue = invoices issued in the period (not drafts or void). Costs = actual costs recorded on projects in the period plus approved labor not tied to a project. Collected = amount paid on the invoices issued in the period.',
-      invoices: inv.length, projects, checks };
+      invoices: inv.length, projects, project_id: project_id || null, checks };
   }
   function aging() {
     const t = today();
@@ -83,21 +85,21 @@ module.exports = function mountReports2(app, ctx) {
 
   // Revenue and costs by month, using the same rules as finance(). The period totals are returned too, so the
   // screen can check that the months add up to them.
-  function monthly({ from, to }) {
+  function monthly({ from, to, project_id }) {
     const bz = require('./bizdate');
     const months = {};
     const bump = (m, k, v) => { months[m] = months[m] || { month: m, revenue: 0, costs: 0 }; months[m][k] = r2(months[m][k] + v); };
     for (const i of db.prepare(`SELECT i.* FROM invoices i WHERE i.status NOT IN ('Draft','Void')`).all()) {
-      const d = bz.invoiceDay(i); if (d >= from && d <= to) bump(String(d).slice(0, 7), 'revenue', i.amount || 0);
+      if (project_id && i.project_id !== project_id) continue; const d = bz.invoiceDay(i); if (d >= from && d <= to) bump(String(d).slice(0, 7), 'revenue', i.amount || 0);
     }
-    if (has('project_costs')) for (const c of db.prepare('SELECT amount, cost_date FROM project_costs WHERE cost_date BETWEEN ? AND ?').all(from, to)) bump(String(c.cost_date).slice(0, 7), 'costs', c.amount || 0);
-    if (has('time_entries')) for (const t of db.prepare(`SELECT t.clock_in, t.minutes, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(...bz.window(from, to))) bump(String(t.clock_in).slice(0, 7), 'costs', (t.minutes / 60) * (t.hourly_rate || 0));
+    if (has('project_costs')) for (const c of db.prepare('SELECT amount, cost_date, project_id FROM project_costs WHERE cost_date BETWEEN ? AND ?').all(from, to).filter(c => !project_id || c.project_id === project_id)) bump(String(c.cost_date).slice(0, 7), 'costs', c.amount || 0);
+    if (has('time_entries') && !project_id) for (const t of db.prepare(`SELECT t.clock_in, t.minutes, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(...bz.window(from, to))) bump(String(t.clock_in).slice(0, 7), 'costs', (t.minutes / 60) * (t.hourly_rate || 0));
     const all = Object.values(months).sort((a, b) => a.month.localeCompare(b.month));
     const revenue = r2(all.reduce((s, m) => s + m.revenue, 0)), costs = r2(all.reduce((s, m) => s + m.costs, 0));
-    return { from, to, months: all.slice(-36), revenue, costs };
+    return { from, to, project_id: project_id || null, months: all.slice(-36), revenue, costs };
   }
-  app.get('/api/admin/reports/monthly', auth, (req, res) => res.json(monthly(range(req.query))));
-  app.get('/api/admin/reports/finance', auth, (req, res) => res.json(finance(range(req.query))));
+  app.get('/api/admin/reports/monthly', auth, (req, res) => res.json(monthly({ ...range(req.query), project_id: Number(req.query.project_id) || null })));
+  app.get('/api/admin/reports/finance', auth, (req, res) => res.json(finance({ ...range(req.query), project_id: Number(req.query.project_id) || null })));
   app.get('/api/admin/reports/aging', auth, (req, res) => res.json(aging()));
   app.get('/api/admin/reports/labor', auth, (req, res) => res.json(labor(range(req.query))));
   const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

@@ -512,7 +512,7 @@ async function check(area, name, fn) {
   await check('Reports UI', 'Reports tabs: P&L, A/R aging, labor, project profitability, scheduled reports each render; overview content hidden on other tabs and restored', async () => {
     await nav('reports'); await sleep(1000);
     const out = {};
-    for (const k of ['pl', 'aging', 'labor', 'projects', 'sched']) { d.querySelector(`#repTabs [data-rt="${k}"]`).click(); await sleep(900); out[k] = txt('#repBody').slice(0, 60); }
+    for (const k of ['pl', 'aging', 'labor', 'projects', 'sched']) { d.querySelector(`#repTabs [data-rt="${k}"]`).click(); await sleep(900); out[k] = txt('#repBody').slice(0, 300); }
     const alt = $('#v-reports').classList.contains('alt');
     d.querySelector('#repTabs [data-rt="overview"]').click(); await sleep(300);
     assert(/Invoiced/.test(out.pl) && /Not yet due/.test(out.aging) && /Hours worked/.test(out.labor) && /Project/.test(out.projects) && /Scheduled report/.test(out.sched) && alt && !$('#v-reports').classList.contains('alt'), JSON.stringify(out));

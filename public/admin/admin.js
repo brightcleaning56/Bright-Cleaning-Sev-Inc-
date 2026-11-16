@@ -2889,15 +2889,18 @@
     $('#repFrom').closest('.filt').style.display = t === 'aging' || t === 'sched' || t === 'projects' ? 'none' : '';
     try {
       if (t === 'pl') {
-        const f = await api('/api/admin/reports/finance?' + q);
-        const mo = await api('/api/admin/reports/monthly?' + q);
+        const pid = rep2.project || '';
+        const pq = pid ? '&project_id=' + pid : '';
+        const f = await api('/api/admin/reports/finance?' + q + pq);
+        const mo = await api('/api/admin/reports/monthly?' + q + pq);
         // Same figures as before. This page only lays them out; the calculations are on the server (reports2.js).
         const pct = v => (v == null || Number.isNaN(v) ? '—' : v + '%');
         const costRows = Object.entries(f.cost_by_category || {}).sort((a, b) => b[1] - a[1]);
         const maxCost = Math.max(1, ...costRows.map(([, v]) => v));
         const projRows = (f.projects || []).filter(p => p.invoiced > 0 || p.cost > 0).sort((a, b) => Math.abs(b.profit || 0) - Math.abs(a.profit || 0)).slice(0, 5);
         const checks = f.checks || [];
-        B.innerHTML = `<div class="kpis6">${kt('money', 'blue', 'Invoiced (revenue)', money(f.invoiced), `${f.invoices} invoice(s)`)}${kt('check', 'green', 'Collected on those', money(f.collected), '')}${kt('reports', 'amber', 'Recorded costs', money(f.costs), '')}${kt('money', 'teal', 'Gross profit', money(f.gross_profit), '')}${kt('scopes', 'navy', 'Gross margin', pct(f.margin), '')}${kt('cal', 'blue', 'Period', fmtDate(f.from), 'to ' + fmtDate(f.to))}</div>
+        const projPick = `<div class="filt"><label>Project <select id="repPl"><option value="">All projects</option>${(f.projects || []).map(p => `<option value="${p.id}" ${String(p.id) === String(pid) ? 'selected' : ''}>${esc(p.name || '#' + p.id)}</option>`).join('')}</select></label></div>`;
+        B.innerHTML = projPick + `<div class="kpis6">${kt('money', 'blue', 'Invoiced (revenue)', money(f.invoiced), `${f.invoices} invoice(s)`)}${kt('check', 'green', 'Collected on those', money(f.collected), '')}${kt('reports', 'amber', 'Recorded costs', money(f.costs), '')}${kt('money', 'teal', 'Gross profit', money(f.gross_profit), '')}${kt('scopes', 'navy', 'Gross margin', pct(f.margin), '')}${kt('cal', 'blue', 'Period', fmtDate(f.from), 'to ' + fmtDate(f.to))}</div>
           <div class="card" style="margin:12px 0"><h2 style="font-size:16px">Revenue against costs, by month</h2>
             ${mo.months.length ? (() => {
               const W = 640, H = 220, pad = 40, bw = Math.max(12, Math.min(48, (W - pad * 2) / mo.months.length / 2.6));
@@ -2933,6 +2936,7 @@
         B.innerHTML = `<div class="kpis6">${['Current', '1–30', '31–60', '61–90', '90+'].map((k, i) => kt(i < 2 ? 'clock' : 'issues', i === 0 ? 'green' : i < 3 ? 'amber' : 'red', k === 'Current' ? 'Not yet due' : k + ' days late', money(a.buckets[k]), '')).join('')}${kt('money', 'navy', 'Total open', money(a.total), 'as of ' + fmtDate(a.as_of))}</div>
           <div class="tablewrap card" style="padding:0"><table class="t"><thead><tr><th>Customer</th><th class="num">Not due</th><th class="num">1–30</th><th class="num">31–60</th><th class="num">61–90</th><th class="num">90+</th><th class="num">Total</th></tr></thead><tbody>${a.customers.map(c => `<tr><td><b>${esc(c.customer)}</b></td>${['Current', '1–30', '31–60', '61–90', '90+'].map(k => `<td class="num"${k === '90+' && c[k] ? ' style="color:#c0362d;font-weight:700"' : ''}>${c[k] ? money(c[k]) : '—'}</td>`).join('')}<td class="num"><b>${money(c.total)}</b></td></tr>`).join('') || '<tr><td class="emptyrow" colspan="7">No open invoices. 🎉</td></tr>'}</tbody></table></div>
           ${a.invoices.length ? `<div class="tablewrap card" style="padding:0"><table class="t"><thead><tr><th>Invoice</th><th>Customer</th><th>Project</th><th>Due</th><th class="num">Days late</th><th class="num">Balance</th></tr></thead><tbody>${a.invoices.map(i => `<tr class="click" data-rec="invoices:${i.id}"><td>${esc(i.number || '#' + i.id)}</td><td>${esc(i.customer)}</td><td>${esc(i.project || '—')}</td><td>${i.due_date ? fmtDate(i.due_date) : '—'}</td><td class="num">${i.days_late || '—'}</td><td class="num">${money(i.balance)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+        const plSel = $('#repPl'); if (plSel) plSel.onchange = e => { rep2.project = e.target.value; drawRep2(); };
         bindOpeners(B);
       } else if (t === 'labor') {
         const l = await api('/api/admin/reports/labor?' + q);

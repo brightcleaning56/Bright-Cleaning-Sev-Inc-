@@ -1797,6 +1797,21 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     globalThis.__repProj = pr;
     return `project: invoiced $10,000 (draft/void excluded), collected $4,000, cost $3,500 (labor $3,000 + supplies $500) → profit $6,500, margin 65%; reversed date range corrected; checks: ${f.checks.length}`;
   });
+  await check('Reports+', 'P&L filtered to one project shows only that project, its checks say so, and the monthly chart filters the same way', async () => {
+    const pr = globalThis.__repProj; assert(pr, 'the project from the P&L check is needed');
+    const d = require('../bizdate').today();
+    const q = (extra) => `/api/admin/reports/finance?from=${d}&to=${d}${extra}`;
+    const all = (await req('GET', q(''), { token: T })).data;
+    const one = (await req('GET', q('&project_id=' + pr), { token: T })).data;
+    const none = (await req('GET', q('&project_id=999999'), { token: T })).data;
+    const moOne = (await req('GET', `/api/admin/reports/monthly?from=${d}&to=${d}&project_id=${pr}`, { token: T })).data;
+    const moAll = (await req('GET', `/api/admin/reports/monthly?from=${d}&to=${d}`, { token: T })).data;
+    const okOne = one.project_id === pr && one.invoiced >= 10000 && one.invoiced <= all.invoiced && one.cost_by_category.Labor >= 3000 && !('Labor (not tied to a project)' in one.cost_by_category) && one.checks.some(c => /Showing one project/.test(c));
+    const okNone = none.invoiced === 0 && none.costs === 0;
+    const okMo = moOne.revenue >= 10000 && moOne.revenue <= moAll.revenue && moAll.revenue >= moOne.revenue;
+    assert(okOne && okNone && okMo, JSON.stringify({ one: one.invoiced, all: all.invoiced, none: none.invoiced, moOne: moOne.revenue, moAll: moAll.revenue }));
+    return `project only: invoiced $${one.invoiced.toFixed(2)} of $${all.invoiced.toFixed(2)} company-wide; unknown project: $0; monthly chart filtered to $${moOne.revenue.toFixed(2)}`;
+  });
   await check('Reports+', 'A/R aging buckets by days past due with customer totals; labor report: hours, cost, overtime per week, pending approval; PDF export; scheduled report (owner only, valid emails) sends the summary email', async () => {
     await new Promise(r => { try { smtp.close(() => r()); } catch { r(); } setTimeout(r, 1000); }); smtp = await startSmtp(); await sleep(300);
     const a = (await req('GET', '/api/admin/reports/aging', { token: T })).data;
