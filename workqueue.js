@@ -296,6 +296,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     if (!l) return res.status(404).json({ error: 'Lead not found.' });
     const who = clean((req.body || {}).assigned_to, 120) || null;
     db.prepare('UPDATE leads SET assigned_to=?, updated_at=? WHERE id=?').run(who, nowIso(), id);
+    require('./leadlog').record(db, id, 'assigned', 'Assigned to ' + (who || 'nobody'), (req.user && req.user.email) || 'admin');
     logAction(req, 'assigned lead', 'lead', id, who || 'unassigned');
     res.json({ ok: true });
   });

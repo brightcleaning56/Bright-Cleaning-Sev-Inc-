@@ -850,6 +850,34 @@
       });
     } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
   }
+  // ---------- Lead history: who worked this lead, what happened, what is next ----------
+  const LEAD_KIND_UI = { note: 'Note', email: 'Email sent', meeting: 'Meeting', status: 'Status change', assigned: 'Assigned', follow_up: 'Follow-up', call: 'Call', estimate: 'Estimate', converted: 'Converted', viewed: 'Opened', received: 'Received' };
+  async function loadLeadHistory(id) {
+    const box = $('#leadHist'); if (!box) return;
+    let h;
+    try { h = await api('/api/admin/leads/' + id + '/activity'); } catch (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; return; }
+    const L = h.lead;
+    const worked = L.no_work_yet
+      ? '<span class="badge amber">No work recorded yet</span>'
+      : `<span class="badge ${L.days_since_contact > 7 ? 'red' : 'green'}">Last worked ${esc(fmtWhen(L.last_activity_at))} by ${esc(L.last_worked_by || 'someone')} (${L.days_since_contact} day${L.days_since_contact === 1 ? '' : 's'} ago)</span>`;
+    const overdue = L.follow_up_overdue ? `<p style="color:#a46a00;margin:6px 0">⚠ Follow-up was due ${esc(fmtDate(L.follow_up_date))} and is overdue.</p>` : (L.follow_up_date ? `<p class="muted" style="margin:6px 0">Next follow-up: ${esc(fmtDate(L.follow_up_date))}</p>` : '');
+    box.innerHTML = `
+      <div class="formsection">Lead history</div>
+      <p style="margin:4px 0">${worked} <span class="muted">Assigned to: ${esc(L.assigned_to || 'nobody')}</span></p>
+      ${overdue}
+      <ul class="plain" style="margin:8px 0;max-height:260px;overflow:auto">${h.entries.map(e => `<li style="margin:6px 0"><b>${esc(LEAD_KIND_UI[e.kind] || e.kind)}</b> · ${esc(e.summary)}${e.detail ? `<div class="muted" style="white-space:pre-wrap">${esc(e.detail)}</div>` : ''}<div class="muted">${esc(fmtWhen(e.created_at))} · ${esc(e.actor || '')}</div></li>`).join('') || '<li class="muted">Nothing recorded yet.</li>'}</ul>
+      <div class="f"><label for="lhKind">What did you do?</label><select id="lhKind"><option value="note">Note</option><option value="email">Email sent</option><option value="meeting">Meeting</option></select></div>
+      <div class="f"><label for="lhSummary">What happened</label><input id="lhSummary" placeholder="For example: Left a voicemail; sent walkthrough times"></div>
+      <div class="f"><label for="lhNext">Next follow-up (optional)</label><input id="lhNext" type="date"></div>
+      <button class="btn small" id="lhSave">Save to lead history</button> <span class="muted">Opening a lead does not count as work. Each entry is saved with your name and the time.</span>`;
+    $('#lhSave').onclick = async () => {
+      const summary = $('#lhSummary').value.trim();
+      if (summary.length < 3) return toast('Describe what happened.', true);
+      try { await api('/api/admin/leads/' + id + '/activity', { method: 'POST', json: { kind: $('#lhKind').value, summary, follow_up_date: $('#lhNext').value || undefined } }); toast('Saved to lead history'); loadLeadHistory(id); loadLeads(); }
+      catch (err) { toast(err.message, true); }
+    };
+  }
+
   async function openLead(id) {
     let l;
     try { l = (await api('/api/admin/leads/' + id)).lead; } catch (err) { return toast(err.message, true); }
@@ -865,12 +893,14 @@
     let intake = null; try { intake = l.intake ? JSON.parse(l.intake) : null; } catch { intake = null; }
     const flagBox = intake && intake.flags && intake.flags.length ? `<div class="formsection">Needed before pricing</div><ul class="needs">${intake.flags.map(f => `<li>${esc(f.text)}</li>`).join('')}</ul>` : (intake ? '<div class="formsection">Needed before pricing</div><p class="muted">Nothing flagged. The answers cover what is needed to price this service.</p>' : '');
     setTimeout(() => { if (l.email) loadConversation('leadConv', [l.email]); }, 0);
+    setTimeout(() => loadLeadHistory(l.id), 0);
     openDrawer({
       title: l.contact_name || 'Lead #' + l.id,
       sub: `${KIND_LABEL[l.kind] || 'Lead'} #${l.id}${l.company ? ' · ' + l.company : ''}`,
       body: `
         <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
         ${flagBox}
+        <div id="leadHist"></div>
         <div id="leadAI"></div>
         ${l.email ? '<div class="formsection">Conversation</div><div id="leadConv"><p class="muted">Loading…</p></div>' : ''}
         ${l.details ? `<div class="formsection">Details</div><div class="pre">${esc(l.details)}</div>` : ''}

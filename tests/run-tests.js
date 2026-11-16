@@ -2966,6 +2966,26 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ first: first.data, second: second.data, staff: staff.status }));
     return 'first check sends one alert, a repeat check stays silent, staff cannot run it';
   });
+  await check('Leads', 'Lead history: opening is recorded but not work; a note, a status change and a follow-up are recorded with who and when', async () => {
+    const made = await req('POST', '/api/admin/leads', { token: T, json: { kind: 'inquiry', contact_name: 'History Test Co', company: 'History Test Co', phone: '515-555-0300', email: 'history.test@example.test', project_type: 'Office', details: 'History test' } });
+    const id = (made.data && (made.data.lead ? made.data.lead.id : made.data.id)) || null;
+    const first = await req('GET', '/api/admin/leads/' + id + '/activity', { token: T });
+    const note = await req('POST', '/api/admin/leads/' + id + '/activity', { token: T, json: { kind: 'note', summary: 'Left a voicemail about the walkthrough' } });
+    const status = await req('PATCH', '/api/admin/leads/' + id, { token: T, json: { status: 'Site Walkthrough' } });
+    const fu = await req('POST', '/api/admin/leads/' + id + '/activity', { token: T, json: { kind: 'email', summary: 'Sent the walkthrough times', follow_up_date: '2099-01-15' } });
+    const kinds = (fu.data.entries || []).map(e => e.kind);
+    const chk = {
+      created: !!id,
+      openIsNotWork: first.status === 200 && first.data.lead.no_work_yet === true && (first.data.entries || []).some(e => e.kind === 'viewed'),
+      noteCounts: note.status === 200 && !!note.data.lead.last_worked_by,
+      statusRecorded: status.status === 200 && kinds.includes('status'),
+      emailAndFollowUp: fu.status === 200 && kinds.includes('email') && fu.data.lead.follow_up_date === '2099-01-15',
+      oldAndNewStatus: (fu.data.entries || []).some(e => e.kind === 'status' && /New → Site Walkthrough|Status: .*Site Walkthrough/.test(e.summary))
+    };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ id, kinds, lead: fu.data && fu.data.lead }));
+    return 'opened, noted, status changed, emailed and scheduled: each entry stamped with who and when';
+  });
   await check('Insurance', 'Attached certificates: a proposal that needs insurance cannot be sent until a current certificate is attached; then it goes out and shows the certificate', async () => {
     const est = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Attach Test GC', company: 'Attach Test GC', email: 'attach.gc@example.test', scope: 'Final clean for insurance attachment test', area_sqft: 1000, use_line_items: 1, line_items: [{ description: 'Final clean', amount: 900 }] } })).data.estimate;
     const set = await req('PUT', '/api/admin/estimates/' + est.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

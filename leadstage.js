@@ -109,6 +109,7 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
     // Converting an open lead means the business is now a customer, so the lead is marked Won. Lost and Archived leads keep their status.
     db.prepare("UPDATE leads SET customer_id=?, status=CASE WHEN status IN ('New','In Review','Site Walkthrough','Proposal in Progress','Proposal Sent') THEN 'Won' ELSE status END, updated_at=? WHERE id=?").run(cid, new Date().toISOString(), lead.id);
     recompute(lead.id);
+    require('./leadlog').record(db, lead.id, 'converted', 'Converted to customer #' + cid, (req.user && req.user.email) || 'admin');
     logAction(req, 'converted lead to customer', 'lead', lead.id, `customer #${cid}`);
     res.json({ ok: true, customer_id: cid });
   });
@@ -122,6 +123,7 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
     if (!validDate(b.date)) return res.status(400).json({ error: 'Choose a follow-up date.' });
     const note = clean(b.note, 500) || 'Follow up on this lead';
     const issueId = scheduleFollowUp(lead, b.date, note, (req.user && req.user.email) || 'admin');
+    require('./leadlog').record(db, lead.id, 'follow_up', 'Follow-up set for ' + b.date + ': ' + note, (req.user && req.user.email) || 'admin');
     logAction(req, 'scheduled follow-up', 'lead', lead.id, `${b.date}: ${note}`);
     res.json({ ok: true, issue_id: issueId });
   });
