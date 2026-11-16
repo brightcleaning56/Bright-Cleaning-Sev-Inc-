@@ -166,7 +166,7 @@ module.exports = function mountCommand(app, ctx) {
   // Also watch key tables directly so changes made outside the admin (website forms, customer decisions, webhooks) are pushed too.
   const WATCH = [['lead', 'SELECT MAX(id) m FROM leads'], ['call', 'SELECT MAX(id) m FROM calls'], ['estimate', 'SELECT MAX(updated_at) m FROM estimates'], ['issue', 'SELECT MAX(updated_at) m FROM customer_issues'], ['payment', 'SELECT MAX(id) m FROM payments'], ['visit', 'SELECT MAX(updated_at) m FROM visits']];
   const marks = {}; for (const [k, q] of WATCH) { try { marks[k] = (db.prepare(q).get() || {}).m; } catch { marks[k] = undefined; } }
-  app.post('/api/admin/events/ticket', auth, (req, res) => { const t = crypto.randomBytes(24).toString('hex'); tickets.set(t, { email: me(req), exp: Date.now() + 60000 }); res.json({ ticket: t }); });
+  app.post('/api/admin/events/ticket', auth, (req, res) => { const why = require('./roles').check(roleOfReq(req), 'GET', '/api/admin/events'); if (why) return res.status(403).json({ error: why }); const t = crypto.randomBytes(24).toString('hex'); tickets.set(t, { email: me(req), exp: Date.now() + 60000 }); res.json({ ticket: t }); });
   app.get('/api/admin/events', (req, res) => {
     const tk = tickets.get(String(req.query.ticket || '')); if (!tk || tk.exp < Date.now()) return res.status(401).end();
     tickets.delete(String(req.query.ticket));
