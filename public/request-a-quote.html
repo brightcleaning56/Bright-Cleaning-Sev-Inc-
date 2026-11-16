@@ -61,6 +61,7 @@
 <div class="qpaths" role="group" aria-label="Project type">
 <button type="button" class="qpath" data-path="construction" aria-pressed="false"><b>Construction bid</b><small>Rough, final, punch-list, windows</small></button>
 <button type="button" class="qpath" data-path="commercial" aria-pressed="false"><b>Commercial cleaning</b><small>Offices, retail, healthcare, industrial</small></button>
+<button type="button" class="qpath" data-path="residential" aria-pressed="false"><b>Residential home</b><small>Houses, condos and single apartment units</small></button>
 <button type="button" class="qpath" data-path="multifamily" aria-pressed="false"><b>Multifamily / apartments</b><small>Common areas, hallways, unit turnovers</small></button>
 </div>
 <p class="muted" style="margin:10px 0 4px">Services needed (select all that apply)</p>
@@ -69,6 +70,7 @@
 <label class="chk"><input type="checkbox" name="service" value="Rough / progress cleaning"> Rough / progress cleaning</label>
 <label class="chk"><input type="checkbox" name="service" value="Punch-list / touch-up cleaning"> Punch-list / touch-up cleaning</label>
 <label class="chk"><input type="checkbox" name="service" value="Interior / exterior window cleaning"> Window cleaning (interior / exterior)</label>
+<label class="chk"><input type="checkbox" name="service" value="Residential house cleaning"> Residential house cleaning</label>
 <label class="chk"><input type="checkbox" name="service" value="Commercial janitorial"> Commercial janitorial</label>
 <label class="chk"><input type="checkbox" name="service" value="Commercial restroom cleaning"> Commercial restroom cleaning</label>
 <label class="chk"><input type="checkbox" name="service" value="Commercial floor care"> Floor care</label>
@@ -87,7 +89,8 @@
 <div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
 <div class="field"><label>Company *</label><input name="company" required></div>
 <div class="field"><label>Project name</label><input name="project_name"></div>
-<div class="field"><label>Project type *</label><select name="project_type" required><option value="">Select</option><option>New construction</option><option>Renovation / remodel</option><option>Occupied commercial facility</option><option>Multifamily / apartment</option><option>Government / public facility</option><option>Hospitality</option><option>Multi-site portfolio</option><option>Other</option></select></div>
+<div class="field"><label>Project type *</label><select name="project_type" required><option value="">Select</option><option>New construction</option><option>Renovation / remodel</option><option>Occupied commercial facility</option><option>Residential home</option>
+<option>Multifamily / apartment</option><option>Government / public facility</option><option>Hospitality</option><option>Multi-site portfolio</option><option>Other</option></select></div>
 <div class="field"><label>Square footage (if known)</label><input name="square_footage" inputmode="decimal"></div>
 </div>
 <div class="field" style="margin-top:12px"><label>Describe the project *</label><textarea name="details" rows="4" required placeholder="Example: 3-story office building, about 120,000 SF. Need rough clean, final clean, and windows."></textarea></div>
