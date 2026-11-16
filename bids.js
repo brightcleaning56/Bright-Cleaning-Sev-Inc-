@@ -162,6 +162,7 @@ module.exports = function mountBids(app, ctx) {
         d.para(String(i.description || '') + qty + amt);
       }
     }
+    { const certs = require('./insurance').attachedFor(e.id).filter(c => c.status !== 'expired'); if (certs.length) { d.heading('Insurance certificates', 11); for (const c of certs) d.para([require('./insurance').KIND_LABEL[c.kind] || c.kind, c.holder, c.carrier, c.policy_no ? 'policy ' + c.policy_no : '', c.expires_on ? 'expires ' + c.expires_on : ''].filter(Boolean).join(' — ')); } }
     d.gap(4); d.text(Number(e.tax_pct) > 0 ? 'Total project investment (one lump-sum price, tax included)' : 'Total project investment (one lump-sum price)', { size: 13, bold: true }); d.text(money(e.proposal_total), { size: 13, bold: true, align: 'right' }); d.y -= 22;
     if (e.assumptions) { d.heading('Assumptions', 11); d.para(e.assumptions); }
     if (e.exclusions) { d.heading('Exclusions', 11); d.para(e.exclusions); }

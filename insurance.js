@@ -62,6 +62,54 @@ module.exports = (app, { db, auth, logAction, clean, adminEmail, getMailer }) =>
     setTimeout(() => { checkExpiry().catch(() => {}); }, 120000).unref?.();
   }
 
+  // ---- Certificates attached to an estimate or proposal, and the insurance a client requires ----
+  try { db.exec('ALTER TABLE estimates ADD COLUMN required_insurance TEXT'); } catch (e) { /* already there */ }
+  db.exec('CREATE TABLE IF NOT EXISTS estimate_certificates(estimate_id INTEGER NOT NULL, certificate_id INTEGER NOT NULL, PRIMARY KEY(estimate_id, certificate_id))');
+  const KIND_LABEL = { general_liability: 'General liability', workers_comp: 'Workers comp', auto: 'Auto', umbrella: 'Umbrella', bond: 'Bond', subcontractor: 'Subcontractor', other: 'Other' };
+  const requiredOf = est => { try { const v = JSON.parse((est && est.required_insurance) || '[]'); return Array.isArray(v) ? v.filter(t => TYPES.includes(t)) : []; } catch { return []; } };
+  const attachedOf = id => db.prepare('SELECT c.* FROM estimate_certificates ec JOIN insurance_certificates c ON c.id = ec.certificate_id WHERE ec.estimate_id=? ORDER BY c.expires_on IS NULL, c.expires_on').all(id).map(r => ({ ...r, status: status(r.expires_on) }));
+  // Requirements the attached certificates do not meet. A certificate counts only when it has an expiry date and is not expired.
+  const gapsFor = id => {
+    const est = db.prepare('SELECT required_insurance FROM estimates WHERE id=?').get(id);
+    if (!est) return [];
+    const good = attachedOf(id).filter(c => c.status === 'ok' || c.status === 'expiring');
+    return requiredOf(est).filter(t => !good.some(c => c.kind === t)).map(t => KIND_LABEL[t] || t);
+  };
+  module.exports.requirementGaps = id => gapsFor(Number(id));
+  module.exports.attachedFor = id => attachedOf(Number(id));
+  module.exports.KIND_LABEL = KIND_LABEL;
+
+  app.get('/api/admin/estimates/:id/insurance', auth, (req, res) => {
+    const id = Number(req.params.id);
+    const est = db.prepare('SELECT id, required_insurance FROM estimates WHERE id=?').get(id);
+    if (!est) return res.status(404).json({ error: 'Estimate not found.' });
+    res.json({ required: requiredOf(est), attached: attachedOf(id), missing: gapsFor(id) });
+  });
+  app.put('/api/admin/estimates/:id/insurance', auth, (req, res) => {
+    const id = Number(req.params.id);
+    if (!db.prepare('SELECT id FROM estimates WHERE id=?').get(id)) return res.status(404).json({ error: 'Estimate not found.' });
+    const want = [...new Set(Array.isArray((req.body || {}).required) ? req.body.required : [])];
+    const bad = want.filter(t => !TYPES.includes(t));
+    if (bad.length) return res.status(400).json({ error: 'Unknown insurance type: ' + bad.join(', ') + '.' });
+    db.prepare('UPDATE estimates SET required_insurance=? WHERE id=?').run(JSON.stringify(want), id);
+    logAction(req, 'set insurance requirements', 'estimate', id, want.join(', ') || 'none');
+    res.json({ ok: true, missing: gapsFor(id) });
+  });
+  app.post('/api/admin/estimates/:id/insurance/:certId', auth, (req, res) => {
+    const id = Number(req.params.id), cid = Number(req.params.certId);
+    if (!db.prepare('SELECT id FROM estimates WHERE id=?').get(id)) return res.status(404).json({ error: 'Estimate not found.' });
+    if (!db.prepare('SELECT id FROM insurance_certificates WHERE id=?').get(cid)) return res.status(404).json({ error: 'Certificate not found.' });
+    db.prepare('INSERT OR IGNORE INTO estimate_certificates(estimate_id, certificate_id) VALUES(?,?)').run(id, cid);
+    logAction(req, 'attached certificate', 'estimate', id, 'certificate #' + cid);
+    res.json({ ok: true, missing: gapsFor(id) });
+  });
+  app.delete('/api/admin/estimates/:id/insurance/:certId', auth, (req, res) => {
+    const id = Number(req.params.id), cid = Number(req.params.certId);
+    db.prepare('DELETE FROM estimate_certificates WHERE estimate_id=? AND certificate_id=?').run(id, cid);
+    logAction(req, 'removed certificate', 'estimate', id, 'certificate #' + cid);
+    res.json({ ok: true, missing: gapsFor(id) });
+  });
+
   app.get('/api/admin/insurance', auth, (req, res) => {
     const rows = db.prepare('SELECT * FROM insurance_certificates ORDER BY expires_on IS NULL, expires_on, holder').all();
     res.json(rows.map(r => ({ ...r, status: status(r.expires_on) })));

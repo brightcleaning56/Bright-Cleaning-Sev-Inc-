@@ -2966,6 +2966,25 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ first: first.data, second: second.data, staff: staff.status }));
     return 'first check sends one alert, a repeat check stays silent, staff cannot run it';
   });
+  await check('Insurance', 'Attached certificates: a proposal that needs insurance cannot be sent until a current certificate is attached; then it goes out and shows the certificate', async () => {
+    const est = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Attach Test GC', company: 'Attach Test GC', email: 'attach.gc@example.test', scope: 'Final clean for insurance attachment test', area_sqft: 1000, use_line_items: 1, line_items: [{ description: 'Final clean', amount: 900 }] } })).data.estimate;
+    const set = await req('PUT', '/api/admin/estimates/' + est.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
+    const blocked = await req('POST', '/api/admin/estimates/' + est.id + '/send', { token: T });
+    const cert = await req('POST', '/api/admin/insurance', { token: T, json: { holder: 'Attach Test Co', kind: 'general_liability', carrier: 'Attach Carrier', policy_no: 'ATT-1', expires_on: '2099-01-01' } });
+    const attach = await req('POST', '/api/admin/estimates/' + est.id + '/insurance/' + cert.data.id, { token: T });
+    const sent = await req('POST', '/api/admin/estimates/' + est.id + '/send', { token: T }); await sleep(300);
+    const pub = (await req('GET', '/api/proposal/' + est.public_token, { token: T })).data.proposal;
+    const chk = {
+      required: set.status === 200,
+      blockedWithoutCert: blocked.status === 409 && blocked.data.insurance === true,
+      attached: attach.status === 200 && attach.data.missing.length === 0,
+      sentWithCert: sent.status === 200,
+      shownToCustomer: (pub.insurance || []).some(c => c.holder === 'Attach Test Co' && c.policy_no === 'ATT-1')
+    };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ blocked: blocked.data, sent: sent.data && sent.data.error, pub: pub.insurance }));
+    return 'sending is blocked until the required certificate is attached; then it sends and the certificate shows on the proposal';
+  });
 
   await check('Subscriptions', 'Extra visits: visits above the monthly allowance are billed at the extra-visit price in the bill run', async () => {
     const cust = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Extra Visit Co', company: 'Extra Visit Co', email: 'extra.visits@example.test', phone: '515-555-0199' } });
