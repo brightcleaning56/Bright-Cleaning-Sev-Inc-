@@ -2061,6 +2061,10 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     // 6 lead status advances
     const lead6 = (await req('GET', '/api/admin/leads', { token: T })).data.leads.find(l => l.id === j1.id);
     ok('6 Lead status reflects the sent proposal', lead6 && /Proposal Sent|Proposal in Progress/.test(lead6.status), lead6 && lead6.status);
+    // 6b the status change is in the lead history
+    const hist6 = (await req('GET', '/api/admin/leads/' + j1.id + '/activity', { token: T })).data;
+    const histEntry = (hist6.entries || []).find(x => x.kind === 'status' && /Proposal Sent/.test(x.summary));
+    ok('6b Lead history records the move to Proposal Sent', !!histEntry, histEntry ? histEntry.summary : JSON.stringify(hist6).slice(0, 120));
     // 7 admin cannot approve; client views + approves
     const adm = await req('PATCH', '/api/admin/estimates/' + e.id, { token: T, json: { status: 'Approved' } });
     await req('GET', '/api/proposal/' + e.public_token);
