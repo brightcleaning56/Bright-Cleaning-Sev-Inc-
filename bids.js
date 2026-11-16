@@ -150,6 +150,16 @@ module.exports = function mountBids(app, ctx) {
     d.heading('Prepared for', 11); d.para([e.company, e.customer_name, e.email, e.site_address].filter(Boolean).join('\n'));
     if (e.project_name) { d.heading('Project', 11); d.para(e.project_name); }
     d.heading('Scope of work', 11); d.para(e.scope || '');
+    // Every line added to the estimate is shown: description, quantity, unit price and amount. Labor hours and rates stay internal.
+    const pdfItems = (() => { try { const v = typeof e.line_items === 'string' ? JSON.parse(e.line_items || '[]') : (e.line_items || []); return Array.isArray(v) ? v : []; } catch { return []; } })();
+    if (pdfItems.length) {
+      d.heading('Itemized pricing', 11);
+      for (const i of pdfItems) {
+        const qty = i.quantity != null && i.quantity !== '' ? ' \u2014 ' + Number(i.quantity).toLocaleString('en-US') + (i.unit ? ' ' + i.unit : '') + (i.unit_price != null && i.unit_price !== '' ? ' at ' + money(i.unit_price) : '') : '';
+        const amt = Number(i.amount) ? '   ' + money(i.amount) : '';
+        d.para(String(i.description || '') + qty + amt);
+      }
+    }
     d.gap(4); d.text(Number(e.tax_pct) > 0 ? 'Total project investment (one lump-sum price, tax included)' : 'Total project investment (one lump-sum price)', { size: 13, bold: true }); d.text(money(e.proposal_total), { size: 13, bold: true, align: 'right' }); d.y -= 22;
     if (e.assumptions) { d.heading('Assumptions', 11); d.para(e.assumptions); }
     if (e.exclusions) { d.heading('Exclusions', 11); d.para(e.exclusions); }
