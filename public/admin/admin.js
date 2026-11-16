@@ -723,9 +723,11 @@
       </div>`).join('') : '<p class="muted">No client messages yet. Messages sent from the client portal appear here.</p>';
     box.querySelectorAll('[data-cmform]').forEach(f => f.onsubmit = async ev => {
       ev.preventDefault();
+      if (f.dataset.busy) return; const sb = f.querySelector('button[type=submit]');
       const body = f.querySelector('textarea').value.trim(); if (!body) return;
+      f.dataset.busy = '1'; if (sb) sb.disabled = true;
       try { const x = await api('/api/admin/portal-messages/' + f.dataset.cmform + '/reply', { method: 'POST', json: { body } }); toast(x.emailed ? 'Reply sent to the customer and their portal' : 'Reply saved. The customer chose not to get message emails.'); loadClientMsgs(); }
-      catch (e) { toast(e.message, true); }
+      catch (e) { toast(e.message, true); delete f.dataset.busy; if (sb) sb.disabled = false; }
     });
   }
   async function loadLeads() {
@@ -1990,7 +1992,7 @@
     $('#kForm').addEventListener('change', () => { cwDirty = true; });
     window.onbeforeunload = () => (cwDirty ? 'You have unsaved changes to this contract.' : undefined);
     $('[data-cw-back]').onclick = backToContracts;
-    const act = (sel, fn) => { const el = $('#cwWrap ' + sel); if (el) el.onclick = fn; };
+    const act = (sel, fn) => { const el = $('#cwWrap ' + sel); if (el) el.onclick = async () => { if (el.disabled) return; el.disabled = true; try { await fn(); } finally { if (el.isConnected) el.disabled = false; } }; };
     const save = () => { const f = formObj($('#kForm')); return api('/api/admin/contracts2/' + id, { method: 'PATCH', json: { ...f, auto_renew: !!f.auto_renew } }); };
     act('#kSave', async () => { try { await save(); toast('Saved'); loadRegister('contracts'); await openContract(id); } catch (e) { toast(e.message, true); } });
     act('#kSend', async () => { try { await save(); const r = await api(`/api/admin/contracts2/${id}/send`, { method: 'POST' }); try { await navigator.clipboard.writeText(r.link); } catch { /* */ } toast(r.emailed ? 'Sent to the customer for signature (link copied)' : 'Signing link created and copied. Email could not be sent, so share the link.'); loadRegister('contracts'); await openContract(id); } catch (e) { toast(e.message, true); } });
