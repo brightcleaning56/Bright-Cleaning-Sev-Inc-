@@ -152,6 +152,8 @@ module.exports = function mountBids(app, ctx) {
     d.heading('Scope of work', 11); d.para(e.scope || '');
     // Every line added to the estimate is shown: description, quantity, unit price and amount. Labor hours and rates stay internal.
     const pdfItems = (() => { try { const v = typeof e.line_items === 'string' ? JSON.parse(e.line_items || '[]') : (e.line_items || []); return Array.isArray(v) ? v : []; } catch { return []; } })();
+    const winInt = (Number(e.windows_interior_panes) || 0) * (Number(e.windows_interior_rate) || 0), winExt = (Number(e.windows_exterior_panes) || 0) * (Number(e.windows_exterior_rate) || 0);
+    if (winInt + winExt > 0) pdfItems.push({ description: 'Window cleaning' + (Number(e.windows_interior_panes) ? ': ' + Number(e.windows_interior_panes) + ' interior panes' : '') + (Number(e.windows_exterior_panes) ? (Number(e.windows_interior_panes) ? ', ' : ': ') + Number(e.windows_exterior_panes) + ' exterior panes' : ''), amount: Math.round((winInt + winExt) * 100) / 100 });
     if (pdfItems.length) {
       d.heading('Itemized pricing', 11);
       for (const i of pdfItems) {

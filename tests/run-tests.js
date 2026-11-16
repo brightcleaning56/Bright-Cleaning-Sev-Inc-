@@ -445,6 +445,16 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | customer ' + items.length + ' stored ' + stored.length);
     return items.length + ' line items shown to the customer, no internal labor fields';
   });
+  await check('Proposals', 'Window charge shows on the customer view as its own line, at the amount it adds to the total', async () => {
+    const made = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Window Line Co', company: 'Window Line Co', scope: 'Final clean with windows', area_sqft: 2000, use_line_items: 1, windows_interior_panes: 10, windows_interior_rate: 10, windows_exterior_panes: 5, windows_exterior_rate: 20, line_items: [{ description: 'Final clean', amount: 1000 }] } });
+    const est = made.data.estimate;
+    const pub = (await req('GET', '/api/proposal/' + est.public_token, { token: T })).data.proposal;
+    const win = (pub.line_items || []).find(i => /^Window cleaning/.test(i.description));
+    const chk = { created: (made.status === 200 || made.status === 201) && !!est.public_token, shown: !!win, amount: !!win && win.amount === 200, totalIncludes: Number(est.proposal_total) === 1200 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ win, total: est.proposal_total }));
+    return 'window line shown at $200, and the total is $1,200 (line + windows)';
+  });
   await check('Proposals', 'Customer view records first-viewed time, last-viewed time and count', async () => {
     await req('GET', '/api/proposal/' + tok1); await sleep(20); await req('GET', '/api/proposal/' + tok1);
     const e = (await req('GET', '/api/admin/estimates/' + E1, { token: T })).data.estimate;
