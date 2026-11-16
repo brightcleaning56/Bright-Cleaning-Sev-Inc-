@@ -81,6 +81,22 @@ module.exports = function mountReports2(app, ctx) {
       basis: 'From crew check-in/out and manager time entries. Cost = hours × each employee\'s hourly rate. Overtime = hours above each employee\'s weekly limit, per week.' };
   }
 
+  // Revenue and costs by month, using the same rules as finance(). The period totals are returned too, so the
+  // screen can check that the months add up to them.
+  function monthly({ from, to }) {
+    const bz = require('./bizdate');
+    const months = {};
+    const bump = (m, k, v) => { months[m] = months[m] || { month: m, revenue: 0, costs: 0 }; months[m][k] = r2(months[m][k] + v); };
+    for (const i of db.prepare(`SELECT i.* FROM invoices i WHERE i.status NOT IN ('Draft','Void')`).all()) {
+      const d = bz.invoiceDay(i); if (d >= from && d <= to) bump(String(d).slice(0, 7), 'revenue', i.amount || 0);
+    }
+    if (has('project_costs')) for (const c of db.prepare('SELECT amount, cost_date FROM project_costs WHERE cost_date BETWEEN ? AND ?').all(from, to)) bump(String(c.cost_date).slice(0, 7), 'costs', c.amount || 0);
+    if (has('time_entries')) for (const t of db.prepare(`SELECT t.clock_in, t.minutes, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(...bz.window(from, to))) bump(String(t.clock_in).slice(0, 7), 'costs', (t.minutes / 60) * (t.hourly_rate || 0));
+    const all = Object.values(months).sort((a, b) => a.month.localeCompare(b.month));
+    const revenue = r2(all.reduce((s, m) => s + m.revenue, 0)), costs = r2(all.reduce((s, m) => s + m.costs, 0));
+    return { from, to, months: all.slice(-36), revenue, costs };
+  }
+  app.get('/api/admin/reports/monthly', auth, (req, res) => res.json(monthly(range(req.query))));
   app.get('/api/admin/reports/finance', auth, (req, res) => res.json(finance(range(req.query))));
   app.get('/api/admin/reports/aging', auth, (req, res) => res.json(aging()));
   app.get('/api/admin/reports/labor', auth, (req, res) => res.json(labor(range(req.query))));

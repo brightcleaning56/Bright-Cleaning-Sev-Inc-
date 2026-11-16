@@ -2859,6 +2859,7 @@
     try {
       if (t === 'pl') {
         const f = await api('/api/admin/reports/finance?' + q);
+        const mo = await api('/api/admin/reports/monthly?' + q);
         // Same figures as before. This page only lays them out; the calculations are on the server (reports2.js).
         const pct = v => (v == null || Number.isNaN(v) ? '—' : v + '%');
         const costRows = Object.entries(f.cost_by_category || {}).sort((a, b) => b[1] - a[1]);
@@ -2866,6 +2867,19 @@
         const projRows = (f.projects || []).filter(p => p.invoiced > 0 || p.cost > 0).sort((a, b) => Math.abs(b.profit || 0) - Math.abs(a.profit || 0)).slice(0, 5);
         const checks = f.checks || [];
         B.innerHTML = `<div class="kpis6">${kt('money', 'blue', 'Invoiced (revenue)', money(f.invoiced), `${f.invoices} invoice(s)`)}${kt('check', 'green', 'Collected on those', money(f.collected), '')}${kt('reports', 'amber', 'Recorded costs', money(f.costs), '')}${kt('money', 'teal', 'Gross profit', money(f.gross_profit), '')}${kt('scopes', 'navy', 'Gross margin', pct(f.margin), '')}${kt('cal', 'blue', 'Period', fmtDate(f.from), 'to ' + fmtDate(f.to))}</div>
+          <div class="card" style="margin:12px 0"><h2 style="font-size:16px">Revenue against costs, by month</h2>
+            ${mo.months.length ? (() => {
+              const W = 640, H = 220, pad = 40, bw = Math.max(12, Math.min(48, (W - pad * 2) / mo.months.length / 2.6));
+              const max = Math.max(1, ...mo.months.map(m => Math.max(m.revenue, m.costs)));
+              const colW = (W - pad * 2) / mo.months.length;
+              const bars = mo.months.map((m, i) => {
+                const x = pad + i * colW + colW / 2;
+                const hr = Math.round(m.revenue / max * (H - 50)), hc = Math.round(m.costs / max * (H - 50));
+                return `<g><rect x="${x - bw - 2}" y="${H - 24 - hr}" width="${bw}" height="${hr}" fill="#17904c"><title>${esc(m.month)} revenue ${money(m.revenue)}</title></rect><rect x="${x + 2}" y="${H - 24 - hc}" width="${bw}" height="${hc}" fill="#1f6fd1"><title>${esc(m.month)} costs ${money(m.costs)}</title></rect><text x="${x}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#5d728a">${esc(m.month.slice(5))}</text></g>`;
+              }).join('');
+              return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Revenue and costs by month">${bars}</svg><p class="muted" style="margin:6px 0 0"><span style="color:#17904c">■</span> Revenue (invoiced) &nbsp; <span style="color:#1f6fd1">■</span> Costs (recorded and approved labor)</p>`;
+            })() : '<p class="muted">No revenue or costs in this period.</p>'}
+            ${Math.round(mo.revenue * 100) !== Math.round(f.invoiced * 100) || Math.round(mo.costs * 100) !== Math.round(f.costs * 100) ? '<p style="color:#a46a00;margin:6px 0">⚠ The months do not add up to the period totals above, so do not rely on the chart until the data is checked.</p>' : ''}</div>
           <div class="two">
             <div class="card"><h2 style="font-size:16px">Profit and loss</h2>
               <table class="t"><tbody>
