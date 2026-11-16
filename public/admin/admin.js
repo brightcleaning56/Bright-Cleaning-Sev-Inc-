@@ -1005,6 +1005,28 @@
   $('#custAdd').addEventListener('click', () => openCustomer(null));
   // ---------- Customer profile page (full CRM workspace) ----------
   const cp = { id: Number(sessionStorage.getItem('bc_cust')) || null, tab: 'overview', d: null };
+  // One way to reach a customer profile from any screen. The button carries the customer id when the record has one,
+  // otherwise the company, email and name, which are matched against the customer list when clicked.
+  const custBtn = (c, label, cls = 'linklike') => {
+    const m = { company: (c && c.company) || '', email: (c && c.email) || '', name: (c && (c.customer_name || c.name)) || '' };
+    const id = (c && c.customer_id) || '';
+    return `<button type="button" class="${cls}" data-open-cust="${esc(id)}" data-cust-match="${esc(JSON.stringify(m))}">${esc(label || m.company || m.name || 'Customer profile')}</button>`;
+  };
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-open-cust]'); if (!b) return;
+    e.preventDefault();
+    if (!leaveContract()) return; // unsaved contract edits: stay put
+    let id = Number(b.dataset.openCust) || null;
+    if (!id) {
+      const m = JSON.parse(b.dataset.custMatch || '{}'), low = v => String(v || '').trim().toLowerCase();
+      let list = []; try { list = (await api('/api/admin/customers')).customers || []; } catch { /* handled below */ }
+      const hit = list.find(c => (low(m.email) && low(c.email) === low(m.email)) || (low(m.company) && low(c.company) === low(m.company)) || (low(m.name) && low(c.name) === low(m.name)));
+      id = hit ? hit.id : null;
+    }
+    if (!id) return toast('No customer record matches yet. Add the customer under Customers first.', true);
+    closeDrawer();
+    go('customers'); setTimeout(() => openCustomerPage(id), 350);
+  });
   function openCustomerPage(id) { cp.id = id; cp.tab = 'overview'; sessionStorage.setItem('bc_cust', id); if (state.view !== 'customers') go('customers'); else { renderCustomers(); loadCustomerPage(); } }
   async function loadCustomerPage() {
     if (!cp.id) return;
@@ -1301,6 +1323,11 @@
       body: `
         ${e.flags && e.flags.length ? `<ul class="flagl">${e.flags.map(f => `<li class="${f.level}">${esc(f.text)}</li>`).join('')}</ul>` : ''}
         <dl class="facts">
+          <dt>Customer</dt><dd>${e.customer_id ? `<button class="linklike" id="eCust">Open customer profile →</button>` : `<span class="muted">No customer record matches this company or email yet</span>`}</dd>
+          <dt>Contract</dt><dd>${e.contract_id ? `<button class="linklike" id="eContract">Open contract #${e.contract_id}</button>`
+      : e.status === 'Approved' ? `<button class="btn small" type="button" id="eMakeContract">Create contract &amp; project</button> <small class="muted">No second approval needed.</small>`
+      : ['Declined', 'Withdrawn'].includes(e.status) ? '<span class="muted">Not available for a declined or withdrawn proposal.</span>'
+      : `<button class="btn small ghost" type="button" id="eOffline">Customer approved outside the portal</button> <small class="muted">Owner or manager. Needs a reason, kept on record.</small>`}</dd>
           <dt>Proposal total</dt><dd><b style="font-size:20px;color:var(--navy)">${money(e.proposal_total)}</b></dd>
           ${Number(e.tax_pct) > 0 ? `<dt>Subtotal before tax</dt><dd>${money(e.proposal_total / (1 + Number(e.tax_pct) / 100))}</dd><dt>Tax (${Number(e.tax_pct)}%)</dt><dd>${money(e.proposal_total - e.proposal_total / (1 + Number(e.tax_pct) / 100))}</dd>` : ''}
           ${Number(e.total_cost) > 0 ? `<dt>Cost incl. overhead</dt><dd>${money(e.total_cost)} · ${Number(e.labor_hours || 0).toFixed(1)} labor hours</dd>
@@ -1333,6 +1360,10 @@
         <span class="grow"></span>
         <button class="btn danger" id="eDel"${e.status === 'Approved' ? ' disabled title="Approved proposals are kept for your records."' : ''}>Delete</button>`
     });
+    const ec = $('#eCust'); if (ec) ec.onclick = () => { closeDrawer(); go('customers'); setTimeout(() => openCustomerPage(e.customer_id), 350); };
+    const mc = $('#eMakeContract'); if (mc) mc.onclick = async () => { mc.disabled = true; try { const r = await api(`/api/admin/estimates/${e.id}/create-contract`, { method: 'POST' }); toast('Contract #' + r.contract_id + ' created'); closeDrawer(); go('contracts'); setTimeout(() => openContract(r.contract_id), 350); } catch (err) { mc.disabled = false; toast(err.message, true); } };
+    const off = $('#eOffline'); if (off) off.onclick = async () => { const note = prompt('How did the customer approve? (kept on record, for example: signed paper copy received)'); if (!note || !note.trim()) return; try { await api(`/api/admin/estimates/${e.id}/record-approval`, { method: 'POST', json: { note: note.trim() } }); toast('Approval recorded'); openEstimate(e.id); } catch (err) { toast(err.message, true); } };
+    const ct = $('#eContract'); if (ct) ct.onclick = () => { closeDrawer(); go('contracts'); setTimeout(() => openContract(e.contract_id), 350); };
     const loadEstFiles = async () => { const box = $('#estFiles'); if (!box) return; let f = []; try { f = (await api(`/api/admin/estimates/${e.id}/files`)).files; } catch { /* */ }
       box.innerHTML = `<h3 class="secth" style="margin-top:0">Attached files</h3>${f.length ? `<ul class="plain">${f.map(x => `<li style="margin:4px 0">📎 <a href="#" data-fdl="${x.id}">${esc(x.title || x.file_name)}</a> <small class="muted">${esc(x.kind)} · ${(x.size / 1024).toFixed(0)} KB · ${esc(fmtDate(x.created_at))}${x.uploaded_by ? ' · ' + esc(x.uploaded_by) : ''}</small></li>`).join('')}</ul>` : '<p class="muted">No files attached yet.</p>'}
         <label class="btn small ghost" style="cursor:pointer">Attach file<input type="file" id="estFileIn" hidden multiple></label> <small class="muted">Also saved to the customer's documents.</small>`;
@@ -1902,9 +1933,10 @@
     const dl = d.documents && d.documents.length ? d.documents.map(x => `<li>${esc(x.title || x.file_name || 'Document')} <small class="muted">${esc(x.kind || '')} · ${fmtWhen(x.created_at)}</small></li>`).join('') : '';
     $('#cwWrap').innerHTML = `
       <div class="cwtop"><button type="button" class="linklike" data-cw-back>← Contracts</button></div>
-      <div class="cwhead"><div><h1>${esc(k.number)} · ${esc(k.title || 'Contract')}</h1><p class="muted">${esc(k.kind || 'Contract')} · ${esc(k.company || k.customer_name || '')}</p></div>
+      <div class="cwhead"><div><h1>${esc(k.number)} · ${esc(k.title || 'Contract')}</h1><p class="muted">${esc(k.kind || 'Contract')} · ${custBtn(k, k.company || k.customer_name || '—')}</p></div>
         <div class="cwbadges">${badge(k.status)} ${badge(sig)}</div></div>
       <div class="cwactions">
+        ${custBtn(k, 'Customer profile', 'btn ghost')}
         ${!signed ? '<button type="button" class="btn ghost" id="kSave">Save</button>' : ''}
         ${!signed && k.status !== 'Superseded' ? `<button type="button" class="btn" id="kSend">${k.link ? 'Re-send link' : 'Send for signature'}</button>` : ''}
         ${(k.signature_status === 'Customer signed' || k.proposal_status === 'Approved') && !k.countersigned_at ? '<button type="button" class="btn" id="kCs">Countersign</button>' : ''}
@@ -2085,6 +2117,7 @@
       sub: id ? `${cfg.label[0].toUpperCase() + cfg.label.slice(1)} #${id} · created ${fmtDate(rec.created_at)}` : '',
       body: `<form id="recForm" class="grid" novalidate>${cfg.fields.map(f => fieldHTML(f, f[0] === 'line_items' ? linesText(rec.line_items) : rec[f[0]])).join('')}</form><p class="msg" id="recMsg" role="status"></p>`,
       footer: `<button class="btn" id="recSave">${id ? 'Save changes' : 'Create ' + cfg.label}</button>
+        ${t === 'invoices' && id ? custBtn(rec, 'Customer profile', 'btn ghost') : ''}
         ${t === 'invoices' && id && bal && rec.status !== 'Void' ? '<button class="btn ghost" id="recPay">Record payment</button>' : ''}
         ${t === 'invoices' && id && Number(rec.paid_amount) > 0 ? '<button class="btn ghost" id="recRefund">Refund</button>' : ''}
         ${t === 'invoices' && id && !['Void', 'Paid'].includes(rec.status) ? `<button class="btn" id="recSend">${rec.sent_at ? 'Resend invoice' : 'Send invoice'}</button>` : ''}
@@ -2098,8 +2131,22 @@
       attachFormPicker(form.elements.customer_name, c => fillInvoiceCustomer(form, c));
       attachFormPicker(form.elements.company, c => fillInvoiceCustomer(form, c));
     }
+    if (t === 'contracts' && form && !id) {
+      // New contract: pick the customer from the list. Name, company and email fill in; a brand-new customer is added under Customers first.
+      let custs = []; try { custs = (await api('/api/admin/customers')).customers || []; } catch { /* list optional: the fields can still be typed */ }
+      const opts = custs.map(c => `<option value="${c.id}">${esc((c.company ? c.company + ' · ' : '') + (c.name || c.email || 'Customer #' + c.id))}</option>`).join('');
+      form.insertAdjacentHTML('afterbegin', `<div class="f wide"><label for="cPick">Customer (from your customer list)</label><select id="cPick"><option value="">Choose a customer…</option>${opts}</select><span class="hint">Fills in the name, company and email below. A new customer must be added under Customers first.</span></div>`);
+      form.insertAdjacentHTML('beforeend', '<input type="hidden" name="customer_id" value=""><input type="hidden" name="email" value="">');
+      $('#cPick').onchange = () => {
+        const c = custs.find(x => String(x.id) === $('#cPick').value);
+        form.elements.customer_id.value = c ? c.id : '';
+        form.elements.email.value = c ? (c.email || '') : '';
+        if (c) { form.elements.customer_name.value = c.name || ''; form.elements.company.value = c.company || ''; }
+      };
+    }
     $('#recSave').onclick = async () => {
       const v = formObj(form);
+      if (t === 'contracts' && !id && !v.customer_id) { delete v.customer_id; delete v.email; }
       if (t === 'invoices' && String(v.line_items || '').trim()) {
         const parsed = textLines(v.line_items), bad = parsed.filter(x => x.error);
         if (bad.length) { $('#recMsg').className = 'msg err'; $('#recMsg').textContent = 'Each service line needs a name and an amount, like "Windows | 1800". Check: ' + bad[0].error; return; }
@@ -3867,9 +3914,9 @@
     const d = pj.d, p = d.project, W = $('#pjWork');
     const svcOpts = Object.entries(d.services).map(([v, l]) => `<option value="${v}"${p.service === v ? ' selected' : ''}>${esc(l)}</option>`).join('');
     W.innerHTML = `<p><button class="linklike" id="pjBack">← All projects</button></p>
-      <div class="card cphero"><div class="bimg">${ic('projects')}</div><div style="min-width:0;flex:1"><h1>${esc(p.name || p.number)} ${badge(p.status === 'In Progress' ? 'Active' : p.status)}</h1><div class="sub">${esc(p.number)} · ${esc(p.company || p.customer_name || '')} · ${esc(p.service_label || 'Service not set')}</div>
+      <div class="card cphero"><div class="bimg">${ic('projects')}</div><div style="min-width:0;flex:1"><h1>${esc(p.name || p.number)} ${badge(p.status === 'In Progress' ? 'Active' : p.status)}</h1><div class="sub">${esc(p.number)} · ${custBtn(p, p.company || p.customer_name || '')} · ${esc(p.service_label || 'Service not set')}</div>
         <div class="cpmeta2"><div><span class="chip blue">${ic('pin')}</span><div><span>Site</span><b>${esc(p.site_address || '—')}</b></div></div><div><span class="chip blue">${ic('user')}</span><div><span>Project manager</span><b>${esc(p.manager || '—')}</b></div></div><div><span class="chip blue">${ic('cal')}</span><div><span>Planned</span><b>${p.start_date ? fmtDate(p.start_date) : '—'} – ${p.due_date ? fmtDate(p.due_date) : '—'}</b></div></div><div><span class="chip blue">${ic('clock')}</span><div><span>Actual</span><b>${p.actual_start ? fmtDate(p.actual_start) : 'not started'}${p.actual_end ? ' – ' + fmtDate(p.actual_end) : ''}</b></div></div></div></div>
-        <div class="cpbtns"><button class="btn" id="pjStatus">Status &amp; next steps</button><button class="btn ghost" id="pjEdit">Edit project</button></div></div>
+        <div class="cpbtns">${custBtn(p, 'Customer profile', 'btn ghost')}<button class="btn" id="pjStatus">Status &amp; next steps</button><button class="btn ghost" id="pjEdit">Edit project</button></div></div>
       <div class="fin2">${kt('check', 'blue', 'Progress', (p.progress || 0) + '%', 'from verified tasks')}${kt('contracts', 'purple', 'Contract value', money(p.contract_value), p.contract ? p.contract.signature_status || 'Not sent' : 'No contract')}${kt('reports', 'navy', 'Budget', money(p.budget), '')}${kt('money', 'teal', 'Actual cost', money(p.actual_cost), 'recorded')}${kt('check', 'green', 'Gross profit', p.actual_cost ? money(p.contract_value - p.actual_cost) : '—', p.actual_cost ? 'actual' : 'no costs yet')}${kt('cal', 'amber', 'Open tasks', p.tasks_open, p.tasks_review ? `${p.tasks_review} to review` : '')}${kt('issues', 'red', 'Open issues', d.issues.filter(i => !['Resolved', 'Verified', 'Closed'].includes(i.status)).length, '')}</div>
       ${p.customer_id ? '' : `<div class="card" style="border-left:4px solid #d1382f"><b>No customer record is linked to this project yet.</b> Issues, inspections and documents attach to the customer record. <button class="btn small" id="pjLinkCust">Link customer</button></div>`}
       <div class="ctabs2 ctabs" role="tablist">${WTABS.map(([k, l, i]) => `<button role="tab" data-wt="${k}" class="${pj.wtab === k ? 'on' : ''}">${ic(i)}<span>${l}</span></button>`).join('')}</div><div id="pjBody"></div>`;

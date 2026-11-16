@@ -1063,6 +1063,21 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(moved.status === 409, 'moving the date of a sent invoice should be refused, got ' + moved.status);
     return 'same date saved; a changed date on a sent invoice is refused (409)';
   });
+  await check('Audit fixes', 'An offline approval (with a reason) lets a proposal become a contract without a second approval; a draft cannot; no duplicate', async () => {
+    const e = await est({});
+    const draft = await req('POST', '/api/admin/estimates/' + e.id + '/create-contract', { token: T });
+    const noNote = await req('POST', '/api/admin/estimates/' + e.id + '/record-approval', { token: T, json: { note: '' } });
+    const rec = await req('POST', '/api/admin/estimates/' + e.id + '/record-approval', { token: T, json: { note: 'Signed paper copy received' } });
+    assert(noNote.status === 400 && rec.status === 200, 'record approval: no-note ' + noNote.status + ', with note ' + rec.status);
+    const made = await req('POST', '/api/admin/estimates/' + e.id + '/create-contract', { token: T });
+    const again = await req('POST', '/api/admin/estimates/' + e.id + '/create-contract', { token: T });
+    const got = await req('GET', '/api/admin/estimates/' + e.id, { token: T });
+    assert(draft.status === 400, 'draft should be refused, got ' + draft.status);
+    assert(made.status === 201 && made.data.contract_id, 'approved should create a contract, got ' + made.status + ' ' + JSON.stringify(made.data));
+    assert(again.status === 409, 'second create should be refused, got ' + again.status);
+    assert(got.data.estimate.contract_id === made.data.contract_id, 'proposal should show its contract');
+    return 'draft refused (400); approved creates contract #' + made.data.contract_id + ' with no second approval; repeat refused (409)';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

@@ -599,6 +599,15 @@ async function check(area, name, fn) {
       return 'cancelling the leave prompt keeps contract A open and the address bar on #contracts/' + aid;
     } finally { w.confirm = realConfirm; }
   });
+  await check('Contracts UI', 'A contract page links to its customer profile', async () => {
+    const a = await api('POST', '/api/admin/contracts', { company: 'Link Co', customer_name: 'Link Person', title: 'Link test', value: 300, status: 'Draft' }, T);
+    const aid = a.id || (a.contract && a.contract.id);
+    await nav('contracts'); await sleep(900);
+    d.querySelector(`#rows-contracts [data-rec="contracts:${aid}"]`).click(); await sleep(1200);
+    const links = d.querySelectorAll('#cwWrap [data-open-cust]');
+    assert(links.length >= 2, 'expected a customer link in the header and the action row, found ' + links.length);
+    return 'contract page has ' + links.length + ' customer-profile links';
+  });
   await check('Contracts UI', 'Contract list: search narrows the cards, sort by value puts the highest first, Export CSV builds the filtered list', async () => {
     await api('POST', '/api/admin/contracts', { company: 'SortLo Co', customer_name: 'Lo Sort', title: 'Sort low', value: 111, status: 'Draft' }, T);
     await api('POST', '/api/admin/contracts', { company: 'SortHi Co', customer_name: 'Hi Sort', title: 'Sort high', value: 999999, status: 'Draft' }, T);
