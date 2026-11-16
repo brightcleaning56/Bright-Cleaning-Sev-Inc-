@@ -1150,6 +1150,21 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(txt.status === 400 && /not set up/.test(txt.data.error || ''), 'text should be refused until set up, got ' + txt.status + ' ' + JSON.stringify(txt.data));
     return 'queues load (5); missed call gets a callback and sits in Missed / callbacks; unmatched call is Unknown caller; call links to a lead; caller context returns the lead; text refused until set up';
   });
+  await check('Email Center', 'Mailboxes and counts load; each email is linked and categorised; a message opens with its summary; unknown emails are 404', async () => {
+    const em = await req('GET', '/api/admin/email-center', { token: T });
+    assert(em.status === 200 && Array.isArray(em.data.mailboxes) && em.data.mailboxes.length === 11, 'mailboxes should load: ' + em.status);
+    const need = ['All', 'Customer', 'Lead inquiries', 'Estimates & proposals', 'Contracts', 'Invoices', 'Sent', 'Needs reply', 'Scheduled', 'Drafts', 'Archived'];
+    assert(need.every(n => n in em.data.counts), 'every mailbox should have a count');
+    const sample = em.data.messages.find(m => m.direction === 'out' && m.source === 'system');
+    if (sample) {
+      const one = await req('GET', '/api/admin/email-center/' + encodeURIComponent(sample.key), { token: T });
+      assert(one.status === 200 && one.data.message && Array.isArray(one.data.requests) && Array.isArray(one.data.questions), 'message should open with its summary: ' + one.status);
+      assert(one.data.message.category === sample.category, 'category should be stable');
+    }
+    const bad = await req('GET', '/api/admin/email-center/out-999999', { token: T });
+    assert(bad.status === 404, 'unknown email should be 404, got ' + bad.status);
+    return 'eleven mailboxes with counts; a sent email opens with its summary and category; unknown email is 404';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

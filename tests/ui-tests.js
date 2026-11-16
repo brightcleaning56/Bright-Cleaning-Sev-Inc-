@@ -795,9 +795,9 @@ async function check(area, name, fn) {
   });
   await check('Email Center UI', 'Sent emails listed; opening one shows the full message', async () => {
     await nav('emails'); await sleep(600);
-    const rows = d.querySelectorAll('#emailsRows [data-mail]').length, api_n = (await api('GET', '/api/admin/emails', null, T)).emails.length;
-    if (rows) { d.querySelector('#emailsRows [data-mail]').click(); await sleep(400); }
-    assert(rows === api_n && (rows ? txt('#drawerRoot').length > 20 : /No emails yet/.test(txt('#emailsRows'))) && d.querySelectorAll('#emailsKpis .kpi').length === 4, `${rows} vs ${api_n}`);
+    const rows = d.querySelectorAll('#emailsRows [data-mkey]').length, api_n = (await api('GET', '/api/admin/email-center', null, T)).messages.length;
+    if (rows) { d.querySelector('#emailsRows [data-mkey]').click(); await sleep(500); }
+    assert(rows === api_n && (rows ? txt('#emView').length > 20 : /No emails in this mailbox/.test(txt('#emailsRows'))) && d.querySelectorAll('#emailsKpis .kpi').length === 4, `${rows} vs ${api_n}`);
     return rows ? `${rows} emails listed; message opened` : 'no email provider in this test server: empty state shown, 4 summary tiles (sending is covered by the server suite)';
   });
   await check('Schedule UI', 'Week view shows 7 days with visits', async () => {

@@ -3655,6 +3655,7 @@
       $$('#inboxCard [data-ilead]').forEach(a => a.onclick = ev => { ev.preventDefault(); go('leads'); setTimeout(() => openLead(Number(a.dataset.ilead)), 350); });
       $$('#inboxCard [data-icust]').forEach(a => a.onclick = ev => { ev.preventDefault(); go('customers'); setTimeout(() => openCustomerPage(Number(a.dataset.icust)), 350); });
     } else if (ib) ib.remove();
+    mailState.center = await api('/api/admin/email-center').catch(() => null);
     renderEmails();
     renderBlocked();
   }
@@ -3685,11 +3686,84 @@
     if ($('#m365Sync')) $('#m365Sync').onclick = async () => { try { const r = await api('/api/admin/m365/sync', { method: 'POST', json: {} }); toast(r.error ? 'Sync problem: ' + r.error : `Synced: ${r.added || 0} new`, !!r.error); closeDrawer(); loadEmails(); } catch (e) { toast(e.message, true); } };
     if ($('#m365Disc')) $('#m365Disc').onclick = async () => { if (!confirm('Disconnect the Outlook inbox? Already-synced messages stay.')) return; try { await api('/api/admin/m365/disconnect', { method: 'POST', json: {} }); toast('Disconnected'); closeDrawer(); loadEmails(); } catch (e) { toast(e.message, true); } };
   }
+  // ---- Email Center: mailboxes, the message list, and the whole conversation for one email ----
+  function inMailbox(m, box) {
+    if (box === 'All') return true;
+    if (box === 'Sent') return m.direction === 'out' && m.source === 'system';
+    if (box === 'Needs reply') return m.reply === 'Needs reply';
+    if (box === 'Scheduled') return m.source === 'scheduled';
+    if (box === 'Drafts' || box === 'Archived') return false; // not saved yet
+    return m.category === box;
+  }
+  function renderEmailBoxes() {
+    const C = mailState.center || { counts: {}, mailboxes: [] }; const box = mailState.box || 'All';
+    $('#emBoxes').innerHTML = (C.mailboxes || []).map(name => '<button type="button" class="ccq' + (box === name ? ' on' : '') + '" data-mb="' + esc(name) + '"><span>' + esc(name) + '</span><b>' + (C.counts[name] || 0) + '</b></button>').join('');
+    $$('#emBoxes [data-mb]').forEach(b => b.onclick = () => { mailState.box = b.dataset.mb; renderEmails(); });
+  }
   function renderEmails() {
-    const q = $('#emailSearch').value.trim().toLowerCase(), st = $('#emailStatus').value;
-    const rows = mailState.emails.filter(m => (!st || m.status === st) && (!q || [m.to_addr, m.subject].join(' ').toLowerCase().includes(q)));
-    $('#emailsRows').innerHTML = rows.length ? rows.map(m => `<tr class="click" data-mail="${m.id}"><td>${esc(fmtWhen(m.created_at))}</td><td>${esc(m.to_addr)}${mailState.blocked && mailState.blocked.has(String(m.to_addr || '').toLowerCase()) ? ' <span class="badge red">Blocked</span>' : ''}</td><td>${esc(m.subject)}</td><td>${m.status === 'sent' ? '<span class="badge green">Sent</span>' : m.status === 'suppressed' ? '<span class="badge">Not sent (blocked)</span>' : '<span class="badge red">Failed</span>'}</td></tr>`).join('') : '<tr><td class="emptyrow" colspan="4">No emails yet.</td></tr>';
-    $$('[data-mail]').forEach(r => r.onclick = () => { const m = mailState.emails.find(x => x.id === Number(r.dataset.mail)); openDrawer({ title: m.subject || '(no subject)', sub: `To ${esc(m.to_addr)} · ${esc(fmtWhen(m.created_at))} · via ${esc(m.provider || '')}`, body: `${m.error ? `<p class="msg err">${esc(m.error)}</p>` : ''}<pre style="white-space:pre-wrap;font:inherit">${esc(m.body || '')}</pre>`, footer: '' }); });
+    renderEmailBoxes();
+    const C = mailState.center || { messages: [] };
+    const q = $('#emailSearch').value.trim().toLowerCase(), st = $('#emailStatus').value, box = mailState.box || 'All';
+    const rows = C.messages.filter(m => inMailbox(m, box)
+      && (!st || (st === 'received' ? m.direction === 'in' : m.status === st))
+      && (!q || [m.from, m.to, m.subject, m.preview, m.link && m.link.name].join(' ').toLowerCase().includes(q)));
+    $('#emailsRows').innerHTML = rows.length ? rows.map(m => '<tr class="click' + (mailState.selKey === m.key ? ' on' : '') + '" data-mkey="' + esc(m.key) + '"><td>' + esc(fmtWhen(m.at)) + '</td>'
+      + '<td>' + esc(m.direction === 'in' ? m.from : m.to) + (m.link ? ' <small class="muted">' + esc(m.link.company || m.link.name || '') + '</small>' : '') + '</td>'
+      + '<td>' + esc(m.subject) + (m.preview ? '<small class="muted">' + esc(String(m.preview).slice(0, 90)) + '</small>' : '') + '</td>'
+      + '<td><span class="pill" style="font-size:11px">' + esc(m.category) + '</span></td>'
+      + '<td>' + esc(m.delivery) + (m.reply ? '<small class="muted">' + esc(m.reply) + '</small>' : '') + '</td></tr>').join('')
+      : '<tr><td class="emptyrow" colspan="5">' + (box === 'Drafts' || box === 'Archived' ? 'Drafts and archived mail are not saved yet.' : 'No emails in this mailbox yet.') + '</td></tr>';
+    $$('#emailsRows [data-mkey]').forEach(r => r.onclick = () => { mailState.selKey = r.dataset.mkey; renderEmails(); renderEmailView(r.dataset.mkey); });
+    if (!mailState.selKey) $('#emView').innerHTML = '<p class="muted">Select an email to see the whole conversation, the linked record and the next step.</p>';
+  }
+  async function renderEmailView(key) {
+    const box = $('#emView'); if (!box) return;
+    box.innerHTML = '<p class="muted">Loading the conversation…</p>';
+    let d; try { d = await api('/api/admin/email-center/' + encodeURIComponent(key)); } catch (err) { box.innerHTML = '<p class="err">' + esc(err.message) + '</p>'; return; }
+    if (mailState.selKey !== key) return;
+    const m = d.message, L = m.link;
+    const addr = m.direction === 'in' ? m.from_addr : m.to;
+    const who = m.direction === 'in' ? (m.from || addr) : (m.to || '');
+    const delivery = m.status === 'failed' ? 'Failed' : m.status === 'scheduled' ? 'Scheduled' : m.direction === 'in' ? 'Received' : (m.status === 'sent' ? 'Sent' : esc(m.status));
+    const linked = L ? (L.type === 'customer'
+      ? custBtn({ customer_id: L.id, company: L.company, customer_name: L.name, email: addr }, L.company || L.name)
+      : '<button type="button" class="linklike" data-em-lead="' + L.id + '">' + esc(L.company || L.name || 'Lead') + ' (lead)</button>') : '<span class="muted">No customer or lead matches this address yet</span>';
+    const proposal = L && L.proposal_id ? ' · <button type="button" class="linklike" data-em-est="' + L.proposal_id + '">' + esc(L.proposal_name || 'Proposal') + '</button>' : '';
+    const first = String((L && L.name) || who || '').split(' ')[0] || 'there';
+    const draft = m.direction === 'in' ? 'Hi ' + first + ', thanks for your message about ' + (m.subject || 'your request') + '. We have your details and are checking the next steps. We will reply with the details today.\n\nBright Cleaning Sev Inc.' : '';
+    box.innerHTML = `
+      <h3 style="margin:0;overflow-wrap:anywhere">${esc(m.subject)}</h3>
+      <p style="margin:4px 0"><span class="pill" style="font-size:11px">${esc(m.category)}</span> <span class="badge ${m.status === 'failed' ? 'red' : ''}">${esc(delivery)}</span>${m.reply ? '<span class="badge' + (m.reply === 'Needs reply' ? ' amber' : '') + '">' + esc(m.reply) + '</span>' : ''}</p>
+      <p class="muted" style="margin:4px 0">${m.direction === 'in' ? 'From' : 'To'} ${esc(who)} · ${esc(fmtWhen(m.at))}${m.sent_by ? ' · ' + esc(m.sent_by) : ''}</p>
+      <p style="margin:6px 0">Linked: ${linked}${proposal}</p>
+      ${m.error ? '<p class="err" style="display:block">' + esc(m.error) + '</p>' : ''}
+      <div class="pre" style="white-space:pre-wrap;background:#f6f9fc;border-radius:8px;padding:10px;max-height:240px;overflow:auto">${esc(m.body || '(no text saved for this email)')}</div>
+      <div class="formsection">Summary</div>
+      <p>${d.requests.length ? 'Requested: ' + esc(d.requests.join(', ')) : 'No specific request found in the message text.'}</p>
+      ${d.questions.length ? '<p><b>Questions in this email</b></p><ul>' + d.questions.map(q => '<li>' + esc(q) + '</li>').join('') + '</ul>' : ''}
+      <div class="formsection">Conversation history</div>
+      <div id="emComms"><p class="muted">Loading…</p></div>
+      ${m.direction === 'in' ? `<div class="formsection">Reply</div>
+        <p class="muted" style="margin:0 0 6px">Draft for you to edit. Nothing is sent until you press Send.</p>
+        <textarea id="emDraft" rows="6" aria-label="Reply draft">${esc(draft)}</textarea>
+        ${L && L.type === 'customer' ? '<button type="button" class="btn" id="emSend" style="margin-top:6px">Send reply</button>' : '<p class="muted">Replies to leads are sent from the lead record. Convert the lead to a customer to reply here.</p>'}` : ''}
+      <div class="formsection">Next step</div>
+      ${L && L.type === 'lead' ? '<label for="emFu">Follow-up date</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="date" id="emFu" value="' + localISO(new Date(Date.now() + 864e5)) + '"><button type="button" class="btn small ghost" id="emFuSave">Create follow-up</button></div>' : '<p class="muted">Follow-ups are scheduled on the customer or lead record.</p>'}`;
+    if (L && L.type === 'customer') { const cb = box.querySelector('[data-open-cust]'); if (cb) cb.dataset.custMatch = JSON.stringify({ email: addr }); }
+    box.querySelectorAll('[data-em-lead]').forEach(b => b.onclick = () => openLead(Number(b.dataset.emLead)));
+    box.querySelectorAll('[data-em-est]').forEach(b => b.onclick = () => openEstimate(Number(b.dataset.emEst)));
+    loadComms(L && L.type === 'customer' ? { customer_id: L.id } : L && L.type === 'lead' ? { lead_id: L.id } : { email: addr }, 'emComms');
+    if ($('#emSend')) $('#emSend').onclick = async () => {
+      const body = $('#emDraft').value.trim(); if (body.length < 5) return toast('Write the reply first.', true);
+      if (!confirm('Send this reply to ' + addr + ' now?')) return;
+      try { await api('/api/admin/customers/' + L.id + '/email', { method: 'POST', json: { to: addr, subject: 'Re: ' + (m.subject || ''), body } }); toast('Reply sent'); mailState.center = await api('/api/admin/email-center').catch(() => null); renderEmails(); renderEmailView(key); }
+      catch (err) { toast(err.message, true); }
+    };
+    if ($('#emFuSave')) $('#emFuSave').onclick = async () => {
+      const dt = $('#emFu').value; if (!dt) return toast('Pick a date.', true);
+      try { await api('/api/admin/leads/' + L.id + '/follow-up', { method: 'POST', json: { date: dt, note: 'Reply to: ' + (m.subject || 'email') } }); toast('Follow-up created for ' + fmtDate(dt)); }
+      catch (err) { toast(err.message, true); }
+    };
   }
 
   // ---------- Takeoffs ----------

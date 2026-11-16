@@ -697,10 +697,16 @@
       <div id="cmList"></div>
     </section>
     <section class="view" id="v-emails">
-      <div class="pagehead"><div><h1>Email Center</h1><p>Every email the system sends: confirmations, proposals, reminders and notices. Reading your Outlook inbox here needs a Microsoft 365 app registration.</p></div></div>
+      <div class="pagehead"><div><h1>Email Center</h1><p>Emails the system sends (confirmations, proposals, reminders, follow-ups) and mail received from the connected Outlook inbox, in one place. Each email opens its customer, lead, proposal or contract.</p></div></div>
       <div class="kpis small" id="emailsKpis"></div>
-      <div class="toolbar"><input type="search" id="emailSearch" placeholder="Search recipient or subject…" aria-label="Search emails"><select id="emailStatus" aria-label="Status"><option value="">All</option><option value="sent">Sent</option><option value="failed">Failed</option></select></div>
-      <div class="tablewrap"><table class="t"><thead><tr><th>When</th><th>To</th><th>Subject</th><th>Status</th></tr></thead><tbody id="emailsRows"></tbody></table></div>
+      <div class="ccwrap">
+        <aside class="card" id="emBoxes" aria-label="Mailboxes" style="padding:10px"></aside>
+        <div style="min-width:0">
+          <div class="toolbar"><input type="search" id="emailSearch" placeholder="Search sender, recipient or subject…" aria-label="Search emails"><select id="emailStatus" aria-label="Delivery status"><option value="">All delivery states</option><option value="sent">Sent</option><option value="failed">Failed</option><option value="received">Received</option></select></div>
+          <div class="tablewrap card" style="padding:0"><table class="t"><thead><tr><th>When</th><th>From / to</th><th>Subject</th><th>Mailbox</th><th>Status</th></tr></thead><tbody id="emailsRows"></tbody></table></div>
+        </div>
+        <aside class="card" id="emView" aria-label="Email" style="position:sticky;top:12px"><p class="muted">Select an email to see the whole conversation, the linked record and the next step.</p></aside>
+      </div>
     </section>
     <section class="view" id="v-takeoffs">
       <div class="pagehead"><div><h1>Takeoffs</h1><p>Quantities from drawings, each tied to its source sheet and how it was found (measured, from a schedule, entered or inferred), then priced from your price book in one click.</p></div><button class="btn" id="takeoffsAdd">New takeoff</button></div>
