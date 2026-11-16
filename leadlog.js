@@ -42,11 +42,11 @@ function timeline(db, lead, today) {
   const address = String(lead.email || '').trim().toLowerCase();
   let sent = [], received = [];
   if (address) {
-    try { sent = db.prepare("SELECT id, subject, status, created_at FROM email_log WHERE lower(to_addr)=? AND status='sent' ORDER BY created_at").all(address); } catch { sent = []; }
+    try { sent = db.prepare("SELECT id, subject, status, created_at, sent_by FROM email_log WHERE lower(to_addr)=? AND status='sent' ORDER BY created_at").all(address); } catch { sent = []; }
   }
   try { received = db.prepare('SELECT id, subject, received_at AS created_at FROM inbox_messages WHERE lead_id=? OR (? <> \'\' AND lower(from_addr)=?) ORDER BY received_at').all(lead.id, address, address); } catch { received = []; }
   const emails = [
-    ...sent.map(m => ({ id: 'email-out-' + m.id, kind: 'email', summary: 'Email sent: ' + (m.subject || '(no subject)'), detail: null, actor: 'Email Center', created_at: m.created_at, source: 'email' })),
+    ...sent.map(m => ({ id: 'email-out-' + m.id, kind: 'email', summary: 'Email sent: ' + (m.subject || '(no subject)'), detail: null, actor: m.sent_by || 'Email Center', created_at: m.created_at, source: 'email' })),
     ...received.map(m => ({ id: 'email-in-' + m.id, kind: 'email_in', summary: 'Email received: ' + (m.subject || '(no subject)'), detail: null, actor: 'Customer', created_at: m.received_at, source: 'email' }))
   ];
   const entries = [...recorded, ...calls, ...estimates, ...emails].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));

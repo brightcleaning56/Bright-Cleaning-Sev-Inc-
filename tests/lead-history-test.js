@@ -6,7 +6,7 @@ const leadlog = require('../leadlog');
 const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE leads(id INTEGER PRIMARY KEY, status TEXT, assigned_to TEXT, follow_up_date TEXT, customer_id INTEGER, created_at TEXT, email TEXT);
-  CREATE TABLE email_log(id INTEGER PRIMARY KEY, to_addr TEXT, subject TEXT, status TEXT, created_at TEXT);
+  CREATE TABLE email_log(id INTEGER PRIMARY KEY, to_addr TEXT, subject TEXT, status TEXT, created_at TEXT, sent_by TEXT);
   CREATE TABLE inbox_messages(id INTEGER PRIMARY KEY, from_addr TEXT, subject TEXT, received_at TEXT, lead_id INTEGER);
   CREATE TABLE calls(id INTEGER PRIMARY KEY, direction TEXT, outcome TEXT, summary TEXT, contact_name TEXT, lead_id INTEGER, created_at TEXT);
   CREATE TABLE estimates(id INTEGER PRIMARY KEY, version INTEGER, status TEXT, proposal_total REAL, created_at TEXT, lead_id INTEGER);
@@ -54,7 +54,7 @@ assert.strictEqual(t.lead.follow_up_overdue, false);
 ok('an overdue follow-up is flagged while the lead is open, and not once it is won');
 
 // Emails to and from the lead's address appear in the history. Sent mail counts as work; a reply does not.
-db.prepare("INSERT INTO email_log VALUES(1,'pat@example.test','Walkthrough times','sent','2026-11-14T09:00:00.000Z')").run();
+db.prepare("INSERT INTO email_log(id,to_addr,subject,status,created_at) VALUES(1,'pat@example.test','Walkthrough times','sent','2026-11-14T09:00:00.000Z')").run();
 db.prepare("INSERT INTO inbox_messages VALUES(1,'pat@example.test','Re: Walkthrough times','2026-11-15T07:00:00.000Z',NULL)").run();
 t = leadlog.timeline(db, lead(), today);
 assert.ok(t.entries.some(e => e.kind === 'email' && /Walkthrough times/.test(e.summary)), 'sent email shown');

@@ -3005,6 +3005,13 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ blocked: blocked.data, sent: sent.data && sent.data.error, pub: pub.insurance }));
     return 'sending is blocked until the required certificate is attached; then it sends and the certificate shows on the proposal';
   });
+  await check('Email', 'Every sent email records the signed-in person who sent it', async () => {
+    const log = (await req('GET', '/api/admin/emails', { token: T })).data;
+    const rows = Array.isArray(log) ? log : (log.emails || log.rows || []);
+    const row = rows.find(r => String(r.to_addr || '').toLowerCase().includes('attach.gc@example.test') && r.status === 'sent');
+    assert(row && row.sent_by && row.sent_by.includes('@'), JSON.stringify({ found: !!row, sent_by: row && row.sent_by, keys: row && Object.keys(row) }));
+    return 'sent email recorded with sent_by: ' + row.sent_by;
+  });
 
   await check('Subscriptions', 'Extra visits: visits above the monthly allowance are billed at the extra-visit price in the bill run', async () => {
     const cust = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Extra Visit Co', company: 'Extra Visit Co', email: 'extra.visits@example.test', phone: '515-555-0199' } });
