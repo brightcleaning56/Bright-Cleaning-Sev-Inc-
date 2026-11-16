@@ -1111,6 +1111,21 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(bad.status === 400, 'unknown kind should be refused, got ' + bad.status);
     return 'attempt counted separately from the conversation; briefing updates when a conversation is logged; unknown kinds refused';
   });
+  await check('Communication history', 'One history per lead or customer: notes and call attempts appear with counts; no customer or lead is refused', async () => {
+    const made = await req('POST', '/api/admin/leads', { token: T, json: { contact_name: 'History Test', kind: 'inquiry', email: 'history@t.test', phone: '5155550111', details: 'History test.' } });
+    const id = made.data.id || (made.data.lead && made.data.lead.id);
+    assert(id, 'lead not created: ' + made.status);
+    await req('POST', '/api/admin/leads/' + id + '/activity', { token: T, json: { kind: 'note', summary: 'Called back about the windows' } });
+    await req('POST', '/api/admin/leads/' + id + '/activity', { token: T, json: { kind: 'call_attempt', summary: 'Called, no answer' } });
+    const h = await req('GET', '/api/admin/comms?lead_id=' + id, { token: T });
+    assert(h.status === 200, 'comms should load, got ' + h.status);
+    const has = txt => (h.data.entries || []).some(e => String(e.title || '').includes(txt) || String(e.detail || '').includes(txt));
+    assert(has('Called back about the windows') && has('Called, no answer'), 'note and call attempt should both appear');
+    assert(h.data.counts && h.data.counts.notes >= 1, 'notes should be counted: ' + JSON.stringify(h.data.counts));
+    const none = await req('GET', '/api/admin/comms', { token: T });
+    assert(none.status === 400, 'no customer or lead should be refused, got ' + none.status);
+    return 'note and call attempt appear in the lead history with counts; a request with no customer or lead is refused (400)';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

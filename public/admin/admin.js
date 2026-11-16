@@ -862,6 +862,17 @@
   }
   // ---------- Lead history: who worked this lead, what happened, what is next ----------
   const LEAD_KIND_UI = { note: 'Note', email: 'Email sent', meeting: 'Meeting', status: 'Status change', assigned: 'Assigned', follow_up: 'Follow-up', call: 'Call', estimate: 'Estimate', converted: 'Converted', viewed: 'Opened', received: 'Received', call_attempt: 'Call attempt', conversation: 'Conversation with the customer', voicemail: 'Voicemail left' };
+  // One communication history for a customer or a lead (see comms.js): calls, texts, emails, notes, proposal events, follow-ups.
+  async function loadComms(q, boxId = 'commsList', sumId = null) {
+    const box = $('#' + boxId); if (!box) return;
+    let h; try { h = await api('/api/admin/comms?' + new URLSearchParams(q).toString()); } catch (err) { box.innerHTML = '<p class="err">' + esc(err.message) + '</p>'; return; }
+    const CH = { call: 'Call', sms: 'Text', email: 'Email sent', email_in: 'Email received', note: 'Note', activity: 'Activity', followup: 'Follow-up', proposal: 'Proposal' };
+    if (sumId && $('#' + sumId)) $('#' + sumId).textContent = h.counts.calls + ' calls · ' + h.counts.texts + ' texts · ' + h.counts.emails + ' emails · ' + h.counts.notes + ' notes · ' + h.counts.followups + ' follow-ups · ' + h.counts.proposals + ' proposal events';
+    box.innerHTML = h.entries.length
+      ? '<ul class="plain">' + h.entries.map(e => '<li style="margin:8px 0;padding-bottom:8px;border-bottom:1px solid #eef2f7"><b>' + esc(CH[e.channel] || e.channel) + '</b> · ' + esc(e.title) + (e.detail ? '<div class="muted" style="white-space:pre-wrap">' + esc(e.detail) + '</div>' : '') + '<div class="muted">' + esc(fmtWhen(e.at)) + (e.actor ? ' · ' + esc(e.actor) : '') + '</div></li>').join('') + '</ul>'
+      : '<p class="empty">Nothing recorded yet.</p>';
+  }
+
   // Briefing and accountability for the lead, built only from logged records (see leadlog.js).
   function renderLeadBrief(h) {
     const el = $('#leadBrief'); if (!el || !h || !h.briefing) return;
@@ -955,6 +966,7 @@
     const flagBox = intake && intake.flags && intake.flags.length ? `<div class="formsection">Needed before pricing</div><ul class="needs">${intake.flags.map(f => `<li>${esc(f.text)}</li>`).join('')}</ul>` : (intake ? '<div class="formsection">Needed before pricing</div><p class="muted">Nothing flagged. The answers cover what is needed to price this service.</p>' : '');
     setTimeout(() => { if (l.email) loadConversation('leadConv', [l.email]); }, 0);
     setTimeout(() => loadLeadHistory(l.id), 0);
+    setTimeout(() => loadComms({ lead_id: l.id }, 'leadComms', 'leadCommsSum'), 0);
     openLeadWorkspace({
       title: l.contact_name || 'Lead #' + l.id,
       sub: `${KIND_LABEL[l.kind] || 'Lead'} #${l.id}${l.company ? ' · ' + l.company : ''}`,
@@ -962,6 +974,7 @@
         <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
         ${flagBox}
         <div id="leadBrief"></div>
+        <div class="card" style="margin:10px 0"><h3 class="secth" style="margin-top:0">Every communication</h3><p class="muted" id="leadCommsSum"></p><div id="leadComms"></div></div>
         <div id="leadHist"></div>
         <div id="leadAI"></div>
         ${l.email ? '<div class="formsection">Conversation</div><div id="leadConv"><p class="muted">Loading…</p></div>' : ''}
@@ -1090,11 +1103,11 @@
     cp.d = d;
     renderCustomerPage();
   }
-  const TABS = [['overview', 'Overview'], ['contacts', 'Contacts'], ['properties', 'Properties'], ['notes', 'Notes'], ['calls', 'Calls'], ['emails', 'Emails'], ['issues', 'Issues'], ['estimates', 'Estimates'], ['proposals', 'Proposals'], ['contracts', 'Contracts'], ['projects', 'Projects'], ['invoices', 'Invoices'], ['documents', 'Documents'], ['activity', 'Activity']];
+  const TABS = [['overview', 'Overview'], ['contacts', 'Contacts'], ['properties', 'Properties'], ['notes', 'Notes'], ['calls', 'Calls'], ['emails', 'Emails'], ['comms', 'Communication'], ['issues', 'Issues'], ['estimates', 'Estimates'], ['proposals', 'Proposals'], ['contracts', 'Contracts'], ['projects', 'Projects'], ['invoices', 'Invoices'], ['documents', 'Documents'], ['activity', 'Activity']];
   function renderCustomerPage() {
     const d = cp.d, c = d.customer, f = d.financials, pc = d.contacts.find(x => x.is_primary) || d.contacts[0] || {};
     const cnt = { contacts: d.contacts.length, properties: d.properties.length, notes: d.notes.length, calls: d.calls.length, emails: d.emails.length, issues: d.issues.length, estimates: d.estimates.length, proposals: d.proposals.length, contracts: d.contracts.length, projects: d.projects.length, invoices: d.invoices.length, documents: d.documents.length };
-    const TI = { overview: 'overview', contacts: 'user', properties: 'customers', notes: 'note', calls: 'calls', emails: 'emails', issues: 'issues', estimates: 'proposals', proposals: 'proposals', contracts: 'contracts', projects: 'projects', invoices: 'invoices', documents: 'documents', activity: 'activity' };
+    const TI = { overview: 'overview', contacts: 'user', properties: 'customers', notes: 'note', calls: 'calls', emails: 'emails', comms: 'calls', issues: 'issues', estimates: 'proposals', proposals: 'proposals', contracts: 'contracts', projects: 'projects', invoices: 'invoices', documents: 'documents', activity: 'activity' };
     $('#custPage').innerHTML = `
       <div class="card cphero"><div class="bimg">${ic('customers')}</div>
         <div style="min-width:0;flex:1"><h1>${esc(c.company || c.name || c.email)} ${badge((c.status || 'Active') + ' customer')}</h1><div class="sub">${esc([c.customer_type, c.industry].filter(Boolean).join(' · ') || 'Commercial cleaning customer')}</div>
@@ -1191,6 +1204,9 @@
       B.innerHTML = `<div class="card"><h2>Documents</h2><button class="btn" id="cpUp">Upload files</button>${rowsOr(d.documents.map(x => `<tr><td><button class="linklike" data-dl="${x.id}">${esc(x.title)}</button><small>${esc(x.file_name || '')}</small></td><td>${esc(x.kind)}</td><td>${esc(x.revision || '—')}</td><td>${fmtDate(x.created_at)}</td></tr>`), ['Document', 'Type', 'Rev', 'Uploaded'], 'No documents for this customer.')}</div>`;
       $('#cpUp').onclick = () => uploadDocs();
       $$('[data-dl]').forEach(b => b.onclick = () => { const x = d.documents.find(y => y.id === Number(b.dataset.dl)); downloadFile({ name: x.file_name || x.title, url: x.file_url }); });
+    } else if (t === 'comms') {
+      B.innerHTML = '<div class="card"><h2>Communication history</h2><p class="muted">Calls, texts, emails, notes, proposal events and follow-ups, newest first.</p><p class="muted" id="commsSum"></p><div id="commsList"><p class="muted">Loading…</p></div></div>';
+      loadComms({ customer_id: c.id }, 'commsList', 'commsSum');
     } else if (t === 'activity') {
       B.innerHTML = `<div class="card"><h2>Activity history</h2><p class="muted">Every change to this customer and its records, with who made it and when.</p><div class="activity">${renderActivity(d.activity) || '<p class="empty">No activity yet.</p>'}</div></div>`;
     }

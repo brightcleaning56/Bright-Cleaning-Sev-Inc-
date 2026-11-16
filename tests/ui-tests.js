@@ -839,7 +839,7 @@ async function check(area, name, fn) {
     assert(/You can approve it/.test(asked[0] || '') && ap.approval && ap.approval.valid && /when it goes to the customer/.test(ap.approval.note), JSON.stringify({ asked, ap }));
     return `owner asked once ("${asked[0].split('\n')[0]}"), approved with note "${ap.approval.note}", then the send was attempted`;
   });
-  await check('Customer page UI', 'Customer opens as a full page; all 14 tabs render; contact, property and note save from the page; Edit account saves', async () => {
+  await check('Customer page UI', 'Customer opens as a full page; all 15 tabs render (incl. Communication); contact, property and note save from the page; Edit account saves', async () => {
     const c = (await api('POST', '/api/admin/customers', { company: 'Page Test Co', name: 'Pat Page', email: 'pat@pagetest.test' }, T));
     await nav('customers'); await sleep(500);
     const row = [...d.querySelectorAll('#custRows [data-cust]')].find(r => r.textContent.includes('Page Test Co')); row.click(); await sleep(1200);
@@ -855,7 +855,7 @@ async function check(area, name, fn) {
     d.querySelector('#custPage [data-a="edit"]').click(); await sleep(700);
     $('#genForm').elements.status.value = 'Prospect'; $('#genSave').click(); await sleep(1000);
     const p = await api('GET', `/api/admin/customers/${c.id}/profile`, null, T);
-    assert(onPage && tabs.length === 14 && rendered.length === 14 && p.contacts.length === 2 && p.properties.length === 1 && p.notes[0].body === 'Prefers email over calls.' && p.notes[0].author && p.customer.status === 'Prospect' && /Prospect/.test(txt('#custPage h1')), JSON.stringify({ onPage, tabs: tabs.length, rendered: rendered.length, c: p.contacts.length, pr: p.properties.length, st: p.customer.status }));
+    assert(onPage && tabs.length === 15 && rendered.length === 15 && p.contacts.length === 2 && p.properties.length === 1 && p.notes[0].body === 'Prefers email over calls.' && p.notes[0].author && p.customer.status === 'Prospect' && /Prospect/.test(txt('#custPage h1')), JSON.stringify({ onPage, tabs: tabs.length, rendered: rendered.length, c: p.contacts.length, pr: p.properties.length, st: p.customer.status }));
     return `two-pane workspace at #customers; ${rendered.length}/14 tabs render; contact, property, note (author ${p.notes[0].author}) saved; status → Prospect`;
   });
   await check('Approvals UI', 'Settings card saves rules; a held proposal shows reasons and can be approved from its drawer', async () => {
