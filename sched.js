@@ -133,7 +133,8 @@ module.exports = function mountSched(app, ctx) {
   // Dispatch gate: required items must be done before an employee can be assigned to a job. The background check is optional.
   // It applies to employees added on or after ONBOARD_FROM, and to anyone whose checklist has been started.
   // Employees already on the team before that date are not blocked until someone starts their checklist.
-  const ONBOARD_FROM = '2026-11-16T00:00:00.000Z';
+  // The cutoff can be moved for test servers only (ONBOARD_FROM); production uses the owner's date.
+  const ONBOARD_FROM = process.env.ONBOARD_FROM || '2026-11-16T00:00:00.000Z';
   const onboardingGate = emp => {
     const started = db.prepare('SELECT 1 FROM employee_onboarding WHERE employee_id=? LIMIT 1').get(emp.id);
     if (!(String(emp.created_at || '') >= ONBOARD_FROM || started)) return [];
