@@ -1,5 +1,11 @@
 (() => {
-  const token = location.pathname.split('/').pop(), $ = s => document.querySelector(s);
+  // /crew/<token> is the personal link; /crew is the sign-in page. A signed-in crew member uses the token 'me'.
+  const rawToken = location.pathname.split('/').pop(), $ = s => document.querySelector(s);
+  const SIGNIN = rawToken === 'crew' || rawToken === '';
+  const token = SIGNIN ? 'me' : rawToken;
+  const SESSION_KEY = 'bc_crew_session';
+  const session = () => { try { return localStorage.getItem(SESSION_KEY) || ''; } catch { return ''; } };
+  const authHdr = () => (token === 'me' && session()) ? { Authorization: 'Bearer ' + session() } : {};
   const KEY_DAY = 'bc_crew_day_' + token, KEY_Q = 'bc_crew_queue_' + token, KEY_OV = 'bc_crew_overlay_' + token;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const say = (t, good) => { $('#msg').innerHTML = t ? `<div class="msg ${good ? 'good' : 'err'}">${esc(t)}</div>` : ''; if (t) scrollTo(0, 0); };
@@ -18,12 +24,40 @@
   // Network failures are TypeError in browsers; a server answer (even an error) is never treated as offline.
   const isOffline = e => e instanceof TypeError;
   async function post(url, body) {
-    const r = await fetch(url, { method: 'POST', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(url, { method: 'POST', headers: { ...authHdr(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { const err = new Error(j.error || 'Something went wrong'); err.status = r.status; throw err; }
     return j;
   }
-  async function get(url) { const r = await fetch(url, { cache: 'no-store' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Something went wrong'); return j; }
+  async function get(url) { const r = await fetch(url, { cache: 'no-store', headers: authHdr() }); const j = await r.json().catch(() => ({})); if (!r.ok) { const err = new Error(j.error || 'Something went wrong'); err.status = r.status; throw err; } return j; }
+
+  // Sign-in page: phone or email and a PIN. A session lasts until the crew member signs out.
+  function showSignIn() {
+    $('#who').textContent = 'Sign in';
+    $('#sub').textContent = '';
+    $('#jobs').innerHTML = '<form id="crewLogin" class="card" style="padding:16px"><p class="muted">Sign in with the phone number or email your supervisor has on file, and your PIN.</p>' +
+      '<label style="display:block;margin:8px 0">Phone or email<input id="crewUser" autocomplete="username" required style="display:block;width:100%;font-size:16px;padding:10px;margin-top:4px"></label>' +
+      '<label style="display:block;margin:8px 0">PIN<input id="crewPin" inputmode="numeric" autocomplete="current-password" required style="display:block;width:100%;font-size:16px;padding:10px;margin-top:4px"></label>' +
+      '<button type="submit" class="btn" style="width:100%;padding:12px;margin-top:8px">Sign in</button></form>';
+    $('#crewLogin').onsubmit = async ev => {
+      ev.preventDefault();
+      const login = $('#crewUser').value.trim(), pin = $('#crewPin').value.trim();
+      try {
+        const r = await fetch('/api/crew/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login, pin }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'Sign-in failed');
+        localStorage.setItem(SESSION_KEY, j.token);
+        location.reload();
+      } catch (e) { say(e.message); }
+    };
+  }
+  if (token === 'me' && !session()) { showSignIn(); return; }
+  if (token === 'me') {
+    const out = document.createElement('button');
+    out.type = 'button'; out.className = 'btn ghost'; out.textContent = 'Sign out'; out.style.cssText = 'margin-left:auto';
+    out.onclick = () => { try { localStorage.removeItem(SESSION_KEY); } catch { /* storage blocked */ } location.reload(); };
+    document.querySelector('header').appendChild(out);
+  }
 
   let d = null, offlineAt = null, flushing = false;
 
@@ -127,7 +161,7 @@
         if (!inp.files.length) return;
         if (!navigator.onLine) { inp.value = ''; return say('Photos need signal. Upload them when you are connected.'); }
         const fd = new FormData(); fd.append('stage', inp.dataset.ph); [...inp.files].forEach(f => fd.append('photos', f));
-        try { const r = await fetch(`/api/crew/${token}/jobs/${id}/photos`, { method: 'POST', body: fd }).then(x => x.json().then(j => ({ ok: x.ok, j }))); if (!r.ok) throw new Error(r.j.error || 'Upload failed'); say(`${r.j.ids.length} photo(s) uploaded.`, true); }
+        try { const r = await fetch(`/api/crew/${token}/jobs/${id}/photos`, { method: 'POST', headers: authHdr(), body: fd }).then(x => x.json().then(j => ({ ok: x.ok, j }))); if (!r.ok) throw new Error(r.j.error || 'Upload failed'); say(`${r.j.ids.length} photo(s) uploaded.`, true); }
         catch (e) { say(isOffline(e) ? 'Photos need signal. Upload them when you are connected.' : e.message); }
       });
     });
@@ -139,6 +173,7 @@
       d = await get('/api/crew/' + token);
       offlineAt = null; store.set(KEY_DAY, { at: Date.now(), data: d });
     } catch (e) {
+      if (e.status === 401 && token === 'me') { try { localStorage.removeItem(SESSION_KEY); } catch { /* storage blocked */ } return showSignIn(); }
       if (!isOffline(e)) { $('#sub').textContent = ''; return say(e.message); }
       const saved = store.get(KEY_DAY, null);
       if (!saved) { $('#sub').textContent = ''; return say('You are offline and this phone has no saved jobs yet. Connect once to load them.'); }

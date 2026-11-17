@@ -201,10 +201,17 @@ module.exports = function mountSched(app, ctx) {
     db.prepare('INSERT OR REPLACE INTO visit_crew(visit_id,employee_id,override_reason,assigned_by,assigned_at) VALUES(?,?,?,?,?)').run(v.id, e.id, reason || null, who(req), now());
     db.prepare('UPDATE visits SET assigned_to=?, updated_at=? WHERE id=?').run(crewOf(v.id).map(x => x.name).join(', '), now(), v.id);
     logAction(req, 'assigned', 'visit', v.id, `${e.name} to ${v.title} ${v.date}${reason ? ' (override: ' + reason + ')' : ''}`);
-    if (v.dispatched_at && e.email && await notify(e.email, `Job update: ${v.title} ${v.date}`, `You've been added to ${v.title} on ${v.date} ${v.start_time || ''}.\nAddress: ${v.address || ''}\nOpen your schedule: ${process.env.PUBLIC_URL || 'https://brightclean.net'}/crew/${e.token}`))
+    if (v.dispatched_at) { const how = await reachCrew(e, `Job update: ${v.title} ${v.date}`, `You've been added to ${v.title} on ${v.date} ${v.start_time || ''}.\nAddress: ${v.address || ''}\nYour job: ${process.env.PUBLIC_URL || 'https://brightclean.net'}/crew/${e.token}\nSign in any time: ${SIGNIN_URL}`, `Bright Clean: you've been added to ${v.title} ${v.date}. Your job: ${process.env.PUBLIC_URL || 'https://brightclean.net'}/crew/${e.token} Sign in any time: ${SIGNIN_URL}`); if (how) db.prepare('UPDATE visit_crew SET notified_at=? WHERE visit_id=? AND employee_id=?').run(now(), v.id, e.id); }
       db.prepare('UPDATE visit_crew SET notified_at=? WHERE visit_id=? AND employee_id=?').run(now(), v.id, e.id);
     res.json({ crew: crewOf(v.id), warnings: c.warn });
   });
+  // Reaches a crew member: email first, then text if they have no email. Returns how, or null.
+  const reachCrew = async (e, subject, text, smsText) => {
+    if (e.email && await notify(e.email, subject, text)) return 'email';
+    if (e.phone && app.locals.smsReady && app.locals.smsReady() && app.locals.sendSms) { try { await app.locals.sendSms(e.phone, smsText); return 'text'; } catch (err) { console.error('crew text failed:', err.message); } }
+    return null;
+  };
+  const SIGNIN_URL = (process.env.PUBLIC_URL || 'https://brightclean.net') + '/crew';
   // Move / skip / dispatch
   app.post('/api/admin/dispatch/visits/:id/move', auth, (req, res) => {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
@@ -234,9 +241,14 @@ module.exports = function mountSched(app, ctx) {
     if (v.project_id) { const p = db.prepare('SELECT status, dispatch_approved_by FROM projects WHERE id=?').get(v.project_id); if (p && !p.dispatch_approved_by && p.status === 'Planning') return res.status(409).json({ error: 'The project is still in Planning: approve dispatch on the project first.' }); }
     db.prepare('UPDATE visits SET dispatched_at=?, dispatched_by=?, updated_at=? WHERE id=?').run(now(), who(req), now(), v.id);
     let sent = 0;
-    for (const c of crew) { const e = getEmp(c.id); if (e.email && await notify(e.email, `Dispatched: ${v.title} ${v.date}`, `You're scheduled for ${v.title} on ${v.date} ${v.start_time || ''}–${v.end_time || ''}.\nAddress: ${v.address || ''}\nCrew: ${crew.map(x => x.name).join(', ')}\nYour schedule, directions and check-in: ${process.env.PUBLIC_URL || 'https://brightclean.net'}/crew/${e.token}`)) { sent++; db.prepare('UPDATE visit_crew SET notified_at=? WHERE visit_id=? AND employee_id=?').run(now(), v.id, e.id); } }
+    const notReached = [];
+    for (const c of crew) {
+      const e = getEmp(c.id);
+      const how = await reachCrew(e, `Dispatched: ${v.title} ${v.date}`, `You're scheduled for ${v.title} on ${v.date} ${v.start_time || ''}–${v.end_time || ''}.\nAddress: ${v.address || ''}\nCrew: ${crew.map(x => x.name).join(', ')}\nYour job, directions and check-in: ${process.env.PUBLIC_URL || 'https://brightclean.net'}/crew/${e.token}\nSign in any time to see your jobs: ${SIGNIN_URL} (phone or email and your PIN).`, `Bright Clean: you're scheduled ${v.title} ${v.date} ${v.start_time || ''}. Your job: ${(process.env.PUBLIC_URL || 'https://brightclean.net')}/crew/${e.token} Sign in any time: ${SIGNIN_URL}`);
+      if (how) sent++; else notReached.push(e.name);
+    }
     logAction(req, 'dispatched', 'visit', v.id, `${v.title} ${v.date}: ${crew.length} crew, ${sent} notified`);
-    res.json({ ok: true, notified: sent, crew: crew.length });
+    res.json({ ok: true, notified: sent, crew: crew.length, not_reached: notReached });
   });
 
   // ---------- Board / dashboard ----------

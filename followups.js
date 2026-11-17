@@ -98,6 +98,9 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   }
   if (process.env.NODE_ENV !== 'test') setInterval(() => runDue().catch(err => console.error('follow-up run failed', err.message)), 15 * 60 * 1000).unref();
 
+  app.locals.sendSms = (to, body) => sendSms(to, body);
+  app.locals.smsReady = () => smsReady();
+
   // ---- Routes ----
   app.get('/api/admin/estimates/:id/followups', auth, (req, res) => {
     const e = estOf(req.params.id); if (!e) return res.status(404).json({ error: 'Not found' });

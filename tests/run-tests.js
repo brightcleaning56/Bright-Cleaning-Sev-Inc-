@@ -1309,6 +1309,31 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     await req('PATCH', '/api/admin/employees/' + eid, { token: T, json: { active: false } });
     return 'sign-in by email and by phone works; wrong PIN and no sign-in are refused; the PIN is never listed';
   });
+  await check('Dispatch to crew', 'A dispatched job reaches the crew member: on their personal link, and when they sign in with a PIN, at any time', async () => {
+    const emp = await req('POST', '/api/admin/employees', { token: T, json: { name: 'Dispatch Crew Test', email: 'dispatch.crew@t.test', phone: '5155550144', role: 'Cleaner' } });
+    const eid = emp.data.id || (emp.data.employee && emp.data.employee.id);
+    assert(eid, 'employee not created: ' + emp.status);
+    await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '7351' } });
+    const today = require('../bizdate').today();
+    const vis = await req('POST', '/api/admin/visits', { token: T, json: { title: 'Dispatch E2E job', date: today, start_time: '13:00', end_time: '15:00', address: '1 Crew St' } });
+    const vid = vis.data.id || (vis.data.visit && vis.data.visit.id);
+    assert(vid, 'visit not created: ' + vis.status + ' ' + JSON.stringify(vis.data));
+    const asg = await req('POST', '/api/admin/dispatch/visits/' + vid + '/crew', { token: T, json: { employee_id: eid } });
+    assert(asg.status === 200, 'crew should be assigned, got ' + asg.status + ' ' + JSON.stringify(asg.data));
+    const disp = await req('POST', '/api/admin/dispatch/visits/' + vid + '/dispatch', { token: T });
+    assert(disp.status === 200 && typeof disp.data.notified === 'number' && Array.isArray(disp.data.not_reached), 'dispatch should answer with who was reached: ' + disp.status);
+    const link = await req('GET', '/api/admin/employees', { token: T });
+    const crewRow = (link.data.employees || []).find(x => x.id === eid);
+    assert(crewRow && crewRow.crew_link, 'the crew member has a personal link');
+    const onLink = await req('GET', crewRow.crew_link.replace('/crew/', '/api/crew/'));
+    assert(onLink.status === 200 && (onLink.data.jobs || []).some(j => j.id === vid), 'the job should be on the personal link');
+    const si = await req('POST', '/api/crew/login', { json: { login: 'dispatch.crew@t.test', pin: '7351' } });
+    assert(si.status === 200 && si.data.token, 'crew should sign in: ' + si.status);
+    const mine = await req('GET', '/api/crew/me', { headers: { Authorization: 'Bearer ' + si.data.token } });
+    assert(mine.status === 200 && (mine.data.jobs || []).some(j => j.id === vid), 'the signed-in crew should see the dispatched job');
+    await req('PATCH', '/api/admin/employees/' + eid, { token: T, json: { active: false } });
+    return 'dispatched job shows on the personal link and to the signed-in crew member (reached: ' + disp.data.notified + ', not reached: ' + disp.data.not_reached.length + ')';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
