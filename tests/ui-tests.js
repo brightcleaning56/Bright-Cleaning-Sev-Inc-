@@ -337,7 +337,7 @@ async function check(area, name, fn) {
     const mods = txt('#ccMods'); const h1 = txt('#v-overview h1');
     const cc = await api('GET', '/api/admin/command-center?days=30', null, T);
     const leadTile = txt('#ccKpis .kpi:first-child b');
-    assert(h1 === 'Command Center' && tiles === 6 && stages === 4 && qa === 10 && portals.length === 5 && /Call Center/.test(mods) && /Setup needed/.test(mods) && leadTile === String(cc.kpis.new_leads.value) && txt('#nav [data-view="overview"]') === 'Command Center', `${h1} ${tiles} ${stages} ${qa} ${mods}`);
+    assert(h1 === 'Command Center' && tiles === 6 && stages === 4 && qa === 13 && portals.length === 5 && /Call Center/.test(mods) && /Setup needed/.test(mods) && leadTile === String(cc.kpis.new_leads.value) && txt('#nav [data-view="overview"]') === 'Command Center', `${h1} ${tiles} ${stages} ${qa} ${mods}`);
     return `tiles ${tiles}, stages ${stages}, quick actions ${qa}, portals ${portals.length}; new-leads tile ${leadTile} = API`;
   });
   await check('Command Center UI', 'Period selector reloads figures; quick action opens the estimator; tile opens its section', async () => {
@@ -628,6 +628,14 @@ async function check(area, name, fn) {
     d.querySelector('#wqScopeAll').click(); await sleep(400);
     assert(mine && d.querySelector('#wqScopeAll').classList.contains('on'), 'My work / All work switch did not switch');
     return 'Client messages tab present; assistant and schedule cards shown; My work / All work switches';
+  });
+  await check('Command Center UI', 'Attention, communications and schedule cards load on the Command Center', async () => {
+    await nav('overview'); await sleep(1500);
+    const ok = !!d.querySelector('#ccAlerts') && !!d.querySelector('#ccComms') && !!d.querySelector('#ccSched');
+    assert(ok, 'the three Command Center cards are missing');
+    const comms = d.querySelectorAll('#ccComms [data-cc-go]').length;
+    assert(comms === 4, 'expected 4 communication tiles, found ' + comms);
+    return '3 cards present; 4 communication tiles open their centers';
   });
   await check('Contracts UI', 'Contract list: search narrows the cards, sort by value puts the highest first, Export CSV builds the filtered list', async () => {
     await api('POST', '/api/admin/contracts', { company: 'SortLo Co', customer_name: 'Lo Sort', title: 'Sort low', value: 111, status: 'Draft' }, T);

@@ -1196,6 +1196,17 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(help.status === 200 && Array.isArray(help.data.suggestions) && /Suggestions only/.test(help.data.note), 'assistant should load with its note');
     return 'messages department, summary, schedule and assistant load; suggestions only';
   });
+  await check('Command Center', 'Communications summary counts every channel for the period; the attention list and schedule load', async () => {
+    const c = await req('GET', '/api/admin/communications-summary?days=30', { token: T });
+    assert(c.status === 200 && c.data.days === 30, 'summary should load: ' + c.status);
+    const keys = ['calls', 'voicemails', 'missed', 'texts_in', 'texts_out', 'emails_sent', 'emails_received'];
+    assert(keys.every(k => typeof c.data[k] === 'number'), 'every channel should be a number: ' + JSON.stringify(c.data));
+    const odd = await req('GET', '/api/admin/communications-summary?days=999', { token: T });
+    assert(odd.status === 200 && odd.data.days === 30, 'an unknown period should fall back to 30 days');
+    const a = await req('GET', '/api/admin/work-queue/assistant', { token: T });
+    assert(a.status === 200 && Array.isArray(a.data.suggestions), 'attention list should load');
+    return 'communications counts for every channel; unknown period falls back to 30 days; attention list loads';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

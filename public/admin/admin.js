@@ -597,6 +597,41 @@
       footer: '<button class="btn ghost" data-close>Close</button>' });
     $$('#drawerRoot [data-drill]').forEach(b => b.onclick = () => openDrill(b.dataset.drill));
   }
+  // Command Center cards: what needs attention (opens Today's Work), communications (opens each center), and today's schedule.
+  async function loadCcExtras() {
+    const days = $('#ccDays') ? $('#ccDays').value : 30;
+    const alerts = $('#ccAlerts');
+    if (alerts) {
+      try {
+        const a = await api('/api/admin/work-queue/assistant');
+        alerts.innerHTML = '<div class="cardhead"><h2>Needs attention</h2><button class="linklike" data-view-link="workqueue">Today’s work</button></div>'
+          + (a.suggestions.length ? '<ul class="plain">' + a.suggestions.map((s, i) => '<li style="margin:6px 0">' + esc(s.text) + ' <button type="button" class="btn small ghost" data-cc-att="' + i + '">Open</button></li>').join('') + '</ul>' : '<p class="muted">Nothing needs attention right now.</p>')
+          + '<p class="muted" style="font-size:12px;margin:6px 0 0">' + esc(a.note) + '</p>';
+        alerts.querySelectorAll('[data-cc-att]').forEach(b => b.onclick = () => { const s = a.suggestions[Number(b.dataset.ccAtt)]; wq.dept = s.dept; wq.bucket = s.bucket; go('workqueue'); });
+      } catch (err) { alerts.innerHTML = '<p class="muted">Attention list could not load: ' + esc(err.message) + '</p>'; }
+    }
+    const comms = $('#ccComms');
+    if (comms) {
+      try {
+        const c = await api('/api/admin/communications-summary?days=' + encodeURIComponent(days));
+        const tile = (label, n, go_, note) => '<button type="button" class="ccq" data-cc-go="' + go_ + '" style="display:flex;justify-content:space-between;width:100%"><span>' + esc(label) + (note ? '<small class="muted"> ' + esc(note) + '</small>' : '') + '</span><b>' + n + '</b></button>';
+        comms.innerHTML = '<div class="cardhead"><h2>Communications</h2><small class="muted">Last ' + c.days + ' days</small></div>'
+          + tile('Calls', c.calls, 'calls', c.missed + ' missed') + tile('Voicemails', c.voicemails, 'calls', '') + tile('Texts received', c.texts_in, 'clientmsgs', c.texts_out + ' sent') + tile('Emails sent', c.emails_sent, 'emails', c.emails_received + ' received');
+        comms.querySelectorAll('[data-cc-go]').forEach(b => b.onclick = () => go(b.dataset.ccGo));
+      } catch (err) { comms.innerHTML = '<p class="muted">Communications could not load: ' + esc(err.message) + '</p>'; }
+    }
+    const sched = $('#ccSched');
+    if (sched) {
+      try {
+        const r = await api('/api/admin/work-queue/schedule');
+        sched.innerHTML = '<div class="cardhead"><h2>Today’s schedule</h2><button class="linklike" data-view-link="workqueue">Open</button></div>'
+          + (r.appointments.length ? '<ul class="plain">' + r.appointments.map(v => '<li style="margin:4px 0"><b>' + esc(v.start_time || 'Any time') + '</b> ' + esc(v.title) + ' <small class="muted">' + esc(v.status) + '</small></li>').join('') + '</ul>' : '<p class="muted">No appointments today.</p>')
+          + '<p style="margin:8px 0 2px"><b>Follow-ups due</b> ' + r.follow_ups.length + '</p>'
+          + (r.follow_ups.slice(0, 5).map(f => '<div class="muted" style="margin:2px 0">' + (f.overdue ? '<span class="badge red">Overdue</span> ' : '') + esc(f.who) + ' · ' + esc(f.what) + '</div>').join(''));
+      } catch (err) { sched.innerHTML = '<p class="muted">Schedule could not load: ' + esc(err.message) + '</p>'; }
+    }
+  }
+
   async function loadOverview() {
     if (state.me && state.me.sees_money === false) { // supervisors: live operations only (no revenue, proposals or collections)
       $$('#v-overview > *').forEach(el => { el.hidden = !(el.classList.contains('pagehead') || el.contains($('#ccLive')) || el.id === 'ccLive'); });
@@ -604,6 +639,7 @@
       return loadLive();
     }
     const [d, cc] = await Promise.all([api('/api/admin/dashboard'), api('/api/admin/command-center?days=' + $('#ccDays').value)]);
+    loadCcExtras();
     $('#todayLine').innerHTML = esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + ` · <span class="live">Live</span> <small class="muted">updated ${esc(new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</small>`;
     const k = cc.kpis, per = `last ${cc.days} days`;
     const att = k.attention.parts;
@@ -631,7 +667,7 @@
       + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
     $('#ccAct').innerHTML = renderActivity(cc.activity) || '<p class="empty">No activity yet.</p>';
     const QA = [
-      ['New lead', 'user', () => newLead()], ['Log call', 'inbox', () => logCall()], ['Schedule visit', 'cal', () => scheduleVisit()], ['Upload drawings', 'layers', () => uploadDocs()],
+      ['New lead', 'user', () => newLead()], ['Log call', 'inbox', () => logCall()], ['Send SMS', 'inbox', () => go('clientmsgs')], ['Send email', 'inbox', () => go('emails')], ['Create task', 'cal', () => { wq.dept = 'tasks'; go('workqueue'); }], ['Schedule visit', 'cal', () => scheduleVisit()], ['Upload drawings', 'layers', () => uploadDocs()],
       ['New estimate', 'plus', () => openEstimator()], ['Add customer', 'user', () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }],
       ['Create invoice', 'inv', () => openRecord('invoices', null)], ['Add scope item', 'layers', () => { go('scopes'); setTimeout(() => $('#scopeAdd').click(), 400); }],
       ['Review leads', 'inbox', () => go('leads')], ['Back up now', 'save', async () => { try { const r = await api('/api/admin/backups', { method: 'POST' }); toast('Backup created: ' + r.name); } catch (e) { toast(e.message, true); } }]

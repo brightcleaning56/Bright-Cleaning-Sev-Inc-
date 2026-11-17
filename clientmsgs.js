@@ -193,6 +193,23 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     res.type('text/xml').send('<Response/>');
   });
 
+  // Communications for the Command Center: counts for the period, each one opens its own center.
+  app.get('/api/admin/communications-summary', auth, (req, res) => {
+    const allowed = [7, 30, 90, 365]; const days = allowed.includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const n = (sql, ...args) => { try { return db.prepare(sql).get(...args).n || 0; } catch { return 0; } };
+    res.json({
+      days,
+      calls: n('SELECT COUNT(*) n FROM calls WHERE created_at>=?', since),
+      voicemails: n("SELECT COUNT(*) n FROM calls WHERE created_at>=? AND outcome='Voicemail'", since),
+      missed: n("SELECT COUNT(*) n FROM calls WHERE created_at>=? AND outcome='Missed'", since),
+      texts_in: n("SELECT COUNT(*) n FROM sms_messages WHERE created_at>=? AND direction='in'", since),
+      texts_out: n("SELECT COUNT(*) n FROM sms_messages WHERE created_at>=? AND (direction IS NULL OR direction<>'in')", since),
+      emails_sent: n("SELECT COUNT(*) n FROM email_log WHERE created_at>=? AND status='sent'", since),
+      emails_received: n('SELECT COUNT(*) n FROM inbox_messages WHERE received_at>=?', since)
+    });
+  });
+
   module.exports.TEMPLATES = TEMPLATES;
   module.exports.inbox = inbox;
 };
