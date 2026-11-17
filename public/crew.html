@@ -40,6 +40,9 @@
   h3.day { margin: 14px 0 6px; font-size: 15px; color: var(--muted); } .row-job b { font-size: 15px; }
   .ph-up:focus-within { outline: 3px solid #1f6fb2; outline-offset: 2px; }
   [hidden] { display: none !important; }
+  textarea, select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; }
+  .bubble { max-width: 85%; padding: 8px 12px; border-radius: 12px; margin: 6px 0; } .bubble.me { background: #e6f0fd; margin-left: auto; } .bubble.office { background: #f1f5f9; }
+  .bubble small { color: var(--muted); display: block; }
 </style></head>
 <body>
 <header>
@@ -51,6 +54,7 @@
   <button type="button" data-view="schedule">Schedule</button>
   <button type="button" data-view="photos">Photos</button>
   <button type="button" data-view="incidents">Incidents</button>
+  <button type="button" data-view="messages">Messages</button>
   <button type="button" data-view="profile">Profile</button>
 </nav>
 <main>
@@ -60,6 +64,7 @@
   <div id="v-schedule" hidden></div>
   <div id="v-photos" hidden></div>
   <div id="v-incidents" hidden></div>
+  <div id="v-messages" hidden></div>
   <div id="v-profile" hidden></div>
 </main>
 <script src="/assets/crew-page.js"></script></body></html>

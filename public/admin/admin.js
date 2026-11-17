@@ -3329,6 +3329,7 @@
   // ---------- Schedule ----------
   const schedState = { visits: [], options: null };
   $('#scheduleAdd').addEventListener('click', () => scheduleVisit());
+  $('#crewMsgBtn').addEventListener('click', () => openCrewMessages());
   $('#schedRange').addEventListener('change', () => loadSchedule());
   $('#schedMode').addEventListener('change', () => { if ($('#schedMode').value === 'week' && $('#schedRange').value === 'past') $('#schedRange').value = '14'; loadSchedule(); });
   async function loadSchedule() {
@@ -3411,23 +3412,54 @@
     openForm({ title: e ? 'Edit employee' : 'Add employee', defs: [{ name: 'name', label: 'Name' }, { name: 'role', label: 'Role', type: 'select', options: ['Cleaner', 'Lead', 'Supervisor', 'Window tech', 'Driver', 'Inspector'] }, { name: 'phone', label: 'Mobile phone' }, { name: 'email', label: 'Email (for dispatch notices)' }, { name: 'crew', label: 'Crew (e.g. A)' }, { name: 'payroll_id', label: 'Payroll file number (ADP)' }, { name: 'skills', label: 'Skills / certifications (comma separated)', wide: true }, { name: 'hourly_rate', label: 'Hourly rate ($)' }, { name: 'max_week_hours', label: 'Weekly hour limit' }, { name: 'day_start', label: 'Usual start', type: 'time' }, { name: 'day_end', label: 'Usual end', type: 'time' }, { name: 'work_days', label: 'Work days (1=Mon … 7=Sun)' }],
       values: e || { role: 'Cleaner', max_week_hours: 40, day_start: '07:00', day_end: '17:00', work_days: '1,2,3,4,5' }, submit: b => api(e ? '/api/admin/employees/' + e.id : '/api/admin/employees', { method: e ? 'PATCH' : 'POST', json: b }), after: () => { toast('Saved'); loadDispatch(); if (disp.tab === 'emp') drawDispTab(); } });
   }
+  // Messages with crew members: the list of conversations, one thread, and a reply (email or text to the crew member)
+  async function openCrewMessages(eid) {
+    if (!eid) {
+      const r = await api('/api/admin/crew-messages');
+      openDrawer({ title: 'Crew messages', sub: 'Messages from your crew, and your replies', body: r.threads.length ? '<ul class="attn">' + r.threads.map(t => `<li data-cm="${t.id}" style="cursor:pointer"><span><b>${esc(t.name)}</b><small>${esc(t.last_body || '')}</small></span><span class="r">${t.unread ? `<span class="badge red">${t.unread} new</span>` : ''}<small>${esc(ago(t.last_at))}</small></span></li>`).join('') + '</ul>' : '<p class="empty">No crew messages yet.</p>', footer: '<button class="btn ghost" data-close>Close</button>' });
+      $$('#drawerRoot [data-cm]').forEach(li => li.onclick = () => openCrewMessages(li.dataset.cm));
+      return;
+    }
+    const r = await api(`/api/admin/crew-messages/${eid}`);
+    const bubbles = r.messages.length ? r.messages.map(m => `<div style="max-width:85%;padding:8px 12px;border-radius:12px;margin:6px 0;${m.direction === 'office' ? 'margin-left:auto;background:#e6f0fd' : 'background:#f1f5f9'}"><small class="muted">${m.direction === 'office' ? 'Office' : esc(r.employee.name)} · ${esc(fmtWhen(m.created_at))}</small><div>${esc(m.body)}</div></div>`).join('') : '<p class="empty">No messages yet.</p>';
+    openDrawer({ title: r.employee.name, sub: 'Messages with this crew member', body: `<div>${bubbles}</div><form id="cmForm" style="margin-top:10px"><textarea name="body" rows="3" placeholder="Reply to ${esc(r.employee.name)}" style="width:100%"></textarea></form>`, footer: '<button class="btn ghost" id="cmBack">All messages</button><button class="btn" id="cmSend">Send</button>' });
+    $('#cmBack').onclick = () => openCrewMessages();
+    $('#cmSend').onclick = async () => {
+      const body = $('#cmForm textarea').value.trim(); if (!body) return toast('Write a message first', true);
+      try { const x = await api(`/api/admin/crew-messages/${eid}`, { method: 'POST', json: { body } }); toast(x.reached ? 'Sent by ' + x.reached : 'Saved. Could not reach them by email or text.', !x.reached); openCrewMessages(eid); }
+      catch (e) { toast(e.message, true); }
+    };
+  }
+
   async function openJob(id) {
     let c, v;
     try { [c] = await Promise.all([api(`/api/admin/dispatch/visits/${id}/candidates`)]); if (!disp.board) disp.board = await api('/api/admin/dispatch/board?date=' + todayISO()); v = disp.board.visits.find(x => x.id === id) || (schedState.visits || []).find(x => x.id === id); } catch (e) { return toast(e.message, true); }
     if (!v) { const r = await api('/api/admin/dispatch/board?date=' + (schedState.visits.find(x => x.id === id) || {}).date); v = r.visits.find(x => x.id === id); }
     const crew = c.candidates.filter(x => x.assigned), list = (v.checklist || []);
+    // Review: a submitted job waits for the office; a returned one shows what to fix
+    const rv = v.review_status || '';
+    const reviewBlock = rv === 'Submitted' ? `<div style="padding:10px;border:1px solid #f5c26b;border-radius:10px;background:#fff8e6;margin:10px 0"><b>Waiting for your review</b><p class="muted" style="margin:4px 0">Check the Before and After photos and the checklist, then approve or send it back.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="jApprove" type="button">Approve</button><button class="btn ghost danger" id="jReturn" type="button">Send back</button></div></div>`
+      : rv === 'Returned' ? `<p class="muted">Sent back to the crew${v.review_note ? ': ' + esc(v.review_note) : ''}. Waiting for them to fix it and submit again.</p>`
+      : rv === 'Approved' ? `<p class="muted">Approved${v.reviewed_by ? ' by ' + esc(v.reviewed_by) : ''}. The crew can mark it complete.</p>` : '';
     openDrawer({ title: v.title, sub: `${fmtDate(v.date)} · ${esc(v.start_time || '')}${v.end_time ? '–' + esc(v.end_time) : ''} · ${esc(v.type)} · ${esc(v.status)}${v.dispatched_at ? ' · dispatched ' + fmtWhen(v.dispatched_at) : ''}`,
       body: `<p>${esc(v.address || '')}${v.address ? ` · <a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(v.address)}" target="_blank" rel="noopener">Directions</a>` : ''}</p>
         ${v.arrived_at || v.completed_at ? `<p class="muted">${v.arrived_at ? 'Arrived ' + fmtWhen(v.arrived_at) : ''}${v.departed_at ? ' · left ' + fmtWhen(v.departed_at) : ''}${v.completed_at ? ' · completed ' + fmtWhen(v.completed_at) : ''}</p>` : ''}
         <h3 class="secth">Crew (${crew.length}${v.crew_needed ? ' of ' + v.crew_needed : ''})</h3><p class="muted">${esc(c.basis)}</p>
         <ul class="cand">${c.candidates.map(x => `<li><span style="flex:1;min-width:0"><b>${esc(x.name)}</b> <small class="muted">${esc(x.role || '')}${x.crew ? ' · Crew ' + esc(x.crew) : ''} · ${x.week_hours} h that week</small>${c.recommended.includes(x.id) ? ' <span class="badge green">Recommended</span>' : ''}${x.block.length ? `<div class="why blk">${esc(x.block.join('; '))}</div>` : ''}${x.warn.length ? `<div class="why wrn">${esc(x.warn.join('; '))}</div>` : ''}</span>
           ${x.assigned ? `<button class="btn small ghost" data-un="${x.id}">Remove</button>` : x.block.length ? '' : `<button class="btn small" data-as="${x.id}" data-ot="${x.warn.some(w => /^overtime/.test(w)) ? 1 : 0}">Assign</button>`}</li>`).join('') || '<li class="muted">No employees yet. Add employees under the Employees tab.</li>'}</ul>
-        <form class="ig" id="jobForm" style="margin-top:12px"><div class="wide"><label>Instructions for the crew</label><textarea name="instructions" rows="2">${esc(v.instructions || '')}</textarea></div><div class="wide"><label>Equipment &amp; supplies</label><input name="equipment" value="${esc(v.equipment || '')}"></div><div><label>Crew needed</label><input name="crew_needed" inputmode="numeric" value="${esc(v.crew_needed || '')}"></div><div><label>Priority</label><select name="priority">${['Low', 'Normal', 'High', 'Urgent'].map(p => `<option${(v.priority || 'Normal') === p ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
+        ${reviewBlock}<form class="ig" id="jobForm" style="margin-top:12px"><div class="wide"><label>Instructions for the crew</label><textarea name="instructions" rows="2">${esc(v.instructions || '')}</textarea></div><div class="wide"><label>Equipment &amp; supplies</label><input name="equipment" value="${esc(v.equipment || '')}"></div><div><label>Crew needed</label><input name="crew_needed" inputmode="numeric" value="${esc(v.crew_needed || '')}"></div><div><label>Priority</label><select name="priority">${['Low', 'Normal', 'High', 'Urgent'].map(p => `<option${(v.priority || 'Normal') === p ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
           <div class="wide"><label>Checklist (one item per line)</label><textarea name="checklist" rows="3">${esc(list.map(x => x.text || x.title || '').join('\n'))}</textarea></div></form>`,
       footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="jEdit">Edit details</button><button class="btn ghost" id="jMove">Move</button><button class="btn ghost danger" id="jSkip">Skip</button><button class="btn ghost" id="jSave">Save</button><button class="btn" id="jDispatch">${v.dispatched_at ? 'Re-send to crew' : 'Confirm dispatch'}</button>` });
     const re = () => { loadSchedule(); openJob(id); };
     $$('#drawerRoot [data-as]').forEach(b => b.onclick = async () => { let reason = ''; if (b.dataset.ot === '1') { reason = prompt('This assignment creates overtime. Reason for approving it:'); if (!reason) return; } try { const r = await api(`/api/admin/dispatch/visits/${id}/crew`, { method: 'POST', json: { employee_id: Number(b.dataset.as), override_reason: reason } }); toast(r.warnings && r.warnings.length ? 'Assigned (note: ' + r.warnings.join('; ') + ')' : 'Assigned'); re(); } catch (e) { toast(e.message, true); } });
     $$('#drawerRoot [data-un]').forEach(b => b.onclick = async () => { try { await api(`/api/admin/dispatch/visits/${id}/crew`, { method: 'POST', json: { employee_id: Number(b.dataset.un), remove: true } }); re(); } catch (e) { toast(e.message, true); } });
+    const rvDo = async decision => {
+      let note = ''; if (decision === 'return') { note = prompt('What needs fixing? The crew will see this.'); if (!note) return; }
+      try { await api(`/api/admin/visits/${id}/review`, { method: 'POST', json: { decision, note } }); toast(decision === 'approve' ? 'Approved. The crew can complete the job now.' : 'Sent back to the crew.'); re(); }
+      catch (e) { toast(e.message, true); }
+    };
+    if ($('#jApprove')) $('#jApprove').onclick = () => rvDo('approve');
+    if ($('#jReturn')) $('#jReturn').onclick = () => rvDo('return');
     $('#jSave').onclick = async () => { const f = formObj($('#jobForm')); try { await api('/api/admin/visits/' + id, { method: 'PATCH', json: { instructions: f.instructions, equipment: f.equipment, crew_needed: f.crew_needed, priority: f.priority, checklist: JSON.stringify(f.checklist.split('\n').map(t => t.trim()).filter(Boolean).map(t => { const o = list.find(x => (x.text || x.title) === t); return o || { text: t, done: false }; })) } }); toast('Saved'); re(); } catch (e) { toast(e.message, true); } };
     $('#jEdit').onclick = () => scheduleVisit((schedState.visits || []).find(x => x.id === id) || v);
     $('#jDispatch').onclick = async () => { try { const r = await api(`/api/admin/dispatch/visits/${id}/dispatch`, { method: 'POST' }); toast(`Dispatched to ${r.crew} crew member(s); ${r.notified} notified${(r.not_reached || []).length ? '. Could not reach: ' + r.not_reached.join(', ') + ' (add an email or phone to their record, or share their crew link)' : ''}`, !!(r.not_reached || []).length); re(); } catch (e) { toast(e.message, true); } };

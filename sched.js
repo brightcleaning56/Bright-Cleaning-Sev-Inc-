@@ -18,8 +18,13 @@ module.exports = function mountSched(app, ctx) {
     CREATE INDEX IF NOT EXISTS te_emp ON time_entries(employee_id);`);
   const vcols = db.prepare('PRAGMA table_info(visits)').all().map(c => c.name);
   for (const [c, t] of [['dispatched_at', 'TEXT'], ['dispatched_by', 'TEXT'], ['arrived_at', 'TEXT'], ['departed_at', 'TEXT'], ['completed_at', 'TEXT'], ['priority', "TEXT DEFAULT 'Normal'"],
-    ['crew_needed', 'INTEGER'], ['instructions', 'TEXT'], ['equipment', 'TEXT'], ['checklist', "TEXT DEFAULT '[]'"], ['skip_reason', 'TEXT'], ['moved_from', 'TEXT']])
+    ['crew_needed', 'INTEGER'], ['instructions', 'TEXT'], ['equipment', 'TEXT'], ['checklist', "TEXT DEFAULT '[]'"], ['skip_reason', 'TEXT'], ['moved_from', 'TEXT'],
+    ['review_status', 'TEXT'], ['submitted_at', 'TEXT'], ['review_note', 'TEXT'], ['reviewed_by', 'TEXT'], ['reviewed_at', 'TEXT']])
     if (!vcols.includes(c)) db.exec(`ALTER TABLE visits ADD COLUMN ${c} ${t}`);
+  // Photos are tied to a job; the column is added at startup so a job with no photos yet can still be checked
+  try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* documents table created elsewhere */ }
+  // Messages between the office and one crew member (optionally about one job)
+  db.exec(`CREATE TABLE IF NOT EXISTS crew_messages(id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, visit_id INTEGER, direction TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, seen_by_office INTEGER DEFAULT 0, seen_by_crew INTEGER DEFAULT 0)`);
   const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
@@ -333,7 +338,7 @@ module.exports = function mountSched(app, ctx) {
         const site = v.project_id ? J((db.prepare('SELECT site_info FROM projects WHERE id=?').get(v.project_id) || {}).site_info, {}) : {};
         // Access details only for crew on today's or tomorrow's jobs; never billing or pricing.
         const near = v.date <= addDays(today(), 1);
-        return { id: v.id, dispatched: !!v.dispatched_at, title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
+        return { id: v.id, dispatched: !!v.dispatched_at, review_status: v.review_status || null, review_note: v.review_note || null, title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
           crew: crewOf(v.id).map(x => x.name), access: near ? (site.access || '') : 'Shown the day before the job.', site_contact: near ? (site.contact || '') : '', safety: site.safety || '', arrived_at: v.arrived_at, completed_at: v.completed_at };
       }) });
   };
@@ -408,10 +413,24 @@ module.exports = function mountSched(app, ctx) {
       db.prepare('UPDATE visits SET checklist=?, updated_at=? WHERE id=?').run(JSON.stringify(list), t, v.id);
       return res.json({ checklist: list });
     }
+    if (a === 'submit') {
+      // Sending the job to the office: every checklist item done, and the evidence on file (before and after photos)
+      const list = J(v.checklist, []), left = list.filter(x => !x.done).length;
+      if (left) return res.status(409).json({ error: `${left} checklist item(s) are not done yet.` });
+      try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* column added with the first photo */ }
+      const titles = db.prepare("SELECT title FROM documents WHERE visit_id=? AND kind='Photos'").all(v.id).map(x => x.title || '');
+      if (!titles.some(x => /^Before –/.test(x))) return res.status(409).json({ error: 'Add at least one BEFORE photo before submitting.' });
+      if (!titles.some(x => /^After –/.test(x))) return res.status(409).json({ error: 'Add at least one AFTER photo before submitting.' });
+      db.prepare("UPDATE visits SET review_status='Submitted', submitted_at=?, review_note=NULL, updated_at=? WHERE id=?").run(t, t, v.id);
+      db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'submitted for review', 'visit', v.id, v.title, t);
+      if (adminEmail) await notify(adminEmail, `Job ready for review: ${v.title}`, `${e.name} submitted ${v.title} (${v.date}) for review.\nOpen: https://brightclean.net/admin/#schedule`);
+      return res.json({ ok: true, review_status: 'Submitted' });
+    }
     if (a === 'complete') {
       const list = J(v.checklist, []), left = list.filter(x => !x.done).length;
       if (left) return res.status(409).json({ error: `${left} checklist item(s) are not done yet.` });
       if (v.type === 'Corrective work') { let n = 0; try { n = db.prepare("SELECT COUNT(*) n FROM documents WHERE visit_id=? AND kind='Photos' AND title LIKE 'After –%'").get(v.id).n; } catch { n = 0; } if (!n) return res.status(409).json({ error: 'Take at least one AFTER photo of the corrected area before completing this job.' }); }
+      if (v.review_status !== 'Approved') return res.status(409).json({ error: v.review_status === 'Submitted' ? 'Waiting for the office to approve this job.' : 'Submit the job for review before completing it.' });
       const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND visit_id=? AND clock_out IS NULL').get(e.id, v.id); if (open) closeEntry(open, t, 'crew');
       db.prepare("UPDATE visits SET status='Done', completed_at=?, departed_at=COALESCE(departed_at,?), updated_at=? WHERE id=?").run(t, t, t, v.id);
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'completed', 'visit', v.id, v.title, t);
@@ -431,6 +450,73 @@ module.exports = function mountSched(app, ctx) {
   };
   app.post('/api/crew/:token/jobs/:vid/:action', crewAction);
   app.post('/api/crew/me/jobs/:vid/:action', crewAction);
+
+  // ---------- Crew messages (office <-> crew member) ----------
+  const msgGet = (req, res) => {
+    const e = crewAuth(req, res); if (!e) return;
+    const rows = db.prepare('SELECT id, direction, body, visit_id, created_at FROM crew_messages WHERE employee_id=? ORDER BY id DESC LIMIT 100').all(e.id).reverse();
+    db.prepare("UPDATE crew_messages SET seen_by_crew=1 WHERE employee_id=? AND direction='office' AND seen_by_crew=0").run(e.id);
+    res.json({ messages: rows });
+  };
+  const msgPost = async (req, res) => {
+    const e = crewAuth(req, res); if (!e) return;
+    const body = clean((req.body || {}).body, 1000);
+    if (!body) return res.status(400).json({ error: 'Write a message first.' });
+    let vid = null;
+    if (req.body.visit_id) { const v = assigned(e, req.body.visit_id); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); vid = v.id; }
+    const t = now();
+    const id = db.prepare("INSERT INTO crew_messages(employee_id,visit_id,direction,body,created_at,seen_by_office,seen_by_crew) VALUES(?,?,'crew',?,?,0,1)").run(e.id, vid, body, t).lastInsertRowid;
+    if (adminEmail) await notify(adminEmail, `Message from ${e.name}`, `${body}\n\nReply in the admin: https://brightclean.net/admin/#schedule`);
+    res.status(201).json({ id });
+  };
+  app.get(['/api/crew/:token/messages', '/api/crew/me/messages'], msgGet);
+  app.post(['/api/crew/:token/messages', '/api/crew/me/messages'], msgPost);
+
+  // Office side: the list of crew conversations, one thread, and a reply
+  app.get('/api/admin/crew-messages', auth, (req, res) => {
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can read crew messages.' });
+    const threads = db.prepare(`SELECT e.id, e.name, e.role,
+        (SELECT body FROM crew_messages m WHERE m.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_body,
+        (SELECT created_at FROM crew_messages m WHERE m.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_at,
+        (SELECT COUNT(*) FROM crew_messages m WHERE m.employee_id=e.id AND m.direction='crew' AND m.seen_by_office=0) AS unread
+      FROM employees e WHERE e.id IN (SELECT DISTINCT employee_id FROM crew_messages) ORDER BY last_at DESC`).all();
+    res.json({ threads });
+  });
+  app.get('/api/admin/crew-messages/:eid', auth, (req, res) => {
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can read crew messages.' });
+    const e = getEmp(req.params.eid); if (!e) return res.status(404).json({ error: 'Employee not found.' });
+    const messages = db.prepare('SELECT id, direction, body, visit_id, created_at FROM crew_messages WHERE employee_id=? ORDER BY id DESC LIMIT 100').all(e.id).reverse();
+    db.prepare("UPDATE crew_messages SET seen_by_office=1 WHERE employee_id=? AND direction='crew' AND seen_by_office=0").run(e.id);
+    res.json({ employee: { id: e.id, name: e.name }, messages });
+  });
+  app.post('/api/admin/crew-messages/:eid', auth, async (req, res) => {
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can message crew.' });
+    const e = getEmp(req.params.eid); if (!e) return res.status(404).json({ error: 'Employee not found.' });
+    const body = clean((req.body || {}).body, 1000);
+    if (!body) return res.status(400).json({ error: 'Write a message first.' });
+    const vid = req.body.visit_id ? Number(req.body.visit_id) || null : null;
+    db.prepare("INSERT INTO crew_messages(employee_id,visit_id,direction,body,created_at,seen_by_office,seen_by_crew) VALUES(?,?,'office',?,?,1,0)").run(e.id, vid, body, now());
+    const how = await reachCrew(e, 'Message from the Bright Clean office', `${body}\n\nReply or see your jobs: ${SIGNIN_URL}`, `Bright Clean office: ${body.slice(0, 120)} Sign in: ${SIGNIN_URL}`);
+    logAction(req, 'messaged crew', 'employee', e.id, body.slice(0, 80));
+    res.status(201).json({ ok: true, reached: how });
+  });
+
+  // Office review of a submitted job: approve (crew may then complete it) or return it with what to fix
+  app.post('/api/admin/visits/:id/review', auth, async (req, res) => {
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can review jobs.' });
+    const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
+    const decision = (req.body || {}).decision;
+    if (!['approve', 'return'].includes(decision)) return res.status(400).json({ error: 'Choose approve or return.' });
+    if (v.review_status !== 'Submitted') return res.status(409).json({ error: 'This job is not waiting for review.' });
+    const note = clean((req.body || {}).note, 500);
+    if (decision === 'return' && !note) return res.status(400).json({ error: 'Say what needs fixing before returning the job.' });
+    const t = now(), status = decision === 'approve' ? 'Approved' : 'Returned';
+    db.prepare('UPDATE visits SET review_status=?, review_note=?, reviewed_by=?, reviewed_at=?, updated_at=? WHERE id=?').run(status, decision === 'approve' ? null : note, who(req), t, t, v.id);
+    logAction(req, decision === 'approve' ? 'approved job' : 'returned job', 'visit', v.id, `${v.title}${note ? ': ' + note : ''}`);
+    const text = decision === 'approve' ? `${v.title} (${v.date}) was approved. You can mark it complete now.` : `${v.title} (${v.date}) needs changes before it can be approved: ${note}`;
+    for (const c of crewOf(v.id)) await reachCrew(getEmp(c.id), `Job ${decision === 'approve' ? 'approved' : 'returned'}: ${v.title} ${v.date}`, `${text}\nOpen your job: ${SIGNIN_URL}`, text.slice(0, 300));
+    res.json({ ok: true, review_status: status });
+  });
   // Crew photo upload (before/after): stored as project/visit documents.
   try {
     const multer = require('multer'), path = require('path'), fs = require('fs');

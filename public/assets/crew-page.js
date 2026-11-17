@@ -119,6 +119,7 @@
   // One job: the big actions first, then photos, then the details (scope, access, checklist) tucked under "Job details".
   function jobCard(j, st) {
     const { o, pending, inHere, done } = st;
+    const rv = j.review_status || null; // null, Submitted, Approved or Returned
     const checked = i => (o.checklist && o.checklist[i] !== undefined) ? o.checklist[i] : !!j.checklist[i].done;
     const label = done ? 'Completed' : inHere ? 'In progress' : j.status;
     const stripe = done ? 'done' : inHere ? 'live' : '';
@@ -127,9 +128,12 @@
       <div class="meta">${esc(fmt(j.date))} · ${esc(j.start_time || '')}${j.end_time ? '–' + esc(j.end_time) : ''}</div>
       <div class="meta">${esc(j.address || 'Address not set yet')}</div>
       <div class="tags">${pending ? '<span class="pill">Waiting to send</span>' : ''}${j.dispatched ? '' : '<span class="pill">Upcoming · office confirms</span>'}</div>
-      ${done ? '' : `<div class="actions">
+      ${done ? '' : `${rv === 'Returned' ? `<div class="msg err">Sent back by the office: ${esc(j.review_note || 'see the office')}. Fix it, then submit again.</div>` : ''}
+      <div class="actions">
         ${inHere ? '<button class="ghost big" data-a="checkout">Check out<small>End job</small></button>' : '<button class="primary big" data-a="checkin">Check in<small>Start job</small></button>'}
-        <button class="ok big" data-a="complete">Mark complete<small>Finish job</small></button>
+        ${rv === 'Submitted' ? '<button class="ghost big" disabled>Waiting for approval<small>Office is reviewing</small></button>'
+          : rv === 'Approved' ? '<button class="ok big" data-a="complete">Mark complete<small>Job approved</small></button>'
+          : '<button class="ok big" data-a="submit">Submit for review<small>Checklist and photos</small></button>'}
       </div>`}
       <div class="photos"><b>Photos</b>
         <label class="btn ghost ph-up">Before<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label>
@@ -152,7 +156,7 @@
     const clockedIn = d.clocked_in ? hm(d.clocked_in.since) : null;
     $('#sub').textContent = `${d.employee.role || ''}${d.employee.crew ? ' · Crew ' + d.employee.crew : ''}${clockedIn ? ' · Checked in since ' + clockedIn : ''}`;
     document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
-    ['jobs', 'schedule', 'photos', 'incidents', 'profile'].forEach(v => { const el = $('#v-' + v); if (el) el.hidden = v !== view; });
+    ['jobs', 'schedule', 'photos', 'incidents', 'messages', 'profile'].forEach(v => { const el = $('#v-' + v); if (el) el.hidden = v !== view; });
 
     const all = d.jobs.map(j => ({ j, ...jobState(j, ov, q) }));
     const sameDay = all.filter(x => x.j.date === today);
@@ -227,6 +231,14 @@
           catch (e) { say(isOffline(e) ? 'Incidents need signal. Report it when you are connected.' : e.message); }
           b.disabled = false; return;
         }
+        if (a === 'submit') {
+          // Sending for review needs the server to see the checklist and photos, so it is not queued offline
+          if (!navigator.onLine) return say('Sending for review needs signal. Try again when you are connected.');
+          b.disabled = true;
+          try { await post(`/api/crew/${token}/jobs/${id}/submit`, {}); say('Sent to the office for review.', true); await refresh(); }
+          catch (e) { say(isOffline(e) ? 'Sending for review needs signal. Try again when you are connected.' : e.message); b.disabled = false; }
+          return;
+        }
         queueChange(id, a, {});
         const refusal = await flush();
         const done = { checkin: 'Checked in.', checkout: 'Checked out.', complete: 'Job marked complete. Thank you!' }[a];
@@ -257,10 +269,31 @@
     });
   }
 
+  // Messages with the office: one conversation, optionally tied to a job. Needs signal.
+  async function loadMessages() {
+    const box = $('#v-messages'); if (!box) return;
+    let list = [];
+    try { list = (await get(`/api/crew/${token}/messages`)).messages || []; }
+    catch (e) { box.innerHTML = `<h1 style="font-size:22px;margin:4px 0 10px">Messages</h1><div class="msg err">${esc(isOffline(e) ? 'Messages need signal. Connect to read and send messages.' : e.message)}</div>`; return; }
+    const jobs = d ? d.jobs : [];
+    box.innerHTML = `<h1 style="font-size:22px;margin:4px 0 4px">Messages</h1><p class="muted">Messages go straight to the office. Pick a job if your message is about one.</p>
+      <div class="card">${list.length ? list.map(m => `<div class="bubble ${m.direction === 'crew' ? 'me' : 'office'}"><small>${m.direction === 'crew' ? 'You' : 'Office'} · ${esc(hm(m.created_at))}</small><div>${esc(m.body)}</div></div>`).join('') : '<p class="muted">No messages yet.</p>'}</div>
+      <form id="msgForm" class="card"><select id="msgJob" aria-label="About which job"><option value="">General (no job)</option>${jobs.map(j => `<option value="${j.id}">${esc(fmt(j.date))} · ${esc(j.title)}</option>`).join('')}</select>
+        <textarea id="msgBody" rows="3" maxlength="1000" placeholder="Write a message to the office" style="margin-top:8px"></textarea>
+        <button type="submit" class="primary big" style="margin-top:8px;width:100%">Send to office</button></form>`;
+    box.querySelector('#msgForm').onsubmit = async ev => {
+      ev.preventDefault();
+      const body = box.querySelector('#msgBody').value.trim(); if (!body) return say('Write a message first.');
+      const vid = box.querySelector('#msgJob').value;
+      try { await post(`/api/crew/${token}/messages`, { body, visit_id: vid ? Number(vid) : null }); say('Message sent to the office.', true); loadMessages(); }
+      catch (e) { say(isOffline(e) ? 'Messages need signal. Try again when you are connected.' : e.message); }
+    };
+  }
+
   // Navigation: the tab bar, the quick actions and the Today / Upcoming / Completed switch
   document.addEventListener('click', e => {
     const v = e.target.closest('[data-view], [data-view-go]');
-    if (v) { view = v.dataset.view || v.dataset.viewGo; say(''); render(); scrollTo(0, 0); return; }
+    if (v) { view = v.dataset.view || v.dataset.viewGo; say(''); render(); if (view === 'messages') loadMessages(); scrollTo(0, 0); return; }
     const s = e.target.closest('[data-sub]');
     if (s) { sub = s.dataset.sub; render(); }
   });

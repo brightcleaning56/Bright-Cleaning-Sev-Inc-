@@ -1361,6 +1361,53 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(newLead.status === 404, 'a decided review cannot be decided again, got ' + newLead.status);
     return 'repeat waits in review; lead unchanged until merged; merge adds details; different project is not a duplicate';
   });
+  await check('Crew review and messages', 'A job needs a checklist, before and after photos and office approval before it can be completed; crew and office can message each other', async () => {
+    const emp = await req('POST', '/api/admin/employees', { token: T, json: { name: 'Review Crew Test', email: 'review.crew@t.test', phone: '5155550178', role: 'Cleaner' } });
+    const eid = emp.data.id || (emp.data.employee && emp.data.employee.id);
+    assert(eid, 'employee not created: ' + emp.status);
+    const list = (await req('GET', '/api/admin/employees', { token: T })).data.employees || [];
+    const row = list.find(x => x.id === eid);
+    assert(row && row.crew_link, 'crew link missing');
+    const tk = row.crew_link.split('/').pop();
+    const today = require('../bizdate').today();
+    const vis = await req('POST', '/api/admin/visits', { token: T, json: { title: 'Review test job', date: today, start_time: '15:00', end_time: '16:00', address: '2 Review Rd' } });
+    const vid = vis.data.id || (vis.data.visit && vis.data.visit.id);
+    assert(vid, 'visit not created');
+    await req('POST', '/api/admin/dispatch/visits/' + vid + '/crew', { token: T, json: { employee_id: eid } });
+    const early = await req('POST', `/api/crew/${tk}/jobs/${vid}/submit`, { json: {} });
+    assert(early.status === 409 && /BEFORE/.test(early.data.error || ''), 'submit needs a before photo, got ' + early.status + ' ' + JSON.stringify(early.data));
+    const pB = new FormData(); pB.append('stage', 'Before'); pB.append('photos', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: 'image/png' }), 'b.png');
+    const pA = new FormData(); pA.append('stage', 'After'); pA.append('photos', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: 'image/png' }), 'a.png');
+    await req('POST', `/api/crew/${tk}/jobs/${vid}/photos`, { body: pB });
+    const noAfter = await req('POST', `/api/crew/${tk}/jobs/${vid}/submit`, { json: {} });
+    assert(noAfter.status === 409 && /AFTER/.test(noAfter.data.error || ''), 'submit needs an after photo, got ' + noAfter.status + ' ' + JSON.stringify(noAfter.data));
+    await req('POST', `/api/crew/${tk}/jobs/${vid}/photos`, { body: pA });
+    const sub = await req('POST', `/api/crew/${tk}/jobs/${vid}/submit`, { json: {} });
+    assert(sub.status === 200 && sub.data.review_status === 'Submitted', 'submit should work: ' + sub.status);
+    const early2 = await req('POST', `/api/crew/${tk}/jobs/${vid}/complete`, { json: {} });
+    assert(early2.status === 409, 'complete must wait for approval, got ' + early2.status);
+    const ret = await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'return' } });
+    assert(ret.status === 400, 'returning needs a note, got ' + ret.status);
+    const back = await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'return', note: 'Redo the entrance mat' } });
+    assert(back.status === 200 && back.data.review_status === 'Returned', 'return should work');
+    await req('POST', `/api/crew/${tk}/jobs/${vid}/submit`, { json: {} });
+    const appr = await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'approve' } });
+    assert(appr.status === 200, 'approve should work: ' + appr.status);
+    const comp = await req('POST', `/api/crew/${tk}/jobs/${vid}/complete`, { json: {} });
+    assert(comp.status === 200, 'complete after approval should work, got ' + comp.status + ' ' + JSON.stringify(comp.data));
+    const sent = await req('POST', `/api/crew/${tk}/messages`, { json: { body: 'Running 10 minutes late', visit_id: vid } });
+    assert(sent.status === 201, 'crew message should send: ' + sent.status);
+    const threads = (await req('GET', '/api/admin/crew-messages', { token: T })).data.threads || [];
+    const th = threads.find(x => x.id === eid);
+    assert(th && th.unread === 1, 'office should see one unread message');
+    const reply = await req('POST', `/api/admin/crew-messages/${eid}`, { token: T, json: { body: 'Thanks, keep going' } });
+    assert(reply.status === 201, 'office reply should send: ' + reply.status);
+    const mine = await req('GET', `/api/crew/${tk}/messages`);
+    assert((mine.data.messages || []).some(m => m.direction === 'office' && /keep going/.test(m.body)), 'crew should see the office reply');
+    await req('PATCH', '/api/admin/employees/' + eid, { token: T, json: { active: false } }); // keep this test crew out of later assignment checks
+    return 'submit needs before and after photos; complete waits for approval; return needs a note; crew and office messages both ways';
+  });
+
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
@@ -1966,7 +2013,15 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const ci2 = await req('POST', `/api/crew/${tok}/jobs/${v1}/checkin`, { json: {} });
     const inc = await req('POST', `/api/crew/${tok}/jobs/${v1}/incident`, { json: { title: 'Broken lobby tile', description: 'Found cracked tile by elevator' } });
     const co = await req('POST', `/api/crew/${tok}/jobs/${v1}/checkout`, { json: {} });
+    // Completing needs the job submitted with evidence and approved by the office first
+    const phB = new FormData(); phB.append('stage', 'Before'); phB.append('photos', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: 'image/png' }), 'b.png');
+    const phA = new FormData(); phA.append('stage', 'After'); phA.append('photos', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: 'image/png' }), 'a.png');
+    await req('POST', `/api/crew/${tok}/jobs/${v1}/photos`, { body: phB }); await req('POST', `/api/crew/${tok}/jobs/${v1}/photos`, { body: phA });
+    const notReviewed = await req('POST', `/api/crew/${tok}/jobs/${v1}/complete`, { json: {} });
+    const subm = await req('POST', `/api/crew/${tok}/jobs/${v1}/submit`, { json: {} });
+    await req('POST', `/api/admin/visits/${v1}/review`, { token: T, json: { decision: 'approve' } });
     const comp = await req('POST', `/api/crew/${tok}/jobs/${v1}/complete`, { json: {} });
+    globalThis.__reviewChk = { refused: notReviewed.status === 409, submitted: subm.status === 200, completed: comp.status === 200 };
     const iss = (await req('GET', '/api/admin/issues?status=open&q=Broken%20lobby', { token: T })).data.issues[0];
     const te = (await req('GET', '/api/admin/time?from=2026-01-01&to=2030-01-01', { token: T })).data.entries.find(x => x.visit_id === v1);
     const man = await req('POST', '/api/admin/time', { token: T, json: { employee_id: a.id, visit_id: v1, clock_in: '2026-12-07T08:00:00Z', clock_out: '2026-12-07T12:30:00Z' } });
@@ -3544,13 +3599,17 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const fd = new FormData(); fd.append('stage', 'After'); fd.append('photos', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])], { type: 'image/png' }), 'after.png');
     const up = await fetch(B + `/api/crew/${tk}/jobs/${vid}/photos`, { method: 'POST', body: fd }); const upBody = await up.text();
     const before2 = mail.length;
+    const phB2 = new FormData(); phB2.append('stage', 'Before'); phB2.append('photos', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: 'image/png' }), 'before.png');
+    await req('POST', `/api/crew/${tk}/jobs/${vid}/photos`, { body: phB2 });
+    await req('POST', `/api/crew/${tk}/jobs/${vid}/submit`, { json: {} });
+    await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'approve' } });
     const done = await req('POST', `/api/crew/${tk}/jobs/${vid}/complete`, { json: {} }); await sleep(300);
     const det = (await req('GET', `/api/admin/quality/complaints/${c.id}`, { token: T })).data;
     const mgrMail = mail.slice(before2).find(m => /Reinspect now/.test(m.subject));
     const act = det.actions.find(a => a.action_type === 'corrective_visit');
     const chk = { scheduled: cor.status === 201 && cor.data.notified === 1, crewMail: !!crewMail && /Before and after photos/.test(crewMail.raw) && mailTk === tk, sees: !!job && job.checklist.length >= 5 && /Take AFTER photos/.test(JSON.stringify(job.checklist)) && /Re-scrub lobby/.test(JSON.stringify(job.checklist)),
       noPrice: job && !/\$\s?\d/.test(JSON.stringify(job)), refused1: noPhoto1.status === 409, refused2: noPhoto2.status === 409 && /AFTER photo/.test(noPhoto2.data.error), photo: up.status === 201, done: done.status === 200,
-      advanced: det.complaint.status === 'REINSPECTION' && act && act.status === 'Completed' && /1 photo/.test(act.notes || ''), mgr: !!mgrMail, timeline: det.autopilot.some(a => /Corrective cleaning completed/.test(a.step)) };
+      advanced: det.complaint.status === 'REINSPECTION' && act && act.status === 'Completed' && /[1-9]\d* photo/.test(act.notes || ''), mgr: !!mgrMail, timeline: det.autopilot.some(a => /Corrective cleaning completed/.test(a.step)) };
     const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ cor: cor.data && { s: cor.status, n: cor.data.notified, e: cor.data.error }, tk: !!tk, job: job && job.checklist, n1: noPhoto1.data, n2: noPhoto2.data, up: up.status + ' ' + upBody.slice(0, 200), done: done.data, st: det.complaint.status, act }).slice(0, 1500));
     return `crew dispatched + emailed; ${job.checklist.length}-item checklist; refused without after photo; completed → ${det.complaint.status}; manager emailed`;
@@ -3884,7 +3943,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const a = await req('POST', '/api/admin/ai/leads/1/triage', { token: T });
     const b = await req('POST', '/api/admin/ai/calls/extract', { token: T, json: { notes: 'x' } });
     const c = await req('POST', '/api/admin/ai/documents/1/takeoff', { token: T });
-    assert(st.enabled === false && [a, b, c].every(x => x.status === 503 && x.data.ai_off), JSON.stringify([a.data, b.data, c.data]));
+    // Takeoff checks the file type before the AI key: a photo (not a PDF) gets the PDF message, which is correct without AI
+    assert(st.enabled === false && [a, b].every(x => x.status === 503 && x.data.ai_off) && (c.status === 503 ? c.data.ai_off : /PDF/.test(c.data.error || '')), JSON.stringify([a.data, b.data, c.data]));
     return `status off; triage, call notes and takeoff all 503 "${a.data.error}"`;
   });
 
