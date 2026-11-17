@@ -1194,7 +1194,7 @@
     const tbar = $('#leadSearch') && $('#leadSearch').closest('.toolbar'); if (tbar) tbar.hidden = true;
     const ws = $('#leadWorkspace'); ws.hidden = false;
     ws.innerHTML = `<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
-        <div style="min-width:0"><p class="muted" style="margin:0 0 4px"><button type="button" class="linklike" id="lwBack">Leads</button> › ${esc(sub)}</p><h1 style="margin:6px 0 2px;font-size:22px;overflow-wrap:anywhere">${esc(title)}</h1><p class="muted" style="margin:0">${esc(sub)}</p></div></div>
+        <div style="min-width:0"><p class="muted" style="margin:0 0 4px"><button type="button" class="linklike" id="lwBack">Leads</button> › ${esc(title)}</p><h1 style="margin:6px 0 2px;font-size:22px;overflow-wrap:anywhere">${esc(title)}</h1><p class="muted" style="margin:0">${esc(sub)}</p></div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">${footer}</div>
       <div class="lwbody">${body}</div>`;
     $('#lwBack').onclick = () => closeLeadWorkspace();
