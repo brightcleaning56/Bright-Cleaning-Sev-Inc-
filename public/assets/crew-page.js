@@ -131,6 +131,7 @@
       ${done ? '' : `${rv === 'Returned' ? `<div class="msg err">Sent back by the office: ${esc(j.review_note || 'see the office')}. Fix it, then submit again.</div>` : ''}
       <div class="actions">
         ${inHere ? '<button class="ghost big" data-a="checkout">Check out<small>End job</small></button>' : '<button class="primary big" data-a="checkin">Check in<small>Start job</small></button>'}
+        ${inHere ? '' : j.on_my_way_at ? '<button class="ghost big" disabled>On the way<small>Client told</small></button>' : '<button class="ghost big" data-a="onmyway">On my way<small>Tell the client</small></button>'}
         ${rv === 'Submitted' ? '<button class="ghost big" disabled>Waiting for approval<small>Office is reviewing</small></button>'
           : rv === 'Approved' ? '<button class="ok big" data-a="complete">Mark complete<small>Job approved</small></button>'
           : '<button class="ok big" data-a="submit">Submit for review<small>Checklist and photos</small></button>'}
@@ -174,6 +175,9 @@
     const first = String(d.employee.name || '').split(' ')[0];
     const list = { today: todays, upcoming, completed }[sub] || todays;
     const emptyText = { today: 'No jobs for today.', upcoming: 'No upcoming jobs yet.', completed: 'No completed jobs yet.' }[sub];
+    // Next stop: the next job that is not finished, with the time the client expects the crew
+    const nextOne = all.filter(x => !x.done && x.j.status !== 'Cancelled').sort((a, b) => (a.j.date + (a.j.start_time || '')).localeCompare(b.j.date + (b.j.start_time || '')))[0];
+    const nextStop = nextOne ? `<div class="card job live"><small class="muted">Next stop</small><h2>${esc(nextOne.j.title)}</h2><div class="meta">${esc(fmt(nextOne.j.date))}${nextOne.j.start_time ? ' · ' + esc(nextOne.j.start_time) : ''} · ${esc(nextOne.j.address || 'Address not set yet')}</div>${nextOne.j.start_time ? `<div class="muted">The client expects the crew at ${esc(nextOne.j.start_time)}. They can follow your arrival on their tracking page.</div>` : ''}${nextOne.j.on_my_way_at ? '<div class="msg good">You have told the client you are on the way.</div>' : ''}${nextOne.j.address ? `<div class="links"><a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(nextOne.j.address)}">Directions</a></div>` : ''}</div>` : '';
 
     if (view === 'jobs') {
       const ring = 2 * Math.PI * 34;
@@ -186,6 +190,7 @@
             <div class="stat"><small>Remaining</small><b>${remaining}</b></div>
             <div class="stat"><small>Checked in</small><b>${inNow}</b></div>
           </div>
+          ${nextStop}
           <div class="subtabs">${[['today', 'Today', todays.length], ['upcoming', 'Upcoming', upcoming.length], ['completed', 'Completed', completed.length]].map(([k, l, n]) => `<button type="button" class="subtab ${sub === k ? 'on' : ''}" data-sub="${k}">${l} (${n})</button>`).join('')}</div>
           <div id="jobs">${!d.jobs.length ? '<div class="card"><b>No dispatched jobs this week.</b><p class="muted">Your supervisor will send jobs here once they are dispatched.</p></div>' : list.length ? list.map(x => jobCard(x.j, x)).join('') : `<div class="card"><b>Nothing here.</b><p class="muted">${emptyText}</p></div>`}</div>
         </div>
@@ -245,8 +250,8 @@
         }
         queueChange(id, a, {});
         const refusal = await flush();
-        const done = { checkin: 'Checked in.', checkout: 'Checked out.', complete: 'Job marked complete. Thank you!' }[a];
-        const saved = { checkin: 'Check-in', checkout: 'Check-out', complete: 'Job completion' }[a];
+        const done = { checkin: 'Checked in.', checkout: 'Checked out.', complete: 'Job marked complete. Thank you!', onmyway: 'On my way. The client has been told.' }[a];
+        const saved = { checkin: 'Check-in', checkout: 'Check-out', complete: 'Job completion', onmyway: 'On my way' }[a];
         if (refusal) { if (!queue().length) await refresh(); else render(); return; } // keep the refusal message on screen
         say(queue().length ? `${saved} saved on this phone. It will send when you have signal.` : done, true);
         if (!queue().length) await refresh(); else render();

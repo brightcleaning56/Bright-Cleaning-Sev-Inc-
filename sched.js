@@ -19,7 +19,7 @@ module.exports = function mountSched(app, ctx) {
   const vcols = db.prepare('PRAGMA table_info(visits)').all().map(c => c.name);
   for (const [c, t] of [['dispatched_at', 'TEXT'], ['dispatched_by', 'TEXT'], ['arrived_at', 'TEXT'], ['departed_at', 'TEXT'], ['completed_at', 'TEXT'], ['priority', "TEXT DEFAULT 'Normal'"],
     ['crew_needed', 'INTEGER'], ['instructions', 'TEXT'], ['equipment', 'TEXT'], ['checklist', "TEXT DEFAULT '[]'"], ['skip_reason', 'TEXT'], ['moved_from', 'TEXT'],
-    ['review_status', 'TEXT'], ['submitted_at', 'TEXT'], ['review_note', 'TEXT'], ['reviewed_by', 'TEXT'], ['reviewed_at', 'TEXT']])
+    ['review_status', 'TEXT'], ['submitted_at', 'TEXT'], ['review_note', 'TEXT'], ['reviewed_by', 'TEXT'], ['reviewed_at', 'TEXT'], ['tracking_token', 'TEXT'], ['on_my_way_at', 'TEXT']])
     if (!vcols.includes(c)) db.exec(`ALTER TABLE visits ADD COLUMN ${c} ${t}`);
   // Photos are tied to a job; the column is added at startup so a job with no photos yet can still be checked
   try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* documents table created elsewhere */ }
@@ -258,6 +258,7 @@ module.exports = function mountSched(app, ctx) {
       const how = await reachCrew(e, `Dispatched: ${v.title} ${v.date}`, `You're scheduled for ${v.title} on ${v.date} ${v.start_time || ''}–${v.end_time || ''}.\nAddress: ${v.address || ''}\nCrew: ${crew.map(x => x.name).join(', ')}\nYour job, directions and check-in: ${process.env.PUBLIC_URL || 'https://brightclean.net'}/crew/${e.token}\nSign in any time to see your jobs: ${SIGNIN_URL} (phone or email and your PIN).`, `Bright Clean: you're scheduled ${v.title} ${v.date} ${v.start_time || ''}. Your job: ${(process.env.PUBLIC_URL || 'https://brightclean.net')}/crew/${e.token} Sign in any time: ${SIGNIN_URL}`);
       if (how) sent++; else notReached.push(e.name);
     }
+    await clientNote(v, `Scheduled: ${v.title} ${v.date}`, `Your job is scheduled for ${v.date}${v.start_time ? ' at ' + v.start_time : ''}. Crew on the job: ${crew.length}.`);
     logAction(req, 'dispatched', 'visit', v.id, `${v.title} ${v.date}: ${crew.length} crew, ${sent} notified`);
     res.json({ ok: true, notified: sent, crew: crew.length, not_reached: notReached });
   });
@@ -339,7 +340,7 @@ module.exports = function mountSched(app, ctx) {
         const site = v.project_id ? J((db.prepare('SELECT site_info FROM projects WHERE id=?').get(v.project_id) || {}).site_info, {}) : {};
         // Access details only for crew on today's or tomorrow's jobs; never billing or pricing.
         const near = v.date <= addDays(today(), 1);
-        return { id: v.id, dispatched: !!v.dispatched_at, review_status: v.review_status || null, review_note: v.review_note || null, notes: db.prepare('SELECT id, body, created_at FROM visit_notes WHERE visit_id=? ORDER BY id DESC LIMIT 10').all(v.id).reverse(), title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
+        return { id: v.id, dispatched: !!v.dispatched_at, review_status: v.review_status || null, review_note: v.review_note || null, on_my_way_at: v.on_my_way_at || null, notes: db.prepare('SELECT id, body, created_at FROM visit_notes WHERE visit_id=? ORDER BY id DESC LIMIT 10').all(v.id).reverse(), title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
           crew: crewOf(v.id).map(x => x.name), access: near ? (site.access || '') : 'Shown the day before the job.', site_contact: near ? (site.contact || '') : '', safety: site.safety || '', arrived_at: v.arrived_at, completed_at: v.completed_at };
       }) });
   };
@@ -397,6 +398,7 @@ module.exports = function mountSched(app, ctx) {
       db.prepare('INSERT INTO time_entries(employee_id,visit_id,project_id,clock_in,source,created_at) VALUES(?,?,?,?,?,?)').run(e.id, v.id, v.project_id, t, 'crew', t);
       db.prepare("UPDATE visits SET arrived_at=COALESCE(arrived_at,?), status=CASE WHEN status IN ('Scheduled','Tentative') THEN 'In progress' ELSE status END, updated_at=? WHERE id=?").run(t, t, v.id);
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'checked in', 'visit', v.id, v.title, t);
+      if (!v.arrived_at) await clientNote(v, `${v.title}: crew arrived`, 'The crew has arrived and started the job.');
       return res.json({ ok: true });
     }
     if (a === 'checkout') {
@@ -435,10 +437,18 @@ module.exports = function mountSched(app, ctx) {
       const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND visit_id=? AND clock_out IS NULL').get(e.id, v.id); if (open) closeEntry(open, t, 'crew');
       db.prepare("UPDATE visits SET status='Done', completed_at=?, departed_at=COALESCE(departed_at,?), updated_at=? WHERE id=?").run(t, t, t, v.id);
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'completed', 'visit', v.id, v.title, t);
+      await clientNote(v, `${v.title}: complete`, 'The job is complete. Photos and the completion record are on your tracking page.');
       try { if (app.locals.onVisitDone) app.locals.onVisitDone(v.id, e.name); } catch (err) { console.error('visit done hook:', err.message); }
       return res.json({ ok: true });
     }
     if (a === 'notes') return noteAdd(req, res);
+    if (a === 'onmyway') {
+      if (!v.on_my_way_at) {
+        db.prepare('UPDATE visits SET on_my_way_at=?, updated_at=? WHERE id=?').run(t, t, v.id);
+        await clientNote(v, `${v.title}: crew on the way`, `The crew is on the way to ${v.address || 'your site'}.`);
+      }
+      return res.json({ ok: true });
+    }
     if (a === 'incident') {
       const title = clean((req.body || {}).title, 200), desc = clean(req.body.description, 3000);
       if (!title) return res.status(400).json({ error: 'Describe what happened in a few words.' });
@@ -524,7 +534,57 @@ module.exports = function mountSched(app, ctx) {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
     let photos = []; try { photos = db.prepare("SELECT id, title, file_name, file_url, created_at, uploaded_by FROM documents WHERE visit_id=? AND kind='Photos' ORDER BY id").all(v.id); } catch { photos = []; }
     const notes = db.prepare('SELECT n.id, n.body, n.created_at, e.name AS by FROM visit_notes n JOIN employees e ON e.id=n.employee_id WHERE n.visit_id=? ORDER BY n.id').all(v.id);
-    res.json({ photos, notes });
+    res.json({ photos, notes, track_url: trackUrl(v), client_email: (clientOf(v) || {}).email || null });
+  });
+  // ---------- Client job tracking: every job has a private link the client can follow, no sign-up needed ----------
+  const trackToken = v => {
+    if (v.tracking_token) return v.tracking_token;
+    const tok = crypto.randomBytes(18).toString('base64url');
+    db.prepare('UPDATE visits SET tracking_token=? WHERE id=?').run(tok, v.id); v.tracking_token = tok; return tok;
+  };
+  const clientOf = v => {
+    let c = v.customer_id ? db.prepare('SELECT name, company, email FROM customers WHERE id=?').get(v.customer_id) : null;
+    if (!c && v.project_id) { const p = db.prepare('SELECT customer_id FROM projects WHERE id=?').get(v.project_id); if (p && p.customer_id) c = db.prepare('SELECT name, company, email FROM customers WHERE id=?').get(p.customer_id) || null; }
+    return c || null;
+  };
+  const trackUrl = v => (process.env.PUBLIC_URL || 'https://brightclean.net') + '/track/' + trackToken(v);
+  const trackStatus = v => v.status === 'Cancelled' ? 'Cancelled' : (v.completed_at || v.status === 'Done') ? 'Done' : v.arrived_at ? 'In progress' : v.on_my_way_at ? 'On the way' : 'Scheduled';
+  // Plain update to the client with their tracking link. Quietly skipped when no client email is on file.
+  const clientNote = async (v, subject, line) => {
+    const c = clientOf(v); if (!c || !c.email) return false;
+    return notify(c.email, subject, `${line}\n\nFollow ${v.title} here: ${trackUrl(v)}\n\nBright Clean`);
+  };
+  const trackView = v => {
+    const c = clientOf(v), status = trackStatus(v);
+    const showPhotos = status === 'Done' || v.review_status === 'Approved';
+    const photos = showPhotos ? db.prepare("SELECT id, title FROM documents WHERE visit_id=? AND kind='Photos' ORDER BY id").all(v.id) : [];
+    return { title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address || '', client: c ? (c.company || c.name || '') : '',
+      status, crew_count: crewOf(v.id).length,
+      steps: [{ label: 'Scheduled', at: v.dispatched_at || null }, { label: 'Crew on the way', at: v.on_my_way_at || null }, { label: 'Crew arrived', at: v.arrived_at || null }, { label: 'Completed', at: v.completed_at || null }],
+      photos: photos.map(p => ({ id: p.id, title: p.title, url: `/api/track/${v.tracking_token}/photos/${p.id}` })) };
+  };
+  const byTrack = tok => db.prepare('SELECT * FROM visits WHERE tracking_token=?').get(String(tok || '').slice(0, 80));
+  app.get('/api/track/:token', (req, res) => {
+    const v = byTrack(req.params.token); if (!v) return res.status(404).json({ error: 'This tracking link is not valid.' });
+    res.set('Cache-Control', 'no-store').json(trackView(v));
+  });
+  app.get('/api/track/:token/photos/:photoId', (req, res) => {
+    const v = byTrack(req.params.token); if (!v) return res.status(404).end();
+    if (!(trackStatus(v) === 'Done' || v.review_status === 'Approved')) return res.status(404).end();
+    const doc = db.prepare("SELECT * FROM documents WHERE id=? AND visit_id=? AND kind='Photos'").get(Number(req.params.photoId), v.id);
+    if (!doc) return res.status(404).end();
+    const p = require('path').join(uploadDir || require('path').join(process.cwd(), 'uploads'), require('path').basename(doc.file_url || ''));
+    if (!require('fs').existsSync(p)) return res.status(404).end();
+    res.sendFile(p);
+  });
+  app.get('/track/:token', (req, res) => res.sendFile(require('path').join(__dirname, 'public', 'track.html')));
+  // Office: resend the client their tracking link (or copy it when there is no email on file)
+  app.post('/api/admin/visits/:id/send-tracking', auth, async (req, res) => {
+    const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
+    const c = clientOf(v), link = trackUrl(v);
+    if (!c || !c.email) return res.status(409).json({ error: 'No client email on file for this job. Copy the link and send it yourself.', link });
+    const sent = await notify(c.email, `Track ${v.title} ${v.date}`, `Here is the progress page for ${v.title} on ${v.date}. It shows when the crew is on the way, when they arrive, and the photos when the job is done.\n\n${link}\n\nBright Clean`);
+    res.json({ sent: !!sent, link });
   });
   // Remove one photo from a job (office only). Only photos attached to that job can be removed.
   app.delete('/api/admin/visits/:id/photos/:photoId', auth, (req, res) => {

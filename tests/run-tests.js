@@ -3748,7 +3748,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const locs = [...sm.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
     const missing = locs.filter(u => !u.startsWith('https://brightclean.net/') || !fs.existsSync(path.join(pubDir, u.replace('https://brightclean.net/', '') || 'index.html')));
     const htmls = []; (function walk(d, rel) { for (const f of fs.readdirSync(d)) { const p = path.join(d, f), r = rel ? rel + '/' + f : f; if (fs.statSync(p).isDirectory()) { if (f !== 'admin') walk(p, r); } else if (f.endsWith('.html')) htmls.push(r); } })(pubDir, '');
-    const priv = new Set(['contract.html', 'crew.html', 'proposal.html', '404.html']);
+    const priv = new Set(['contract.html', 'crew.html', 'proposal.html', 'track.html', '404.html']);
     const noSeo = [], noindex = [], badLd = [];
     for (const r of htmls) {
       const s = fs.readFileSync(path.join(pubDir, r), 'utf8');
@@ -3958,7 +3958,36 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'transcribe refused without a recording; unknown call 404';
   });
 
-  await check('AI off', 'Without an API key every AI action says AI is off (503), nothing breaks', async () => {
+  await check('Client tracking', 'Every job has a tracking link the client can follow without signing up; crew on my way and arrival show on it; photos only after approval', async () => {
+    const emp = await req('POST', '/api/admin/employees', { token: T, json: { name: 'Track Crew Test', email: 'track.crew@t.test', phone: '5155550166', role: 'Cleaner' } });
+    const eid = emp.data.id || (emp.data.employee && emp.data.employee.id);
+    assert(eid, 'employee not created: ' + emp.status);
+    const row = ((await req('GET', '/api/admin/employees', { token: T })).data.employees || []).find(x => x.id === eid);
+    const tk = row.crew_link.split('/').pop();
+    const vis = await req('POST', '/api/admin/visits', { token: T, json: { title: 'Tracking test job', date: require('../bizdate').today(), start_time: '10:00', end_time: '11:00', address: '9 Track Ln' } });
+    const vid = vis.data.id || (vis.data.visit && vis.data.visit.id);
+    assert(vid, 'visit not created');
+    await req('POST', '/api/admin/dispatch/visits/' + vid + '/crew', { token: T, json: { employee_id: eid } });
+    const link = (await req('GET', `/api/admin/visits/${vid}/photos`, { token: T })).data.track_url;
+    assert(/\/track\/[A-Za-z0-9_-]{20,}$/.test(link || ''), 'job should have a tracking link, got ' + link);
+    const tok = link.split('/').pop();
+    const s1 = await req('GET', '/api/track/' + tok);
+    assert(s1.status === 200 && s1.data.status === 'Scheduled' && s1.data.address === '9 Track Ln', 'tracking should show Scheduled, got ' + s1.status + ' ' + JSON.stringify(s1.data).slice(0, 200));
+    assert(!JSON.stringify(s1.data).includes('Track Crew Test'), 'tracking must not show crew names');
+    assert((await req('GET', '/api/track/not-a-real-token-123456789012345')).status === 404, 'a bad tracking token must not work');
+    const om = await req('POST', `/api/crew/${tk}/jobs/${vid}/onmyway`, { json: {} });
+    assert(om.status === 200, 'on my way should work, got ' + om.status);
+    const s2 = await req('GET', '/api/track/' + tok);
+    assert(s2.data.status === 'On the way' && s2.data.steps[1].at, 'tracking should show On the way');
+    const ci = await req('POST', `/api/crew/${tk}/jobs/${vid}/checkin`, { json: {} });
+    assert(ci.status === 200, 'check-in should work, got ' + ci.status);
+    const s3 = await req('GET', '/api/track/' + tok);
+    assert(s3.data.status === 'In progress' && s3.data.steps[2].at, 'tracking should show In progress with arrival, got ' + s3.data.status);
+    assert(s3.data.photos.length === 0, 'no photos before approval');
+    assert((await req('GET', `/api/track/${tok}/photos/1`)).status === 404, 'photos stay hidden before approval');
+  });
+
+  await check('AI off','Without an API key every AI action says AI is off (503), nothing breaks', async () => {
     const st = (await req('GET', '/api/admin/ai/status', { token: T })).data;
     const a = await req('POST', '/api/admin/ai/leads/1/triage', { token: T });
     const b = await req('POST', '/api/admin/ai/calls/extract', { token: T, json: { notes: 'x' } });
