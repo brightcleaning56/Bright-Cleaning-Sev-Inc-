@@ -122,7 +122,7 @@
         <div class="muted" style="margin-top:6px">Crew: ${esc(j.crew.join(', '))}</div>
         ${j.checklist.length ? `<div class="sec">Checklist</div><ul class="check">${j.checklist.map((c, i) => `<li><input type="checkbox" data-ck="${i}" ${checked(i) ? 'checked' : ''} ${done ? 'disabled' : ''} aria-label="${esc(c.text || c.title || '')}"><span>${esc(c.text || c.title || '')}</span></li>`).join('')}</ul>` : ''}
         ${done ? '' : `<div class="row">${inHere ? '<button class="ghost" data-a="checkout">Check out</button>' : '<button class="primary" data-a="checkin">Check in</button>'}<button class="ok" data-a="complete">Mark job complete</button></div>
-        <div class="row"><style>.ph-up:focus-within{outline:3px solid #1f6fb2;outline-offset:2px}</style><label class="btn ghost ph-up">Before photos<input type="file" accept="image/*" capture="environment" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label><label class="btn ghost ph-up">After photos<input type="file" accept="image/*" capture="environment" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label></div>
+        <div class="row"><style>.ph-up:focus-within{outline:3px solid #1f6fb2;outline-offset:2px}</style><label class="btn ghost ph-up">Before photos<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label><label class="btn ghost ph-up">After photos<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label></div>
         <div class="row"><button class="danger" data-a="incident">Report an incident</button></div>`}</div>`;
     }).join('');
     wire();
@@ -160,8 +160,15 @@
       card.querySelectorAll('[data-ph]').forEach(inp => inp.onchange = async () => {
         if (!inp.files.length) return;
         if (!navigator.onLine) { inp.value = ''; return say('Photos need signal. Upload them when you are connected.'); }
-        const fd = new FormData(); fd.append('stage', inp.dataset.ph); [...inp.files].forEach(f => fd.append('photos', f));
-        try { const r = await fetch(`/api/crew/${token}/jobs/${id}/photos`, { method: 'POST', headers: authHdr(), body: fd }).then(x => x.json().then(j => ({ ok: x.ok, j }))); if (!r.ok) throw new Error(r.j.error || 'Upload failed'); say(`${r.j.ids.length} photo(s) uploaded.`, true); }
+        const files = [...inp.files]; let sent = 0;
+        try {
+          // The server takes up to 6 files per request, so send larger picks in batches
+          for (let i = 0; i < files.length; i += 6) {
+            const fd = new FormData(); fd.append('stage', inp.dataset.ph); files.slice(i, i + 6).forEach(f => fd.append('photos', f));
+            const r = await fetch(`/api/crew/${token}/jobs/${id}/photos`, { method: 'POST', headers: authHdr(), body: fd }).then(x => x.json().then(j => ({ ok: x.ok, j }))); if (!r.ok) throw new Error(r.j.error || 'Upload failed'); sent += r.j.ids.length;
+          }
+          inp.value = ''; say(`${sent} ${inp.dataset.ph.toLowerCase()} photo(s) uploaded. Add more any time.`, true);
+        }
         catch (e) { say(isOffline(e) ? 'Photos need signal. Upload them when you are connected.' : e.message); }
       });
     });
