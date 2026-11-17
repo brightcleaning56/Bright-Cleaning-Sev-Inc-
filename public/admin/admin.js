@@ -3793,10 +3793,27 @@
     } else {
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div>`;
     }
-    return `<tr>${itemCell}${typeCell}${relatedCell}${prioCell}${when}${d === 'sent' ? '<td>—</td>' : owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
+    const pickCell = d === 'tasks' ? `<td><input type="checkbox" class="wqpick" value="${id}" aria-label="Select this task"></td>` : '<td></td>';
+    return `<tr>${pickCell}${itemCell}${typeCell}${relatedCell}${prioCell}${when}${d === 'sent' ? '<td>—</td>' : owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
   }
   const WQ_LABEL_TEXT = { new: 'Needs attention', missed: 'Missed', contact_today: 'Contact today', today: 'Today', overdue: 'Overdue', waiting: 'Waiting', scheduled: 'Scheduled', qualified: 'Qualified', converted: 'Converted', completed: 'Completed', closed: 'Closed' };
 
+  // Bulk actions for tasks: assign an owner and/or set a due date on every selected task.
+  function wqBulkSync() {
+    const n = document.querySelectorAll('#wqRows .wqpick:checked').length;
+    const bar = $('#wqBulk'); if (bar) bar.hidden = !n;
+    const c = $('#wqBulkCount'); if (c) c.textContent = n + ' selected';
+  }
+  if ($('#wqBulkApply')) $('#wqBulkApply').onclick = async () => {
+    const ids = [...document.querySelectorAll('#wqRows .wqpick:checked')].map(x => Number(x.value));
+    const owner = $('#wqBulkOwner').value.trim(), date = $('#wqBulkDate').value;
+    if (!ids.length) return;
+    if (!owner && !date) return toast('Choose an owner, a due date, or both.', true);
+    let done = 0;
+    for (const id of ids) { const json = {}; if (owner) json.assigned_to = owner; if (date) json.due_date = date; try { await api('/api/admin/tasks/' + id + '/work', { method: 'POST', json }); done++; } catch (err) { toast(err.message, true); } }
+    toast(done + ' of ' + ids.length + ' tasks updated');
+    wqRender().catch(err => toast(err.message, true));
+  };
   async function wqRender() {
     wqTabs();
     const priority = wq.dept === 'tasks' ? $('#wqPriority').value : '';
@@ -3804,7 +3821,8 @@
     const qs = `dept=${wq.dept}&bucket=${wq.bucket}` + (wq.owner ? `&assigned_to=${encodeURIComponent(wq.owner)}` : '') + (priority ? `&priority=${encodeURIComponent(priority)}` : '');
     const j = await api('/api/admin/work-queue?' + qs);
     const shown = wqFilterText(j.items);
-    $('#wqRows').innerHTML = shown.length ? shown.map(wqRow).join('') : '<tr><td colspan="7" class="muted">Nothing here right now.</td></tr>';
+    $('#wqRows').innerHTML = shown.length ? shown.map(wqRow).join('') : '<tr><td colspan="8" class="muted">Nothing here right now.</td></tr>';
+    $$('#wqRows .wqpick').forEach(x => x.onchange = wqBulkSync); wqBulkSync();
     $('#wqCount').textContent = `${shown.length} item${shown.length === 1 ? '' : 's'}${j.items.length === 500 ? ' (first 500 shown)' : ''}`;
   }
 
