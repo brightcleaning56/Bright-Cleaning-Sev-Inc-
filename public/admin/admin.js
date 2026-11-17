@@ -1226,6 +1226,7 @@
     setTimeout(() => { if (l.email) loadConversation('leadConv', [l.email]); }, 0);
     setTimeout(() => loadLeadHistory(l.id), 0);
     setTimeout(() => loadComms({ lead_id: l.id }, 'leadComms', 'leadCommsSum'), 0);
+    setTimeout(async () => { const box = $('#leadRelated'); if (!box) return; let ests = []; try { ests = ((await api('/api/admin/estimates')).estimates || []).filter(e => e.lead_id === l.id); } catch { ests = []; } const props = ests.filter(e => ['Sent', 'Viewed', 'Approved', 'Declined'].includes(e.status)).length; box.innerHTML = '<h3 class="secth" style="margin-top:0">Related records</h3><ul class="plain"><li>Estimates: <b>' + ests.length + '</b></li><li>Proposals sent: <b>' + props + '</b></li><li>Follow-up: <b>' + (l.follow_up_date ? fmtDate(l.follow_up_date) : 'not set') + '</b></li><li>Customer: <b>' + (l.customer_id ? 'linked' : 'not yet') + '</b></li></ul>'; }, 0);
     openLeadWorkspace({
       title: l.contact_name || 'Lead #' + l.id,
       sub: `${KIND_LABEL[l.kind] || 'Lead'} #${l.id}${l.company ? ' · ' + l.company : ''}`,
@@ -1242,6 +1243,7 @@
         ${files.length ? `<div class="formsection">Attachments</div><div class="related"><ul>${files.map((f, i) => `<li><button class="linklike" data-file="${i}">${esc(f.name)}</button></li>`).join('')}</ul></div>` : ''}
         </div><div class="lwright">
         <h3 class="secth" style="margin-top:0">Lead details</h3>        <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
+        <div class="card" id="leadRelated" style="margin:10px 0"><h3 class="secth" style="margin-top:0">Related records</h3><p class="muted">Loading…</p></div>
         <div class="formsection">Follow-up</div>
         <div class="grid">
           <div class="f"><label for="ls">Status</label><select id="ls">${options(STATUS.leads, l.status)}</select></div>
