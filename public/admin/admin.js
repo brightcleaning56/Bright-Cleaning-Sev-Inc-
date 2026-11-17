@@ -3696,8 +3696,16 @@
   function wqKpis(counts) {
     $('#wqKpis').innerHTML = WQ_DEPTS.map(([k, l]) => {
       const c = counts[k] || {};
-      return `<div class="st"><span>${l}: needs attention</span><b>${(c.new || 0) + (c.missed || 0) + (c.contact_today || 0)}</b><small>${c.today || 0} due today · ${c.overdue || 0} overdue · ${c.waiting || 0} waiting · ${c.scheduled || 0} scheduled</small></div>`;
+      return `<div class="st"><span>${l}</span><b>${(c.new || 0) + (c.missed || 0) + (c.contact_today || 0)}</b><small>need attention · ${c.today || 0} due today · ${c.overdue || 0} overdue</small></div>`;
     }).join('');
+    const sum = b => WQ_DEPTS.reduce((n, [k]) => n + (((counts[k] || {})[b]) || 0), 0);
+    const g = $('#wqGlance');
+    if (g) g.innerHTML = '<h3 class="secth" style="margin-top:0">Today at a glance</h3>' + [
+      ['Follow-ups due', sum('today') + sum('overdue'), ''],
+      ['Overdue items', sum('overdue'), sum('overdue') > 0 ? 'red' : ''],
+      ['Scheduled later', sum('scheduled'), ''],
+      ['Open items', ['new', 'missed', 'contact_today', 'today', 'overdue', 'waiting', 'scheduled'].reduce((n, b) => n + sum(b), 0), '']
+    ].map(([l, v, t]) => '<div class="st" style="margin:4px 0"><span>' + esc(l) + '</span><b' + (t === 'red' ? ' style="color:#b42318"' : '') + '>' + v + '</b></div>').join('');
   }
 
   function wqRow(it) {
@@ -3705,7 +3713,10 @@
     const dueText = it.due ? `<small>${wqIsDue(it.bucket) || it.bucket === 'scheduled' ? 'Due' : 'Date'} ${esc(it.due)}</small>` : '';
     const when = `<td>${esc(fmtWhen(it.when))}${dueText ? '<br>' + dueText : ''}<br><small class="muted">${esc(WQ_LABEL_TEXT[it.bucket] || it.bucket)}</small>${it.escalated ? '<br><b style="color:#b42318">Escalated: not returned in time</b>' : ''}</td>`;
     const owner = `<td><div class="wqrow-act"><input list="wqOwners" data-owner-for="${id}" data-dept="${d}" value="${esc(it.assigned_to || '')}" placeholder="Unassigned" aria-label="Owner"><button class="btn ghost" type="button" data-wq-act="assign" data-wq-dept="${d}" data-id="${id}">Save</button></div></td>`;
-    const who = `<td>${esc(it.who || '')}</td><td>${esc(it.title || '')}${it.note ? `<br><small class="muted">${esc(String(it.note).slice(0, 160))}</small>` : ''}</td>`;
+    const itemCell = `<td>${esc(it.title || '')}${it.note ? `<br><small class="muted">${esc(String(it.note).slice(0, 160))}</small>` : ''}</td>`;
+    const typeCell = `<td><span class="pill" style="font-size:11px">${esc((WQ_DEPTS.find(x => x[0] === d) || [d, d])[1])}</span></td>`;
+    const relatedCell = `<td>${esc(it.who || '—')}</td>`;
+    const prioCell = `<td>${it.priority ? esc(it.priority) : '—'}</td>`;
     const dateIn = `<input type="date" data-date-for="${id}" aria-label="Date">`;
     const btn = (act, label, cls = 'ghost') => `<button class="btn ${cls}" type="button" data-wq-act="${act}" data-wq-dept="${d}" data-id="${id}">${label}</button>`;
     let next = '';
@@ -3721,7 +3732,7 @@
     } else {
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div>`;
     }
-    return `<tr>${when}${who}${d === 'sent' ? '<td>—</td>' : owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
+    return `<tr>${itemCell}${typeCell}${relatedCell}${prioCell}${when}${d === 'sent' ? '<td>—</td>' : owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
   }
   const WQ_LABEL_TEXT = { new: 'Needs attention', missed: 'Missed', contact_today: 'Contact today', today: 'Today', overdue: 'Overdue', waiting: 'Waiting', scheduled: 'Scheduled', qualified: 'Qualified', converted: 'Converted', completed: 'Completed', closed: 'Closed' };
 
@@ -3732,7 +3743,7 @@
     const qs = `dept=${wq.dept}&bucket=${wq.bucket}` + (wq.owner ? `&assigned_to=${encodeURIComponent(wq.owner)}` : '') + (priority ? `&priority=${encodeURIComponent(priority)}` : '');
     const j = await api('/api/admin/work-queue?' + qs);
     const shown = wqFilterText(j.items);
-    $('#wqRows').innerHTML = shown.length ? shown.map(wqRow).join('') : '<tr><td colspan="5" class="muted">Nothing here right now.</td></tr>';
+    $('#wqRows').innerHTML = shown.length ? shown.map(wqRow).join('') : '<tr><td colspan="7" class="muted">Nothing here right now.</td></tr>';
     $('#wqCount').textContent = `${shown.length} item${shown.length === 1 ? '' : 's'}${j.items.length === 500 ? ' (first 500 shown)' : ''}`;
   }
 
