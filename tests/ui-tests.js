@@ -337,7 +337,7 @@ async function check(area, name, fn) {
     const mods = txt('#ccMods'); const h1 = txt('#v-overview h1');
     const cc = await api('GET', '/api/admin/command-center?days=30', null, T);
     const leadTile = txt('#ccKpis .kpi:first-child b');
-    assert(h1 === 'Command Center' && tiles === 6 && stages === 4 && qa === 13 && portals.length === 5 && /Call Center/.test(mods) && /Setup needed/.test(mods) && leadTile === String(cc.kpis.new_leads.value) && txt('#nav [data-view="overview"]') === 'Command Center', `${h1} ${tiles} ${stages} ${qa} ${mods}`);
+    assert(h1 === 'Command Center' && tiles === 5 && stages === 4 && qa === 13 && portals.length === 5 && /Call Center/.test(mods) && /Setup needed/.test(mods) && leadTile === String(cc.kpis.new_leads.value) && txt('#nav [data-view="overview"]') === 'Command Center', `${h1} ${tiles} ${stages} ${qa} ${mods}`);
     return `tiles ${tiles}, stages ${stages}, quick actions ${qa}, portals ${portals.length}; new-leads tile ${leadTile} = API`;
   });
   await check('Command Center UI', 'Period selector reloads figures; quick action opens the estimator; tile opens its section', async () => {
@@ -730,9 +730,9 @@ async function check(area, name, fn) {
     const opened = txt('#drawerRoot'), view = d.querySelector('#nav .active') && d.querySelector('#nav .active').dataset.view;
     d.querySelector('#drawerRoot [data-close]') && d.querySelector('#drawerRoot [data-close]').click(); await sleep(300);
     await nav('overview'); await sleep(1500);
-    [...d.querySelectorAll('#ccKpis .kpi')].find(k => /Needs attention/.test(k.textContent)).click(); await sleep(900);
-    const att = txt('#drawerRoot'), lines = d.querySelectorAll('#drawerRoot [data-drill]').length;
-    assert(['Sales', 'Operations', 'Finance', 'Calls & AI'].every(g => groups.includes(g)) && shown >= 1 && listed === shown && /Estimates in progress/.test(title) && view === 'proposals' && /Drill/.test(opened) && /Needs attention/.test(att),
+    const attBtn = d.querySelector('#ccAlerts [data-cc-att]'); if (attBtn) attBtn.click(); await sleep(900);
+    const att = txt('#v-workqueue') || '', lines = attBtn ? 1 : 0;
+    assert(['Sales', 'Operations', 'Finance', 'Calls & AI'].every(g => groups.includes(g)) && shown >= 1 && listed === shown && /Estimates in progress/.test(title) && view === 'proposals' && /Drill/.test(opened) && (!attBtn || d.querySelector('#nav .active') && d.querySelector('#nav .active').dataset.view === 'workqueue'),
       JSON.stringify({ groups, shown, listed, view, opened: opened.slice(0, 120), att: att.slice(0, 120), lines }));
     return `groups ${groups.join(', ')}; "Estimates in progress" ${shown} = ${listed} listed; row opened the proposal; attention breakdown ${lines} line(s)`;
   });

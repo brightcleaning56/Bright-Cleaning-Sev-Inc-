@@ -4032,12 +4032,12 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'drawer shows None on file and explains the blocked reply; partner backfill is in place';
   });
 
-  await check('Work queue', 'Command Center: the signed-in page has a Today’s work card; the summary is available to owners and staff', async () => {
+  await check('Work queue', 'Command Center: one attention card (the duplicate work strip is gone); the summary is available to owners and staff', async () => {
     const html = (await req('GET', '/admin/')).data.toString();
     const adminJs = (await req('GET', '/admin/admin.js')).data.toString();
-    const chk = { card: html.includes('id="ccWorkKpis"'), wiredToOverview: adminJs.includes('loadCcWork().catch'), staffSummary: (await req('GET', '/api/admin/work-queue/summary', { token: T })).status === 200 };
+    const chk = { duplicateStripRemoved: !html.includes('id="ccWorkKpis"'), attentionCardPresent: html.includes('id="ccAlerts"'), staffSummary: (await req('GET', '/api/admin/work-queue/summary', { token: T })).status === 200 };
     assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
-    return 'Command Center card present and wired to the queue summary';
+    return 'duplicate work strip removed; attention card present; queue summary available';
   });
 
   await check('Work queue', 'Attachments: listed and downloaded from Outlook on demand; refused cleanly when the inbox is not connected or the email is unknown; never stored on the server', async () => {

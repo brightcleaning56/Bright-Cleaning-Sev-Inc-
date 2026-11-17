@@ -649,8 +649,6 @@
       { label: 'Won', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
       { label: 'Collected this month', value: money(k.collected_month.value), icon: 'dollar', c: '#178a4c', to: 'invoices' },
       { label: 'Active projects', value: k.active_projects.value, icon: 'cal', c: '#2563eb', to: 'projects' },
-      { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: att.awaiting_approval ? 'proposals' : (att.open_complaints || att.overdue_tasks) ? 'issues' : att.overdue_invoices ? 'invoices' : att.late_projects ? 'projects' : 'leads', alert: k.attention.value > 0,
-        title: `Proposals awaiting approval ${att.awaiting_approval} · open complaints ${att.open_complaints} · overdue tasks ${att.overdue_tasks} · overdue invoices ${att.overdue_invoices} · late projects ${att.late_projects} · leads waiting 2+ days ${att.leads_waiting_2_days} · failed emails (7 days) ${att.failed_emails_7_days}` }
     ];
     $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
     $$('#ccKpis .kpi').forEach(b => b.onclick = () => { const t = tiles[b.dataset.i]; if (t.label === 'Needs attention') return openAttention(); if (t.drill === 'new_leads') return openLeadList('all', ''); if (t.drill) return openDrill(t.drill); go(t.to); });
