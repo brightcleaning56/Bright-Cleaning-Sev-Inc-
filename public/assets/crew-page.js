@@ -11,6 +11,9 @@
   const say = (t, good) => { $('#msg').innerHTML = t ? `<div class="msg ${good ? 'good' : 'err'}">${esc(t)}</div>` : ''; if (t) scrollTo(0, 0); };
   const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   const hm = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const todayStr = () => { const t = new Date(); return [t.getFullYear(), String(t.getMonth() + 1).padStart(2, '0'), String(t.getDate()).padStart(2, '0')].join('-'); };
+  const addDaysStr = (s, n) => { const t = new Date(s + 'T12:00:00'); t.setDate(t.getDate() + n); return [t.getFullYear(), String(t.getMonth() + 1).padStart(2, '0'), String(t.getDate()).padStart(2, '0')].join('-'); };
+  const greet = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
 
   // Phone storage: today's jobs, the queue of changes waiting to send, and what the phone has already changed locally.
   const store = {
@@ -35,7 +38,8 @@
   function showSignIn() {
     $('#who').textContent = 'Sign in';
     $('#sub').textContent = '';
-    $('#jobs').innerHTML = '<form id="crewLogin" class="card" style="padding:16px"><p class="muted">Sign in with the phone number or email your supervisor has on file, and your PIN.</p>' +
+    document.querySelector('nav.tabs').hidden = true;
+    $('#v-jobs').innerHTML = '<form id="crewLogin" class="card" style="padding:16px"><p class="muted">Sign in with the phone number or email your supervisor has on file, and your PIN.</p>' +
       '<label style="display:block;margin:8px 0">Phone or email<input id="crewUser" autocomplete="username" required style="display:block;width:100%;font-size:16px;padding:10px;margin-top:4px"></label>' +
       '<label style="display:block;margin:8px 0">PIN<input id="crewPin" inputmode="numeric" autocomplete="current-password" required style="display:block;width:100%;font-size:16px;padding:10px;margin-top:4px"></label>' +
       '<button type="submit" class="btn" style="width:100%;padding:12px;margin-top:8px">Sign in</button></form>';
@@ -54,12 +58,13 @@
   if (token === 'me' && !session()) { showSignIn(); return; }
   if (token === 'me') {
     const out = document.createElement('button');
-    out.type = 'button'; out.className = 'btn ghost'; out.textContent = 'Sign out'; out.style.cssText = 'margin-left:auto';
+    out.type = 'button'; out.className = 'btn ghost'; out.textContent = 'Sign out'; out.style.cssText = 'margin-left:12px;flex:0 0 auto;min-height:40px';
     out.onclick = () => { try { localStorage.removeItem(SESSION_KEY); } catch { /* storage blocked */ } location.reload(); };
-    document.querySelector('header').appendChild(out);
+    document.querySelector('header .who').appendChild(out);
   }
 
   let d = null, offlineAt = null, flushing = false;
+  let view = 'jobs', sub = 'today';
 
   function banner() {
     const el = $('#net'); if (!el) return;
@@ -101,30 +106,108 @@
     return item;
   }
 
-  function render() {
-    const ov = overlay(), q = queue();
-    $('#who').textContent = d.employee.name;
-    const clockedIn = d.clocked_in ? hm(d.clocked_in.since) : null;
-    $('#sub').textContent = `${d.employee.role || ''}${d.employee.crew ? ' · Crew ' + d.employee.crew : ''}${clockedIn ? ' · Checked in since ' + clockedIn : ''}`;
-    if (!d.jobs.length) { $('#jobs').innerHTML = '<div class="card"><b>No dispatched jobs this week.</b><p class="muted">Your supervisor will send jobs here once they are dispatched.</p></div>'; return; }
-    $('#jobs').innerHTML = d.jobs.map(j => {
-      const o = ov[j.id] || {};
-      const pending = q.some(x => x.visitId === j.id);
-      const serverIn = !!(d.clocked_in && d.clocked_in.visit_id === j.id);
-      const inHere = o.status === 'checkin' ? true : o.status === 'checkout' || o.status === 'complete' ? false : serverIn;
-      const done = o.status === 'complete' || j.status === 'Done';
-      const checked = i => (o.checklist && o.checklist[i] !== undefined) ? o.checklist[i] : !!j.checklist[i].done;
-      return `<div class="card job" data-id="${j.id}"><span class="pill ${done ? 'done' : ''}">${esc(done ? 'Completed' : j.status)}</span>${pending ? ' <span class="pill">Waiting to send</span>' : ''}${j.dispatched ? '' : ' <span class="pill">Upcoming · office confirms</span>'}<h2>${esc(j.title)}</h2>
-        <div class="muted">${fmt(j.date)} · ${esc(j.start_time || '')}${j.end_time ? '–' + esc(j.end_time) : ''}</div>
-        <div>${esc(j.address || '')}</div>${j.address ? `<div class="row"><a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}">Directions</a></div>` : ''}
+  // What the phone should show for one job: finished, in progress, or waiting to send.
+  function jobState(j, ov, q) {
+    const o = ov[j.id] || {};
+    const pending = q.some(x => x.visitId === j.id);
+    const serverIn = !!(d.clocked_in && d.clocked_in.visit_id === j.id);
+    const inHere = o.status === 'checkin' ? true : o.status === 'checkout' || o.status === 'complete' ? false : serverIn;
+    const done = o.status === 'complete' || j.status === 'Done';
+    return { o, pending, inHere, done };
+  }
+
+  // One job: the big actions first, then photos, then the details (scope, access, checklist) tucked under "Job details".
+  function jobCard(j, st) {
+    const { o, pending, inHere, done } = st;
+    const checked = i => (o.checklist && o.checklist[i] !== undefined) ? o.checklist[i] : !!j.checklist[i].done;
+    const label = done ? 'Completed' : inHere ? 'In progress' : j.status;
+    const stripe = done ? 'done' : inHere ? 'live' : '';
+    return `<div class="card job ${stripe}" data-id="${j.id}">
+      <div class="jtop"><h2>${esc(j.title)}</h2><span class="pill ${done ? 'done' : ''}">${esc(label)}</span></div>
+      <div class="meta">${esc(fmt(j.date))} · ${esc(j.start_time || '')}${j.end_time ? '–' + esc(j.end_time) : ''}</div>
+      <div class="meta">${esc(j.address || 'Address not set yet')}</div>
+      <div class="tags">${pending ? '<span class="pill">Waiting to send</span>' : ''}${j.dispatched ? '' : '<span class="pill">Upcoming · office confirms</span>'}</div>
+      ${done ? '' : `<div class="actions">
+        ${inHere ? '<button class="ghost big" data-a="checkout">Check out<small>End job</small></button>' : '<button class="primary big" data-a="checkin">Check in<small>Start job</small></button>'}
+        <button class="ok big" data-a="complete">Mark complete<small>Finish job</small></button>
+      </div>`}
+      <div class="photos"><b>Photos</b>
+        <label class="btn ghost ph-up">Before<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label>
+        <label class="btn ghost ph-up">After<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label>
+      </div>
+      <div class="links">${j.address ? `<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}">Directions</a>` : ''}</div>
+      <details><summary>Job details</summary>
         ${j.instructions ? `<div class="sec">Instructions</div><div>${esc(j.instructions)}</div>` : ''}${j.equipment ? `<div class="sec">Equipment &amp; supplies</div><div>${esc(j.equipment)}</div>` : ''}
         <div class="sec">Site access</div><div>${esc(j.access || '—')}${j.site_contact ? '<br>Contact: ' + esc(j.site_contact) : ''}</div>${j.safety ? `<div class="sec">Safety</div><div>${esc(j.safety)}</div>` : ''}
         <div class="muted" style="margin-top:6px">Crew: ${esc(j.crew.join(', '))}</div>
         ${j.checklist.length ? `<div class="sec">Checklist</div><ul class="check">${j.checklist.map((c, i) => `<li><input type="checkbox" data-ck="${i}" ${checked(i) ? 'checked' : ''} ${done ? 'disabled' : ''} aria-label="${esc(c.text || c.title || '')}"><span>${esc(c.text || c.title || '')}</span></li>`).join('')}</ul>` : ''}
-        ${done ? '' : `<div class="row">${inHere ? '<button class="ghost" data-a="checkout">Check out</button>' : '<button class="primary" data-a="checkin">Check in</button>'}<button class="ok" data-a="complete">Mark job complete</button></div>
-        <div class="row"><style>.ph-up:focus-within{outline:3px solid #1f6fb2;outline-offset:2px}</style><label class="btn ghost ph-up">Before photos<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label><label class="btn ghost ph-up">After photos<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label></div>
-        <div class="row"><button class="danger" data-a="incident">Report an incident</button></div>`}</div>`;
-    }).join('');
+        <div class="row"><button class="danger" data-a="incident">Report an incident</button></div>
+      </details>
+    </div>`;
+  }
+
+  function render() {
+    const ov = overlay(), q = queue(), today = todayStr();
+    $('#who').textContent = d.employee.name;
+    const clockedIn = d.clocked_in ? hm(d.clocked_in.since) : null;
+    $('#sub').textContent = `${d.employee.role || ''}${d.employee.crew ? ' · Crew ' + d.employee.crew : ''}${clockedIn ? ' · Checked in since ' + clockedIn : ''}`;
+    document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    ['jobs', 'schedule', 'photos', 'incidents', 'profile'].forEach(v => { const el = $('#v-' + v); if (el) el.hidden = v !== view; });
+
+    const all = d.jobs.map(j => ({ j, ...jobState(j, ov, q) }));
+    const sameDay = all.filter(x => x.j.date === today);
+    const todays = all.filter(x => x.j.date === today || (x.j.date < today && !x.done));
+    const upcoming = all.filter(x => x.j.date > today && !x.done);
+    const completed = all.filter(x => x.done);
+    const doneToday = sameDay.filter(x => x.done).length;
+    const pct = sameDay.length ? Math.round(doneToday / sameDay.length * 100) : 0;
+    const remaining = todays.filter(x => !x.done).length;
+    const inNow = all.filter(x => x.inHere).length;
+    const first = String(d.employee.name || '').split(' ')[0];
+    const list = { today: todays, upcoming, completed }[sub] || todays;
+    const emptyText = { today: 'No jobs for today.', upcoming: 'No upcoming jobs yet.', completed: 'No completed jobs yet.' }[sub];
+
+    if (view === 'jobs') {
+      const ring = 2 * Math.PI * 34;
+      $('#v-jobs').innerHTML = `
+        <section class="hero"><div><small class="muted">${greet()}</small><h1>${esc(first)}</h1><p>Here’s your work for today.</p></div><span class="datechip">${esc(new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}</span></section>
+        <div class="grid"><div>
+          <div class="stats">
+            <div class="stat"><small>Today’s jobs</small><b>${todays.length}</b></div>
+            <div class="stat"><small>Completed</small><b>${doneToday}</b></div>
+            <div class="stat"><small>Remaining</small><b>${remaining}</b></div>
+            <div class="stat"><small>Checked in</small><b>${inNow}</b></div>
+          </div>
+          <div class="subtabs">${[['today', 'Today', todays.length], ['upcoming', 'Upcoming', upcoming.length], ['completed', 'Completed', completed.length]].map(([k, l, n]) => `<button type="button" class="subtab ${sub === k ? 'on' : ''}" data-sub="${k}">${l} (${n})</button>`).join('')}</div>
+          <div id="jobs">${!d.jobs.length ? '<div class="card"><b>No dispatched jobs this week.</b><p class="muted">Your supervisor will send jobs here once they are dispatched.</p></div>' : list.length ? list.map(x => jobCard(x.j, x)).join('') : `<div class="card"><b>Nothing here.</b><p class="muted">${emptyText}</p></div>`}</div>
+        </div>
+        <aside>
+          <div class="card ring"><svg width="84" height="84" viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="34" fill="none" stroke="#e5ebf2" stroke-width="10"/><circle cx="42" cy="42" r="34" fill="none" stroke="#17904c" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(ring * pct / 100).toFixed(1)} ${ring.toFixed(1)}" transform="rotate(-90 42 42)"/></svg><div><b>Today’s progress</b><p class="muted" style="margin:4px 0 0">${doneToday} of ${sameDay.length} job${sameDay.length === 1 ? '' : 's'} completed (${pct}%)</p></div></div>
+          <div class="card"><b>Quick actions</b><div class="qa" style="margin-top:10px"><button type="button" class="ghost" data-view-go="photos">Take photo</button><button type="button" class="danger" data-view-go="incidents">Report incident</button></div></div>
+        </aside></div>`;
+    }
+
+    if (view === 'schedule') {
+      const days = [0, 1, 2, 3, 4, 5, 6].map(n => addDaysStr(today, n));
+      $('#v-schedule').innerHTML = `<h1 style="font-size:22px;margin:4px 0 10px">Next 7 days</h1>` + days.map(day => {
+        const rows = all.filter(x => x.j.date === day);
+        return `<h3 class="day">${esc(fmt(day))}${day === today ? ' · Today' : ''}</h3>` + (rows.length ? rows.map(x => `<div class="card row-job"><b>${esc(x.j.start_time || 'Any time')}${x.j.end_time ? '–' + esc(x.j.end_time) : ''}</b> · ${esc(x.j.title)}<div class="meta">${esc(x.j.address || 'Address not set yet')}</div><div class="meta">Crew: ${esc(x.j.crew.join(', '))}</div></div>`).join('') : '<p class="muted" style="margin:0 0 6px">No jobs</p>');
+      }).join('');
+    }
+
+    if (view === 'photos') {
+      $('#v-photos').innerHTML = `<h1 style="font-size:22px;margin:4px 0 4px">Photos</h1><p class="muted">Add before and after photos to a job. You can add more at any time.</p>` +
+        (todays.length ? todays.map(x => `<div class="card job" data-id="${x.j.id}"><h2>${esc(x.j.title)}</h2><div class="meta">${esc(x.j.address || '')}</div><div class="photos"><label class="btn ghost ph-up">Before<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label><label class="btn ghost ph-up">After<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label></div></div>`).join('') : '<div class="card"><b>No jobs for today.</b></div>');
+    }
+
+    if (view === 'incidents') {
+      $('#v-incidents').innerHTML = `<h1 style="font-size:22px;margin:4px 0 4px">Report an incident</h1><p class="muted">Use this for damage, access problems, missing supplies, complaints or safety issues. Reporting needs signal.</p>` +
+        (todays.length ? todays.map(x => `<div class="card job" data-id="${x.j.id}"><h2>${esc(x.j.title)}</h2><div class="meta">${esc(x.j.address || '')}</div><div class="actions" style="grid-template-columns:1fr"><button class="danger big" data-a="incident">Report an incident for this job</button></div></div>`).join('') : '<div class="card"><b>No jobs for today.</b><p class="muted">Pick the job from My jobs when you have one.</p></div>');
+    }
+
+    if (view === 'profile') {
+      $('#v-profile').innerHTML = `<h1 style="font-size:22px;margin:4px 0 10px">Profile</h1><div class="card"><b>${esc(d.employee.name)}</b><p class="muted" style="margin:4px 0 0">${esc(d.employee.role || '')}${d.employee.crew ? ' · Crew ' + esc(d.employee.crew) : ''}</p>${clockedIn ? `<p class="muted">Checked in since ${esc(clockedIn)}</p>` : '<p class="muted">Not checked in.</p>'}</div>`;
+    }
     wire();
     banner();
   }
@@ -173,6 +256,14 @@
       });
     });
   }
+
+  // Navigation: the tab bar, the quick actions and the Today / Upcoming / Completed switch
+  document.addEventListener('click', e => {
+    const v = e.target.closest('[data-view], [data-view-go]');
+    if (v) { view = v.dataset.view || v.dataset.viewGo; say(''); render(); scrollTo(0, 0); return; }
+    const s = e.target.closest('[data-sub]');
+    if (s) { sub = s.dataset.sub; render(); }
+  });
 
   // Loads today's jobs from the server; if the phone is offline, shows the copy saved on this phone.
   async function refresh() {
