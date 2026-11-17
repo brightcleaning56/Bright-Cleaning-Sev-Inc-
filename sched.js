@@ -532,8 +532,8 @@ module.exports = function mountSched(app, ctx) {
     const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' });
     const body = clean((req.body || {}).body, 2000);
     if (!body) return res.status(400).json({ error: 'Write a note first.' });
+    // Saved on the job itself: the office reads it in the job record when reviewing the job. Nothing is emailed or messaged.
     const id = db.prepare('INSERT INTO visit_notes(visit_id,employee_id,body,created_at) VALUES(?,?,?,?)').run(v.id, e.id, body, now()).lastInsertRowid;
-    if (adminEmail) await notify(adminEmail, `Job note from ${e.name}: ${v.title} ${v.date}`, `${body}\n\nSee the job in the admin: https://brightclean.net/admin/#schedule`);
     res.status(201).json({ id });
   };
   // Crew photo upload (before/after): stored as project/visit documents.
