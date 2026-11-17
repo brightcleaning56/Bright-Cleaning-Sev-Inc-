@@ -3969,7 +3969,7 @@
     $('#navEmails').hidden = !r.summary.failed_30d; $('#navEmails').textContent = r.summary.failed_30d;
     { const sf = v => { $('#emailStatus').value = v; renderEmails(); }; wireTiles('#emailsKpis', { 'Sent (30 days)': () => sf('sent'), 'Failed (30 days)': () => sf('failed'), 'Total (30 days)': () => sf('') }); }
     let ib = document.getElementById('inboxCard');
-    if (ms.connected) { if (!ib) { ib = document.createElement('div'); ib.id = 'inboxCard'; ib.className = 'card'; ib.style.cssText = 'margin:14px 0;padding:14px'; $('#emailsKpis').after(ib); }
+    if (ms.connected) { if (!ib) { ib = document.createElement('div'); ib.id = 'inboxCard'; ib.className = 'card'; ib.style.cssText = 'margin:14px 0;padding:14px'; document.querySelector('.emgrid').after(ib); }
       const m = await api('/api/admin/inbox').catch(() => ({ messages: [] }));
       ib.innerHTML = `<h2 style="margin:0 0 8px;font-size:17px">Inbox (Outlook)</h2>${m.messages.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Received</th><th>From</th><th>Subject</th><th>Linked to</th></tr></thead><tbody>${m.messages.slice(0, 50).map(x => `<tr><td>${esc(fmtWhen(x.received_at))}</td><td>${esc(x.from_name || x.from_addr)}<small>${esc(x.from_addr)}</small></td><td>${x.web_link ? `<a href="${esc(webHref(x.web_link))}" target="_blank" rel="noopener">${esc(x.subject || '(no subject)')}</a>` : esc(x.subject || '')}<small>${esc(String(x.preview || '').slice(0, 120))}</small></td><td>${x.lead_id ? `<a href="#" data-ilead="${x.lead_id}">Lead #${x.lead_id}</a>` : ''}${x.customer_id ? ` <a href="#" data-icust="${x.customer_id}">Customer #${x.customer_id}</a>` : ''}${!x.lead_id && !x.customer_id ? '<span class="muted">—</span>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No messages synced yet.</p>'}`;
       $$('#inboxCard [data-ilead]').forEach(a => a.onclick = ev => { ev.preventDefault(); go('leads'); setTimeout(() => openLead(Number(a.dataset.ilead)), 350); });
@@ -3981,7 +3981,7 @@
   }
   function renderBlocked() {
     let bc = document.getElementById('blockedCard');
-    if (!bc) { bc = document.createElement('div'); bc.id = 'blockedCard'; bc.className = 'card'; bc.style.cssText = 'margin:14px 0;padding:14px'; $('#emailsKpis').after(bc); }
+    if (!bc) { bc = document.createElement('div'); bc.id = 'blockedCard'; bc.className = 'card'; bc.style.cssText = 'margin:14px 0;padding:14px'; document.querySelector('.emgrid').after(bc); }
     const list = [...mailState.blocked.values()];
     bc.innerHTML = `<h2 style="margin:0 0 4px;font-size:17px">Blocked from automated email (${list.length})</h2>` +
       `<p class="muted" style="margin:0 0 10px">Reminders, bid questions and AI follow-ups skip these addresses. Emails you write by hand still go out.</p>` +
