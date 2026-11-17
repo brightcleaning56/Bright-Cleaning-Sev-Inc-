@@ -3871,7 +3871,7 @@
       && (!st || (st === 'received' ? m.direction === 'in' : m.status === st))
       && (!q || [m.from, m.to, m.subject, m.preview, m.link && m.link.name].join(' ').toLowerCase().includes(q)));
     $('#emailsRows').innerHTML = rows.length ? rows.map(m => '<tr class="click' + (mailState.selKey === m.key ? ' on' : '') + '" data-mkey="' + esc(m.key) + '"><td>' + esc(fmtWhen(m.at)) + '</td>'
-      + '<td>' + esc(m.direction === 'in' ? m.from : m.to) + (m.link ? ' <small class="muted">' + esc(m.link.company || m.link.name || '') + '</small>' : '') + '</td>'
+      + '<td>' + esc(m.direction === 'in' ? m.from : m.to) + (m.link ? ' <small class="muted">' + (m.link.type === 'customer' ? custBtn({ customer_id: m.link.id, company: m.link.company, customer_name: m.link.name, email: '' }, m.link.company || m.link.name) : esc(m.link.company || m.link.name || '')) + '</small>' : '') + '</td>'
       + '<td>' + esc(m.subject) + (m.preview ? '<small class="muted">' + esc(String(m.preview).slice(0, 90)) + '</small>' : '') + '</td>'
       + '<td><span class="pill" style="font-size:11px">' + esc(m.category) + '</span></td>'
       + '<td>' + esc(m.delivery) + (m.reply ? '<small class="muted">' + esc(m.reply) + '</small>' : '') + '</td></tr>').join('')
