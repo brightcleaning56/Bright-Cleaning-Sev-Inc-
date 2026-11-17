@@ -139,6 +139,10 @@
         <label class="btn ghost ph-up">Before<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label>
         <label class="btn ghost ph-up">After<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label>
       </div>
+      <div class="photos"><b>Job notes</b></div>
+      ${(j.notes || []).length ? (j.notes || []).slice(-5).map(n => `<div class="bubble me"><small>${esc(new Date(n.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}</small>${esc(n.body)}</div>`).join('') : '<p class="muted">No notes yet. Say what was done here, or anything that happened.</p>'}
+      <textarea rows="2" placeholder="What was done, or anything that happened here" data-note-text aria-label="Job note"></textarea>
+      <div class="links"><button class="ghost" type="button" data-note-send>Send note to the office</button></div>
       <div class="links">${j.address ? `<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}">Directions</a>` : ''}</div>
       <details><summary>Job details</summary>
         ${j.instructions ? `<div class="sec">Instructions</div><div>${esc(j.instructions)}</div>` : ''}${j.equipment ? `<div class="sec">Equipment &amp; supplies</div><div>${esc(j.equipment)}</div>` : ''}
@@ -247,6 +251,15 @@
         say(queue().length ? `${saved} saved on this phone. It will send when you have signal.` : done, true);
         if (!queue().length) await refresh(); else render();
       });
+      const noteBtn = card.querySelector('[data-note-send]');
+      if (noteBtn) noteBtn.onclick = async () => {
+        const body = ((card.querySelector('[data-note-text]') || {}).value || '').trim();
+        if (!body) return say('Write a note first.');
+        if (!navigator.onLine) return say('Notes need signal. Send it when you are connected.');
+        noteBtn.disabled = true;
+        try { await post(`/api/crew/${token}/jobs/${id}/notes`, { body }); say('Note sent to the office.', true); await refresh(); }
+        catch (e) { say(isOffline(e) ? 'Notes need signal. Send it when you are connected.' : e.message); noteBtn.disabled = false; }
+      };
       card.querySelectorAll('[data-ck]').forEach(c => c.onchange = async () => {
         queueChange(id, 'checklist', { index: Number(c.dataset.ck), done: c.checked });
         await flush();

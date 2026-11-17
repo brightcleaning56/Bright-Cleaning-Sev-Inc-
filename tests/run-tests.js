@@ -1390,6 +1390,14 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(shown.status === 200 && (shown.data.photos || []).length === 2, 'office should see both photos on the job, got ' + shown.status + ' ' + JSON.stringify(shown.data).slice(0, 200));
     const noVis = await req('GET', '/api/admin/visits/999999/photos', { token: T });
     assert(noVis.status === 404, 'unknown job photos should be 404, got ' + noVis.status);
+    const emptyNote = await req('POST', `/api/crew/${tk}/jobs/${vid}/notes`, { json: { body: '   ' } });
+    assert(emptyNote.status === 400, 'an empty job note should be refused, got ' + emptyNote.status + ' ' + JSON.stringify(emptyNote.data).slice(0, 200) + ' tk=' + tk + ' vid=' + vid);
+    const note = await req('POST', `/api/crew/${tk}/jobs/${vid}/notes`, { json: { body: 'Entrance mat was wet, left the sign out' } });
+    assert(note.status === 201, 'crew should be able to leave a job note, got ' + note.status + ' ' + JSON.stringify(note.data));
+    const seenNotes = await req('GET', `/api/admin/visits/${vid}/photos`, { token: T });
+    assert((seenNotes.data.notes || []).some(n => /wet, left the sign/.test(n.body) && n.by === 'Review Crew Test'), 'office should see the crew note on the job');
+    const crewView = await req('GET', `/api/crew/${tk}`);
+    assert(crewView.status === 200 && JSON.stringify(crewView.data).includes('wet, left the sign'), 'crew job list should include their own notes');
     const ret = await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'return' } });
     assert(ret.status === 400, 'returning needs a note, got ' + ret.status);
     const back = await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'return', note: 'Redo the entrance mat' } });

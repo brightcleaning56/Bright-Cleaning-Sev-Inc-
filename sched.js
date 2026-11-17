@@ -24,6 +24,7 @@ module.exports = function mountSched(app, ctx) {
   // Photos are tied to a job; the column is added at startup so a job with no photos yet can still be checked
   try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* documents table created elsewhere */ }
   // Messages between the office and one crew member (optionally about one job)
+  db.exec(`CREATE TABLE IF NOT EXISTS visit_notes(id INTEGER PRIMARY KEY AUTOINCREMENT, visit_id INTEGER NOT NULL, employee_id INTEGER NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL)`);
   db.exec(`CREATE TABLE IF NOT EXISTS crew_messages(id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, visit_id INTEGER, direction TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, seen_by_office INTEGER DEFAULT 0, seen_by_crew INTEGER DEFAULT 0)`);
   const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
@@ -338,7 +339,7 @@ module.exports = function mountSched(app, ctx) {
         const site = v.project_id ? J((db.prepare('SELECT site_info FROM projects WHERE id=?').get(v.project_id) || {}).site_info, {}) : {};
         // Access details only for crew on today's or tomorrow's jobs; never billing or pricing.
         const near = v.date <= addDays(today(), 1);
-        return { id: v.id, dispatched: !!v.dispatched_at, review_status: v.review_status || null, review_note: v.review_note || null, title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
+        return { id: v.id, dispatched: !!v.dispatched_at, review_status: v.review_status || null, review_note: v.review_note || null, notes: db.prepare('SELECT id, body, created_at FROM visit_notes WHERE visit_id=? ORDER BY id DESC LIMIT 10').all(v.id).reverse(), title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
           crew: crewOf(v.id).map(x => x.name), access: near ? (site.access || '') : 'Shown the day before the job.', site_contact: near ? (site.contact || '') : '', safety: site.safety || '', arrived_at: v.arrived_at, completed_at: v.completed_at };
       }) });
   };
@@ -437,6 +438,7 @@ module.exports = function mountSched(app, ctx) {
       try { if (app.locals.onVisitDone) app.locals.onVisitDone(v.id, e.name); } catch (err) { console.error('visit done hook:', err.message); }
       return res.json({ ok: true });
     }
+    if (a === 'notes') return noteAdd(req, res);
     if (a === 'incident') {
       const title = clean((req.body || {}).title, 200), desc = clean(req.body.description, 3000);
       if (!title) return res.status(400).json({ error: 'Describe what happened in a few words.' });
@@ -521,8 +523,19 @@ module.exports = function mountSched(app, ctx) {
   app.get('/api/admin/visits/:id/photos', auth, (req, res) => {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
     let photos = []; try { photos = db.prepare("SELECT id, title, file_name, file_url, created_at, uploaded_by FROM documents WHERE visit_id=? AND kind='Photos' ORDER BY id").all(v.id); } catch { photos = []; }
-    res.json({ photos });
+    const notes = db.prepare('SELECT n.id, n.body, n.created_at, e.name AS by FROM visit_notes n JOIN employees e ON e.id=n.employee_id WHERE n.visit_id=? ORDER BY n.id').all(v.id);
+    res.json({ photos, notes });
   });
+  // Crew notes on a job: what was done, anything that happened. The office sees them on the job.
+  const noteAdd = async (req, res) => {
+    const e = crewAuth(req, res); if (!e) return;
+    const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' });
+    const body = clean((req.body || {}).body, 2000);
+    if (!body) return res.status(400).json({ error: 'Write a note first.' });
+    const id = db.prepare('INSERT INTO visit_notes(visit_id,employee_id,body,created_at) VALUES(?,?,?,?)').run(v.id, e.id, body, now()).lastInsertRowid;
+    if (adminEmail) await notify(adminEmail, `Job note from ${e.name}: ${v.title} ${v.date}`, `${body}\n\nSee the job in the admin: https://brightclean.net/admin/#schedule`);
+    res.status(201).json({ id });
+  };
   // Crew photo upload (before/after): stored as project/visit documents.
   try {
     const multer = require('multer'), path = require('path'), fs = require('fs');
