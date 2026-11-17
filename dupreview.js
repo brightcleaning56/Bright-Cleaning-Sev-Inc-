@@ -9,7 +9,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     return { id: r.id, created_at: r.created_at, status: r.status, lead, bid: { contact_name: p.contact_name || '', company: p.company || '', email: p.email || '', phone: p.phone || '', project_name: p.project_name || '', address: p.address || '', service: p.service || '', details: p.details || '' }, files: safeList(r.files) };
   };
   app.get('/api/admin/duplicate-reviews', auth, (req, res) => {
-    const rows = db.prepare("SELECT * FROM duplicate_reviews WHERE status='open' ORDER BY id DESC LIMIT 200").all();
+    // Owner-facing list. If the query itself fails, say why (the error text, not the stack) so it can be fixed.
+    let rows;
+    try { rows = db.prepare("SELECT * FROM duplicate_reviews WHERE status='open' ORDER BY id DESC LIMIT 200").all(); }
+    catch (err) { console.error('duplicate-reviews query failed:', err.stack || err.message); return res.status(500).json({ error: 'Repeat bids could not be loaded.', detail: String(err.message || err).slice(0, 300) }); }
     res.json({ reviews: rows.map(r => { try { return open(r); } catch (err) { console.error('duplicate review ' + r.id + ' could not be shown:', err.message); return { id: r.id, created_at: r.created_at, status: r.status, lead: null, bid: { contact_name: '', company: '', email: '', phone: '', project_name: '', address: '', service: '', details: '' }, files: [] }; } }) });
   });
   app.post('/api/admin/duplicate-reviews/:id/merge', auth, (req, res) => {
