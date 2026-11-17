@@ -719,24 +719,107 @@
       after: () => { toast('Subscription saved'); loadSubscriptions(); } });
   }
   // Messages customers sent from the client portal. Staff reply here; the reply goes to the customer's portal and email.
+  // ---- Client messages: one inbox for portal messages and texts ----
+  const cm = { box: 'All', key: null, data: null };
+  const CM_STATUS = { 'Open': 'blue', 'Waiting on customer': 'amber', 'Closed': '' };
   async function loadClientMsgs() {
-    const box = $('#cmList'); if (!box) return;
-    let r; try { r = await api('/api/admin/portal-messages'); } catch (e) { box.innerHTML = '<p class="msg err">' + esc(e.message) + '</p>'; return; }
-    const list = r.messages || [];
-    box.innerHTML = list.length ? list.map(m => `<div class="card" style="margin-bottom:12px" data-cm="${m.id}">
-        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(m.subject)}</b><small class="muted">${esc(m.email)} · ${esc(fmtWhen(m.created_at))}</small></div>
-        <p style="white-space:pre-wrap;margin:8px 0">${esc(m.body)}</p>
-        ${(m.replies || []).map(x => `<div style="margin:8px 0 0 14px;padding:8px;background:#f2f7fc;border-radius:8px"><small class="muted">Bright Clean · ${esc(fmtWhen(x.created_at))}</small><div style="white-space:pre-wrap">${esc(x.body)}</div></div>`).join('')}
-        <form class="inl" data-cmform="${m.id}" style="margin-top:10px"><div class="wide"><textarea name="body" rows="3" required placeholder="Write your reply to the customer"></textarea></div><div><button class="btn" type="submit">Send reply</button></div></form>
-      </div>`).join('') : '<p class="muted">No client messages yet. Messages sent from the client portal appear here.</p>';
-    box.querySelectorAll('[data-cmform]').forEach(f => f.onsubmit = async ev => {
-      ev.preventDefault();
-      if (f.dataset.busy) return; const sb = f.querySelector('button[type=submit]');
-      const body = f.querySelector('textarea').value.trim(); if (!body) return;
-      f.dataset.busy = '1'; if (sb) sb.disabled = true;
-      try { const x = await api('/api/admin/portal-messages/' + f.dataset.cmform + '/reply', { method: 'POST', json: { body } }); toast(x.emailed ? 'Reply sent to the customer and their portal' : 'Reply saved. The customer chose not to get message emails.'); loadClientMsgs(); }
-      catch (e) { toast(e.message, true); delete f.dataset.busy; if (sb) sb.disabled = false; }
-    });
+    let r; try { r = await api('/api/admin/conversations?box=' + encodeURIComponent(cm.box)); } catch (e) { $('#cmList').innerHTML = '<tr><td class="emptyrow" colspan="3">' + esc(e.message) + '</td></tr>'; return; }
+    cm.data = r; renderCmBoxes(); renderCmList();
+    if (cm.key) renderCmThread(cm.key);
+  }
+  function renderCmBoxes() {
+    const d = cm.data; if (!d) return;
+    $('#cmBoxes').innerHTML = d.boxes.map(b => '<button type="button" class="ccq' + (cm.box === b ? ' on' : '') + '" data-cmb="' + esc(b) + '"><span>' + esc(b) + '</span><b>' + (d.counts[b] || 0) + '</b></button>').join('');
+    $$('#cmBoxes [data-cmb]').forEach(b => b.onclick = () => { cm.box = b.dataset.cmb; loadClientMsgs(); });
+  }
+  function renderCmList() {
+    const d = cm.data; if (!d) return;
+    $('#cmList').innerHTML = d.conversations.length ? d.conversations.map(c => '<tr class="click' + (cm.key === c.key ? ' on' : '') + '" data-ckey="' + esc(c.key) + '"><td>'
+      + (c.unread ? '<span title="Unread" style="color:#1f6fd1">●</span> ' : '') + '<b>' + esc(c.name) + '</b> <span class="pill" style="font-size:11px">' + esc(c.type) + '</span>'
+      + (c.company ? '<small class="muted">' + esc(c.company) + '</small>' : '') + (c.property ? '<small class="muted">' + esc(c.property) + '</small>' : '') + '</td>'
+      + '<td>' + esc(fmtWhen(c.last_at)) + '<small>' + esc(c.last_channel === 'sms' ? 'Text' : 'Portal') + ' · ' + esc(c.last_dir === 'in' ? 'from customer' : 'from us') + '</small><small class="muted">' + esc(c.last_text) + '</small></td>'
+      + '<td>' + (c.needs_reply ? '<span class="badge amber">Needs reply</span> ' : '') + '<span class="badge ' + (CM_STATUS[c.status] || '') + '">' + esc(c.status) + '</span>' + (c.follow_up_due ? ' <span class="badge red">Follow-up due</span>' : '') + '</td></tr>').join('')
+      : '<tr><td class="emptyrow" colspan="3">No conversations in this inbox.</td></tr>';
+    $$('#cmList [data-ckey]').forEach(r => r.onclick = () => { cm.key = r.dataset.ckey; renderCmList(); renderCmThread(cm.key); });
+  }
+  async function renderCmThread(key) {
+    const box = $('#cmThread'); if (!box) return;
+    box.innerHTML = '<p class="muted">Loading the conversation…</p>';
+    let d; try { d = await api('/api/admin/conversations/' + encodeURIComponent(key)); } catch (err) { box.innerHTML = '<p class="err">' + esc(err.message) + '</p>'; return; }
+    if (cm.key !== key) return;
+    const c = d.conversation, items = d.items;
+    const first = String(c.name || '').split(' ')[0] || 'there';
+    const latestPortal = [...items].reverse().find(x => x.channel === 'portal');
+    const phone = c.contact && /\d{7,}/.test(c.contact) ? c.contact : '';
+    const custId = c.key.startsWith('cust:') ? Number(c.key.slice(5)) : null, leadId = c.key.startsWith('lead:') ? Number(c.key.slice(5)) : null;
+    // What is unanswered: inbound messages with no reply after them, and questions among them.
+    const lastIn = [...items].reverse().find(x => x.dir === 'in');
+    const unansweredQs = items.filter(x => x.dir === 'in' && /\?/.test(x.body || '') && !items.some(y => y.dir === 'out' && y.at > x.at)).map(x => String(x.body).split(/(?<=\?)/).filter(s => /\?/.test(s)).join(' ').trim());
+    const tpl = d.templates.map(t => '<option value="' + esc(t.id) + '">' + esc(t.name) + '</option>').join('');
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><span class="pill" style="font-size:11px">${esc(c.type)}</span><h3 style="margin:4px 0 0;overflow-wrap:anywhere">${esc(c.name)}</h3><p class="muted" style="margin:2px 0">${esc(c.company)}${c.property ? ' · ' + esc(c.property) : ''}</p><p class="muted" style="margin:2px 0">${esc(c.contact)}</p></div>
+        <div>${custId ? custBtn({ customer_id: custId, company: c.company, customer_name: c.name, email: '' }, 'Customer profile', 'btn small ghost') : leadId ? '<button type="button" class="btn small ghost" id="cmOpenLead">Lead record</button>' : ''}</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center">
+        <label class="muted" for="cmStatus">Status</label><select id="cmStatus" aria-label="Conversation status">${d.states.map(s => '<option value="' + esc(s) + '"' + (c.status === s ? ' selected' : '') + '>' + esc(s) + '</option>').join('')}</select>
+        <label class="muted" for="cmOwner">Owner</label><input id="cmOwner" value="${esc(c.owner || '')}" placeholder="Who handles this" style="max-width:200px">
+        <label class="muted" for="cmFu">Follow-up</label><input type="date" id="cmFu" value="${esc(c.follow_up_date || '')}">
+        <button type="button" class="btn small ghost" id="cmSaveState">Save</button><button type="button" class="btn small ghost" id="cmRead">Mark read</button></div>
+      <div class="formsection">Conversation</div>
+      <div id="cmMsgs" style="max-height:340px;overflow:auto;border:1px solid #eef2f7;border-radius:8px;padding:8px">${items.length ? items.map(x => '<div style="margin:8px 0;' + (x.dir === 'out' ? 'text-align:right' : '') + '"><span class="badge">' + esc(x.channel === 'sms' ? 'Text' : 'Portal') + '</span> <span class="muted">' + esc(x.dir === 'in' ? (c.type === 'Customer' ? 'Customer' : 'Lead') : (x.by || 'Bright Clean')) + ' · ' + esc(fmtWhen(x.at)) + '</span>' + (x.subject ? '<br><b>' + esc(x.subject) + '</b>' : '') + '<div class="pre" style="white-space:pre-wrap;display:inline-block;max-width:92%;text-align:left;background:' + (x.dir === 'out' ? '#e8f1fd' : '#f6f9fc') + ';border-radius:8px;padding:8px">' + esc(x.body) + '</div>' + (x.error ? '<br><span class="err">' + esc(x.error) + '</span>' : '') + '</div>').join('') : '<p class="muted">No messages yet.</p>'}</div>
+      <div class="formsection">Reply</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><label class="chk"><input type="checkbox" id="cmInternal"> Internal note (customer cannot see)</label>
+        <select id="cmChannel" aria-label="Reply channel">${phone ? '<option value="sms">Text</option>' : ''}${latestPortal ? '<option value="portal">Portal</option>' : ''}</select>
+        <select id="cmTpl" aria-label="Approved template"><option value="">Approved template…</option>${tpl}</select></div>
+      <textarea id="cmBody" rows="3" aria-label="Message" placeholder="Write your reply"></textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button type="button" class="btn small" id="cmSend">Send</button><label class="btn small ghost" style="cursor:pointer">Attach file<input type="file" id="cmFile" hidden></label><small class="muted">Files attach to the customer's documents.</small></div>
+      <div class="formsection">Assistant</div>
+      <p class="muted" style="margin:0 0 6px">Built from this conversation only. Nothing is sent or saved until you press a button.</p>
+      ${unansweredQs.length ? '<p><b>Unanswered questions</b></p><ul>' + unansweredQs.map(q => '<li>' + esc(q) + '</li>').join('') + '</ul>' : '<p>No unanswered questions from the customer.</p>'}
+      <p>${lastIn ? 'Last message from the customer: “' + esc(String(lastIn.body).slice(0, 160)) + '”' : 'No messages from the customer yet.'}</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn small ghost" id="aiDraft">Suggested reply</button><button type="button" class="btn small ghost" id="aiSaveSum">Save summary to history</button><button type="button" class="btn small ghost" id="aiFlag">Flag for a person</button><button type="button" class="btn small ghost" id="aiFollow">Create follow-up task (tomorrow)</button></div>
+      <div class="formsection">History with this ${c.type === 'Customer' ? 'customer' : 'lead'}</div>
+      <ul class="mini" style="max-height:200px;overflow:auto">${d.history.length ? d.history.slice(0, 25).map(h => '<li>' + esc(fmtWhen(h.at)) + ' · ' + esc(h.title) + (h.actor ? ' · ' + esc(h.actor) : '') + '</li>').join('') : '<li class="muted">Nothing recorded yet.</li>'}</ul>
+      <div class="formsection">Internal notes</div>
+      <ul class="mini">${d.notes.length ? d.notes.slice(0, 10).map(n => '<li>' + esc(fmtWhen(n.created_at)) + ' · ' + esc(n.body) + (n.author ? ' <span class="muted">· ' + esc(n.author) + '</span>' : '') + '</li>').join('') : '<li class="muted">No notes yet.</li>'}</ul>`;
+    if ($('#cmOpenLead')) $('#cmOpenLead').onclick = () => openLead(leadId);
+    const saveState = async extra => { try { await api('/api/admin/conversations/' + encodeURIComponent(key) + '/state', { method: 'POST', json: Object.assign({ status: $('#cmStatus').value, owner: $('#cmOwner').value.trim(), follow_up_date: $('#cmFu').value || '' }, extra || {}) }); await loadClientMsgs(); return true; } catch (err) { toast(err.message, true); return false; } };
+    $('#cmSaveState').onclick = async () => { if (await saveState()) toast('Saved'); };
+    $('#cmRead').onclick = async () => { await saveState({ mark_read: true }); toast('Marked read'); };
+    $('#cmTpl').onchange = () => { const t = d.templates.find(x => x.id === $('#cmTpl').value); if (t) $('#cmBody').value = t.body.replace('{first}', first); };
+    $('#aiDraft').onclick = () => { const t = d.templates.find(x => x.id === 'received') || d.templates[0]; $('#cmBody').value = t.body.replace('{first}', first); toast('Draft placed in the reply box. Edit it, then press Send.'); };
+    $('#aiFlag').onclick = async () => { $('#cmOwner').value = d.me; if (await saveState({ status: 'Open', owner: d.me })) toast('Flagged for you to handle'); };
+    $('#aiFollow').onclick = async () => { const t = new Date(Date.now() + 864e5); const dt = localISO(t); if (await saveState({ follow_up_date: dt })) toast('Follow-up set for ' + fmtDate(dt)); };
+    $('#aiSaveSum').onclick = async () => {
+      const summary = 'Summary (' + items.length + ' messages): ' + (unansweredQs.length ? 'unanswered questions: ' + unansweredQs.join(' | ') : 'no unanswered questions') + (lastIn ? '. Last from customer: ' + String(lastIn.body).slice(0, 160) : '');
+      if (!confirm('Save this summary to the history of this ' + c.type.toLowerCase() + '?')) return;
+      try { await api('/api/admin/conversations/' + encodeURIComponent(key) + '/note', { method: 'POST', json: { body: summary } }); toast('Summary saved to history'); renderCmThread(key); }
+      catch (err) { toast(err.message, true); }
+    };
+    $('#cmFile').onchange = async ev => {
+      const f = ev.target.files && ev.target.files[0]; if (!f || !custId) return toast(custId ? 'Pick a file.' : 'Link this conversation to a customer first.', true);
+      const fd = new FormData(); fd.append('files', f); fd.append('kind', 'Other'); fd.append('customer_id', String(custId)); fd.append('title', f.name.replace(/\.[^.]+$/, ''));
+      try { const r = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd }); const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Upload failed'); toast('File saved to the customer documents'); }
+      catch (err) { toast(err.message, true); }
+    };
+    $('#cmSend').onclick = async () => {
+      const body = $('#cmBody').value.trim(); if (body.length < 2) return toast('Write the message first.', true);
+      const internal = $('#cmInternal').checked, channel = $('#cmChannel').value;
+      try {
+        if (internal) {
+          if (!confirm('Save this internal note? The customer will not see it.')) return;
+          await api('/api/admin/conversations/' + encodeURIComponent(key) + '/note', { method: 'POST', json: { body } });
+        } else if (channel === 'sms') {
+          if (!confirm('Send this text to ' + c.name + ' now?')) return;
+          await api('/api/admin/messages/sms', { method: 'POST', json: { customer_id: custId || undefined, lead_id: leadId || undefined, to: phone, body } });
+        } else {
+          if (!latestPortal) return toast('No portal message to reply to.', true);
+          if (!confirm('Send this reply to the customer portal now?')) return;
+          await api('/api/admin/portal-messages/' + latestPortal.msgId + '/reply', { method: 'POST', json: { body } });
+        }
+        toast(internal ? 'Note saved' : 'Sent');
+        await saveState({ status: 'Waiting on customer' });
+      } catch (err) { toast(err.message, true); }
+    };
   }
   async function loadLeads() {
     state.leads = (await api('/api/admin/leads')).leads || [];

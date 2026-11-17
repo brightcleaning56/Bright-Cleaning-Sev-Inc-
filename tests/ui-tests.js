@@ -608,6 +608,16 @@ async function check(area, name, fn) {
     assert(links.length >= 2, 'expected a customer link in the header and the action row, found ' + links.length);
     return 'contract page has ' + links.length + ' customer-profile links';
   });
+  await check('Client messages UI', 'Inbox shows its boxes; a conversation opens with its reply box and assistant', async () => {
+    await nav('clientmsgs'); await sleep(900);
+    const boxes = d.querySelectorAll('#cmBoxes [data-cmb]').length;
+    assert(boxes === 9, 'expected 9 inbox boxes, found ' + boxes);
+    const first = d.querySelector('#cmList [data-ckey]');
+    if (first) { first.click(); await sleep(900); }
+    const opened = !first || (!!d.querySelector('#cmSend') && !!d.querySelector('#aiDraft') && /Assistant/.test(txt('#cmThread')));
+    assert(opened, 'a conversation should open with a reply box and the assistant');
+    return boxes + ' inbox boxes; ' + (first ? 'a conversation opens with reply box and assistant' : 'no conversations yet: empty state shown');
+  });
   await check('Contracts UI', 'Contract list: search narrows the cards, sort by value puts the highest first, Export CSV builds the filtered list', async () => {
     await api('POST', '/api/admin/contracts', { company: 'SortLo Co', customer_name: 'Lo Sort', title: 'Sort low', value: 111, status: 'Draft' }, T);
     await api('POST', '/api/admin/contracts', { company: 'SortHi Co', customer_name: 'Hi Sort', title: 'Sort high', value: 999999, status: 'Draft' }, T);

@@ -1165,6 +1165,24 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(bad.status === 404, 'unknown email should be 404, got ' + bad.status);
     return 'eleven mailboxes with counts; a sent email opens with its summary and category; unknown email is 404';
   });
+  await check('Client messages', 'Inbox loads; notes go to the lead history; a conversation needs messages; unknown numbers cannot take notes; unsigned texts are refused', async () => {
+    const made = await req('POST', '/api/admin/leads', { token: T, json: { contact_name: 'Inbox Test', kind: 'inquiry', phone: '5155550222', details: 'Inbox test.' } });
+    const id = made.data.id || (made.data.lead && made.data.lead.id);
+    assert(id, 'lead not created: ' + made.status);
+    const list = await req('GET', '/api/admin/conversations?box=All', { token: T });
+    assert(list.status === 200 && Array.isArray(list.data.boxes) && list.data.boxes.length === 9, 'inbox boxes should load');
+    const note = await req('POST', '/api/admin/conversations/lead:' + id + '/note', { token: T, json: { body: 'Asked for a walkthrough on Friday' } });
+    assert(note.status === 201, 'note should save, got ' + note.status);
+    const hist = await req('GET', '/api/admin/leads/' + id + '/activity', { token: T });
+    assert((hist.data.entries || []).some(e => /walkthrough/.test(e.summary + ' ' + (e.detail || ''))), 'the note should be in the lead history');
+    const noMsgs = await req('GET', '/api/admin/conversations/lead:' + id, { token: T });
+    assert(noMsgs.status === 404, 'a lead with no messages is not a conversation yet, got ' + noMsgs.status);
+    const unknown = await req('POST', '/api/admin/conversations/phone:5155559888/note', { token: T, json: { body: 'x note' } });
+    assert(unknown.status === 400, 'an unknown number cannot take notes, got ' + unknown.status);
+    const hook = await req('POST', '/api/webhooks/twilio/sms', { json: { From: '+15155550222', Body: 'Yes please' } });
+    assert(hook.status === 403, 'an unsigned text should be refused, got ' + hook.status);
+    return 'inbox loads with 9 boxes; note saved to the lead history; a lead with no messages is not a conversation (404); unknown number refused (400); unsigned text refused (403)';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
