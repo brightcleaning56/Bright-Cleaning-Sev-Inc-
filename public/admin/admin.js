@@ -640,8 +640,10 @@
         const tile = (label, n, go_, note) => '<button type="button" class="ccq" data-cc-go="' + go_ + '" style="display:flex;justify-content:space-between;width:100%"><span>' + esc(label) + (note ? '<small class="muted"> ' + esc(note) + '</small>' : '') + '</span><b>' + n + '</b></button>';
         comms.innerHTML = '<div class="cardhead"><h2>Communications</h2><small class="muted">Last ' + c.days + ' days</small></div>'
           + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">'
-          + tile('Calls', c.calls, 'calls', c.missed + ' missed') + tile('Voicemails', c.voicemails, 'calls', '') + tile('Texts received', c.texts_in, 'clientmsgs', c.texts_out + ' sent') + tile('Emails sent', c.emails_sent, 'emails', c.emails_received + ' received') + '</div>';
+          + tile('Calls', c.calls, 'calls', c.missed + ' missed') + tile('Messages (SMS)', (c.texts_in || 0) + (c.texts_out || 0), 'clientmsgs', c.texts_in + ' in · ' + c.texts_out + ' out') + tile('Emails', (c.emails_sent || 0) + (c.emails_received || 0), 'emails', c.emails_sent + ' sent · ' + c.emails_received + ' in') + tile('Voicemails', c.voicemails, 'calls', '') + '</div>'
+          + '<div style="text-align:right;margin-top:8px"><button type="button" class="linklike" data-cc-all="1">View all communications →</button></div>';
         comms.querySelectorAll('[data-cc-go]').forEach(b => b.onclick = () => go(b.dataset.ccGo));
+        comms.querySelectorAll('[data-cc-all]').forEach(b => b.onclick = () => go('calls'));
       } catch (err) { comms.innerHTML = '<p class="muted">Communications could not load: ' + esc(err.message) + '</p>'; }
     }
     const sched = $('#ccSched');
@@ -666,10 +668,12 @@
     loadCcExtras();
     $('#todayLine').innerHTML = esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + ` · <span class="live">Live</span> <small class="muted">updated ${esc(new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</small>`;
     const k = cc.kpis, per = `last ${cc.days} days`;
-    const att = k.attention.parts;
-    const ALERTS = [['Proposals awaiting approval', att.awaiting_approval, 'proposals'], ['Open complaints', att.open_complaints, 'issues'], ['Overdue tasks', att.overdue_tasks, 'workqueue'], ['Overdue invoices', att.overdue_invoices, 'invoices'], ['Late projects', att.late_projects, 'projects'], ['Leads waiting 2+ days', att.leads_waiting_2_days, 'leads'], ['Failed emails (7 days)', att.failed_emails_7_days, 'emails']];
+    const att = Object.assign({ follow_ups_today: k.attention.follow_ups_today }, k.attention.parts);
+    // The five alerts shown on the Command Center, in the mockup's order. The total is the sum of these rows.
+    const ALERTS = [['Leads not contacted (2+ days)', att.leads_waiting_2_days, 'leads'], ['Overdue tasks', att.overdue_tasks, 'workqueue'], ['Follow-ups due today', att.follow_ups_today, 'calls'], ['Open issues / complaints', att.open_complaints, 'issues'], ['Invoices past due', att.overdue_invoices, 'invoices']];
     if ($('#ccAlerts')) {
-      $('#ccAlerts').innerHTML = '<div class="cardhead"><h2>Alerts &amp; attention</h2><small class="muted">' + k.attention.value + ' total</small></div>' + ALERTS.map(([l, n, v]) => '<button type="button" class="ccq" data-ccal="' + v + '" style="display:flex;justify-content:space-between;width:100%"><span>' + esc(l) + '</span><b' + (n ? ' style="color:#b42318"' : '') + '>' + n + '</b></button>').join('');
+      const alertTotal = ALERTS.reduce((s, a) => s + (Number(a[1]) || 0), 0);
+      $('#ccAlerts').innerHTML = '<div class="cardhead"><h2>Alerts &amp; attention</h2><small class="muted">' + alertTotal + ' total</small></div>' + ALERTS.map(([l, n, v]) => '<button type="button" class="ccq" data-ccal="' + v + '" style="display:flex;justify-content:space-between;width:100%"><span>' + esc(l) + '</span><span><b' + (n ? ' style="color:#b42318"' : '') + '>' + n + '</b> <span aria-hidden="true">›</span></span></button>').join('');
       $$('#ccAlerts [data-ccal]').forEach(b => b.onclick = () => go(b.dataset.ccal));
     }
     api('/api/admin/command-center/trend?months=6').then(renderCcTrend).catch(() => { /* chart is optional */ });
@@ -679,7 +683,7 @@
       { label: 'New leads', sub: per, value: k.new_leads.value, change: k.new_leads.change, icon: 'leads', c: '#1f6fd1', to: 'leads', drill: 'new_leads' },
       { label: 'Proposals sent', sub: per, value: k.proposals_sent.value, change: k.proposals_sent.change, icon: 'doc', c: '#2f80ed', to: 'proposals' },
       { label: 'Won', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
-      { label: 'Collected this month', value: money(k.collected_month.value), icon: 'dollar', c: '#178a4c', to: 'invoices' },
+      { label: 'Revenue (collected)', sub: per, value: money(k.collected_period.value), change: k.collected_period.change, icon: 'dollar', c: '#178a4c', to: 'invoices', drill: 'collected' },
       { label: 'Active projects', value: k.active_projects.value, icon: 'cal', c: '#2563eb', to: 'projects' },
       { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: 'workqueue', alert: k.attention.value > 0 },
     ];
@@ -698,6 +702,8 @@
     // A percentage chip between stages shows how many move on from the stage before (like the mockup)
     $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => { const prev = i ? cc.pipeline[i - 1].n : 0; const chip = i && prev ? `<div style="text-align:center;margin:-2px 0"><span style="display:inline-block;padding:1px 10px;border-radius:999px;background:#eef3fb;color:#1d4f91;font-size:12px;font-weight:600">${Math.min(999, Math.round(p.n / prev * 100))}%</span></div>` : ''; return chip + `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]}"><span>${esc(p.stage)} (${p.n})</span><span>${p.valued ? money(p.v) : ''}</span></div>`; }).join('')
       + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
+    // Total value: the sum of the stages that carry money (the mockup's "Total Value" header)
+    if ($('#ccPipeTotal')) $('#ccPipeTotal').textContent = money(cc.pipeline.reduce((s, p) => s + (p.valued ? Number(p.v) || 0 : 0), 0)) + ' total value';
     $('#ccAct').innerHTML = renderActivity(cc.activity) || '<p class="empty">No activity yet.</p>';
     const QA = [
       ['New Lead', 'user', () => newLead()], ['Log Call', 'calls', () => logCall()], ['Send Email', 'emails', () => go('emails')],

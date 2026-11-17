@@ -28,6 +28,10 @@ module.exports = function mountCommand(app, ctx) {
     const sent = sentIn(from, nowIso), sentPrev = sentIn(prevFrom, from);
     const won = wonIn(from, nowIso), wonPrev = wonIn(prevFrom, from);
     const collectedMonth = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, monthStart).v;
+    // Revenue tile: money collected in the selected period, compared with the period before it
+    const collectedPeriod = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, from.slice(0, 10)).v;
+    const collectedPrev = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=? AND received_at<?`, prevFrom.slice(0, 10), from.slice(0, 10)).v;
+    const followUpsToday = one(`SELECT COUNT(*) n FROM calls WHERE follow_up_date = ? AND COALESCE(follow_up_done,0)=0`, today).n;
     const activeProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived')`).n;
 
     const overdueInvoices = one(`SELECT COUNT(*) n FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND due_date<>'' AND due_date IS NOT NULL AND due_date<? AND paid_amount<amount`, today).n;
@@ -60,10 +64,11 @@ module.exports = function mountCommand(app, ctx) {
         proposals_sent: { value: sent.n, amount: sent.v, change: pct(sent.n, sentPrev.n) },
         won: { value: won.n, amount: won.v, change: pct(won.n, wonPrev.n) },
         collected_month: { value: collectedMonth },
+        collected_period: { value: Math.round(collectedPeriod * 100) / 100, change: pct(collectedPeriod, collectedPrev) },
         invoice_tiles: { open: invOpen, overdue: invOver, collected_month: collectedMonth },
         active_projects: { value: activeProjects },
         attention: { value: overdueInvoices + lateProjects + staleLeads + failedEmails + openComplaints + overdueItems + awaitingApproval,
-          parts: { awaiting_approval: awaitingApproval, open_complaints: openComplaints, overdue_tasks: overdueItems, overdue_invoices: overdueInvoices, late_projects: lateProjects, leads_waiting_2_days: staleLeads, failed_emails_7_days: failedEmails } }
+          parts: { awaiting_approval: awaitingApproval, open_complaints: openComplaints, overdue_tasks: overdueItems, overdue_invoices: overdueInvoices, late_projects: lateProjects, leads_waiting_2_days: staleLeads, failed_emails_7_days: failedEmails }, follow_ups_today: followUpsToday }
       },
       pipeline,
       activity: db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT 6').all(),

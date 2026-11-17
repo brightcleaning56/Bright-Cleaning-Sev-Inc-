@@ -2,14 +2,15 @@
 // makes a separate lead from the same bid. Nothing happens to a lead until someone presses one of these.
 module.exports = function (app, { db, auth, logAction, clean }) {
   const who = req => String((req.user && req.user.email) || '');
+  const safeList = s => { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
   const open = r => {
     let p = {}; try { p = JSON.parse(r.payload || '{}'); } catch { p = {}; }
     const lead = db.prepare('SELECT id, contact_name, company, project_name, address, status FROM leads WHERE id=?').get(r.lead_id) || null;
-    return { id: r.id, created_at: r.created_at, status: r.status, lead, bid: { contact_name: p.contact_name || '', company: p.company || '', email: p.email || '', phone: p.phone || '', project_name: p.project_name || '', address: p.address || '', service: p.service || '', details: p.details || '' }, files: JSON.parse(r.files || '[]') };
+    return { id: r.id, created_at: r.created_at, status: r.status, lead, bid: { contact_name: p.contact_name || '', company: p.company || '', email: p.email || '', phone: p.phone || '', project_name: p.project_name || '', address: p.address || '', service: p.service || '', details: p.details || '' }, files: safeList(r.files) };
   };
   app.get('/api/admin/duplicate-reviews', auth, (req, res) => {
     const rows = db.prepare("SELECT * FROM duplicate_reviews WHERE status='open' ORDER BY id DESC LIMIT 200").all();
-    res.json({ reviews: rows.map(open) });
+    res.json({ reviews: rows.map(r => { try { return open(r); } catch (err) { console.error('duplicate review ' + r.id + ' could not be shown:', err.message); return { id: r.id, created_at: r.created_at, status: r.status, lead: null, bid: { contact_name: '', company: '', email: '', phone: '', project_name: '', address: '', service: '', details: '' }, files: [] }; } }) });
   });
   app.post('/api/admin/duplicate-reviews/:id/merge', auth, (req, res) => {
     const r = db.prepare("SELECT * FROM duplicate_reviews WHERE id=? AND status='open'").get(Number(req.params.id));
