@@ -1267,6 +1267,24 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(bad.status === 400, 'drafts cannot be flagged this way, got ' + bad.status);
     return 'flags save and show on reload; drafts refused';
   });
+  await check('Follow-ups', 'Sending a proposal schedules its follow-up two days later, automatically', async () => {
+    const e = await est({ margin_pct: 40 });
+    const sent = await req('POST', '/api/admin/estimates/' + e.id + '/send', { token: T });
+    if (sent.status !== 200) {
+      // no email went out, so no follow-up may be created
+      assert(sent.status === 502 && /Email delivery failed/.test(sent.data.error || ''), 'a failed send should say so: ' + sent.status);
+      const none = (await req('GET', '/api/admin/estimates/' + e.id + '/followups', { token: T })).data.followups.filter(f => f.auto === 1 && f.status === 'Scheduled');
+      assert(none.length === 0, 'no follow-up should be scheduled when the email did not go out');
+      return 'a failed send creates no follow-up (the mail server is not running in this test run)';
+    }
+    await sleep(300);
+    const list = (await req('GET', '/api/admin/estimates/' + e.id + '/followups', { token: T })).data.followups;
+    const auto = list.find(f => f.auto === 1 && f.status === 'Scheduled');
+    assert(auto, 'an automatic follow-up should be scheduled: ' + JSON.stringify(list));
+    const bd = require('../bizdate').today(), d = new Date(bd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 2);
+    assert(auto.due_date === d.toISOString().slice(0, 10), 'due two days after send: got ' + auto.due_date);
+    return 'send scheduled one automatic follow-up due ' + auto.due_date;
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
