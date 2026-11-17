@@ -4001,6 +4001,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(b2.status === 200 && b2.data.on_break === false, 'end break should work');
     const tm = (await req('GET', `/api/admin/visits/${vid}/photos`, { token: T })).data.time;
     assert(tm && typeof tm.on_site_minutes === 'number' && tm.break_minutes >= 0, 'office should see time on site and breaks');
+    const mo = (await req('GET', `/api/admin/visits/${vid}/photos`, { token: T })).data.money;
+    assert(mo && typeof mo.labor_cost === 'number' && typeof mo.hours === 'number' && mo.has_project === false, 'office should see labor cost for the job');
     assert(s3.data.photos.length === 0, 'no photos before approval');
     assert((await req('GET', `/api/track/${tok}/photos/1`)).status === 404, 'photos stay hidden before approval');
   });

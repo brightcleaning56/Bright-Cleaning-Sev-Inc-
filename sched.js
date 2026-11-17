@@ -541,7 +541,7 @@ module.exports = function mountSched(app, ctx) {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
     let photos = []; try { photos = db.prepare("SELECT id, title, file_name, file_url, created_at, uploaded_by FROM documents WHERE visit_id=? AND kind='Photos' ORDER BY id").all(v.id); } catch { photos = []; }
     const notes = db.prepare('SELECT n.id, n.body, n.created_at, e.name AS by FROM visit_notes n JOIN employees e ON e.id=n.employee_id WHERE n.visit_id=? ORDER BY n.id').all(v.id);
-    res.json({ photos, notes, track_url: trackUrl(v), client_email: (clientOf(v) || {}).email || null, time: siteTime(v, null) });
+    res.json({ photos, notes, track_url: trackUrl(v), client_email: (clientOf(v) || {}).email || null, time: siteTime(v, null), money: jobMoney(v) });
   });
   // ---------- Client job tracking: every job has a private link the client can follow, no sign-up needed ----------
   const trackToken = v => {
@@ -602,6 +602,15 @@ module.exports = function mountSched(app, ctx) {
     const end = v.departed_at || v.completed_at || now();
     const br = breakMinutes(v.id, eid);
     return { on_site_minutes: Math.max(0, minutesBetween(v.arrived_at, end) - br), break_minutes: br };
+  };
+  // Labor cost of a job from the same time entries and hourly rates payroll uses, plus what the project has invoiced.
+  const jobMoney = v => {
+    const rows = db.prepare('SELECT t.clock_in, t.clock_out, t.minutes, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.visit_id=?').all(v.id);
+    let mins = 0, cost = 0;
+    for (const r of rows) { const m = r.clock_out ? minutesBetween(r.clock_in, r.clock_out) : Number(r.minutes || 0); mins += m; cost += (m / 60) * Number(r.hourly_rate || 0); }
+    let invoiced = 0;
+    if (v.project_id) { try { invoiced = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM invoices WHERE project_id=? AND status NOT IN ('Draft','Void')").get(v.project_id).s || 0; } catch { invoiced = 0; } }
+    return { hours: Math.round(mins / 6) / 10, labor_cost: Math.round(cost * 100) / 100, project_invoiced: Math.round(invoiced * 100) / 100, has_project: !!v.project_id };
   };
   // Remove one photo from a job (office only). Only photos attached to that job can be removed.
   app.delete('/api/admin/visits/:id/photos/:photoId', auth, (req, res) => {
