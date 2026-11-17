@@ -3801,6 +3801,7 @@
       + (r.follow_ups.length ? '<ul class="plain">' + r.follow_ups.map(f => '<li style="margin:4px 0">' + (f.overdue ? '<span class="badge red">Overdue</span> ' : '') + esc(fmtDate(f.date)) + ' · ' + esc(f.who) + ' <small class="muted">' + esc(f.what) + '</small></li>').join('') + '</ul>' : '<p class="muted">No follow-ups due.</p>');
   }
 
+  if ($('#wqAddTask')) $('#wqAddTask').onclick = () => { go('issues'); setTimeout(() => { const b = $('#issAdd'); if (b) b.click(); }, 300); };
   async function loadWorkQueue() {
     await wqLoadUsers();
     const s = await api('/api/admin/work-queue/summary');
