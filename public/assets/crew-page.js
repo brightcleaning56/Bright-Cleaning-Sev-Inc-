@@ -139,6 +139,7 @@
       </div>`}
       <div class="photos"><b>Photos</b>
         <label class="btn ghost ph-up">Before<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label>
+        <label class="btn ghost ph-up">During<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="During"></label>
         <label class="btn ghost ph-up">After<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label>
       </div>
       <div class="photos"><b>Job notes</b><span class="muted">Saved on this job for the office to read at review</span></div>
@@ -151,7 +152,7 @@
         <div class="sec">Site access</div><div>${esc(j.access || '—')}${j.site_contact ? '<br>Contact: ' + esc(j.site_contact) : ''}</div>${j.safety ? `<div class="sec">Safety</div><div>${esc(j.safety)}</div>` : ''}
         <div class="muted" style="margin-top:6px">Crew: ${esc(j.crew.join(', '))}</div>
         ${j.checklist.length ? `<div class="sec">Checklist</div><ul class="check">${j.checklist.map((c, i) => `<li><input type="checkbox" data-ck="${i}" ${checked(i) ? 'checked' : ''} ${done ? 'disabled' : ''} aria-label="${esc(c.text || c.title || '')}"><span>${esc(c.text || c.title || '')}</span></li>`).join('')}</ul>` : ''}
-        <div class="row"><button class="danger" data-a="incident">Report an incident</button></div>
+        <div class="row"><label style="display:block;width:100%"><span class="muted">What kind of incident?</span><select data-inc-cat><option>Safety</option><option>Damage / incident</option><option>Equipment</option><option>Customer request</option><option>Other</option></select></label><button class="danger" data-a="incident">Report an incident</button></div>
       </details>
     </div>`;
   }
@@ -235,7 +236,7 @@
         if (a === 'incident') {
           if (!navigator.onLine) return say('Incidents need signal. Report it when you are connected.');
           const t = prompt('What happened? (short)'); if (!t) return;
-          const body = { title: t, description: prompt('Details (optional)') || '', priority: 'High' };
+          const body = { title: t, description: prompt('Details (optional)') || '', priority: 'High', category: (card.querySelector('[data-inc-cat]') || {}).value || 'Other' };
           b.disabled = true;
           try { await post(`/api/crew/${token}/jobs/${id}/incident`, body); say('Incident reported to the office.', true); }
           catch (e) { say(isOffline(e) ? 'Incidents need signal. Report it when you are connected.' : e.message); }

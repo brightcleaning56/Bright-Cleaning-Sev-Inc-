@@ -1404,6 +1404,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(note.status === 201, 'crew should be able to leave a job note, got ' + note.status + ' ' + JSON.stringify(note.data));
     const seenNotes = await req('GET', `/api/admin/visits/${vid}/photos`, { token: T });
     assert((seenNotes.data.notes || []).some(n => /wet, left the sign/.test(n.body) && n.by === 'Review Crew Test'), 'office should see the crew note on the job');
+    const pD = new FormData(); pD.append('stage', 'During'); pD.append('photos', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: 'image/png' }), 'd.png');
+    const during = await req('POST', `/api/crew/${tk}/jobs/${vid}/photos`, { body: pD });
+    assert(during.status === 201, 'crew should be able to add During photos, got ' + during.status);
+    const inc = await req('POST', `/api/crew/${tk}/jobs/${vid}/incident`, { json: { title: 'Wet floor near entrance', category: 'Safety', description: 'Signed the area off' } });
+    assert(inc.status === 201, 'crew should be able to report an incident with a category, got ' + inc.status);
     const crewView = await req('GET', `/api/crew/${tk}`);
     assert(crewView.status === 200 && JSON.stringify(crewView.data).includes('wet, left the sign'), 'crew job list should include their own notes');
     const ret = await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'return' } });

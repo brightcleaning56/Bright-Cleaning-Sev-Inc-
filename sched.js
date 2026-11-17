@@ -452,8 +452,8 @@ module.exports = function mountSched(app, ctx) {
     if (a === 'incident') {
       const title = clean((req.body || {}).title, 200), desc = clean(req.body.description, 3000);
       if (!title) return res.status(400).json({ error: 'Describe what happened in a few words.' });
-      const id = db.prepare("INSERT INTO customer_issues(customer_id,project_id,type,category,title,description,priority,status,source,reported_by,customer_comms,created_by,created_at,updated_at) VALUES(?,?,'incident','Damage / incident',?,?,?,'Open','Employee',?,'Not needed',?,?,?)")
-        .run(v.customer_id || null, v.project_id || null, title, `${desc}\n\nReported from job: ${v.title} (${v.date})`, ['Low', 'Normal', 'High', 'Urgent'].includes(req.body.priority) ? req.body.priority : 'High', e.name, 'crew: ' + e.name, t, t).lastInsertRowid;
+      const id = db.prepare("INSERT INTO customer_issues(customer_id,project_id,type,category,title,description,priority,status,source,reported_by,customer_comms,created_by,created_at,updated_at) VALUES(?,?,'incident',?,?,?,?,'Open','Employee',?,'Not needed',?,?,?)")
+        .run(v.customer_id || null, v.project_id || null, ['Safety', 'Damage / incident', 'Equipment', 'Customer request', 'Other'].includes(req.body.category) ? req.body.category : 'Other', title, `${desc}\n\nReported from job: ${v.title} (${v.date})`, ['Low', 'Normal', 'High', 'Urgent'].includes(req.body.priority) ? req.body.priority : 'High', e.name, 'crew: ' + e.name, t, t).lastInsertRowid;
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'reported', 'incident', id, title, t);
       if (adminEmail) await notify(adminEmail, `Incident reported by ${e.name}: ${title}`, `${desc}\nJob: ${v.title} ${v.date}\nOpen: https://brightclean.net/admin/#issues`);
       return res.status(201).json({ id });
@@ -615,7 +615,7 @@ module.exports = function mountSched(app, ctx) {
       limits: { fileSize: 12 * 1024 * 1024, files: 6 }, fileFilter: (r, f, cb) => cb(null, /^image\//.test(f.mimetype)) });
     app.post(['/api/crew/:token/jobs/:vid/photos', '/api/crew/me/jobs/:vid/photos'], (req, res, next) => { const e = crewAuth(req, res); if (!e) return; const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); req.crewEmp = e; req.crewVisit = v; next(); }, up.array('photos', 6), require('./filecheck').verifyUploads, (req, res) => {
       const files = req.files || []; if (!files.length) return res.status(400).json({ error: 'Choose at least one photo.' });
-      const stage = ['Before', 'After', 'Issue'].includes(req.body.stage) ? req.body.stage : 'After', t = now();
+      const stage = ['Before', 'During', 'After', 'Issue'].includes(req.body.stage) ? req.body.stage : 'After', t = now();
       try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* */ }
       const ids = files.map(f => db.prepare('INSERT INTO documents(project_id,customer_id,title,kind,file_name,file_url,size,uploaded_by,created_at,visit_id) VALUES(?,?,?,?,?,?,?,?,?,?)')
         .run(req.crewVisit.project_id || null, req.crewVisit.customer_id || null, `${stage} – ${req.crewVisit.title} ${req.crewVisit.date}`, 'Photos', f.originalname, '/api/files/' + path.basename(f.path), f.size, 'crew: ' + req.crewEmp.name, t, req.crewVisit.id).lastInsertRowid);
