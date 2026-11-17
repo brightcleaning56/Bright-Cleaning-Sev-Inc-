@@ -3774,6 +3774,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const intake = (k, body) => fetch(B + '/api/integrations/leads', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(k ? { 'X-API-Key': k } : {}) }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, data: await r.json().catch(() => ({})) }));
     const good = await intake(key, { name: 'Partner Lead Test', company: 'Partner Co', email: 'partner.lead@example.com', phone: '515-555-0199', project_name: 'Partner project', service: 'Commercial janitorial', details: 'Came from the partner site', source: 'landing-page' });
     const leadRow = good.data.id ? (await req('GET', '/api/admin/leads', { token: T })).data.leads.find(l => l.id === good.data.id) : null;
+    // Repeat intake: the same email while its lead is still open adds to that lead, not a second lead
+    const repeat = await intake(key, { name: 'Partner Lead Test', email: 'partner.lead@example.com', details: 'Second message from the partner site' });
+    const allLeads = (await req('GET', '/api/admin/leads?status=all', { token: T })).data.leads || [];
+    const sameEmail = allLeads.filter(l => (l.email || '').toLowerCase() === 'partner.lead@example.com');
+    const repeatRow = sameEmail.find(l => l.id === good.data.id);
     const noKey = await intake('', { name: 'No Key', email: 'x@example.com' });
     const badKey = await intake('bc_live_not-a-real-key', { name: 'Bad Key', email: 'x@example.com' });
     const noContact = await intake(key, { details: 'nobody to call' });
@@ -3788,7 +3793,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
       intake: good.status === 201 && !!leadRow && leadRow.intake.startsWith('API: Partner site test') && leadRow.email === 'partner.lead@example.com' && leadRow.kind === 'inquiry',
       refused: noKey.status === 401 && badKey.status === 401 && noContact.status === 400 && badEmail.status === 400,
       staffBlocked: staffMake.status === 403,
-      revoked: revoke.status === 200 && afterRevoke.status === 401
+      revoked: revoke.status === 200 && afterRevoke.status === 401,
+      repeatMerged: repeat.status === 200 && repeat.data.duplicate === true && repeat.data.id === good.data.id && sameEmail.length === 1 && !!repeatRow && String(repeatRow.details || '').includes('Second message from the partner site')
     };
     const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ created: created.status, good: good.status, leadRow: leadRow && leadRow.intake, noKey: noKey.status, badKey: badKey.status, noContact: noContact.status, badEmail: badEmail.status, staffMake: staffMake.status, revoke: revoke.status, afterRevoke: afterRevoke.status, shownAgain }).slice(0, 1200));

@@ -51,6 +51,16 @@ module.exports = function (app, { db, auth, logAction, clean, isEmail, notify })
     if (!name && !email && !phone) return res.status(400).json({ error: 'Send at least a name, an email or a phone number.' });
     if (email && !isEmail(email)) return res.status(400).json({ error: 'That email address is not valid.' });
     const label = 'API: ' + key.name + (source ? ' · ' + source : '');
+    // Repeat intake: if this email already has an open lead, add the new message to that lead instead of creating another.
+    // Closed leads (Won, Lost, Archived) do not block a new inquiry.
+    const open = email && db.prepare("SELECT id, details FROM leads WHERE lower(email)=lower(?) AND status NOT IN ('Won','Lost','Archived') ORDER BY id DESC LIMIT 1").get(email);
+    if (open) {
+      const line = '[Repeat inquiry ' + now().slice(0, 16).replace('T', ' ') + ' UTC via ' + label + ']' + (details ? '\n' + details : '');
+      db.prepare('UPDATE leads SET details=?, updated_at=? WHERE id=?').run(clean(((open.details || '') + '\n\n' + line).trim(), 20000), now(), open.id);
+      db.prepare('UPDATE api_keys SET last_used_at=? WHERE id=?').run(now(), key.id);
+      logAction({ user: { email: 'api:' + key.name } }, 'repeat lead merged', 'lead', open.id, label);
+      return res.status(200).json({ ok: true, id: open.id, duplicate: true });
+    }
     const id = db.prepare("INSERT INTO leads(kind,contact_name,company,email,phone,project_name,service,details,status,intake,created_at,origin) VALUES('inquiry',?,?,?,?,?,?,?,'New',?,?,'api')")
       .run(name, company, email, phone, project, service, details, label, now()).lastInsertRowid;
     db.prepare('UPDATE api_keys SET last_used_at=? WHERE id=?').run(now(), key.id);
