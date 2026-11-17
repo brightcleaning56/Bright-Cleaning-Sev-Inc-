@@ -101,6 +101,7 @@
     const q = queue(); q.push(item); store.set(KEY_Q, q);
     const ov = overlay(), o = ov[visitId] || {};
     if (action === 'checklist') o.checklist = { ...(o.checklist || {}), [body.index]: !!body.done };
+    else if (action === 'onmyway') o.onmyway = true; // only a flag: it must not change the job's status
     else o.status = action === 'checkin' ? 'checkin' : action === 'checkout' ? 'checkout' : 'complete';
     ov[visitId] = o; store.set(KEY_OV, ov);
     return item;
@@ -131,7 +132,7 @@
       ${done ? '' : `${rv === 'Returned' ? `<div class="msg err">Sent back by the office: ${esc(j.review_note || 'see the office')}. Fix it, then submit again.</div>` : ''}
       <div class="actions">
         ${inHere ? '<button class="ghost big" data-a="checkout">Check out<small>End job</small></button>' : '<button class="primary big" data-a="checkin">Check in<small>Start job</small></button>'}
-        ${inHere ? '' : j.on_my_way_at ? '<button class="ghost big" disabled>On the way<small>Client told</small></button>' : '<button class="ghost big" data-a="onmyway">On my way<small>Tell the client</small></button>'}
+        ${inHere ? '' : (j.on_my_way_at || o.onmyway) ? '<button class="ghost big" disabled>On the way<small>Client told</small></button>' : '<button class="ghost big" data-a="onmyway">On my way<small>Tell the client</small></button>'}
         ${rv === 'Submitted' ? '<button class="ghost big" disabled>Waiting for approval<small>Office is reviewing</small></button>'
           : rv === 'Approved' ? '<button class="ok big" data-a="complete">Mark complete<small>Job approved</small></button>'
           : '<button class="ok big" data-a="submit">Submit for review<small>Checklist and photos</small></button>'}
@@ -177,7 +178,7 @@
     const emptyText = { today: 'No jobs for today.', upcoming: 'No upcoming jobs yet.', completed: 'No completed jobs yet.' }[sub];
     // Next stop: the next job that is not finished, with the time the client expects the crew
     const nextOne = all.filter(x => !x.done && x.j.status !== 'Cancelled').sort((a, b) => (a.j.date + (a.j.start_time || '')).localeCompare(b.j.date + (b.j.start_time || '')))[0];
-    const nextStop = nextOne ? `<div class="card job live"><small class="muted">Next stop</small><h2>${esc(nextOne.j.title)}</h2><div class="meta">${esc(fmt(nextOne.j.date))}${nextOne.j.start_time ? ' · ' + esc(nextOne.j.start_time) : ''} · ${esc(nextOne.j.address || 'Address not set yet')}</div>${nextOne.j.start_time ? `<div class="muted">The client expects the crew at ${esc(nextOne.j.start_time)}. They can follow your arrival on their tracking page.</div>` : ''}${nextOne.j.on_my_way_at ? '<div class="msg good">You have told the client you are on the way.</div>' : ''}${nextOne.j.address ? `<div class="links"><a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(nextOne.j.address)}">Directions</a></div>` : ''}</div>` : '';
+    const nextStop = nextOne ? `<div class="card job live"><small class="muted">Next stop</small><h2>${esc(nextOne.j.title)}</h2><div class="meta">${esc(fmt(nextOne.j.date))}${nextOne.j.start_time ? ' · ' + esc(nextOne.j.start_time) : ''} · ${esc(nextOne.j.address || 'Address not set yet')}</div>${nextOne.j.start_time ? `<div class="muted">The client expects the crew at ${esc(nextOne.j.start_time)}. They can follow your arrival on their tracking page.</div>` : ''}${(nextOne.j.on_my_way_at || (nextOne.o && nextOne.o.onmyway)) ? '<div class="msg good">You have told the client you are on the way.</div>' : ''}${nextOne.j.address ? `<div class="links"><a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(nextOne.j.address)}">Directions</a></div>` : ''}</div>` : '';
 
     if (view === 'jobs') {
       const ring = 2 * Math.PI * 34;
