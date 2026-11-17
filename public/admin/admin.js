@@ -3151,8 +3151,37 @@
       ${c.phone ? `<label for="ccSms">Text ${esc(c.phone)}</label><textarea id="ccSms" rows="2" placeholder="Short, clear message"></textarea><button type="button" class="btn small" id="ccSend" style="margin:6px 0">Send SMS</button>` : ''}
       <label for="ccNote">Add note</label><textarea id="ccNote" rows="2" placeholder="Internal note"></textarea><button type="button" class="btn small ghost" id="ccNoteSave" style="margin:6px 0">Save note</button>
       <label for="ccTask">Callback task (due)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="date" id="ccTask" value="${esc(c.follow_up_date || tomorrow)}"><button type="button" class="btn small ghost" id="ccTaskSave">Create task</button></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${m ? '<button type="button" class="btn small ghost" id="ccEst">New estimate</button>' : ''}<button type="button" class="btn small ghost" id="ccDetails">More</button></div>`;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${m ? '<button type="button" class="btn small ghost" id="ccEst">New estimate</button>' : ''}<button type="button" class="btn small ghost" id="ccDetails">More</button></div>
+      <div class="formsection">${c.recording_url ? '<button type="button" class="btn small ghost" id="ccPlay">Play recording</button> ' : ''}</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0" role="tablist">${[['activity', 'Activity'], ['sms', 'SMS'], ['notes', 'Notes'], ['files', 'Files']].map(([k, l]) => '<button type="button" class="btn small' + ((callState.panelTab || 'activity') === k ? '' : ' ghost') + '" data-cctab="' + k + '">' + l + '</button>').join('')}</div>
+      <div id="ccTabBody"><p class="muted">Loading…</p></div>`;
     box.querySelectorAll('[data-open-lead]').forEach(b => b.onclick = () => openLead(Number(b.dataset.openLead)));
+    const loadCcTab = async () => {
+      const body = $('#ccTabBody'); if (!body) return;
+      const tab = callState.panelTab || 'activity';
+      const q = m && m.type === 'customer' ? { customer_id: m.id } : m && m.type === 'lead' ? { lead_id: m.id } : null;
+      if (tab === 'files') {
+        if (!q || !q.customer_id) { body.innerHTML = '<p class="muted">Files are kept on the customer record. Link this caller to a customer first.</p>'; return; }
+        try { const p = await api('/api/admin/customers/' + q.customer_id + '/profile'); body.innerHTML = (p.documents || []).length ? '<ul class="plain">' + p.documents.map(d => '<li>' + esc(d.title || d.file_name || 'Document') + ' <small class="muted">' + esc(fmtDate(d.created_at)) + '</small></li>').join('') + '</ul>' : '<p class="muted">No files yet.</p>'; }
+        catch (err) { body.innerHTML = '<p class="err">' + esc(err.message) + '</p>'; }
+        return;
+      }
+      if (!q) { body.innerHTML = '<p class="muted">Nothing is on file for this number yet.</p>'; return; }
+      const kind = tab === 'sms' ? 'sms' : tab === 'notes' ? 'note' : null;
+      const holder = document.createElement('div'); body.innerHTML = ''; body.appendChild(holder);
+      await loadComms(q, holder.id || (holder.id = 'ccTabList'));
+      if (kind) { const items = [...holder.querySelectorAll('li')]; items.forEach(li => { if (!li.textContent.includes(kind === 'sms' ? 'Text' : 'Note')) li.remove(); }); if (!items.some(li => li.isConnected && li.textContent.includes(kind === 'sms' ? 'Text' : 'Note'))) holder.insertAdjacentHTML('afterbegin', '<p class="muted">Nothing here yet.</p>'); }
+    };
+    box.querySelectorAll('[data-cctab]').forEach(b => b.onclick = () => { callState.panelTab = b.dataset.cctab; renderCallPanel(c); });
+    if ($('#ccPlay')) $('#ccPlay').onclick = async () => {
+      try {
+        const r = await fetch('/api/admin/calls/' + c.id + '/recording', { headers: { Authorization: 'Bearer ' + token } });
+        if (!r.ok) throw new Error('The recording is not available.');
+        const url = URL.createObjectURL(await r.blob());
+        const holder = $('#ccTabBody'); if (holder) holder.insertAdjacentHTML('afterbegin', '<audio controls src="' + url + '" style="width:100%;margin-bottom:8px"></audio>');
+      } catch (err) { toast(err.message, true); }
+    };
+    loadCcTab();
     $('#ccOutcome').onchange = async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { outcome: $('#ccOutcome').value } }); toast('Outcome saved'); await loadCalls(); } catch (err) { toast(err.message, true); } };
     if ($('#ccSend')) $('#ccSend').onclick = async () => {
       const body = $('#ccSms').value.trim(); if (body.length < 2) return toast('Write the text first.', true);
