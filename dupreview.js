@@ -1,0 +1,39 @@
+// Possible duplicate bids: the office decides. Merging adds the new details and files to the lead; creating a new lead
+// makes a separate lead from the same bid. Nothing happens to a lead until someone presses one of these.
+module.exports = function (app, { db, auth, logAction, clean }) {
+  const who = req => String((req.user && req.user.email) || '');
+  const open = r => {
+    let p = {}; try { p = JSON.parse(r.payload || '{}'); } catch { p = {}; }
+    const lead = db.prepare('SELECT id, contact_name, company, project_name, address, status FROM leads WHERE id=?').get(r.lead_id) || null;
+    return { id: r.id, created_at: r.created_at, status: r.status, lead, bid: { contact_name: p.contact_name || '', company: p.company || '', email: p.email || '', phone: p.phone || '', project_name: p.project_name || '', address: p.address || '', service: p.service || '', details: p.details || '' }, files: JSON.parse(r.files || '[]') };
+  };
+  app.get('/api/admin/duplicate-reviews', auth, (req, res) => {
+    const rows = db.prepare("SELECT * FROM duplicate_reviews WHERE status='open' ORDER BY id DESC LIMIT 200").all();
+    res.json({ reviews: rows.map(open) });
+  });
+  app.post('/api/admin/duplicate-reviews/:id/merge', auth, (req, res) => {
+    const r = db.prepare("SELECT * FROM duplicate_reviews WHERE id=? AND status='open'").get(Number(req.params.id));
+    if (!r) return res.status(404).json({ error: 'That review is already decided or does not exist.' });
+    const lead = db.prepare('SELECT * FROM leads WHERE id=?').get(r.lead_id);
+    if (!lead) return res.status(404).json({ error: 'The lead for this bid no longer exists. Create a new lead instead.' });
+    let p = {}; try { p = JSON.parse(r.payload || '{}'); } catch { p = {}; }
+    let fl = []; try { fl = JSON.parse(lead.files || '[]'); } catch { fl = []; }
+    let newFiles = []; try { newFiles = JSON.parse(r.files || '[]'); } catch { newFiles = []; }
+    const t = new Date().toISOString();
+    db.prepare('UPDATE leads SET files=?, details=?, updated_at=? WHERE id=?').run(JSON.stringify(fl.concat(newFiles)), clean((lead.details || '') + '\n\n[Repeat bid merged ' + t.slice(0, 16).replace('T', ' ') + ' UTC] ' + (p.details || ''), 20000), t, lead.id);
+    db.prepare("UPDATE duplicate_reviews SET status='merged', result_lead_id=?, decided_at=?, decided_by=? WHERE id=?").run(lead.id, t, who(req), r.id);
+    logAction(req, 'merged repeat bid', 'lead', lead.id, 'review #' + r.id);
+    res.json({ ok: true, lead_id: lead.id });
+  });
+  app.post('/api/admin/duplicate-reviews/:id/new-lead', auth, (req, res) => {
+    const r = db.prepare("SELECT * FROM duplicate_reviews WHERE id=? AND status='open'").get(Number(req.params.id));
+    if (!r) return res.status(404).json({ error: 'That review is already decided or does not exist.' });
+    let p = {}; try { p = JSON.parse(r.payload || '{}'); } catch { p = {}; }
+    const t = new Date().toISOString();
+    const id = db.prepare("INSERT INTO leads(kind,contact_name,company,email,phone,project_name,address,details,files,status,created_at,updated_at) VALUES('bid',?,?,?,?,?,?,?,?,'New',?,?)")
+      .run(clean(p.contact_name, 150), clean(p.company, 200), clean(p.email, 254), clean(p.phone, 60), clean(p.project_name, 200), clean(p.address, 300), clean(p.details, 20000), r.files || '[]', t, t).lastInsertRowid;
+    db.prepare("UPDATE duplicate_reviews SET status='new_lead', result_lead_id=?, decided_at=?, decided_by=? WHERE id=?").run(id, t, who(req), r.id);
+    logAction(req, 'created lead from repeat bid', 'lead', id, 'review #' + r.id);
+    res.json({ ok: true, lead_id: id });
+  });
+};

@@ -1334,6 +1334,33 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     await req('PATCH', '/api/admin/employees/' + eid, { token: T, json: { active: false } });
     return 'dispatched job shows on the personal link and to the signed-in crew member (reached: ' + disp.data.notified + ', not reached: ' + disp.data.not_reached.length + ')';
   });
+  await check('Repeat bids', 'A repeat bid for the same project goes to review; the lead is not changed until someone decides; merge and new-lead both work', async () => {
+    const fields = { contact_name: 'Dup Tester', company: 'Dup Co', email: 'dup.bid@t.test', phone: '5155550166', project_type: 'Commercial', service: 'Commercial janitorial', project_name: 'Dup Project Alpha', address: '77 Repeat Rd', details: 'First request', consent: '1' };
+    const send = async (f) => { const fd = new FormData(); Object.entries(f).forEach(([k, v]) => fd.append(k, v)); const r = await fetch(B + '/api/bids', { method: 'POST', body: fd }); return { status: r.status, data: await r.json() }; };
+    const first = await send(fields);
+    assert(first.status === 201, 'first bid should be accepted, got ' + first.status);
+    const leadsBefore = (await req('GET', '/api/admin/leads', { token: T })).data.leads;
+    const leadRow = leadsBefore.find(l => l.email === 'dup.bid@t.test');
+    assert(leadRow, 'the first bid should be a lead');
+    const again = await send({ ...fields, details: 'Repeat request with more detail' });
+    assert(again.status === 201, 'repeat bid should be acknowledged, got ' + again.status);
+    const leadAfter = (await req('GET', '/api/admin/leads', { token: T })).data.leads.find(l => l.id === leadRow.id);
+    assert(!/Repeat request with more detail/.test(leadAfter.details || ''), 'the lead must not change before review');
+    const reviews = (await req('GET', '/api/admin/duplicate-reviews', { token: T })).data.reviews;
+    const rv = reviews.find(x => x.lead && x.lead.id === leadRow.id);
+    assert(rv && rv.bid.details === 'Repeat request with more detail', 'the repeat should wait in review');
+    const merged = await req('POST', '/api/admin/duplicate-reviews/' + rv.id + '/merge', { token: T });
+    assert(merged.status === 200, 'merge should work, got ' + merged.status);
+    const afterMerge = (await req('GET', '/api/admin/leads', { token: T })).data.leads.find(l => l.id === leadRow.id);
+    assert(/Repeat request with more detail/.test(afterMerge.details || ''), 'merge should add the repeat details');
+    const again2 = await send({ ...fields, project_name: 'Dup Project Beta', details: 'Second project' });
+    assert(again2.status === 201, 'a different project is a new bid');
+    const rv2 = ((await req('GET', '/api/admin/duplicate-reviews', { token: T })).data.reviews || []).find(x => x.bid.project_name === 'Dup Project Beta');
+    assert(!rv2, 'a different project should not be a duplicate review');
+    const newLead = await req('POST', '/api/admin/duplicate-reviews/' + rv.id + '/new-lead', { token: T });
+    assert(newLead.status === 404, 'a decided review cannot be decided again, got ' + newLead.status);
+    return 'repeat waits in review; lead unchanged until merged; merge adds details; different project is not a duplicate';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

@@ -997,7 +997,21 @@
   };
   $('#cmSearch').oninput = () => { cm.search = $('#cmSearch').value; renderCmList(); };
 
+  // Repeat bids that matched an existing lead wait here. Merge adds them to that lead; New lead makes a separate lead.
+  async function loadDupReviews() {
+    const box = $('#dupReviews'); if (!box) return;
+    let r; try { r = await api('/api/admin/duplicate-reviews'); } catch { box.hidden = true; return; }
+    box.hidden = !r.reviews.length;
+    if (!r.reviews.length) { box.innerHTML = ''; return; }
+    box.innerHTML = '<h2 style="font-size:17px;margin:0 0 6px">Repeat bids to review (' + r.reviews.length + ')</h2><p class="muted" style="margin:0 0 8px">These matched an existing lead by email, project and address. Nothing has changed on the lead yet.</p>' +
+      r.reviews.map(x => '<div class="card" style="margin:8px 0;padding:10px"><b>' + esc(x.bid.project_name || 'Project') + '</b> · ' + esc(x.bid.contact_name) + (x.bid.company ? ', ' + esc(x.bid.company) : '') + '<div class="muted">' + esc(x.bid.email) + ' · ' + esc(x.bid.phone) + ' · ' + esc(x.bid.address) + '</div><p style="white-space:pre-wrap;margin:6px 0">' + esc(x.bid.details) + '</p>' +
+        (x.files.length ? '<p class="muted">' + x.files.length + ' file(s) attached</p>' : '') +
+        '<p class="muted">Matches lead #' + (x.lead ? x.lead.id : '?') + (x.lead && x.lead.status ? ' (' + esc(x.lead.status) + ')' : '') + '</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small" data-dmerge="' + x.id + '">Merge into lead #' + (x.lead ? x.lead.id : '') + '</button><button type="button" class="btn small ghost" data-dnew="' + x.id + '">Create as a new lead</button></div></div>').join('');
+    box.querySelectorAll('[data-dmerge]').forEach(b => b.onclick = async () => { if (!confirm('Add this repeat bid to the existing lead?')) return; try { await api('/api/admin/duplicate-reviews/' + b.dataset.dmerge + '/merge', { method: 'POST', json: {} }); toast('Merged into the lead'); loadDupReviews(); loadLeads(); } catch (err) { toast(err.message, true); } });
+    box.querySelectorAll('[data-dnew]').forEach(b => b.onclick = async () => { if (!confirm('Create this as a separate new lead?')) return; try { await api('/api/admin/duplicate-reviews/' + b.dataset.dnew + '/new-lead', { method: 'POST', json: {} }); toast('New lead created'); loadDupReviews(); loadLeads(); } catch (err) { toast(err.message, true); } });
+  }
   async function loadLeads() {
+    loadDupReviews();
     state.leads = (await api('/api/admin/leads')).leads || [];
     renderLeads();
   }
