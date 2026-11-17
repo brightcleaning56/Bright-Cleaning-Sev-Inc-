@@ -1165,7 +1165,7 @@
     const tbar = $('#leadSearch') && $('#leadSearch').closest('.toolbar'); if (tbar) tbar.hidden = true;
     const ws = $('#leadWorkspace'); ws.hidden = false;
     ws.innerHTML = `<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
-        <div style="min-width:0"><button type="button" class="linklike" id="lwBack">← All leads</button><h1 style="margin:6px 0 2px;font-size:22px;overflow-wrap:anywhere">${esc(title)}</h1><p class="muted" style="margin:0">${esc(sub)}</p></div></div>
+        <div style="min-width:0"><p class="muted" style="margin:0 0 4px"><button type="button" class="linklike" id="lwBack">Leads</button> › ${esc(sub)}</p><h1 style="margin:6px 0 2px;font-size:22px;overflow-wrap:anywhere">${esc(title)}</h1><p class="muted" style="margin:0">${esc(sub)}</p></div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">${footer}</div>
       <div class="lwbody">${body}</div>`;
     $('#lwBack').onclick = () => closeLeadWorkspace();
@@ -1201,7 +1201,8 @@
       title: l.contact_name || 'Lead #' + l.id,
       sub: `${KIND_LABEL[l.kind] || 'Lead'} #${l.id}${l.company ? ' · ' + l.company : ''}`,
       body: `
-        <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
+        <div class="lwbody"><div class="lwleft">
+        <div class="lwstep">${[["New", "New"], ["Contacting", "Attempting contact"], ["Qualified", "Qualified"], ["Estimate", "Estimate"], ["Proposal", "Proposal Sent"], ["Won / Lost", "Won"]].map(([lbl, key], i) => { const cur = ({ "New": 0, "Attempting contact": 1, "Contacting": 1, "Qualified": 2, "Estimate": 3, "Estimate Sent": 3, "Proposal Sent": 4, "Proposal in Progress": 4, "Won": 5, "Lost": 5 })[l.status] ?? 0; return "<span class=\"" + (i === cur ? "on" : i < cur ? "done" : "") + "\">" + lbl + "</span>"; }).join("")}</div>
         ${flagBox}
         <div id="leadBrief"></div>
         <div class="card" style="margin:10px 0"><h3 class="secth" style="margin-top:0">Every communication</h3><p class="muted" id="leadCommsSum"></p><div id="leadComms"></div></div>
@@ -1210,6 +1211,8 @@
         ${l.email ? '<div class="formsection">Conversation</div><div id="leadConv"><p class="muted">Loading…</p></div>' : ''}
         ${l.details ? `<div class="formsection">Details</div><div class="pre">${esc(l.details)}</div>` : ''}
         ${files.length ? `<div class="formsection">Attachments</div><div class="related"><ul>${files.map((f, i) => `<li><button class="linklike" data-file="${i}">${esc(f.name)}</button></li>`).join('')}</ul></div>` : ''}
+        </div><div class="lwright">
+        <h3 class="secth" style="margin-top:0">Lead details</h3>        <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${raw.has(k) ? v : esc(v)}</dd>`).join('')}</dl>
         <div class="formsection">Follow-up</div>
         <div class="grid">
           <div class="f"><label for="ls">Status</label><select id="ls">${options(STATUS.leads, l.status)}</select></div>
@@ -1217,11 +1220,12 @@
           <div class="f wide"><label for="ln">Internal notes</label><textarea id="ln" placeholder="Calls, site walk notes, next steps. Only visible here.">${esc(l.notes || '')}</textarea></div>
           <div class="f wide"><label class="chk"><input type="checkbox" id="lCb" ${l.callback_requested ? 'checked' : ''}> Call back requested (automatic calls only go to leads marked this way)</label></div>
           <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
-        </div>`,
-      footer: `<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}${l.customer_id ? '<button class="btn ghost" id="lOpenCust">Open customer</button>' : '<button class="btn ghost" id="lConvert">Convert to customer</button>'}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
+        </div></div></div>`,
+      footer: `<button class="btn" id="lLog" type="button">Log activity</button>${l.phone ? `<a class="btn ghost" href="tel:${esc(l.phone)}">Call</a>` : ''}${l.email ? `<a class="btn ghost" href="mailto:${esc(l.email)}">Email</a>` : ''}<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}${l.customer_id ? '<button class="btn ghost" id="lOpenCust">Open customer</button>' : '<button class="btn ghost" id="lConvert">Convert to customer</button>'}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
     });
     $$('[data-file]').forEach(b => b.onclick = () => downloadFile(files[b.dataset.file]));
     renderLeadAI(l);
+    if ($('#lLog')) $('#lLog').onclick = () => { const f = $('#lhSummary'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } };
     $('#lSave').onclick = async () => {
       try {
         await api('/api/admin/leads/' + l.id, { method: 'PATCH', json: { status: $('#ls').value, notes: $('#ln').value, origin: $('#lOrigin').value } });
