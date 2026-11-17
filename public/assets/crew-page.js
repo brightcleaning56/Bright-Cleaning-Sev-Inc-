@@ -66,12 +66,62 @@
   let d = null, offlineAt = null, flushing = false;
   let view = 'jobs', sub = 'today';
 
+  // Photos taken with no signal are kept on the phone (IndexedDB) and sent when it is back
+  let photosWaiting = 0;
+  function openPhotos() {
+    return new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error('This phone cannot keep photos offline.'));
+      const r = indexedDB.open('bc-crew-photos', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('photos', { autoIncrement: true });
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+  }
+  function queuePhotos(items) {
+    return openPhotos().then(db => new Promise((res, rej) => {
+      const tx = db.transaction('photos', 'readwrite'); items.forEach(x => tx.objectStore('photos').add(x));
+      tx.oncomplete = () => { db.close(); res(); }; tx.onerror = () => { db.close(); rej(tx.error); };
+    }));
+  }
+  function pendingPhotos() {
+    return openPhotos().then(db => new Promise((res, rej) => {
+      const tx = db.transaction('photos', 'readonly'), items = [];
+      tx.objectStore('photos').openCursor().onsuccess = e => { const c = e.target.result; if (c) { items.push({ key: c.key, ...c.value }); c.continue(); } };
+      tx.oncomplete = () => { db.close(); res(items); }; tx.onerror = () => { db.close(); rej(tx.error); };
+    }));
+  }
+  function removePhoto(key) {
+    return openPhotos().then(db => new Promise((res, rej) => {
+      const tx = db.transaction('photos', 'readwrite'); tx.objectStore('photos').delete(key);
+      tx.oncomplete = () => { db.close(); res(); }; tx.onerror = () => { db.close(); rej(tx.error); };
+    }));
+  }
+  let flushingPhotos = false;
+  async function flushPhotos() {
+    if (flushingPhotos || !navigator.onLine) return;
+    flushingPhotos = true; let sent = 0;
+    try {
+      const items = await pendingPhotos().catch(() => []);
+      for (const it of items) {
+        try {
+          const fd = new FormData(); fd.append('stage', it.stage); fd.append('photos', it.blob, it.name || 'photo.jpg');
+          const r = await fetch(`/api/crew/${it.token}/jobs/${it.visitId}/photos`, { method: 'POST', headers: authHdr(), body: fd });
+          if (!r.ok) continue; // keep it and try again later
+          await removePhoto(it.key); sent++;
+        } catch { break; } // still no signal: stop and try later
+      }
+    } finally { flushingPhotos = false; }
+    photosWaiting = (await pendingPhotos().catch(() => [])).length;
+    if (sent) say(`${sent} photo(s) from this phone uploaded.`, true);
+    banner();
+  }
+
   function banner() {
     const el = $('#net'); if (!el) return;
     const waiting = queue().length;
     const parts = [];
     if (offlineAt) parts.push(`Offline: showing jobs as of ${hm(offlineAt)}.`);
     if (waiting) parts.push(`${waiting} change${waiting === 1 ? '' : 's'} waiting to send.`);
+    if (photosWaiting) parts.push(`${photosWaiting} photo${photosWaiting === 1 ? '' : 's'} waiting to upload.`);
     el.hidden = !parts.length; el.textContent = parts.join(' ');
   }
 
@@ -293,8 +343,13 @@
       });
       card.querySelectorAll('[data-ph]').forEach(inp => inp.onchange = async () => {
         if (!inp.files.length) return;
-        if (!navigator.onLine) { inp.value = ''; return say('Photos need signal. Upload them when you are connected.'); }
         const files = [...inp.files]; let sent = 0;
+        // No signal: keep the photos on the phone; they upload when it is back
+        const keepOffline = async list => {
+          try { await queuePhotos(list.map(f => ({ token, visitId: id, stage: inp.dataset.ph, blob: f, name: f.name, type: f.type, at: Date.now() }))); inp.value = ''; await flushPhotos(); say(`${list.length} photo(s) saved on this phone. They upload when you have signal.`, true); }
+          catch { say('This phone cannot keep photos offline. Connect to upload them.'); }
+        };
+        if (!navigator.onLine) return keepOffline(files);
         try {
           // The server takes up to 6 files per request, so send larger picks in batches
           for (let i = 0; i < files.length; i += 6) {
@@ -303,7 +358,7 @@
           }
           inp.value = ''; say(`${sent} ${inp.dataset.ph.toLowerCase()} photo(s) uploaded. Add more any time.`, true);
         }
-        catch (e) { say(isOffline(e) ? 'Photos need signal. Upload them when you are connected.' : e.message); }
+        catch (e) { if (isOffline(e)) return keepOffline(files.slice(sent)); say(e.message); }
       });
     });
   }
@@ -352,8 +407,8 @@
     render();
   }
 
-  window.addEventListener('online', async () => { await flush(); await refresh(); });
-  setInterval(() => { if (queue().length) flush().then(banner); }, 30000);
+  window.addEventListener('online', async () => { await flush(); await refresh(); flushPhotos(); });
+  setInterval(() => { if (queue().length) flush().then(banner); flushPhotos(); }, 30000);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/crew-sw.js').catch(() => { /* the page works without it */ });
-  refresh().then(() => flush()).then(() => { if (!queue().length && d) refresh(); });
+  refresh().then(() => flush()).then(() => { if (!queue().length && d) refresh(); }).then(() => flushPhotos());
 })();
