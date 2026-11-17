@@ -3861,6 +3861,33 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return `status off; triage, call notes and takeoff all 503 "${a.data.error}"`;
   });
 
+  await check('Crew session', 'A signed-in crew member sees an assigned job even before dispatch (marked upcoming) and can upload photos to it', async () => {
+    const emp = await req('POST', '/api/admin/employees', { token: T, json: { name: 'Session Crew Test', email: 'session.crew@t.test', phone: '5155550155', role: 'Cleaner' } });
+    const eid = emp.data.id || (emp.data.employee && emp.data.employee.id);
+    assert(eid, 'employee not created: ' + emp.status);
+    await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '6604' } });
+    const today = require('../bizdate').today();
+    const vis = await req('POST', '/api/admin/visits', { token: T, json: { title: 'Session job', date: today, start_time: '09:00', end_time: '10:00', address: '9 Photo Ave' } });
+    const vid = vis.data.id || (vis.data.visit && vis.data.visit.id);
+    assert(vid, 'visit not created');
+    const asg = await req('POST', '/api/admin/dispatch/visits/' + vid + '/crew', { token: T, json: { employee_id: eid } });
+    assert(asg.status === 200, 'assign should work, got ' + asg.status);
+    const si = await req('POST', '/api/crew/login', { json: { login: 'session.crew@t.test', pin: '6604' } });
+    assert(si.status === 200 && si.data.token, 'sign in should work');
+    const auth = { Authorization: 'Bearer ' + si.data.token };
+    const mine = await req('GET', '/api/crew/me', { headers: auth });
+    const job = (mine.data.jobs || []).find(j => j.id === vid);
+    assert(job && job.dispatched === false, 'an assigned, undispatched job should show as upcoming: ' + JSON.stringify(mine.data.jobs));
+    const fd = new FormData();
+    fd.append('photos', new Blob([Buffer.from('89504e470d0a1a0a', 'hex')], { type: 'image/png' }), 'before.png');
+    fd.append('stage', 'Before');
+    const up = await req('POST', '/api/crew/me/jobs/' + vid + '/photos', { headers: auth, body: fd });
+    assert(up.status === 201 && Array.isArray(up.data.ids) && up.data.ids.length === 1, 'photo should upload from the session, got ' + up.status + ' ' + JSON.stringify(up.data).slice(0, 200));
+    const noAuth = await req('POST', '/api/crew/me/jobs/' + vid + '/photos', { body: fd });
+    assert(noAuth.status === 401, 'photo upload without signing in should be refused, got ' + noAuth.status);
+    await req('PATCH', '/api/admin/employees/' + eid, { token: T, json: { active: false } });
+    return 'upcoming job shown to the signed-in crew; photo uploaded from the session; refused without sign-in';
+  });
   await check('Work queue', 'Email: a new email is in Needs Attention; a follow-up for a future date leaves Today and shows in Scheduled; it returns on its date; handled emails are Completed; opening it changes nothing', async () => {
     const pdb = new Database(path.join(dataDir, 'brightclean.db'));
     const mid = pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES(?,?,?,?,?,?,?)")

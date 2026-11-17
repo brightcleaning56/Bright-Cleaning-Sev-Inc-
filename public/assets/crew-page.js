@@ -114,7 +114,7 @@
       const inHere = o.status === 'checkin' ? true : o.status === 'checkout' || o.status === 'complete' ? false : serverIn;
       const done = o.status === 'complete' || j.status === 'Done';
       const checked = i => (o.checklist && o.checklist[i] !== undefined) ? o.checklist[i] : !!j.checklist[i].done;
-      return `<div class="card job" data-id="${j.id}"><span class="pill ${done ? 'done' : ''}">${esc(done ? 'Completed' : j.status)}</span>${pending ? ' <span class="pill">Waiting to send</span>' : ''}<h2>${esc(j.title)}</h2>
+      return `<div class="card job" data-id="${j.id}"><span class="pill ${done ? 'done' : ''}">${esc(done ? 'Completed' : j.status)}</span>${pending ? ' <span class="pill">Waiting to send</span>' : ''}${j.dispatched ? '' : ' <span class="pill">Upcoming · office confirms</span>'}<h2>${esc(j.title)}</h2>
         <div class="muted">${fmt(j.date)} · ${esc(j.start_time || '')}${j.end_time ? '–' + esc(j.end_time) : ''}</div>
         <div>${esc(j.address || '')}</div>${j.address ? `<div class="row"><a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}">Directions</a></div>` : ''}
         ${j.instructions ? `<div class="sec">Instructions</div><div>${esc(j.instructions)}</div>` : ''}${j.equipment ? `<div class="sec">Equipment &amp; supplies</div><div>${esc(j.equipment)}</div>` : ''}

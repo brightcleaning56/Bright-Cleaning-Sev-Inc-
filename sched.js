@@ -321,14 +321,14 @@ module.exports = function mountSched(app, ctx) {
   const crewGet = (req, res) => {
     const e = crewAuth(req, res); if (!e) return;
     const d = clean(req.query.date, 10) || today();
-    const jobs = db.prepare("SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date BETWEEN ? AND ? AND v.status NOT IN ('Cancelled','Skipped') AND v.dispatched_at IS NOT NULL ORDER BY v.date, v.start_time").all(e.id, d, addDays(d, 6));
+    const jobs = db.prepare("SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date BETWEEN ? AND ? AND v.status NOT IN ('Cancelled','Skipped','Tentative') ORDER BY v.date, v.start_time").all(e.id, d, addDays(d, 6));
     const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND clock_out IS NULL ORDER BY id DESC').get(e.id);
     res.json({ employee: { name: e.name, role: e.role, crew: e.crew }, date: d, clocked_in: open ? { visit_id: open.visit_id, since: open.clock_in } : null,
       jobs: jobs.map(v => {
         const site = v.project_id ? J((db.prepare('SELECT site_info FROM projects WHERE id=?').get(v.project_id) || {}).site_info, {}) : {};
         // Access details only for crew on today's or tomorrow's jobs; never billing or pricing.
         const near = v.date <= addDays(today(), 1);
-        return { id: v.id, title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
+        return { id: v.id, dispatched: !!v.dispatched_at, title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
           crew: crewOf(v.id).map(x => x.name), access: near ? (site.access || '') : 'Shown the day before the job.', site_contact: near ? (site.contact || '') : '', safety: site.safety || '', arrived_at: v.arrived_at, completed_at: v.completed_at };
       }) });
   };
