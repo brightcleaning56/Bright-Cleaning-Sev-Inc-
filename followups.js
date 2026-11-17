@@ -147,6 +147,18 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
 
   // Text a customer or a lead from anywhere (Call & Message Center, customer and lead records). Every text is logged to the
   // customer or lead it belongs to.
+  // Owner only: one test email to a chosen address, to confirm delivery and that the sender name is recorded.
+  app.post('/api/admin/email/test', auth, async (req, res) => {
+    const ow = String(process.env.ADMIN_EMAIL || '').toLowerCase();
+    if (!ow || me(req).toLowerCase() !== ow) return res.status(403).json({ error: 'Only the owner can send a test email.' });
+    const to = String((req.body || {}).to || '').trim().slice(0, 254);
+    if (!isEmail(to)) return res.status(400).json({ error: 'Enter an email address.' });
+    try {
+      await getMailer().sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to, subject: 'Bright Clean test email (sent-by check)', text: 'This is a test email from the Bright Clean admin to confirm the sender name appears. No action needed.', automated: false });
+      res.json({ ok: true });
+    } catch (err) { res.status(502).json({ error: err.message }); }
+  });
+
   app.post('/api/admin/messages/sms', auth, async (req, res) => {
     const b = req.body || {};
     const body = clean(b.body, 600);
