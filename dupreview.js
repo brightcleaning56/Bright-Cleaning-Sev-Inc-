@@ -11,7 +11,11 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   app.get('/api/admin/duplicate-reviews', auth, (req, res) => {
     // Owner-facing list. If the query itself fails, say why (the error text, not the stack) so it can be fixed.
     let rows;
-    try { rows = db.prepare("SELECT * FROM duplicate_reviews WHERE status='open' ORDER BY id DESC LIMIT 200").all(); }
+    try {
+      // Same schema as server.js. Creating it here too means the list works even if the table was not there at startup.
+      db.exec("CREATE TABLE IF NOT EXISTS duplicate_reviews(id INTEGER PRIMARY KEY AUTOINCREMENT, lead_id INTEGER NOT NULL, payload TEXT NOT NULL, files TEXT, status TEXT NOT NULL DEFAULT 'open', result_lead_id INTEGER, created_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT)");
+      rows = db.prepare("SELECT * FROM duplicate_reviews WHERE status='open' ORDER BY id DESC LIMIT 200").all();
+    }
     catch (err) { console.error('duplicate-reviews query failed:', err.stack || err.message); return res.status(500).json({ error: 'Repeat bids could not be loaded.', detail: String(err.message || err).slice(0, 300) }); }
     res.json({ reviews: rows.map(r => { try { return open(r); } catch (err) { console.error('duplicate review ' + r.id + ' could not be shown:', err.message); return { id: r.id, created_at: r.created_at, status: r.status, lead: null, bid: { contact_name: '', company: '', email: '', phone: '', project_name: '', address: '', service: '', details: '' }, files: [] }; } }) });
   });
