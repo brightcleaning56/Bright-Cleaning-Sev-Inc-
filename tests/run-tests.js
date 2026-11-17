@@ -1388,6 +1388,14 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(early2.status === 409, 'complete must wait for approval, got ' + early2.status);
     const shown = await req('GET', `/api/admin/visits/${vid}/photos`, { token: T });
     assert(shown.status === 200 && (shown.data.photos || []).length === 2, 'office should see both photos on the job, got ' + shown.status + ' ' + JSON.stringify(shown.data).slice(0, 200));
+    // Remove the newest photo on this job (keeping a Before and an After, so the job can still be submitted)
+    const pB2 = new FormData(); pB2.append('stage', 'Before'); pB2.append('photos', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: 'image/png' }), 'b2.png');
+    await req('POST', `/api/crew/${tk}/jobs/${vid}/photos`, { body: pB2 });
+    const before3 = (await req('GET', `/api/admin/visits/${vid}/photos`, { token: T })).data.photos;
+    const delPhoto = await req('DELETE', `/api/admin/visits/${vid}/photos/${before3[before3.length - 1].id}`, { token: T });
+    assert(delPhoto.status === 200, 'office should be able to remove a job photo, got ' + delPhoto.status);
+    const afterDel = await req('GET', `/api/admin/visits/${vid}/photos`, { token: T });
+    assert(afterDel.data.photos.length === before3.length - 1, 'one photo should be removed, got ' + afterDel.data.photos.length);
     const noVis = await req('GET', '/api/admin/visits/999999/photos', { token: T });
     assert(noVis.status === 404, 'unknown job photos should be 404, got ' + noVis.status);
     const emptyNote = await req('POST', `/api/crew/${tk}/jobs/${vid}/notes`, { json: { body: '   ' } });

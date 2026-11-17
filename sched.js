@@ -526,6 +526,17 @@ module.exports = function mountSched(app, ctx) {
     const notes = db.prepare('SELECT n.id, n.body, n.created_at, e.name AS by FROM visit_notes n JOIN employees e ON e.id=n.employee_id WHERE n.visit_id=? ORDER BY n.id').all(v.id);
     res.json({ photos, notes });
   });
+  // Remove one photo from a job (office only). Only photos attached to that job can be removed.
+  app.delete('/api/admin/visits/:id/photos/:photoId', auth, (req, res) => {
+    if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can remove job photos.' });
+    const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
+    const doc = db.prepare("SELECT * FROM documents WHERE id=? AND visit_id=? AND kind='Photos'").get(Number(req.params.photoId), v.id);
+    if (!doc) return res.status(404).json({ error: 'Photo not found on this job.' });
+    db.prepare('DELETE FROM documents WHERE id=?').run(doc.id);
+    try { const p = require('path').join(uploadDir || require('path').join(process.cwd(), 'uploads'), require('path').basename(doc.file_url || '')); if (require('fs').existsSync(p)) require('fs').unlinkSync(p); } catch { /* file already gone */ }
+    logAction(req, 'removed job photo', 'visit', v.id, `${doc.title || 'photo'}`);
+    res.json({ ok: true });
+  });
   // Crew notes on a job: what was done, anything that happened. The office sees them on the job.
   const noteAdd = async (req, res) => {
     const e = crewAuth(req, res); if (!e) return;
