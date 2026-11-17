@@ -1,5 +1,8 @@
 // Possible duplicate bids: the office decides. Merging adds the new details and files to the lead; creating a new lead
 // makes a separate lead from the same bid. Nothing happens to a lead until someone presses one of these.
+// Same schema as server.js. Used by the list and by the website's repeat-bid path, so the table exists before either writes.
+const SCHEMA = "CREATE TABLE IF NOT EXISTS duplicate_reviews(id INTEGER PRIMARY KEY AUTOINCREMENT, lead_id INTEGER NOT NULL, payload TEXT NOT NULL, files TEXT, status TEXT NOT NULL DEFAULT 'open', result_lead_id INTEGER, created_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT)";
+const ensureTable = db => db.exec(SCHEMA);
 module.exports = function (app, { db, auth, logAction, clean }) {
   const who = req => String((req.user && req.user.email) || '');
   const safeList = s => { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
@@ -13,7 +16,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     let rows;
     try {
       // Same schema as server.js. Creating it here too means the list works even if the table was not there at startup.
-      db.exec("CREATE TABLE IF NOT EXISTS duplicate_reviews(id INTEGER PRIMARY KEY AUTOINCREMENT, lead_id INTEGER NOT NULL, payload TEXT NOT NULL, files TEXT, status TEXT NOT NULL DEFAULT 'open', result_lead_id INTEGER, created_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT)");
+      ensureTable(db);
       rows = db.prepare("SELECT * FROM duplicate_reviews WHERE status='open' ORDER BY id DESC LIMIT 200").all();
     }
     catch (err) { console.error('duplicate-reviews query failed:', err.stack || err.message); return res.status(500).json({ error: 'Repeat bids could not be loaded.', detail: String(err.message || err).slice(0, 300) }); }
@@ -45,3 +48,4 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     res.json({ ok: true, lead_id: id });
   });
 };
+module.exports.ensureTable = ensureTable;
