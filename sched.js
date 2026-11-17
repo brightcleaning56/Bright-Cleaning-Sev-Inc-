@@ -2,6 +2,7 @@
 // dispatch confirmation and notifications, holidays/skips for recurring work, time tracking with labor cost,
 // and a private mobile crew page (per-employee secure link) for check-in/out, photos, checklist and incidents.
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken'), bcrypt = require('bcryptjs');
 const ROLES = ['Cleaner', 'Lead', 'Supervisor', 'Window tech', 'Driver', 'Inspector'];
 
 module.exports = function mountSched(app, ctx) {
@@ -56,7 +57,8 @@ module.exports = function mountSched(app, ctx) {
     return { block, warn, week_hours: Math.round(total * 10) / 10 };
   }
   // The crew link is a login for that cleaner's clock-in page: only operations roles may see it.
-  const empPublic = (e, withLink = false) => ({ ...e, token: undefined, crew_link: withLink && e.token ? `/crew/${e.token}` : null });
+  for (const col of ['pin_hash TEXT', 'pin_set_at TEXT', 'last_login_at TEXT']) { try { db.exec('ALTER TABLE employees ADD COLUMN ' + col); } catch { /* already there */ } }
+  const empPublic = (e, withLink = false) => ({ ...e, token: undefined, pin_hash: undefined, crew_link: withLink && e.token ? `/crew/${e.token}` : null });
 
   // ---------- Employees ----------
   app.get('/api/admin/employees', auth, (req, res) => {
@@ -296,9 +298,15 @@ module.exports = function mountSched(app, ctx) {
   });
 
   // ---------- Crew page (per-employee private link) ----------
-  const crewAuth = (req, res) => { const e = db.prepare('SELECT * FROM employees WHERE token=? AND active=1').get(clean(req.params.token, 80)); if (!e) { res.status(404).json({ error: 'This link is not valid. Ask your supervisor for a new one.' }); return null; } return e; };
+  const crewAuth = (req, res) => {
+    // A personal link (/crew/<token>) or a signed-in crew session (token 'me').
+    const isMe = !req.params.token || req.params.token === 'me';
+    const e = isMe ? crewBearer(req) : db.prepare('SELECT * FROM employees WHERE token=? AND active=1').get(clean(req.params.token, 80));
+    if (!e) { res.status(isMe ? 401 : 404).json({ error: isMe ? 'Sign in to see your jobs.' : 'This link is not valid. Ask your supervisor for a new one.' }); return null; }
+    return e;
+  };
   const assigned = (e, vid) => db.prepare('SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.id=?').get(e.id, Number(vid));
-  app.get('/api/crew/:token', (req, res) => {
+  const crewGet = (req, res) => {
     const e = crewAuth(req, res); if (!e) return;
     const d = clean(req.query.date, 10) || today();
     const jobs = db.prepare("SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date BETWEEN ? AND ? AND v.status NOT IN ('Cancelled','Skipped') AND v.dispatched_at IS NOT NULL ORDER BY v.date, v.start_time").all(e.id, d, addDays(d, 6));
@@ -311,8 +319,45 @@ module.exports = function mountSched(app, ctx) {
         return { id: v.id, title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
           crew: crewOf(v.id).map(x => x.name), access: near ? (site.access || '') : 'Shown the day before the job.', site_contact: near ? (site.contact || '') : '', safety: site.safety || '', arrived_at: v.arrived_at, completed_at: v.completed_at };
       }) });
+  };
+  app.get('/api/crew/:token', crewGet);
+  app.get('/api/crew/me', crewGet);
+  // ---- Crew sign-in: phone or email plus a PIN, so crew can see their jobs at any time, not only through the link ----
+  const crewSecret = () => (process.env.JWT_SECRET || 'bright-clean-dev') + ':crew';
+  const crewBearer = req => {
+    const h = String(req.headers.authorization || '').replace(/^Bearer /, '');
+    if (!h) return null;
+    let p; try { p = jwt.verify(h, crewSecret()); } catch { return null; }
+    if (!p || p.kind !== 'crew') return null;
+    return db.prepare('SELECT * FROM employees WHERE id=? AND active=1').get(p.emp) || null;
+  };
+  const loginFails = new Map();
+  app.post('/api/crew/login', (req, res) => {
+    const login = clean((req.body || {}).login, 120).toLowerCase(), pin = String((req.body || {}).pin || '').trim();
+    const f = loginFails.get(login) || { n: 0, until: 0 };
+    if (f.until > Date.now()) return res.status(429).json({ error: 'Too many tries. Wait 15 minutes, then try again.' });
+    let e = null;
+    if (login.includes('@')) e = db.prepare('SELECT * FROM employees WHERE lower(email)=? AND active=1').get(login);
+    else { const d = login.replace(/\D/g, '').slice(-10); if (d.length === 10) e = db.prepare("SELECT * FROM employees WHERE active=1 AND substr(replace(replace(replace(replace(replace(replace(phone,' ',''),'-',''),'(',''),')',''),'.',''),'+',''),-10)=? ORDER BY id LIMIT 1").get(d) || null; }
+    if (!e || !e.pin_hash || !pin || !bcrypt.compareSync(pin, e.pin_hash)) {
+      loginFails.set(login, { n: f.n + 1, until: f.n + 1 >= 5 ? Date.now() + 15 * 60000 : 0 });
+      return res.status(401).json({ error: 'That phone or email and PIN do not match. Ask your supervisor if you need a PIN.' });
+    }
+    loginFails.delete(login);
+    db.prepare('UPDATE employees SET last_login_at=? WHERE id=?').run(now(), e.id);
+    res.json({ token: jwt.sign({ kind: 'crew', emp: e.id }, crewSecret(), { expiresIn: '90d' }), employee: { name: e.name } });
   });
-  app.post('/api/crew/:token/jobs/:vid/:action', async (req, res, next) => {
+  // Owner or manager sets (or resets) a crew member's PIN. The PIN itself is never shown again.
+  app.post('/api/admin/employees/:id/crew-pin', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can set crew PINs.' });
+    const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
+    const pin = String((req.body || {}).pin || '').trim();
+    if (!/^\d{4,8}$/.test(pin)) return res.status(400).json({ error: 'The PIN is 4 to 8 digits.' });
+    db.prepare('UPDATE employees SET pin_hash=?, pin_set_at=? WHERE id=?').run(bcrypt.hashSync(pin, 10), now(), e.id);
+    logAction(req, 'set crew PIN', 'employee', e.id, e.name);
+    res.json({ ok: true, login: e.phone || e.email || '' });
+  });
+  const crewAction = async (req, res, next) => {
     if (req.params.action === 'photos') return next(); // photo uploads have their own route below (was unreachable: D-22)
     const e = crewAuth(req, res); if (!e) return;
     const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' });
@@ -366,14 +411,16 @@ module.exports = function mountSched(app, ctx) {
       return res.status(201).json({ id });
     }
     res.status(404).json({ error: 'Unknown action.' });
-  });
+  };
+  app.post('/api/crew/:token/jobs/:vid/:action', crewAction);
+  app.post('/api/crew/me/jobs/:vid/:action', crewAction);
   // Crew photo upload (before/after): stored as project/visit documents.
   try {
     const multer = require('multer'), path = require('path'), fs = require('fs');
     const dir = uploadDir || path.join(process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'));
     const up = multer({ storage: multer.diskStorage({ destination: (r, f, cb) => { fs.mkdirSync(dir, { recursive: true }); cb(null, dir); }, filename: (r, f, cb) => cb(null, crypto.randomBytes(12).toString('hex') + (path.extname(f.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '') || '.jpg')) }),
       limits: { fileSize: 12 * 1024 * 1024, files: 6 }, fileFilter: (r, f, cb) => cb(null, /^image\//.test(f.mimetype)) });
-    app.post('/api/crew/:token/jobs/:vid/photos', (req, res, next) => { const e = crewAuth(req, res); if (!e) return; const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); req.crewEmp = e; req.crewVisit = v; next(); }, up.array('photos', 6), require('./filecheck').verifyUploads, (req, res) => {
+    app.post(['/api/crew/:token/jobs/:vid/photos', '/api/crew/me/jobs/:vid/photos'], (req, res, next) => { const e = crewAuth(req, res); if (!e) return; const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); req.crewEmp = e; req.crewVisit = v; next(); }, up.array('photos', 6), require('./filecheck').verifyUploads, (req, res) => {
       const files = req.files || []; if (!files.length) return res.status(400).json({ error: 'Choose at least one photo.' });
       const stage = ['Before', 'After', 'Issue'].includes(req.body.stage) ? req.body.stage : 'After', t = now();
       try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* */ }
@@ -382,6 +429,7 @@ module.exports = function mountSched(app, ctx) {
       res.status(201).json({ ids });
     });
   } catch (err) { console.error('crew photo upload disabled:', err.message); }
+  app.get('/crew', (req, res) => res.sendFile(require('path').join(__dirname, 'public', 'crew.html')));
   app.get('/crew/:token', (req, res) => res.sendFile(require('path').join(__dirname, 'public', 'crew.html')));
   app.locals.schedCheck = (empId, visitId) => check(getEmp(empId), getVisit(visitId));
 };

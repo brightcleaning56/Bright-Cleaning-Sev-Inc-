@@ -1285,6 +1285,30 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(auto.due_date === d.toISOString().slice(0, 10), 'due two days after send: got ' + auto.due_date);
     return 'send scheduled one automatic follow-up due ' + auto.due_date;
   });
+  await check('Crew sign-in', 'A crew member signs in with phone or email and a PIN, sees their jobs without a link, and a wrong PIN is refused; the PIN never appears in the list', async () => {
+    const made = await req('POST', '/api/admin/employees', { token: T, json: { name: 'Crew Login Test', phone: '5155550133', email: 'crewlogin@t.test', role: 'Cleaner' } });
+    const eid = made.data.id || (made.data.employee && made.data.employee.id);
+    assert(eid, 'employee not created: ' + made.status + ' ' + JSON.stringify(made.data));
+    const short = await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '12' } });
+    assert(short.status === 400, 'a short PIN should be refused, got ' + short.status);
+    const set = await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '4821' } });
+    assert(set.status === 200, 'PIN should be set, got ' + set.status);
+    const byEmail = await req('POST', '/api/crew/login', { json: { login: 'crewlogin@t.test', pin: '4821' } });
+    assert(byEmail.status === 200 && byEmail.data.token, 'sign in by email should work: ' + byEmail.status);
+    const byPhone = await req('POST', '/api/crew/login', { json: { login: '(515) 555-0133', pin: '4821' } });
+    assert(byPhone.status === 200 && byPhone.data.token, 'sign in by phone should work: ' + byPhone.status);
+    const bad = await req('POST', '/api/crew/login', { json: { login: 'crewlogin@t.test', pin: '0000' } });
+    assert(bad.status === 401, 'a wrong PIN should be refused, got ' + bad.status);
+    const none = await req('GET', '/api/crew/me');
+    assert(none.status === 401, 'jobs without signing in should be refused, got ' + none.status);
+    const mine = await req('GET', '/api/crew/me', { headers: { Authorization: 'Bearer ' + byEmail.data.token } });
+    assert(mine.status === 200 && mine.data.employee && mine.data.employee.name === 'Crew Login Test', 'signed-in crew should see their jobs: ' + mine.status);
+    const list = await req('GET', '/api/admin/employees', { token: T });
+    const row = (list.data.employees || []).find(x => x.id === eid);
+    assert(row && row.pin_hash === undefined && !JSON.stringify(list.data).includes('$2'), 'the PIN must never appear in the employee list');
+    await req('PATCH', '/api/admin/employees/' + eid, { token: T, json: { active: false } });
+    return 'sign-in by email and by phone works; wrong PIN and no sign-in are refused; the PIN is never listed';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
