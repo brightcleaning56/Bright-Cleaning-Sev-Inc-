@@ -611,7 +611,7 @@ async function check(area, name, fn) {
   await check('Client messages UI', 'Inbox shows its boxes; a conversation opens with its reply box and assistant', async () => {
     await nav('clientmsgs'); await sleep(900);
     const boxes = d.querySelectorAll('#cmBoxes [data-cmb]').length;
-    assert(boxes === 9, 'expected 9 inbox boxes, found ' + boxes);
+    assert(boxes === 7, 'expected 7 inbox boxes, found ' + boxes);
     const first = d.querySelector('#cmList [data-ckey]');
     if (first) { first.click(); await sleep(900); }
     const opened = !first || (!!d.querySelector('#cmSend') && !!d.querySelector('#aiDraft') && /Assistant/.test(txt('#cmThread')));

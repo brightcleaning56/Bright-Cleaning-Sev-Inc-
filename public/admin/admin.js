@@ -753,27 +753,69 @@
       after: () => { toast('Subscription saved'); loadSubscriptions(); } });
   }
   // Messages customers sent from the client portal. Staff reply here; the reply goes to the customer's portal and email.
-  // ---- Client messages: one inbox for portal messages and texts ----
-  const cm = { box: 'All', key: null, data: null };
-  const CM_STATUS = { 'Open': 'blue', 'Waiting on customer': 'amber', 'Closed': '' };
+  // ---- Client Messages: inbox, conversation, customer panel (layout follows the approved design) ----
+  const cm = { box: 'All', key: null, data: null, channel: 'sms', panelTab: 'overview', profile: null, status: { open: true, waiting: true, closed: false }, types: { sms: true, portal: true }, days: '30', search: '' };
+  const CM_BOXES = ['All', 'Customer', 'Lead', 'My conversations', 'Unread', 'Follow-up due', 'Needs reply', 'Waiting on customer', 'Closed'];
+  const CM_INBOX = [['All', 'All Messages'], ['Customer', 'Customer Messages'], ['Lead', 'Lead Messages'], ['My conversations', 'My Conversations'], ['Unread', 'Unread'], ['Follow-up due', 'Follow-up Due']];
+  const cmInit = s => (s || '').split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
   async function loadClientMsgs() {
-    let r; try { r = await api('/api/admin/conversations?box=' + encodeURIComponent(cm.box)); } catch (e) { $('#cmList').innerHTML = '<tr><td class="emptyrow" colspan="3">' + esc(e.message) + '</td></tr>'; return; }
-    cm.data = r; renderCmBoxes(); renderCmList();
+    const boxes = cm.box === 'Closed' || cm.status.closed && !cm.status.open && !cm.status.waiting ? 'Closed' : cm.box;
+    let r; try { r = await api('/api/admin/conversations?box=' + encodeURIComponent(boxes)); } catch (e) { $('#cmList').innerHTML = '<p class="emptyrow">' + esc(e.message) + '</p>'; return; }
+    if (cm.status.closed && boxes !== 'Closed') { try { const c = await api('/api/admin/conversations?box=Closed'); r.conversations = r.conversations.concat(c.conversations); } catch { /* optional */ } }
+    cm.data = r;
+    renderCmKpis(); renderCmSide(); renderCmList();
     if (cm.key) renderCmThread(cm.key);
   }
-  function renderCmBoxes() {
-    const d = cm.data; if (!d) return;
-    $('#cmBoxes').innerHTML = d.boxes.map(b => '<button type="button" class="ccq' + (cm.box === b ? ' on' : '') + '" data-cmb="' + esc(b) + '"><span>' + esc(b) + '</span><b>' + (d.counts[b] || 0) + '</b></button>').join('');
+  function renderCmKpis() {
+    const c = cm.data.counts;
+    const tile = (label, n, icon, tone, go) => '<button type="button" class="kpi" data-cmk="' + esc(go) + '" style="text-align:left"><span class="ic" style="background:' + tone + '">' + ic(icon) + '</span><div><span>' + esc(label) + '</span><b>' + n + '</b></div></button>';
+    $('#cmKpis').innerHTML = tile('Unread', c['Unread'] || 0, 'inbox', '#1f6fd1', 'Unread') + tile('Needs Reply', c['Needs reply'] || 0, 'inbox', '#d64545', 'Needs reply')
+      + tile('Customer Messages', c['Customer'] || 0, 'user', '#1f9d55', 'Customer') + tile('Lead Messages', c['Lead'] || 0, 'user', '#7b3fe4', 'Lead')
+      + tile('Follow-ups', c['Follow-up due'] || 0, 'cal', '#e0a100', 'Follow-up due');
+    $$('#cmKpis [data-cmk]').forEach(b => b.onclick = () => { cm.box = b.dataset.cmk; loadClientMsgs(); });
+  }
+  function renderCmSide() {
+    const c = cm.data.counts;
+    $('#cmBoxes').innerHTML = '<h3 class="secth" style="margin:4px 6px 8px">Inboxes</h3>' + CM_INBOX.map(([k, l]) => '<button type="button" class="ccq' + (cm.box === k ? ' on' : '') + '" data-cmb="' + esc(k) + '"><span>' + esc(l) + '</span><b>' + (c[k] || 0) + '</b></button>').join('')
+      + '<button type="button" class="ccq' + (cm.box === 'Closed' ? ' on' : '') + '" data-cmb="Closed"><span>Closed</span><b>' + (c['Closed'] || 0) + '</b></button>';
     $$('#cmBoxes [data-cmb]').forEach(b => b.onclick = () => { cm.box = b.dataset.cmb; loadClientMsgs(); });
+    const openN = cm.data.conversations.filter(x => x.status === 'Open').length, waitN = cm.data.conversations.filter(x => x.status === 'Waiting on customer').length;
+    $('#cmFilters').innerHTML = '<h3 class="secth" style="margin:14px 6px 6px">Status</h3>'
+      + [['open', 'Open', openN], ['waiting', 'Waiting on customer', waitN], ['closed', 'Closed', c['Closed'] || 0]].map(([k, l, n]) => '<label class="chk" style="display:flex;justify-content:space-between;margin:4px 6px"><span><input type="checkbox" data-cms="' + k + '"' + (cm.status[k] ? ' checked' : '') + '> ' + esc(l) + '</span><b>' + n + '</b></label>').join('')
+      + '<h3 class="secth" style="margin:14px 6px 6px">Type</h3>'
+      + [['sms', 'SMS / Text'], ['portal', 'Portal Message']].map(([k, l]) => '<label class="chk" style="margin:4px 6px"><input type="checkbox" data-cmt="' + k + '"' + (cm.types[k] ? ' checked' : '') + '> ' + esc(l) + '</label>').join('')
+      + '<p class="muted" style="font-size:12px;margin:2px 6px">Type follows each conversation’s latest message.</p>'
+      + '<h3 class="secth" style="margin:14px 6px 6px">Date range</h3><select id="cmDays" aria-label="Date range" style="margin:0 6px;width:calc(100% - 12px)">'
+      + [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['0', 'All time']].map(([v, l]) => '<option value="' + v + '"' + (cm.days === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
+    $$('#cmFilters [data-cms]').forEach(i => i.onchange = () => { cm.status[i.dataset.cms] = i.checked; loadClientMsgs(); });
+    $$('#cmFilters [data-cmt]').forEach(i => i.onchange = () => { cm.types[i.dataset.cmt] = i.checked; renderCmList(); });
+    $('#cmDays').onchange = () => { cm.days = $('#cmDays').value; renderCmList(); };
+  }
+  function cmVisible() {
+    const d = cm.data; if (!d) return [];
+    const q = (cm.search || '').toLowerCase();
+    const minAt = cm.days === '0' ? '' : new Date(Date.now() - Number(cm.days) * 864e5).toISOString();
+    const seen = new Set();
+    return d.conversations.filter(c => {
+      if (seen.has(c.key)) return false; seen.add(c.key);
+      if (c.status === 'Closed' && !cm.status.closed) return false;
+      if (c.status === 'Open' && !cm.status.open) return false;
+      if (c.status === 'Waiting on customer' && !cm.status.waiting) return false;
+      if (!((c.last_channel === 'sms' && cm.types.sms) || (c.last_channel !== 'sms' && cm.types.portal))) return false;
+      if (minAt && c.last_at < minAt) return false;
+      if (q && ![c.name, c.company, c.property, c.last_text].join(' ').toLowerCase().includes(q)) return false;
+      return true;
+    });
   }
   function renderCmList() {
-    const d = cm.data; if (!d) return;
-    $('#cmList').innerHTML = d.conversations.length ? d.conversations.map(c => '<tr class="click' + (cm.key === c.key ? ' on' : '') + '" data-ckey="' + esc(c.key) + '"><td>'
-      + (c.unread ? '<span title="Unread" style="color:#1f6fd1">●</span> ' : '') + '<b>' + esc(c.name) + '</b> <span class="pill" style="font-size:11px">' + esc(c.type) + '</span>'
-      + (c.company ? '<small class="muted">' + esc(c.company) + '</small>' : '') + (c.property ? '<small class="muted">' + esc(c.property) + '</small>' : '') + '</td>'
-      + '<td>' + esc(fmtWhen(c.last_at)) + '<small>' + esc(c.last_channel === 'sms' ? 'Text' : 'Portal') + ' · ' + esc(c.last_dir === 'in' ? 'from customer' : 'from us') + '</small><small class="muted">' + esc(c.last_text) + '</small></td>'
-      + '<td>' + (c.needs_reply ? '<span class="badge amber">Needs reply</span> ' : '') + '<span class="badge ' + (CM_STATUS[c.status] || '') + '">' + esc(c.status) + '</span>' + (c.follow_up_due ? ' <span class="badge red">Follow-up due</span>' : '') + '</td></tr>').join('')
-      : '<tr><td class="emptyrow" colspan="3">No conversations in this inbox.</td></tr>';
+    const rows = cmVisible();
+    $('#cmCount').textContent = rows.length + ' conversation' + (rows.length === 1 ? '' : 's');
+    $('#cmList').innerHTML = rows.length ? rows.map(c => '<button type="button" class="cmrow' + (cm.key === c.key ? ' on' : '') + '" data-ckey="' + esc(c.key) + '" style="display:flex;gap:10px;width:100%;text-align:left;border:0;border-bottom:1px solid #eef2f7;background:' + (cm.key === c.key ? '#eef4fb' : 'none') + ';padding:10px 8px;cursor:pointer;color:inherit">'
+      + '<span style="flex:0 0 36px;height:36px;border-radius:50%;background:#e8f1fd;display:flex;align-items:center;justify-content:center;font-weight:700;color:#1f6fd1">' + esc(cmInit(c.name)) + '</span>'
+      + '<span style="min-width:0;flex:1"><span style="display:flex;justify-content:space-between;gap:6px"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (c.unread ? '<span style="color:#1f6fd1">●</span> ' : '') + esc(c.name) + '</b><small class="muted" style="white-space:nowrap">' + esc(fmtWhen(c.last_at)) + '</small></span>'
+      + '<small class="muted" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.last_text) + '</small>'
+      + '<span style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"><span class="pill" style="font-size:11px">' + esc(c.type) + '</span>' + (c.needs_reply ? '<span class="badge amber">Needs reply</span>' : '') + (c.follow_up_due ? '<span class="badge red">Follow-up</span>' : '') + '<span class="badge ' + (c.status === 'Closed' ? '' : 'blue') + '">' + esc(c.status) + '</span></span></span></button>').join('')
+      : '<p class="emptyrow">No conversations match these filters.</p>';
     $$('#cmList [data-ckey]').forEach(r => r.onclick = () => { cm.key = r.dataset.ckey; renderCmList(); renderCmThread(cm.key); });
   }
   async function renderCmThread(key) {
@@ -785,64 +827,68 @@
     const first = String(c.name || '').split(' ')[0] || 'there';
     const latestPortal = [...items].reverse().find(x => x.channel === 'portal');
     const phone = c.contact && /\d{7,}/.test(c.contact) ? c.contact : '';
-    const custId = c.key.startsWith('cust:') ? Number(c.key.slice(5)) : null, leadId = c.key.startsWith('lead:') ? Number(c.key.slice(5)) : null;
-    // What is unanswered: inbound messages with no reply after them, and questions among them.
+    const custId = key.startsWith('cust:') ? Number(key.slice(5)) : null, leadId = key.startsWith('lead:') ? Number(key.slice(5)) : null;
+    if (cm.channel === 'portal' && !latestPortal) cm.channel = 'sms';
+    if (cm.channel === 'sms' && !phone && latestPortal) cm.channel = 'portal';
     const lastIn = [...items].reverse().find(x => x.dir === 'in');
     const unansweredQs = items.filter(x => x.dir === 'in' && /\?/.test(x.body || '') && !items.some(y => y.dir === 'out' && y.at > x.at)).map(x => String(x.body).split(/(?<=\?)/).filter(s => /\?/.test(s)).join(' ').trim());
     const tpl = d.templates.map(t => '<option value="' + esc(t.id) + '">' + esc(t.name) + '</option>').join('');
-    box.innerHTML = `
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><span class="pill" style="font-size:11px">${esc(c.type)}</span><h3 style="margin:4px 0 0;overflow-wrap:anywhere">${esc(c.name)}</h3><p class="muted" style="margin:2px 0">${esc(c.company)}${c.property ? ' · ' + esc(c.property) : ''}</p><p class="muted" style="margin:2px 0">${esc(c.contact)}</p></div>
-        <div>${custId ? custBtn({ customer_id: custId, company: c.company, customer_name: c.name, email: '' }, 'Customer profile', 'btn small ghost') : leadId ? '<button type="button" class="btn small ghost" id="cmOpenLead">Lead record</button>' : ''}</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center">
-        <label class="muted" for="cmStatus">Status</label><select id="cmStatus" aria-label="Conversation status">${d.states.map(s => '<option value="' + esc(s) + '"' + (c.status === s ? ' selected' : '') + '>' + esc(s) + '</option>').join('')}</select>
-        <label class="muted" for="cmOwner">Owner</label><input id="cmOwner" value="${esc(c.owner || '')}" placeholder="Who handles this" style="max-width:200px">
-        <label class="muted" for="cmFu">Follow-up</label><input type="date" id="cmFu" value="${esc(c.follow_up_date || '')}">
-        <button type="button" class="btn small ghost" id="cmSaveState">Save</button><button type="button" class="btn small ghost" id="cmRead">Mark read</button></div>
-      <div class="formsection">Conversation</div>
-      <div id="cmMsgs" style="max-height:340px;overflow:auto;border:1px solid #eef2f7;border-radius:8px;padding:8px">${items.length ? items.map(x => '<div style="margin:8px 0;' + (x.dir === 'out' ? 'text-align:right' : '') + '"><span class="badge">' + esc(x.channel === 'sms' ? 'Text' : 'Portal') + '</span> <span class="muted">' + esc(x.dir === 'in' ? (c.type === 'Customer' ? 'Customer' : 'Lead') : (x.by || 'Bright Clean')) + ' · ' + esc(fmtWhen(x.at)) + '</span>' + (x.subject ? '<br><b>' + esc(x.subject) + '</b>' : '') + '<div class="pre" style="white-space:pre-wrap;display:inline-block;max-width:92%;text-align:left;background:' + (x.dir === 'out' ? '#e8f1fd' : '#f6f9fc') + ';border-radius:8px;padding:8px">' + esc(x.body) + '</div>' + (x.error ? '<br><span class="err">' + esc(x.error) + '</span>' : '') + '</div>').join('') : '<p class="muted">No messages yet.</p>'}</div>
-      <div class="formsection">Reply</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><label class="chk"><input type="checkbox" id="cmInternal"> Internal note (customer cannot see)</label>
-        <select id="cmChannel" aria-label="Reply channel">${phone ? '<option value="sms">Text</option>' : ''}${latestPortal ? '<option value="portal">Portal</option>' : ''}</select>
-        <select id="cmTpl" aria-label="Approved template"><option value="">Approved template…</option>${tpl}</select></div>
-      <textarea id="cmBody" rows="3" aria-label="Message" placeholder="Write your reply"></textarea>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button type="button" class="btn small" id="cmSend">Send</button><label class="btn small ghost" style="cursor:pointer">Attach file<input type="file" id="cmFile" hidden></label><small class="muted">Files attach to the customer's documents.</small></div>
-      <div class="formsection">Assistant</div>
-      <p class="muted" style="margin:0 0 6px">Built from this conversation only. Nothing is sent or saved until you press a button.</p>
-      ${unansweredQs.length ? '<p><b>Unanswered questions</b></p><ul>' + unansweredQs.map(q => '<li>' + esc(q) + '</li>').join('') + '</ul>' : '<p>No unanswered questions from the customer.</p>'}
-      <p>${lastIn ? 'Last message from the customer: “' + esc(String(lastIn.body).slice(0, 160)) + '”' : 'No messages from the customer yet.'}</p>
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn small ghost" id="aiAsk">Ask AI for a summary</button><button type="button" class="btn small ghost" id="aiDraft">Suggested reply</button><button type="button" class="btn small ghost" id="aiSaveSum">Save summary to history</button><button type="button" class="btn small ghost" id="aiFlag">Flag for a person</button><button type="button" class="btn small ghost" id="aiFollow">Create follow-up task (tomorrow)</button></div>
-      <div id="aiOut"></div>
-      <div class="formsection">History with this ${c.type === 'Customer' ? 'customer' : 'lead'}</div>
-      <ul class="mini" style="max-height:200px;overflow:auto">${d.history.length ? d.history.slice(0, 25).map(h => '<li>' + esc(fmtWhen(h.at)) + ' · ' + esc(h.title) + (h.actor ? ' · ' + esc(h.actor) : '') + '</li>').join('') : '<li class="muted">Nothing recorded yet.</li>'}</ul>
-      <div class="formsection">Internal notes</div>
-      <ul class="mini">${d.notes.length ? d.notes.slice(0, 10).map(n => '<li>' + esc(fmtWhen(n.created_at)) + ' · ' + esc(n.body) + (n.author ? ' <span class="muted">· ' + esc(n.author) + '</span>' : '') + '</li>').join('') : '<li class="muted">No notes yet.</li>'}</ul>`;
+    const statusOpts = d.states.map(s => '<option value="' + esc(s) + '"' + (c.status === s ? ' selected' : '') + '>' + esc(s) + '</option>').join('');
+    box.innerHTML = ''
+      + '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start"><div style="min-width:0"><h3 style="margin:0;overflow-wrap:anywhere">' + esc(c.name) + ' <span class="badge ' + (c.type === 'Customer' ? 'green' : 'blue') + '">' + esc(c.type === 'Customer' ? 'Existing Customer' : 'New Lead') + '</span></h3>'
+      + '<p class="muted" style="margin:4px 0">' + (phone ? '📞 ' + esc(phone) + ' · ' : '') + esc(c.property || c.company || '') + '</p></div>'
+      + '<div>' + (custId ? custBtn({ customer_id: custId, company: c.company, customer_name: c.name, email: '' }, 'Open customer', 'btn small ghost') : leadId ? '<button type="button" class="btn small ghost" id="cmOpenLead">Open lead</button>' : '') + '</div></div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center">'
+      + '<label class="muted" for="cmStatus">Status</label><select id="cmStatus" aria-label="Conversation status">' + statusOpts + '</select>'
+      + '<label class="muted" for="cmOwner">Owner</label><input id="cmOwner" value="' + esc(c.owner || '') + '" placeholder="Who handles this" style="max-width:180px">'
+      + '<label class="muted" for="cmFu">Follow-up</label><input type="date" id="cmFu" value="' + esc(c.follow_up_date || '') + '">'
+      + '<button type="button" class="btn small ghost" id="cmSaveState">Save</button><button type="button" class="btn small ghost" id="cmRead">Mark read</button></div>'
+      + '<div id="cmMsgs" style="max-height:360px;overflow:auto;border:1px solid #eef2f7;border-radius:10px;padding:10px;background:#fafcff">'
+      + (items.length ? items.map(x => '<div style="margin:8px 0;' + (x.dir === 'out' ? 'text-align:right' : '') + '"><span class="muted" style="font-size:12px">' + esc(x.channel === 'sms' ? 'Text' : 'Portal') + ' · ' + esc(x.dir === 'in' ? (c.type === 'Customer' ? 'Customer' : 'Lead') : (x.by || 'Bright Clean')) + ' · ' + esc(fmtWhen(x.at)) + '</span>' + (x.subject ? '<br><b>' + esc(x.subject) + '</b>' : '') + '<div class="pre" style="white-space:pre-wrap;display:inline-block;max-width:85%;text-align:left;background:' + (x.dir === 'out' ? '#1f6fd1;color:#fff' : '#fff') + ';border:1px solid #e3e8ef;border-radius:12px;padding:8px 10px">' + esc(x.body) + '</div>' + (x.error ? '<br><span class="err">' + esc(x.error) + '</span>' : '') + '</div>').join('') : '<p class="muted">No messages yet.</p>')
+      + '</div>'
+      + '<div style="display:flex;gap:8px;margin:12px 0 6px" role="tablist" aria-label="Channel">'
+      + '<button type="button" class="btn small' + (cm.channel === 'sms' ? '' : ' ghost') + '" id="cmTabSms"' + (phone ? '' : ' disabled title="No phone number on file"') + '>SMS / Text</button>'
+      + '<button type="button" class="btn small' + (cm.channel === 'portal' ? '' : ' ghost') + '" id="cmTabPortal"' + (latestPortal ? '' : ' disabled title="No portal message in this conversation"') + '>Portal Message</button></div>'
+      + '<label class="chk" style="margin:4px 0"><input type="checkbox" id="cmInternal"> Internal note (customer cannot see)</label>'
+      + '<textarea id="cmBody" rows="3" aria-label="Message" placeholder="Type a message to ' + esc(c.name) + '…" style="width:100%"></textarea>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px"><select id="cmTpl" aria-label="Approved template"><option value="">Approved template…</option>' + tpl + '</select>'
+      + '<label class="btn small ghost" style="cursor:pointer" title="Attach to customer documents">Attach<input type="file" id="cmFile" hidden></label>'
+      + '<span style="flex:1"></span><button type="button" class="btn" id="cmSend">' + (cm.channel === 'portal' ? 'Send portal reply' : 'Send SMS') + '</button></div>'
+      + '<div class="formsection">Assistant</div>'
+      + '<p class="muted" style="margin:0 0 6px">Built from this conversation. Nothing is sent or saved until you press a button.</p>'
+      + (unansweredQs.length ? '<p><b>Unanswered questions</b></p><ul>' + unansweredQs.map(q => '<li>' + esc(q) + '</li>').join('') + '</ul>' : '<p>No unanswered questions from the customer.</p>')
+      + '<p>' + (lastIn ? 'Last message from the customer: “' + esc(String(lastIn.body).slice(0, 160)) + '”' : 'No messages from the customer yet.') + '</p>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn small ghost" id="aiAsk">Ask AI for a summary</button><button type="button" class="btn small ghost" id="aiDraft">Suggested reply</button><button type="button" class="btn small ghost" id="aiSaveSum">Save summary to history</button><button type="button" class="btn small ghost" id="aiFlag">Flag for a person</button><button type="button" class="btn small ghost" id="aiFollow">Follow-up tomorrow</button></div>'
+      + '<div id="aiOut"></div>';
     if ($('#cmOpenLead')) $('#cmOpenLead').onclick = () => openLead(leadId);
+    const first2 = first;
     const saveState = async extra => { try { await api('/api/admin/conversations/' + encodeURIComponent(key) + '/state', { method: 'POST', json: Object.assign({ status: $('#cmStatus').value, owner: $('#cmOwner').value.trim(), follow_up_date: $('#cmFu').value || '' }, extra || {}) }); await loadClientMsgs(); return true; } catch (err) { toast(err.message, true); return false; } };
     $('#cmSaveState').onclick = async () => { if (await saveState()) toast('Saved'); };
     $('#cmRead').onclick = async () => { await saveState({ mark_read: true }); toast('Marked read'); };
-    $('#cmTpl').onchange = () => { const t = d.templates.find(x => x.id === $('#cmTpl').value); if (t) $('#cmBody').value = t.body.replace('{first}', first); };
-    $('#aiDraft').onclick = () => { const t = d.templates.find(x => x.id === 'received') || d.templates[0]; $('#cmBody').value = t.body.replace('{first}', first); toast('Draft placed in the reply box. Edit it, then press Send.'); };
-    $('#aiAsk').onclick = async () => {
-      const out = $('#aiOut'); out.innerHTML = '<p class="muted">Reading the conversation…</p>';
-      try {
-        const r = await api('/api/admin/conversations/' + encodeURIComponent(key) + '/assist', { method: 'POST', json: {} });
-        out.innerHTML = '<div class="card" style="background:#f7f9fc;margin:8px 0"><p class="muted" style="margin:0 0 6px;font-size:12px">' + (r.source === 'ai' ? 'AI' : 'Rules') + ' · ' + esc(r.note) + '</p>'
-          + '<p><b>Summary.</b> ' + esc(r.summary) + '</p>'
-          + (r.requests.length ? '<p><b>Requests:</b> ' + esc(r.requests.join(', ')) + '</p>' : '')
-          + (r.unanswered_questions.length ? '<p><b>Unanswered questions</b></p><ul>' + r.unanswered_questions.map(q => '<li>' + esc(q) + '</li>').join('') + '</ul>' : '')
-          + '<p><b>Next step.</b> ' + esc(r.next_action) + '</p>'
-          + (r.needs_human ? '<p class="err" style="display:block"><b>Needs a person:</b> ' + esc(r.human_reason || 'Read this conversation before replying.') + '</p>' : '')
-          + (r.suggested_reply ? '<p><button type="button" class="btn small ghost" id="aiUse">Use suggested reply (not sent)</button></p>' : '') + '</div>';
-        if ($('#aiUse')) $('#aiUse').onclick = () => { $('#cmBody').value = r.suggested_reply; toast('Placed in the reply box. Edit it, then press Send.'); };
-      } catch (err) { out.innerHTML = '<p class="err">' + esc(err.message) + '</p>'; }
-    };
+    $('#cmTabSms').onclick = () => { cm.channel = 'sms'; renderCmThread(key); };
+    $('#cmTabPortal').onclick = () => { cm.channel = 'portal'; renderCmThread(key); };
+    $('#cmTpl').onchange = () => { const t = d.templates.find(x => x.id === $('#cmTpl').value); if (t) $('#cmBody').value = t.body.replace('{first}', first2); };
+    $('#aiDraft').onclick = () => { const t = d.templates.find(x => x.id === 'received') || d.templates[0]; $('#cmBody').value = t.body.replace('{first}', first2); toast('Draft placed in the message box. Edit it, then press Send.'); };
     $('#aiFlag').onclick = async () => { $('#cmOwner').value = d.me; if (await saveState({ status: 'Open', owner: d.me })) toast('Flagged for you to handle'); };
-    $('#aiFollow').onclick = async () => { const t = new Date(Date.now() + 864e5); const dt = localISO(t); if (await saveState({ follow_up_date: dt })) toast('Follow-up set for ' + fmtDate(dt)); };
+    $('#aiFollow').onclick = async () => { const dt = localISO(new Date(Date.now() + 864e5)); if (await saveState({ follow_up_date: dt })) toast('Follow-up set for ' + fmtDate(dt)); };
     $('#aiSaveSum').onclick = async () => {
       const summary = 'Summary (' + items.length + ' messages): ' + (unansweredQs.length ? 'unanswered questions: ' + unansweredQs.join(' | ') : 'no unanswered questions') + (lastIn ? '. Last from customer: ' + String(lastIn.body).slice(0, 160) : '');
       if (!confirm('Save this summary to the history of this ' + c.type.toLowerCase() + '?')) return;
       try { await api('/api/admin/conversations/' + encodeURIComponent(key) + '/note', { method: 'POST', json: { body: summary } }); toast('Summary saved to history'); renderCmThread(key); }
       catch (err) { toast(err.message, true); }
+    };
+    $('#aiAsk').onclick = async () => {
+      const out = $('#aiOut'); out.innerHTML = '<p class="muted">Reading the conversation…</p>';
+      try {
+        const r = await api('/api/admin/conversations/' + encodeURIComponent(key) + '/assist', { method: 'POST', json: {} });
+        out.innerHTML = '<div class="card" style="background:#f7f9fc;margin:8px 0"><p class="muted" style="margin:0 0 6px;font-size:12px">' + (r.source === 'ai' ? 'AI' : 'Rules') + ' · ' + esc(r.note) + '</p>'
+          + '<p><b>Summary.</b> ' + esc(r.summary) + '</p>' + (r.requests.length ? '<p><b>Requests:</b> ' + esc(r.requests.join(', ')) + '</p>' : '')
+          + (r.unanswered_questions.length ? '<p><b>Unanswered questions</b></p><ul>' + r.unanswered_questions.map(q => '<li>' + esc(q) + '</li>').join('') + '</ul>' : '')
+          + '<p><b>Next step.</b> ' + esc(r.next_action) + '</p>'
+          + (r.needs_human ? '<p class="err" style="display:block"><b>Needs a person:</b> ' + esc(r.human_reason || 'Read this conversation before replying.') + '</p>' : '')
+          + (r.suggested_reply ? '<p><button type="button" class="btn small ghost" id="aiUse">Use suggested reply (not sent)</button></p>' : '') + '</div>';
+        if ($('#aiUse')) $('#aiUse').onclick = () => { $('#cmBody').value = r.suggested_reply; toast('Placed in the message box. Edit it, then press Send.'); };
+      } catch (err) { out.innerHTML = '<p class="err">' + esc(err.message) + '</p>'; }
     };
     $('#cmFile').onchange = async ev => {
       const f = ev.target.files && ev.target.files[0]; if (!f || !custId) return toast(custId ? 'Pick a file.' : 'Link this conversation to a customer first.', true);
@@ -852,12 +898,12 @@
     };
     $('#cmSend').onclick = async () => {
       const body = $('#cmBody').value.trim(); if (body.length < 2) return toast('Write the message first.', true);
-      const internal = $('#cmInternal').checked, channel = $('#cmChannel').value;
+      const internal = $('#cmInternal').checked;
       try {
         if (internal) {
           if (!confirm('Save this internal note? The customer will not see it.')) return;
           await api('/api/admin/conversations/' + encodeURIComponent(key) + '/note', { method: 'POST', json: { body } });
-        } else if (channel === 'sms') {
+        } else if (cm.channel === 'sms') {
           if (!confirm('Send this text to ' + c.name + ' now?')) return;
           await api('/api/admin/messages/sms', { method: 'POST', json: { customer_id: custId || undefined, lead_id: leadId || undefined, to: phone, body } });
         } else {
@@ -869,7 +915,59 @@
         await saveState({ status: 'Waiting on customer' });
       } catch (err) { toast(err.message, true); }
     };
+    renderCmPanel(c, items, custId, leadId, d);
   }
+  // Right-hand customer panel: profile, tabs (Overview, History, Notes, Tasks) and recent activity.
+  async function renderCmPanel(c, items, custId, leadId, d) {
+    const p = $('#cmPanel'); if (!p) return;
+    const tabs = [['overview', 'Overview'], ['history', 'History'], ['notes', 'Notes'], ['tasks', 'Tasks']];
+    let prof = null;
+    if (custId) { try { prof = await api('/api/admin/customers/' + custId + '/profile'); } catch { prof = null; } }
+    if (cm.key !== c.key) return;
+    const cu = prof && prof.customer, ld = leadId ? null : null;
+    const money = v => '$' + Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const openProjects = prof ? (prof.projects || []).filter(x => !['Completed', 'Closed', 'Customer accepted', 'Archived'].includes(x.status)).length : 0;
+    const openInv = prof ? (prof.invoices || []).filter(x => !['Paid', 'Void'].includes(x.status)).length : 0;
+    const lastProject = prof && (prof.projects || [])[0];
+    const overview = cu
+      ? '<dl class="facts"><dt>Account owner</dt><dd>' + esc(cu.account_owner || '—') + '</dd><dt>Customer since</dt><dd>' + esc(fmtDate(cu.created_at)) + '</dd><dt>Active projects</dt><dd>' + openProjects + '</dd><dt>Open invoices</dt><dd>' + openInv + ' · ' + money((prof.financials && prof.financials.outstanding && prof.financials.outstanding.value) || 0) + ' owed</dd><dt>Last service</dt><dd>' + esc(lastProject ? lastProject.name || fmtDate(lastProject.start_date) : 'None yet') + '</dd></dl>'
+      : '<dl class="facts"><dt>Type</dt><dd>Lead (not a customer yet)</dd><dt>Contact</dt><dd>' + esc(c.contact || '—') + '</dd></dl><p class="muted">Convert the lead to a customer to see projects and invoices.</p>';
+    const history = prof ? (prof.communications || []).slice(0, 12).map(h => '<li style="margin:6px 0"><b>' + esc(h.title || h.kind || 'Activity') + '</b><div class="muted">' + esc(fmtWhen(h.at || h.created_at)) + '</div></li>').join('') : '';
+    const notes = prof ? (prof.notes || []).slice(0, 10).map(n => '<li style="margin:6px 0">' + esc(n.body) + '<div class="muted">' + esc(fmtWhen(n.created_at)) + ' · ' + esc(n.author || '') + '</div></li>').join('') : '';
+    const tasks = prof ? (prof.issues || []).filter(x => !['Resolved', 'Verified', 'Closed'].includes(x.status)).slice(0, 10).map(x => '<li style="margin:6px 0">' + esc(x.title) + ' <small class="muted">' + esc(x.status) + (x.due_date ? ' · due ' + esc(fmtDate(x.due_date)) : '') + '</small></li>').join('') : '';
+    const body = cm.panelTab === 'overview' ? overview : cm.panelTab === 'history' ? '<ul class="plain">' + (history || '<li class="muted">Nothing recorded yet.</li>') + '</ul>'
+      : cm.panelTab === 'notes' ? '<ul class="plain">' + (notes || '<li class="muted">No notes yet.</li>') + '</ul>' : '<ul class="plain">' + (tasks || '<li class="muted">No open tasks.</li>') + '</ul>';
+    p.innerHTML = '<div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span style="width:44px;height:44px;border-radius:10px;background:#e8f1fd;display:flex;align-items:center;justify-content:center;font-weight:700;color:#1f6fd1">' + esc(cmInit(c.name)) + '</span><div style="min-width:0"><b style="overflow-wrap:anywhere">' + esc(c.name) + '</b><div><span class="badge ' + (c.type === 'Customer' ? 'green' : 'blue') + '">' + esc(c.type === 'Customer' ? 'Existing Customer' : 'New Lead') + '</span></div></div></div>'
+      + '<p style="margin:4px 0">' + (c.contact && /\d{7,}/.test(c.contact) ? '📞 ' + esc(c.contact) : '') + '</p>'
+      + (cu && cu.email ? '<p style="margin:4px 0">✉ ' + esc(cu.email) + '</p>' : '')
+      + (c.property ? '<p style="margin:4px 0">📍 ' + esc(c.property) + '</p>' : '')
+      + '<div style="display:flex;gap:4px;flex-wrap:wrap;margin:10px 0" role="tablist">' + tabs.map(([k, l]) => '<button type="button" class="btn small' + (cm.panelTab === k ? '' : ' ghost') + '" data-cmp="' + k + '">' + l + '</button>').join('') + '</div>'
+      + body
+      + '<div class="formsection">Recent activity</div><ul class="plain">' + (items.slice(-4).reverse().map(x => '<li style="margin:4px 0"><span class="muted">' + esc(fmtWhen(x.at)) + '</span> · ' + esc(x.channel === 'sms' ? 'Text' : 'Portal') + ' · ' + esc(x.dir === 'in' ? 'from customer' : 'from us') + '</li>').join('') || '<li class="muted">No activity yet.</li>') + '</ul>';
+    $$('#cmPanel [data-cmp]').forEach(b => b.onclick = () => { cm.panelTab = b.dataset.cmp; renderCmPanel(c, items, custId, leadId, d); });
+  }
+  // Header buttons: approved templates, automation status, and a new message to a customer.
+  $('#cmTemplates').onclick = () => {
+    const list = (cm.data && cm.data.templates) || [];
+    openDrawer({ title: 'Approved templates', sub: 'Pick one in a conversation, edit it, then send.', body: list.map(t => '<div class="card" style="margin:8px 0"><b>' + esc(t.name) + '</b><div class="pre" style="white-space:pre-wrap;margin-top:6px">' + esc(t.body) + '</div></div>').join('') || '<p class="muted">No templates yet.</p>', footer: '<button class="btn ghost" data-close>Close</button>' });
+  };
+  $('#cmAutomations').onclick = () => {
+    openDrawer({ title: 'Automations', sub: 'What the system does on its own', body: '<ul><li>Two business days after a proposal is sent, a follow-up is scheduled. It goes out automatically unless you cancel it.</li><li>An inbound text or portal message that a customer sends reopens a closed conversation.</li><li>Nothing is sent to a customer without a person pressing Send, except the scheduled follow-ups above.</li></ul><p class="muted">Change automation settings in Settings → Automation.</p>', footer: '<button class="btn ghost" data-close>Close</button><button class="btn" id="cmAutoSettings">Open Settings</button>' });
+    $('#cmAutoSettings').onclick = () => { closeDrawer(); location.hash = '#settings'; };
+  };
+  $('#cmNew').onclick = async () => {
+    let custs = []; try { custs = (await api('/api/admin/customers')).customers || []; } catch { /* list optional */ }
+    openDrawer({ title: 'New message', sub: 'Text an existing customer. A new customer is added under Customers first.', body: '<div class="f wide"><label for="nmTo">To</label><select id="nmTo"><option value="">Choose a customer…</option>' + custs.filter(c => c.phone).map(c => '<option value="' + c.id + '">' + esc((c.company || c.name || 'Customer') + ' · ' + c.phone) + '</option>').join('') + '</select></div><div class="f wide"><label for="nmBody">Message</label><textarea id="nmBody" rows="4" placeholder="Short, clear message"></textarea></div>', footer: '<button class="btn ghost" data-close>Cancel</button><button class="btn" id="nmSend">Send SMS</button>' });
+    $('#nmSend').onclick = async () => {
+      const id = $('#nmTo').value, body = $('#nmBody').value.trim();
+      if (!id) return toast('Choose a customer.', true); if (body.length < 2) return toast('Write the message first.', true);
+      if (!confirm('Send this text now?')) return;
+      try { await api('/api/admin/messages/sms', { method: 'POST', json: { customer_id: Number(id), body } }); closeDrawer(); toast('Text sent'); cm.key = 'cust:' + id; await loadClientMsgs(); }
+      catch (err) { toast(err.message, true); }
+    };
+  };
+  $('#cmSearch').oninput = () => { cm.search = $('#cmSearch').value; renderCmList(); };
+
   async function loadLeads() {
     state.leads = (await api('/api/admin/leads')).leads || [];
     renderLeads();

@@ -696,11 +696,15 @@
       </div><aside class="propside" id="docSide"><div class="card"><p class="muted">Select a document to see its revisions, sheet index and blueprint reading.</p></div></aside></div>
     </section>
     <section class="view" id="v-clientmsgs">
-      <div class="pagehead"><div><h1>Client messages</h1><p>Portal messages and texts from customers and leads, in one inbox. Replies go out by text or to the portal. Every message and reply is kept on the customer or lead it belongs to.</p></div></div>
-      <div class="ccwrap">
-        <aside class="card" id="cmBoxes" aria-label="Inboxes" style="padding:10px"></aside>
-        <div style="min-width:0"><div class="tablewrap card" style="padding:0"><table class="t"><thead><tr><th>Conversation</th><th>Last message</th><th>Status</th></tr></thead><tbody id="cmList"></tbody></table></div></div>
-        <aside class="card" id="cmThread" aria-label="Conversation" style="position:sticky;top:12px"><p class="muted">Select a conversation to read it and reply.</p></aside>
+      <div class="pagehead"><div><h1>Client Messages</h1><p>Manage text messages and portal messages from customers and leads in one place.</p></div>
+        <div class="headact"><button class="btn ghost" id="cmTemplates" type="button">Templates</button><button class="btn ghost" id="cmAutomations" type="button">Automations</button><button class="btn" id="cmNew" type="button">New Message</button></div></div>
+      <div class="kpis small" id="cmKpis"></div>
+      <style>.cmgrid{display:grid;grid-template-columns:220px minmax(240px,320px) minmax(0,1fr) 300px;gap:14px;align-items:start;margin-top:12px}.cmgrid .card{min-width:0}@media (max-width:1280px){.cmgrid{grid-template-columns:220px minmax(240px,1fr)}#cmThread{grid-column:1/-1}#cmPanel{display:none}}@media (max-width:820px){.cmgrid{grid-template-columns:1fr}}</style>
+      <div class="cmgrid">
+        <aside class="card" id="cmSide" style="padding:10px" aria-label="Inboxes"><div id="cmBoxes"></div><div id="cmFilters"></div></aside>
+        <div class="card" style="padding:10px"><input type="search" id="cmSearch" placeholder="Search messages…" aria-label="Search messages" style="width:100%"><p class="muted" id="cmCount" style="margin:6px 2px"></p><div id="cmList"></div></div>
+        <div class="card" id="cmThread" aria-label="Conversation"><p class="muted">Select a conversation to read it and reply.</p></div>
+        <aside class="card" id="cmPanel" aria-label="Customer" style="position:sticky;top:12px"><p class="muted">Select a conversation to see the customer.</p></aside>
       </div>
     </section>
     <section class="view" id="v-emails">
