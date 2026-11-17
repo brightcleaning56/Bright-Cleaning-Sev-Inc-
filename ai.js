@@ -31,6 +31,8 @@ Never invent prices, rates, availability, insurance, licenses, certifications or
     const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
     return text;
   }
+  app.locals.aiOn = () => !!key();
+  app.locals.aiCall = (messages, system, maxTokens) => call(messages, system, maxTokens);
   function parseJSON(text) {
     const m = String(text).replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
     if (!m) throw new Error('The AI reply was not in the expected format.');

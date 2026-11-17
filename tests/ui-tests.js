@@ -637,6 +637,12 @@ async function check(area, name, fn) {
     assert(comms === 4, 'expected 4 communication tiles, found ' + comms);
     return '3 cards present; 4 communication tiles open their centers';
   });
+  await check('Email gaps UI', 'Email Center shows Drafts and Archived mailboxes', async () => {
+    await nav('emails'); await sleep(700);
+    const names = [...d.querySelectorAll('#emBoxes [data-mb]')].map(b => b.dataset.mb);
+    assert(names.includes('Drafts') && names.includes('Archived') && names.length === 11, 'mailboxes: ' + names.join(','));
+    return '11 mailboxes including Drafts and Archived';
+  });
   await check('Contracts UI', 'Contract list: search narrows the cards, sort by value puts the highest first, Export CSV builds the filtered list', async () => {
     await api('POST', '/api/admin/contracts', { company: 'SortLo Co', customer_name: 'Lo Sort', title: 'Sort low', value: 111, status: 'Draft' }, T);
     await api('POST', '/api/admin/contracts', { company: 'SortHi Co', customer_name: 'Hi Sort', title: 'Sort high', value: 999999, status: 'Draft' }, T);

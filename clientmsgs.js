@@ -210,6 +210,22 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     });
   });
 
+  // Assistant for one conversation: a summary, requests, questions, a suggested reply to edit, and whether a person should look.
+  app.post('/api/admin/conversations/:key/assist', auth, async (req, res) => {
+    const key = String(req.params.key);
+    if (!inbox().some(r => r.key === key)) return res.status(404).json({ error: 'That conversation was not found.' });
+    const dir = directory(), ev = events(), lines = [];
+    for (const m of ev.portal) if (keyFor(dir, { email: m.email }) === key) {
+      lines.push({ dir: 'in', at: m.created_at, channel: 'portal', body: m.subject + '\n' + m.body });
+      for (const r of ev.replies.filter(x => x.message_id === m.id)) lines.push({ dir: 'out', at: r.created_at, channel: 'portal', body: r.body });
+    }
+    for (const s of ev.sms) if (keyFor(dir, { phone: s.to_number, customer_id: s.customer_id, lead_id: s.lead_id }) === key) lines.push({ dir: s.direction === 'in' ? 'in' : 'out', at: s.created_at, channel: 'sms', body: s.body });
+    lines.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    const result = await require('./assist').assist(app, lines, 'conversation');
+    logAction(req, 'assistant ' + result.source, 'conversation', null, key);
+    res.json(result);
+  });
+
   module.exports.TEMPLATES = TEMPLATES;
   module.exports.inbox = inbox;
 };

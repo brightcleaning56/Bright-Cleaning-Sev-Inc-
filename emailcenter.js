@@ -6,6 +6,12 @@ module.exports = function (app, { db, auth }) {
   const isAddr = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || ''));
   const MAILBOXES = ['All', 'Customer', 'Lead inquiries', 'Estimates & proposals', 'Contracts', 'Invoices', 'Sent', 'Needs reply', 'Scheduled', 'Drafts', 'Archived'];
 
+  db.exec(`CREATE TABLE IF NOT EXISTS email_drafts(id INTEGER PRIMARY KEY AUTOINCREMENT, to_addr TEXT, subject TEXT, body TEXT, customer_id INTEGER, lead_id INTEGER, created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS email_archive(key TEXT PRIMARY KEY, archived_at TEXT NOT NULL, archived_by TEXT);`);
+  const who = req => String((req.user && req.user.email) || '');
+  for (const col of ['provider_id TEXT', 'delivered_at TEXT', 'bounced_at TEXT', 'bounce_reason TEXT']) { try { db.exec('ALTER TABLE email_log ADD COLUMN ' + col); } catch { /* already there */ } }
+  const ES = require('./emailsuppress');
+
   function safe(sql, args = []) { try { return db.prepare(sql).all(...args); } catch { return []; } }
 
   // Who an address belongs to: a customer, a lead, a proposal, in that order.
@@ -38,14 +44,14 @@ module.exports = function (app, { db, auth }) {
 
   function build() {
     const cache = new Map();
-    const sent = safe("SELECT id, to_addr, subject, body, status, error, created_at, sent_by FROM email_log ORDER BY id DESC LIMIT 500");
+    const sent = safe("SELECT id, to_addr, subject, body, status, error, created_at, sent_by, provider_id, delivered_at, bounced_at, bounce_reason FROM email_log ORDER BY id DESC LIMIT 500");
     const inbound = safe("SELECT id, from_addr, from_name, subject, preview, received_at, lead_id, customer_id, conversation_id FROM inbox_messages ORDER BY id DESC LIMIT 500");
     const suppressed = new Map(safe('SELECT address, reason FROM email_suppression').map(r => [low(r.address), r.reason]));
     const out = sent.map(m => {
       const addr = m.to_addr;
-      const bounced = suppressed.get(low(addr)) === 'bounced';
+      const bounced = !!m.bounced_at || suppressed.get(low(addr)) === 'bounced';
       const replied = inbound.some(i => low(i.from_addr) === low(addr) && String(i.received_at || '') > String(m.created_at || ''));
-      const row = { key: 'out-' + m.id, id: m.id, direction: 'out', source: 'system', at: m.created_at, from: 'Bright Clean', to: addr, subject: m.subject || '(no subject)', status: m.status, delivery: m.status === 'failed' ? 'Failed' : bounced ? 'Bounced' : 'Sent', reply: replied ? 'Customer replied' : 'No reply yet', sent_by: m.sent_by || 'System' };
+      const row = { key: 'out-' + m.id, id: m.id, direction: 'out', source: 'system', at: m.created_at, from: 'Bright Clean', to: addr, subject: m.subject || '(no subject)', status: m.status, delivery: m.status === 'failed' ? 'Failed' : bounced ? 'Bounced' : m.delivered_at ? 'Delivered' : 'Sent', reply: replied ? 'Customer replied' : 'No reply yet', sent_by: m.sent_by || 'System' };
       row.link = linkFor(addr, cache);
       row.category = categoryOf(row);
       return row;
@@ -59,25 +65,84 @@ module.exports = function (app, { db, auth }) {
       return row;
     });
     const all = [...out, ...ins].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    const arch = new Set(safe('SELECT key FROM email_archive').map(r => r.key));
+    for (const m of all) m.archived = arch.has(m.key);
+    const live = all.filter(m => !m.archived);
     const scheduled = safe("SELECT f.id, f.due_date, f.channel, f.message, f.estimate_id, e.email, e.project_name FROM proposal_followups f LEFT JOIN estimates e ON e.id=f.estimate_id WHERE f.status='Scheduled' AND f.channel='email' ORDER BY f.due_date");
+    const drafts = safe('SELECT * FROM email_drafts ORDER BY updated_at DESC LIMIT 200').map(d => ({ key: 'draft-' + d.id, id: d.id, direction: 'out', source: 'draft', at: d.updated_at, from: 'Bright Clean', to: d.to_addr || '', subject: d.subject || '(no subject)', preview: String(d.body || '').slice(0, 160), body: d.body || '', status: 'draft', delivery: 'Draft', reply: '', sent_by: d.created_by || '', link: d.to_addr ? linkFor(d.to_addr, cache) : null, category: 'Drafts', archived: false }));
+    const scheduledRows = scheduled.map(f => ({ key: 'sched-' + f.id, id: f.id, direction: 'out', source: 'scheduled', at: f.due_date + 'T00:00:00Z', from: 'Bright Clean', to: f.email || '', subject: 'Follow-up (' + (f.project_name || 'proposal') + ')', preview: f.message, status: 'scheduled', delivery: 'Scheduled for ' + f.due_date, reply: '', sent_by: 'Automatic', link: f.email ? linkFor(f.email, cache) : null, category: 'Scheduled', archived: false }));
     const counts = {
-      'All': all.length,
-      'Customer': all.filter(m => m.category === 'Customer').length,
-      'Lead inquiries': all.filter(m => m.category === 'Lead inquiries').length,
-      'Estimates & proposals': all.filter(m => m.category === 'Estimates & proposals').length,
-      'Contracts': all.filter(m => m.category === 'Contracts').length,
-      'Invoices': all.filter(m => m.category === 'Invoices').length,
-      'Sent': out.length,
-      'Needs reply': ins.filter(m => m.reply === 'Needs reply').length,
+      'All': live.length,
+      'Customer': live.filter(m => m.category === 'Customer').length,
+      'Lead inquiries': live.filter(m => m.category === 'Lead inquiries').length,
+      'Estimates & proposals': live.filter(m => m.category === 'Estimates & proposals').length,
+      'Contracts': live.filter(m => m.category === 'Contracts').length,
+      'Invoices': live.filter(m => m.category === 'Invoices').length,
+      'Sent': live.filter(m => m.direction === 'out' && m.source === 'system').length,
+      'Needs reply': live.filter(m => m.reply === 'Needs reply').length,
       'Scheduled': scheduled.length,
-      'Drafts': 0,
-      'Archived': 0
+      'Drafts': drafts.length,
+      'Archived': all.filter(m => m.archived).length
     };
-    const scheduledRows = scheduled.map(f => ({ key: 'sched-' + f.id, id: f.id, direction: 'out', source: 'scheduled', at: f.due_date + 'T00:00:00Z', from: 'Bright Clean', to: f.email || '', subject: 'Follow-up (' + (f.project_name || 'proposal') + ')', preview: f.message, status: 'scheduled', delivery: 'Scheduled for ' + f.due_date, reply: '', sent_by: 'Automatic', link: f.email ? linkFor(f.email, cache) : null, category: 'Scheduled' }));
-    return { messages: [...all, ...scheduledRows], counts, mailboxes: MAILBOXES };
+    return { messages: [...live, ...scheduledRows, ...drafts, ...all.filter(m => m.archived)], counts, mailboxes: MAILBOXES };
   }
 
   app.get('/api/admin/email-center', auth, (req, res) => res.json(build()));
+
+  // Postmark sends delivery and bounce events here. Set POSTMARK_WEBHOOK_TOKEN in Render and use the same token in the URL.
+  app.post('/api/webhooks/postmark', (req, res) => {
+    const want = process.env.POSTMARK_WEBHOOK_TOKEN || '';
+    if (!want) return res.status(503).type('text/plain').send('Postmark events are not set up (POSTMARK_WEBHOOK_TOKEN missing).');
+    const got = String(req.query.token || '');
+    if (got.length !== want.length || !require('crypto').timingSafeEqual(Buffer.from(got), Buffer.from(want))) return res.status(403).type('text/plain').send('Forbidden.');
+    const b = req.body || {}, id = String(b.MessageID || '');
+    const t = new Date().toISOString();
+    if (b.RecordType === 'Delivery' && id) {
+      db.prepare('UPDATE email_log SET delivered_at=COALESCE(delivered_at, ?) WHERE provider_id=?').run(String(b.DeliveredAt || t), id);
+    } else if (b.RecordType === 'Bounce' && id) {
+      const addr = String(b.Email || b.Recipient || '').toLowerCase();
+      db.prepare('UPDATE email_log SET bounced_at=COALESCE(bounced_at, ?), bounce_reason=? WHERE provider_id=?').run(String(b.BouncedAt || t), String(b.Description || b.Type || 'bounced').slice(0, 300), id);
+      if (addr) { try { ES.suppress(db, addr, 'bounced', 'postmark', String(b.Description || b.Type || 'bounced').slice(0, 300), 'system'); } catch { /* suppression is best effort */ } }
+    }
+    res.status(200).json({ ok: true });
+  });
+
+  // Drafts: saved, edited and discarded here. A draft is sent only when someone presses Send.
+  const draftFields = b => {
+    const to = String(b.to || '').trim().slice(0, 254), subject = String(b.subject || '').trim().slice(0, 200), body = String(b.body || '').trim().slice(0, 10000);
+    return { to, subject, body };
+  };
+  app.post('/api/admin/email-center/drafts', auth, (req, res) => {
+    const f = draftFields(req.body || {});
+    if (!f.body) return res.status(400).json({ error: 'Write the email first.' });
+    if (f.to && !isAddr(f.to)) return res.status(400).json({ error: 'Enter a valid email address, or leave it blank.' });
+    const t = new Date().toISOString();
+    const id = db.prepare('INSERT INTO email_drafts(to_addr,subject,body,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?)').run(f.to, f.subject, f.body, who(req), t, t).lastInsertRowid;
+    res.status(201).json({ ok: true, id });
+  });
+  app.post('/api/admin/email-center/drafts/:id', auth, (req, res) => {
+    const cur = db.prepare('SELECT * FROM email_drafts WHERE id=?').get(Number(req.params.id));
+    if (!cur) return res.status(404).json({ error: 'Draft not found.' });
+    const f = draftFields(req.body || {});
+    if (!f.body) return res.status(400).json({ error: 'Write the email first.' });
+    if (f.to && !isAddr(f.to)) return res.status(400).json({ error: 'Enter a valid email address, or leave it blank.' });
+    db.prepare('UPDATE email_drafts SET to_addr=?, subject=?, body=?, updated_at=? WHERE id=?').run(f.to, f.subject, f.body, new Date().toISOString(), cur.id);
+    res.json({ ok: true });
+  });
+  app.delete('/api/admin/email-center/drafts/:id', auth, (req, res) => {
+    const r = db.prepare('DELETE FROM email_drafts WHERE id=?').run(Number(req.params.id));
+    if (!r.changes) return res.status(404).json({ error: 'Draft not found.' });
+    res.json({ ok: true });
+  });
+
+  // Archive: a separate record. The email itself is never changed or removed.
+  app.post('/api/admin/email-center/:key/archive', auth, (req, res) => {
+    const key = String(req.params.key);
+    if (!/^(out|in)-\d+$/.test(key)) return res.status(400).json({ error: 'Only received and sent emails can be archived.' });
+    if (req.body && req.body.archived === false) db.prepare('DELETE FROM email_archive WHERE key=?').run(key);
+    else db.prepare('INSERT OR REPLACE INTO email_archive(key,archived_at,archived_by) VALUES(?,?,?)').run(key, new Date().toISOString(), who(req));
+    res.json({ ok: true, archived: !(req.body && req.body.archived === false) });
+  });
 
   // One message in full, with the record it belongs to and the team's history with that person.
   app.get('/api/admin/email-center/:key', auth, (req, res) => {
@@ -90,6 +155,9 @@ module.exports = function (app, { db, auth }) {
     } else if (kind === 'in') {
       const r = db.prepare('SELECT * FROM inbox_messages WHERE id=?').get(id);
       if (r) m = { key: req.params.key, direction: 'in', at: r.received_at, from: r.from_name || r.from_addr, from_addr: r.from_addr, to: 'Bright Clean', subject: r.subject || '(no subject)', body: r.preview || '', status: 'received', sent_by: '' , lead_id: r.lead_id, customer_id: r.customer_id };
+    } else if (kind === 'draft') {
+      const r = db.prepare('SELECT * FROM email_drafts WHERE id=?').get(id);
+      if (r) m = { key: req.params.key, direction: 'out', at: r.updated_at, from: 'Bright Clean', to: r.to_addr || '', subject: r.subject || '(no subject)', body: r.body || '', status: 'draft', sent_by: r.created_by || '', draft_id: r.id, customer_id: r.customer_id || null };
     } else if (kind === 'sched') {
       const r = db.prepare("SELECT f.*, e.email FROM proposal_followups f LEFT JOIN estimates e ON e.id=f.estimate_id WHERE f.id=?").get(id);
       if (r) m = { key: req.params.key, direction: 'out', at: r.due_date, from: 'Bright Clean', to: r.email || '', subject: 'Scheduled follow-up', body: r.message, status: 'scheduled', sent_by: 'Automatic' };
@@ -108,6 +176,16 @@ module.exports = function (app, { db, auth }) {
     const history = m.link && m.link.type === 'customer'
       ? { customer_id: m.link.id } : m.link && m.link.type === 'lead' ? { lead_id: m.link.id } : null;
     res.json({ message: m, questions, requests: asks, history, note: 'Summary and requests are read from the message text only. Replies are drafted for a person to review and send.' });
+  });
+  // Assistant for one email: the same summary and draft rules as conversations; the draft is never sent by this.
+  app.post('/api/admin/email-center/:key/assist', auth, async (req, res) => {
+    const [kind, idRaw] = String(req.params.key).split('-'); const id = Number(idRaw);
+    let m = null;
+    if (kind === 'out') { const r = db.prepare('SELECT * FROM email_log WHERE id=?').get(id); if (r) m = { dir: 'out', at: r.created_at, body: (r.subject || '') + '\n' + (r.body || '') }; }
+    else if (kind === 'in') { const r = db.prepare('SELECT * FROM inbox_messages WHERE id=?').get(id); if (r) m = { dir: 'in', at: r.received_at, body: (r.subject || '') + '\n' + (r.preview || '') }; }
+    if (!m) return res.status(404).json({ error: 'That email was not found.' });
+    const result = await require('./assist').assist(app, [{ ...m, channel: 'email' }], 'email');
+    res.json(result);
   });
   module.exports.build = build;
 };

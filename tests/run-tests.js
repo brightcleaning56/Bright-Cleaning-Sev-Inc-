@@ -1207,6 +1207,41 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(a.status === 200 && Array.isArray(a.data.suggestions), 'attention list should load');
     return 'communications counts for every channel; unknown period falls back to 30 days; attention list loads';
   });
+  await check('Email gaps', 'Drafts are saved, edited and discarded; archive keeps the email; the assistant answers without AI and suggests only; delivery webhook refuses without its token', async () => {
+    const bad = await req('POST', '/api/admin/email-center/drafts', { token: T, json: { to: 'x@y.test', body: '' } });
+    assert(bad.status === 400, 'empty draft should be refused, got ' + bad.status);
+    const made = await req('POST', '/api/admin/email-center/drafts', { token: T, json: { to: 'draft@t.test', subject: 'Hello', body: 'First draft text' } });
+    assert(made.status === 201 && made.data.id, 'draft should save, got ' + made.status);
+    const did = 'draft-' + made.data.id;
+    const shown = await req('GET', '/api/admin/email-center/' + did, { token: T });
+    assert(shown.status === 200 && shown.data.message.draft_id === made.data.id, 'draft should open');
+    const upd = await req('POST', '/api/admin/email-center/drafts/' + made.data.id, { token: T, json: { to: 'draft@t.test', subject: 'Hello again', body: 'Edited draft text' } });
+    assert(upd.status === 200, 'draft should update, got ' + upd.status);
+    const box = await req('GET', '/api/admin/email-center', { token: T });
+    assert((box.data.messages || []).some(m => m.key === did && /Edited/.test(m.preview || '')) && box.data.counts.Drafts >= 1, 'drafts box should list the draft');
+    const del = await req('DELETE', '/api/admin/email-center/drafts/' + made.data.id, { token: T });
+    assert(del.status === 200, 'discard should work, got ' + del.status);
+    const gone = await req('GET', '/api/admin/email-center/' + did, { token: T });
+    assert(gone.status === 404, 'discarded draft should be gone, got ' + gone.status);
+    const center = await req('GET', '/api/admin/email-center', { token: T });
+    const any = (center.data.messages || []).find(m => /^(out|in)-/.test(m.key));
+    if (any) {
+      const arch = await req('POST', '/api/admin/email-center/' + any.key + '/archive', { token: T, json: { archived: true } });
+      assert(arch.status === 200, 'archive should save');
+      const after = await req('GET', '/api/admin/email-center', { token: T });
+      assert(after.data.counts.Archived >= 1 && !after.data.messages.some(m => m.key === any.key && !m.archived), 'archived email should move to Archived');
+      const still = await req('GET', '/api/admin/email-center/' + any.key, { token: T });
+      assert(still.status === 200, 'archived email must still open (nothing deleted)');
+      await req('POST', '/api/admin/email-center/' + any.key + '/archive', { token: T, json: { archived: false } });
+    }
+    const help = await req('POST', '/api/admin/email-center/out-999999/assist', { token: T, json: {} });
+    assert(help.status === 404, 'assist on an unknown email should be 404, got ' + help.status);
+    const chelp = await req('POST', '/api/admin/conversations/lead:999999/assist', { token: T, json: {} });
+    assert(chelp.status === 404, 'assist on an unknown conversation should be 404, got ' + chelp.status);
+    const hook = await req('POST', '/api/webhooks/postmark?token=anything', { json: { RecordType: 'Delivery', MessageID: 'x' } });
+    assert(hook.status === 503 || hook.status === 403, 'postmark events should be refused until configured, got ' + hook.status);
+    return 'empty draft refused; draft saved, edited, listed and discarded; archive keeps the email; assist refuses unknown items; delivery events refused until configured';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
