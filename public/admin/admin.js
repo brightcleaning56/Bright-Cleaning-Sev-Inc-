@@ -769,8 +769,8 @@
   function renderCmKpis() {
     const c = cm.data.counts;
     const tile = (label, n, icon, tone, go) => '<button type="button" class="kpi" data-cmk="' + esc(go) + '" style="text-align:left"><span class="ic" style="background:' + tone + '">' + ic(icon) + '</span><div><span>' + esc(label) + '</span><b>' + n + '</b></div></button>';
-    $('#cmKpis').innerHTML = tile('Unread', c['Unread'] || 0, 'inbox', '#1f6fd1', 'Unread') + tile('Needs Reply', c['Needs reply'] || 0, 'inbox', '#d64545', 'Needs reply')
-      + tile('Customer Messages', c['Customer'] || 0, 'user', '#1f9d55', 'Customer') + tile('Lead Messages', c['Lead'] || 0, 'user', '#7b3fe4', 'Lead')
+    $('#cmKpis').innerHTML = tile('Unread', c['Unread'] || 0, 'emails', '#1f6fd1', 'Unread') + tile('Needs Reply', c['Needs reply'] || 0, 'calls', '#d64545', 'Needs reply')
+      + tile('Customer Messages', c['Customer'] || 0, 'customers', '#1f9d55', 'Customer') + tile('Lead Messages', c['Lead'] || 0, 'activity', '#7b3fe4', 'Lead')
       + tile('Follow-ups', c['Follow-up due'] || 0, 'cal', '#e0a100', 'Follow-up due');
     $$('#cmKpis [data-cmk]').forEach(b => b.onclick = () => { cm.box = b.dataset.cmk; loadClientMsgs(); });
   }
@@ -928,7 +928,7 @@
     const money = v => '$' + Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const openProjects = prof ? (prof.projects || []).filter(x => !['Completed', 'Closed', 'Customer accepted', 'Archived'].includes(x.status)).length : 0;
     const openInv = prof ? (prof.invoices || []).filter(x => !['Paid', 'Void'].includes(x.status)).length : 0;
-    const lastProject = prof && (prof.projects || [])[0];
+    const lastProject = prof && (prof.projects || []).find(x => x.status !== 'Archived');
     const overview = cu
       ? '<dl class="facts"><dt>Account owner</dt><dd>' + esc(cu.account_owner || '—') + '</dd><dt>Customer since</dt><dd>' + esc(fmtDate(cu.created_at)) + '</dd><dt>Active projects</dt><dd>' + openProjects + '</dd><dt>Open invoices</dt><dd>' + openInv + ' · ' + money((prof.financials && prof.financials.outstanding && prof.financials.outstanding.value) || 0) + ' owed</dd><dt>Last service</dt><dd>' + esc(lastProject ? lastProject.name || fmtDate(lastProject.start_date) : 'None yet') + '</dd></dl>'
       : '<dl class="facts"><dt>Type</dt><dd>Lead (not a customer yet)</dd><dt>Contact</dt><dd>' + esc(c.contact || '—') + '</dd></dl><p class="muted">Convert the lead to a customer to see projects and invoices.</p>';
