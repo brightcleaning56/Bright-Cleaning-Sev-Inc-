@@ -19,7 +19,7 @@ module.exports = function mountSched(app, ctx) {
   const vcols = db.prepare('PRAGMA table_info(visits)').all().map(c => c.name);
   for (const [c, t] of [['dispatched_at', 'TEXT'], ['dispatched_by', 'TEXT'], ['arrived_at', 'TEXT'], ['departed_at', 'TEXT'], ['completed_at', 'TEXT'], ['priority', "TEXT DEFAULT 'Normal'"],
     ['crew_needed', 'INTEGER'], ['instructions', 'TEXT'], ['equipment', 'TEXT'], ['checklist', "TEXT DEFAULT '[]'"], ['skip_reason', 'TEXT'], ['moved_from', 'TEXT'],
-    ['review_status', 'TEXT'], ['submitted_at', 'TEXT'], ['review_note', 'TEXT'], ['reviewed_by', 'TEXT'], ['reviewed_at', 'TEXT'], ['tracking_token', 'TEXT'], ['on_my_way_at', 'TEXT'], ['rooms', 'TEXT'], ['customer_requests', 'TEXT'], ['arrived_lat', 'REAL'], ['arrived_lng', 'REAL'], ['arrived_accuracy', 'REAL']])
+    ['review_status', 'TEXT'], ['submitted_at', 'TEXT'], ['review_note', 'TEXT'], ['reviewed_by', 'TEXT'], ['reviewed_at', 'TEXT'], ['tracking_token', 'TEXT'], ['on_my_way_at', 'TEXT'], ['rooms', 'TEXT'], ['customer_requests', 'TEXT'], ['late_alert_at', 'TEXT'], ['arrived_lat', 'REAL'], ['arrived_lng', 'REAL'], ['arrived_accuracy', 'REAL']])
     if (!vcols.includes(c)) db.exec(`ALTER TABLE visits ADD COLUMN ${c} ${t}`);
   // Photos are tied to a job; the column is added at startup so a job with no photos yet can still be checked
   try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* documents table created elsewhere */ }
@@ -462,7 +462,7 @@ module.exports = function mountSched(app, ctx) {
       const id = db.prepare("INSERT INTO customer_issues(customer_id,project_id,type,category,title,description,priority,status,source,reported_by,customer_comms,created_by,created_at,updated_at) VALUES(?,?,'incident',?,?,?,?,'Open','Employee',?,'Not needed',?,?,?)")
         .run(v.customer_id || null, v.project_id || null, ['Safety', 'Damage / incident', 'Equipment', 'Customer request', 'Other'].includes(req.body.category) ? req.body.category : 'Other', title, `${desc}\n\nReported from job: ${v.title} (${v.date})`, ['Low', 'Normal', 'High', 'Urgent'].includes(req.body.priority) ? req.body.priority : 'High', e.name, 'crew: ' + e.name, t, t).lastInsertRowid;
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'reported', 'incident', id, title, t);
-      if (adminEmail) await notify(adminEmail, `Incident reported by ${e.name}: ${title}`, `${desc}\nJob: ${v.title} ${v.date}\nOpen: https://brightclean.net/admin/#issues`);
+      if (adminEmail) await notify(adminEmail, `Incident reported by ${e.name}: ${title}`, `Category: ${['Safety', 'Damage / incident', 'Equipment', 'Customer request', 'Other'].includes(req.body.category) ? req.body.category : 'Other'}\n${desc}\nJob: ${v.title} ${v.date}\nOpen: https://brightclean.net/admin/#issues`);
       return res.status(201).json({ id });
     }
     res.status(404).json({ error: 'Unknown action.' });
@@ -641,5 +641,22 @@ module.exports = function mountSched(app, ctx) {
   } catch (err) { console.error('crew photo upload disabled:', err.message); }
   app.get('/crew', (req, res) => res.sendFile(require('path').join(__dirname, 'public', 'crew.html')));
   app.get('/crew/:token', (req, res) => res.sendFile(require('path').join(__dirname, 'public', 'crew.html')));
+  // Office alert when a dispatched job has not started 15 minutes after its start time. Once per job.
+  const lateSweep = async () => {
+    if (!adminEmail) return;
+    const bd = require('./bizdate');
+    const d = bd.today();
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: bd.TZ, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date()).map(x => [x.type, x.value]));
+    const nowMin = Number(p.hour) * 60 + Number(p.minute);
+    const rows = db.prepare("SELECT * FROM visits WHERE date=? AND dispatched_at IS NOT NULL AND arrived_at IS NULL AND late_alert_at IS NULL AND start_time IS NOT NULL AND status NOT IN ('Cancelled','Skipped','Done')").all(d);
+    for (const v of rows) {
+      const [h, m] = String(v.start_time).split(':').map(Number);
+      if (!(nowMin > h * 60 + m + 15)) continue;
+      db.prepare('UPDATE visits SET late_alert_at=? WHERE id=?').run(now(), v.id);
+      await notify(adminEmail, `Late start: ${v.title} ${v.date}`, `${v.title} was due to start at ${v.start_time} at ${v.address || 'the site'}, and no crew has checked in yet.\nCrew: ${crewOf(v.id).map(x => x.name).join(', ') || 'none'}\n\nOpen the schedule: https://brightclean.net/admin/#schedule`);
+    }
+  };
+  app.locals.lateSweep = lateSweep;
+  if (!process.env.DISABLE_SCHEDULER) { const lt = setInterval(() => lateSweep().catch(err => console.error('late sweep:', err.message)), 5 * 60 * 1000); lt.unref(); }
   app.locals.schedCheck = (empId, visitId) => check(getEmp(empId), getVisit(visitId));
 };
