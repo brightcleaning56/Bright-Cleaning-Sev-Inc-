@@ -321,7 +321,7 @@ module.exports = function mountSched(app, ctx) {
   const crewGet = (req, res) => {
     const e = crewAuth(req, res); if (!e) return;
     const d = clean(req.query.date, 10) || today();
-    const jobs = db.prepare("SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date BETWEEN ? AND ? AND v.status NOT IN ('Cancelled','Skipped','Tentative') ORDER BY v.date, v.start_time").all(e.id, d, addDays(d, 6));
+    const jobs = db.prepare("SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date BETWEEN ? AND ? AND v.status NOT IN ('Cancelled','Skipped','Tentative') ORDER BY v.date, v.start_time").all(e.id, d, addDays(d, 30));
     const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND clock_out IS NULL ORDER BY id DESC').get(e.id);
     res.json({ employee: { name: e.name, role: e.role, crew: e.crew }, date: d, clocked_in: open ? { visit_id: open.visit_id, since: open.clock_in } : null,
       jobs: jobs.map(v => {
