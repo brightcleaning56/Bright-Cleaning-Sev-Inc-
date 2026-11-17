@@ -1,6 +1,6 @@
 // Lets the crew page open with no signal. Only the page itself and its script are kept; live data always comes from the server
 // (the page saves today's jobs on the phone and sends queued changes itself).
-const SHELL = 'bc-crew-shell-v8';
+const SHELL = 'bc-crew-shell-v9';
 const SHELL_FILES = ['/crew.html', '/assets/crew-page.js'];
 
 self.addEventListener('install', event => {

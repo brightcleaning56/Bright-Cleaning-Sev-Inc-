@@ -108,6 +108,7 @@
   }
 
   // What the phone should show for one job: finished, in progress, or waiting to send.
+  function fmtMins(m) { m = Math.max(0, Math.round(m || 0)); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; }
   function jobState(j, ov, q) {
     const o = ov[j.id] || {};
     const pending = q.some(x => x.visitId === j.id);
@@ -128,10 +129,12 @@
       <div class="jtop"><h2>${esc(j.title)}</h2><span class="pill ${done ? 'done' : ''}">${esc(label)}</span></div>
       <div class="meta">${esc(fmt(j.date))} · ${esc(j.start_time || '')}${j.end_time ? '–' + esc(j.end_time) : ''}</div>
       <div class="meta">${esc(j.address || 'Address not set yet')}</div>
+      ${j.on_site_minutes || inHere ? `<div class="meta">Time on site: ${esc(fmtMins(j.on_site_minutes || 0))}${j.break_minutes ? ' · breaks ' + esc(fmtMins(j.break_minutes)) : ''}${j.on_break ? ' · on break' : ''}</div>` : ''}
       <div class="tags">${pending ? '<span class="pill">Waiting to send</span>' : ''}${j.dispatched ? '' : '<span class="pill">Upcoming · office confirms</span>'}</div>
       ${done ? '' : `${rv === 'Returned' ? `<div class="msg err">Sent back by the office: ${esc(j.review_note || 'see the office')}. Fix it, then submit again.</div>` : ''}
       <div class="actions">
         ${inHere ? '<button class="ghost big" data-a="checkout">Check out<small>End job</small></button>' : '<button class="primary big" data-a="checkin">Check in<small>Start job</small></button>'}
+        ${inHere ? `<button class="ghost big" data-a="break">${j.on_break ? 'End break' : 'Start break'}<small>${j.on_break ? 'Back to work' : 'Pause the clock'}</small></button>` : ''}
         ${inHere ? '' : (j.on_my_way_at || o.onmyway) ? '<button class="ghost big" disabled>On the way<small>Client told</small></button>' : '<button class="ghost big" data-a="onmyway">On my way<small>Tell the client</small></button>'}
         ${rv === 'Submitted' ? '<button class="ghost big" disabled>Waiting for approval<small>Office is reviewing</small></button>'
           : rv === 'Approved' ? '<button class="ok big" data-a="complete">Mark complete<small>Job approved</small></button>'
@@ -148,7 +151,7 @@
       <div class="links"><button class="ghost" type="button" data-note-send>Add note to job</button></div>
       <div class="links">${j.address ? `<a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}">Directions</a>` : ''}</div>
       <details><summary>Job details</summary>
-        ${j.instructions ? `<div class="sec">Instructions</div><div>${esc(j.instructions)}</div>` : ''}${j.equipment ? `<div class="sec">Equipment &amp; supplies</div><div>${esc(j.equipment)}</div>` : ''}
+        ${j.instructions ? `<div class="sec">Instructions</div><div>${esc(j.instructions)}</div>` : ''}${j.rooms ? `<div class="sec">Rooms and areas</div><div style="white-space:pre-wrap">${esc(j.rooms)}</div>` : ''}${j.customer_requests ? `<div class="sec">Customer requests</div><div style="white-space:pre-wrap">${esc(j.customer_requests)}</div>` : ''}${j.equipment ? `<div class="sec">Equipment &amp; supplies</div><div>${esc(j.equipment)}</div>` : ''}
         <div class="sec">Site access</div><div>${esc(j.access || '—')}${j.site_contact ? '<br>Contact: ' + esc(j.site_contact) : ''}</div>${j.safety ? `<div class="sec">Safety</div><div>${esc(j.safety)}</div>` : ''}
         <div class="muted" style="margin-top:6px">Crew: ${esc(j.crew.join(', '))}</div>
         ${j.checklist.length ? `<div class="sec">Checklist</div><ul class="check">${j.checklist.map((c, i) => `<li><input type="checkbox" data-ck="${i}" ${checked(i) ? 'checked' : ''} ${done ? 'disabled' : ''} aria-label="${esc(c.text || c.title || '')}"><span>${esc(c.text || c.title || '')}</span></li>`).join('')}</ul>` : ''}
@@ -248,6 +251,14 @@
           b.disabled = true;
           try { await post(`/api/crew/${token}/jobs/${id}/submit`, {}); say('Sent to the office for review.', true); await refresh(); }
           catch (e) { say(isOffline(e) ? 'Sending for review needs signal. Try again when you are connected.' : e.message); b.disabled = false; }
+          return;
+        }
+        if (a === 'break') {
+          // A break is sent straight to the server, like submit, so the clock is right at once
+          if (!navigator.onLine) return say('Breaks need signal. Try again when you are connected.');
+          b.disabled = true;
+          try { await post(`/api/crew/${token}/jobs/${id}/break`, {}); say('Break updated.', true); await refresh(); }
+          catch (e) { say(isOffline(e) ? 'Breaks need signal. Try again when you are connected.' : e.message); b.disabled = false; }
           return;
         }
         queueChange(id, a, {});

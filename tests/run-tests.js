@@ -3980,6 +3980,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(s1.status === 200 && s1.data.status === 'Scheduled' && s1.data.address === '9 Track Ln', 'tracking should show Scheduled, got ' + s1.status + ' ' + JSON.stringify(s1.data).slice(0, 200));
     assert(!JSON.stringify(s1.data).includes('Track Crew Test'), 'tracking must not show crew names');
     assert((await req('GET', '/api/track/not-a-real-token-123456789012345')).status === 404, 'a bad tracking token must not work');
+    const rm = await req('PATCH', '/api/admin/visits/' + vid, { token: T, json: { rooms: 'Kitchen\nTwo bathrooms', customer_requests: 'Use the back door' } });
+    assert(rm.status === 200, 'office should save rooms and requests, got ' + rm.status + ' ' + JSON.stringify(rm.data).slice(0, 150));
+    const cv = await req('GET', `/api/crew/${tk}`);
+    const cj = (cv.data.jobs || []).find(j => j.id === vid);
+    assert(cj && cj.rooms === 'Kitchen\nTwo bathrooms' && cj.customer_requests === 'Use the back door', 'crew should see rooms and customer requests on the job');
     const om = await req('POST', `/api/crew/${tk}/jobs/${vid}/onmyway`, { json: {} });
     assert(om.status === 200, 'on my way should work, got ' + om.status);
     const s2 = await req('GET', '/api/track/' + tok);
@@ -3988,6 +3993,14 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(ci.status === 200, 'check-in should work, got ' + ci.status);
     const s3 = await req('GET', '/api/track/' + tok);
     assert(s3.data.status === 'In progress' && s3.data.steps[2].at, 'tracking should show In progress with arrival, got ' + s3.data.status);
+    const b1 = await req('POST', `/api/crew/${tk}/jobs/${vid}/break`, { json: {} });
+    assert(b1.status === 200 && b1.data.on_break === true, 'start break should work, got ' + b1.status + ' ' + JSON.stringify(b1.data));
+    const onB = (await req('GET', `/api/crew/${tk}`)).data.jobs.find(j => j.id === vid);
+    assert(onB.on_break === true, 'crew should see they are on break');
+    const b2 = await req('POST', `/api/crew/${tk}/jobs/${vid}/break`, { json: {} });
+    assert(b2.status === 200 && b2.data.on_break === false, 'end break should work');
+    const tm = (await req('GET', `/api/admin/visits/${vid}/photos`, { token: T })).data.time;
+    assert(tm && typeof tm.on_site_minutes === 'number' && tm.break_minutes >= 0, 'office should see time on site and breaks');
     assert(s3.data.photos.length === 0, 'no photos before approval');
     assert((await req('GET', `/api/track/${tok}/photos/1`)).status === 404, 'photos stay hidden before approval');
   });

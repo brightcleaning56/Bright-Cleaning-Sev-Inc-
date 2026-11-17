@@ -19,11 +19,12 @@ module.exports = function mountSched(app, ctx) {
   const vcols = db.prepare('PRAGMA table_info(visits)').all().map(c => c.name);
   for (const [c, t] of [['dispatched_at', 'TEXT'], ['dispatched_by', 'TEXT'], ['arrived_at', 'TEXT'], ['departed_at', 'TEXT'], ['completed_at', 'TEXT'], ['priority', "TEXT DEFAULT 'Normal'"],
     ['crew_needed', 'INTEGER'], ['instructions', 'TEXT'], ['equipment', 'TEXT'], ['checklist', "TEXT DEFAULT '[]'"], ['skip_reason', 'TEXT'], ['moved_from', 'TEXT'],
-    ['review_status', 'TEXT'], ['submitted_at', 'TEXT'], ['review_note', 'TEXT'], ['reviewed_by', 'TEXT'], ['reviewed_at', 'TEXT'], ['tracking_token', 'TEXT'], ['on_my_way_at', 'TEXT']])
+    ['review_status', 'TEXT'], ['submitted_at', 'TEXT'], ['review_note', 'TEXT'], ['reviewed_by', 'TEXT'], ['reviewed_at', 'TEXT'], ['tracking_token', 'TEXT'], ['on_my_way_at', 'TEXT'], ['rooms', 'TEXT'], ['customer_requests', 'TEXT'], ['arrived_lat', 'REAL'], ['arrived_lng', 'REAL'], ['arrived_accuracy', 'REAL']])
     if (!vcols.includes(c)) db.exec(`ALTER TABLE visits ADD COLUMN ${c} ${t}`);
   // Photos are tied to a job; the column is added at startup so a job with no photos yet can still be checked
   try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* documents table created elsewhere */ }
   // Messages between the office and one crew member (optionally about one job)
+  db.exec(`CREATE TABLE IF NOT EXISTS visit_breaks(id INTEGER PRIMARY KEY AUTOINCREMENT, visit_id INTEGER NOT NULL, employee_id INTEGER NOT NULL, start_at TEXT NOT NULL, end_at TEXT)`);
   db.exec(`CREATE TABLE IF NOT EXISTS visit_notes(id INTEGER PRIMARY KEY AUTOINCREMENT, visit_id INTEGER NOT NULL, employee_id INTEGER NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL)`);
   db.exec(`CREATE TABLE IF NOT EXISTS crew_messages(id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, visit_id INTEGER, direction TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, seen_by_office INTEGER DEFAULT 0, seen_by_crew INTEGER DEFAULT 0)`);
   const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
@@ -340,7 +341,7 @@ module.exports = function mountSched(app, ctx) {
         const site = v.project_id ? J((db.prepare('SELECT site_info FROM projects WHERE id=?').get(v.project_id) || {}).site_info, {}) : {};
         // Access details only for crew on today's or tomorrow's jobs; never billing or pricing.
         const near = v.date <= addDays(today(), 1);
-        return { id: v.id, dispatched: !!v.dispatched_at, review_status: v.review_status || null, review_note: v.review_note || null, on_my_way_at: v.on_my_way_at || null, notes: db.prepare('SELECT id, body, created_at FROM visit_notes WHERE visit_id=? ORDER BY id DESC LIMIT 10').all(v.id).reverse(), title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', checklist: J(v.checklist, []),
+        return { id: v.id, dispatched: !!v.dispatched_at, review_status: v.review_status || null, review_note: v.review_note || null, on_my_way_at: v.on_my_way_at || null, ...siteTime(v, e.id), on_break: !!db.prepare('SELECT 1 FROM visit_breaks WHERE visit_id=? AND employee_id=? AND end_at IS NULL').get(v.id, e.id), notes: db.prepare('SELECT id, body, created_at FROM visit_notes WHERE visit_id=? ORDER BY id DESC LIMIT 10').all(v.id).reverse(), title: v.title, date: v.date, start_time: v.start_time, end_time: v.end_time, address: v.address, status: v.status, instructions: v.instructions || '', equipment: v.equipment || '', rooms: v.rooms || '', customer_requests: v.customer_requests || '', checklist: J(v.checklist, []),
           crew: crewOf(v.id).map(x => x.name), access: near ? (site.access || '') : 'Shown the day before the job.', site_contact: near ? (site.contact || '') : '', safety: site.safety || '', arrived_at: v.arrived_at, completed_at: v.completed_at };
       }) });
   };
@@ -442,6 +443,12 @@ module.exports = function mountSched(app, ctx) {
       return res.json({ ok: true });
     }
     if (a === 'notes') return noteAdd(req, res);
+    if (a === 'break') {
+      const open = db.prepare('SELECT * FROM visit_breaks WHERE visit_id=? AND employee_id=? AND end_at IS NULL').get(v.id, e.id);
+      if (open) db.prepare('UPDATE visit_breaks SET end_at=? WHERE id=?').run(t, open.id);
+      else db.prepare('INSERT INTO visit_breaks(visit_id,employee_id,start_at) VALUES(?,?,?)').run(v.id, e.id, t);
+      return res.json({ ok: true, on_break: !open });
+    }
     if (a === 'onmyway') {
       if (!v.on_my_way_at) {
         db.prepare('UPDATE visits SET on_my_way_at=?, updated_at=? WHERE id=?').run(t, t, v.id);
@@ -534,7 +541,7 @@ module.exports = function mountSched(app, ctx) {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
     let photos = []; try { photos = db.prepare("SELECT id, title, file_name, file_url, created_at, uploaded_by FROM documents WHERE visit_id=? AND kind='Photos' ORDER BY id").all(v.id); } catch { photos = []; }
     const notes = db.prepare('SELECT n.id, n.body, n.created_at, e.name AS by FROM visit_notes n JOIN employees e ON e.id=n.employee_id WHERE n.visit_id=? ORDER BY n.id').all(v.id);
-    res.json({ photos, notes, track_url: trackUrl(v), client_email: (clientOf(v) || {}).email || null });
+    res.json({ photos, notes, track_url: trackUrl(v), client_email: (clientOf(v) || {}).email || null, time: siteTime(v, null) });
   });
   // ---------- Client job tracking: every job has a private link the client can follow, no sign-up needed ----------
   const trackToken = v => {
@@ -586,6 +593,16 @@ module.exports = function mountSched(app, ctx) {
     const sent = await notify(c.email, `Track ${v.title} ${v.date}`, `Here is the progress page for ${v.title} on ${v.date}. It shows when the crew is on the way, when they arrive, and the photos when the job is done.\n\n${link}\n\nBright Clean`);
     res.json({ sent: !!sent, link });
   });
+  // Time on site: from arrival to finish (or now), minus the breaks taken. Breaks are per crew member.
+  const minutesBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000));
+  const breakMinutes = (vid, eid) => db.prepare('SELECT start_at, end_at FROM visit_breaks WHERE visit_id=? AND (? IS NULL OR employee_id=?)').all(vid, eid == null ? null : eid, eid == null ? null : eid)
+    .reduce((t, b) => t + minutesBetween(b.start_at, b.end_at || now()), 0);
+  const siteTime = (v, eid) => {
+    if (!v.arrived_at) return { on_site_minutes: 0, break_minutes: 0 };
+    const end = v.departed_at || v.completed_at || now();
+    const br = breakMinutes(v.id, eid);
+    return { on_site_minutes: Math.max(0, minutesBetween(v.arrived_at, end) - br), break_minutes: br };
+  };
   // Remove one photo from a job (office only). Only photos attached to that job can be removed.
   app.delete('/api/admin/visits/:id/photos/:photoId', auth, (req, res) => {
     if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can remove job photos.' });
