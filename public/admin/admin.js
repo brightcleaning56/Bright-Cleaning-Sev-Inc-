@@ -3045,9 +3045,17 @@
     if (!document.getElementById('dialPadBtn')) { const h = document.querySelector('#v-calls .pagehead'); if (h) { const btn = document.createElement('button'); btn.className = 'btn'; btn.id = 'dialPadBtn'; btn.type = 'button'; btn.textContent = '📞 Call a number'; btn.onclick = () => openDialPad(); const wrap = h.querySelector('.headact') || h; wrap.appendChild(btn); } }
     const r = await api('/api/admin/calls'); Object.assign(callState, r);
     try { callState.cc = await api('/api/admin/calls-center'); } catch { callState.cc = null; }
-    kpiTiles('#callsKpis', [{ label: "Today's calls", value: r.today.total }, { label: 'Answered', value: r.today.answered }, { label: 'Missed / voicemail', value: r.today.missed, alert: r.today.missed > 0 }, { label: 'Follow-ups due', value: r.follow_ups_due, alert: r.follow_ups_due > 0 }]);
+    const qc = (callState.cc && callState.cc.queue_counts) || {};
+    let cs = {}; try { cs = await api('/api/admin/communications-summary?days=1'); } catch { cs = {}; }
+    kpiTiles('#callsKpis', [{ label: 'Live queue', value: qc['Missed / callbacks'] || 0, alert: (qc['Missed / callbacks'] || 0) > 0 }, { label: "Today's calls", value: r.today.total }, { label: 'Customer calls', value: qc['Existing customer'] || 0 }, { label: 'Lead calls', value: (qc['New lead'] || 0) + (qc['Returning lead'] || 0) }, { label: 'New texts', value: cs.texts_in || 0 }, { label: 'Voicemails', value: cs.voicemails || 0, alert: (cs.voicemails || 0) > 0 }]);
     const callFilter = (follow, vm) => { $('#callFollow').checked = follow; $('#callVm').checked = vm; renderCalls(); };
-    wireTiles('#callsKpis', { "Today's calls": () => callFilter(false, false), 'Answered': () => callFilter(false, false), 'Missed / voicemail': () => callFilter(false, true), 'Follow-ups due': () => callFilter(true, false) });
+    wireTiles('#callsKpis', { 'Live queue': () => { callState.queue = 'Missed / callbacks'; renderCalls(); }, "Today's calls": () => { callState.queue = 'All'; renderCalls(); }, 'Customer calls': () => { callState.queue = 'Existing customer'; renderCalls(); }, 'Lead calls': () => { callState.queue = 'New lead'; renderCalls(); }, 'New texts': () => go('clientmsgs'), 'Voicemails': () => { callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = true; renderCalls(); } });
+    const setTab = id => ['ccTabQueue', 'ccTabAll', 'ccTabVm', 'ccTabHist'].forEach(k => { const b = $('#' + k); if (b) b.classList.toggle('on', k === id); });
+    $('#ccTabQueue').onclick = () => { setTab('ccTabQueue'); callState.queue = 'All'; $('#callFollow').checked = true; $('#callVm').checked = false; renderCalls(); };
+    $('#ccTabAll').onclick = () => { setTab('ccTabAll'); callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = false; renderCalls(); };
+    $('#ccTabSms').onclick = () => go('clientmsgs');
+    $('#ccTabVm').onclick = () => { setTab('ccTabVm'); callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = true; renderCalls(); };
+    $('#ccTabHist').onclick = () => { setTab('ccTabHist'); callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = false; renderCalls(); };
     $('#navCalls').hidden = !r.follow_ups_due; $('#navCalls').textContent = r.follow_ups_due;
     renderCalls();
     api('/api/admin/calls-intel').then(x => { const el = $('#callsIntel'); if (!el) return;
@@ -3072,11 +3080,15 @@
       && (!q || [c.contact_name, c.company, c.phone, c.summary, c.customer_company, c.match && c.match.name].join(' ').toLowerCase().includes(q))
       && (!due || (!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t))
       && (!vm || c.outcome === 'Voicemail'));
-    $('#callsRows').innerHTML = rows.length ? rows.map(c => '<tr class="click' + (callState.selId === c.id ? ' on' : '') + '" data-call="' + c.id + '"><td>' + esc(fmtWhen(c.created_at)) + '<small>' + esc(c.direction) + '</small></td>'
-      + '<td>' + callerLabel(c) + ' <span class="pill" style="font-size:11px">' + esc(c.queue) + '</span><small>' + esc(c.phone || '') + '</small></td>'
-      + '<td>' + outcomeBadge(c.outcome) + '</td><td>' + esc((c.summary || '').slice(0, 90)) + '</td>'
-      + '<td>' + (c.callback_open ? '<span class="badge amber">Callback due</span>' : c.follow_up_date ? esc(fmtDate(c.follow_up_date)) + (c.follow_up_done ? ' <small class="muted">done</small>' : '') : '—') + '</td></tr>').join('')
-      : '<tr><td class="emptyrow" colspan="5">No calls in this queue' + (q || due || vm ? ' match' : ' yet') + '.</td></tr>';
+    $('#callsRows').innerHTML = rows.length ? rows.map(c => '<tr class="click' + (callState.selId === c.id ? ' on' : '') + '" data-call="' + c.id + '">'
+      + '<td>' + esc(fmtWhen(c.created_at)) + '</td>'
+      + '<td>' + callerLabel(c) + '<small>' + esc(c.phone || '') + '</small></td>'
+      + '<td><span class="pill" style="font-size:11px">' + esc(c.queue) + '</span></td>'
+      + '<td>' + esc(c.direction || '') + '</td>'
+      + '<td>' + outcomeBadge(c.outcome) + (c.callback_open ? ' <span class="badge amber">Callback due</span>' : '') + '</td>'
+      + '<td>' + (c.recording_url ? '<span class="badge blue">Recording</span>' : '—') + '</td>'
+      + '<td>' + (c.follow_up_date ? esc(fmtDate(c.follow_up_date)) + (c.follow_up_done ? ' <small class="muted">done</small>' : '') : '—') + '</td></tr>').join('')
+      : '<tr><td class="emptyrow" colspan="7">No calls in this queue' + (q || due || vm ? ' match' : ' yet') + '.</td></tr>';
     $$('#callsRows [data-call]').forEach(r => r.onclick = () => { callState.selId = Number(r.dataset.call); renderCalls(); });
     $$('#callsRows [data-cc-lead]').forEach(b => b.onclick = () => openLead(Number(b.dataset.ccLead)));
     const picked = cc.calls.find(c => c.id === callState.selId);
@@ -3103,8 +3115,8 @@
       <div class="formsection">Quick actions</div>
       ${c.phone ? `<label for="ccSms">Text ${esc(c.phone)}</label><textarea id="ccSms" rows="2" placeholder="Short, clear message"></textarea><button type="button" class="btn small" id="ccSend" style="margin:6px 0">Send SMS</button>` : ''}
       <label for="ccNote">Add note</label><textarea id="ccNote" rows="2" placeholder="Internal note"></textarea><button type="button" class="btn small ghost" id="ccNoteSave" style="margin:6px 0">Save note</button>
-      <label for="ccTask">Callback task (due)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="date" id="ccTask" value="${esc(c.follow_up_date || tomorrow)}"><button type="button" class="btn small ghost" id="ccTaskSave">Save callback task</button></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${m ? '<button type="button" class="btn small ghost" id="ccEst">Build estimate</button>' : ''}<button type="button" class="btn small ghost" id="ccDetails">Full call details</button></div>`;
+      <label for="ccTask">Callback task (due)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="date" id="ccTask" value="${esc(c.follow_up_date || tomorrow)}"><button type="button" class="btn small ghost" id="ccTaskSave">Create task</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${m ? '<button type="button" class="btn small ghost" id="ccEst">New estimate</button>' : ''}<button type="button" class="btn small ghost" id="ccDetails">More</button></div>`;
     box.querySelectorAll('[data-open-lead]').forEach(b => b.onclick = () => openLead(Number(b.dataset.openLead)));
     $('#ccOutcome').onchange = async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { outcome: $('#ccOutcome').value } }); toast('Outcome saved'); await loadCalls(); } catch (err) { toast(err.message, true); } };
     if ($('#ccSend')) $('#ccSend').onclick = async () => {
