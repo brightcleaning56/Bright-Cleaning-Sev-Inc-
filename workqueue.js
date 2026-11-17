@@ -13,7 +13,7 @@
 // Dates use the business time zone (BUSINESS_TZ), via bizdate.js.
 const { today: bizToday, TZ } = require('./bizdate');
 
-const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent'];
+const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages'];
 const MISSED = ['Missed', 'Voicemail', 'No answer', 'No-answer'];
 const ISSUE_CLOSED = ['Resolved', 'Verified', 'Closed'];
 const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));
@@ -35,6 +35,15 @@ function dayBounds(d, tz = TZ) {
   const offset = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - probe.getTime();
   const start = Date.parse(d + 'T00:00:00Z') - offset;
   return [new Date(start).toISOString(), new Date(start + 86400000).toISOString()];
+}
+
+// A client conversation: needs a reply, waiting on the customer, follow-up date, or answered.
+function messageBucket(r, today) {
+  if (r.status === 'Closed') return 'closed';
+  if (r.needs_reply) return 'new';
+  if (r.status === 'Waiting on customer') return 'waiting';
+  if (r.follow_up_date) return r.follow_up_date < today ? 'overdue' : r.follow_up_date === today ? 'today' : 'scheduled';
+  return 'completed';
 }
 
 function emailBucket(row, state, today, now) {
@@ -144,6 +153,15 @@ module.exports = function (app, { db, auth, logAction, clean }) {
           due: r.due_date || null, bucket: taskBucket(r, t), priority: r.priority
         }));
     }
+    if (dept === 'messages') {
+      const inbox = require('./clientmsgs').inbox;
+      return inbox().map(r => ({
+        dept, id: r.key, title: r.company ? r.type + ' · ' + r.company : r.type, who: r.name, when: r.last_at,
+        assigned_to: r.owner || null, lead_id: r.key.startsWith('lead:') ? Number(r.key.slice(5)) : null,
+        customer_id: r.key.startsWith('cust:') ? Number(r.key.slice(5)) : null, due: r.follow_up_date || null,
+        bucket: messageBucket(r, t), note: (r.needs_reply ? 'Needs reply: ' : '') + (r.last_text || '')
+      }));
+    }
     throw new Error('unknown department');
   }
 
@@ -177,6 +195,39 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     }
     return out;
   }
+  // Today's schedule: visits on the day, and follow-ups due that day or earlier that are still open.
+  app.get('/api/admin/work-queue/schedule', auth, (req, res) => {
+    const day = validDate(req.query.date) ? String(req.query.date) : today();
+    const visits = db.prepare("SELECT id, title, type, date, start_time, end_time, address, customer_id, lead_id, assigned_to, status FROM visits WHERE date=? AND status NOT IN ('Cancelled') ORDER BY COALESCE(start_time,'99:99'), id").all(day);
+    const fuLeads = db.prepare("SELECT id, contact_name, company, follow_up_date, follow_up_note, assigned_to FROM leads WHERE follow_up_date IS NOT NULL AND follow_up_date<>'' AND follow_up_date<=? AND status NOT IN ('Won','Lost','Archived') ORDER BY follow_up_date, id LIMIT 200").all(day);
+    const fuCalls = db.prepare("SELECT id, contact_name, company, phone, follow_up_date, summary, assigned_to FROM calls WHERE follow_up_done=0 AND follow_up_date IS NOT NULL AND follow_up_date<>'' AND follow_up_date<=? ORDER BY follow_up_date, id LIMIT 200").all(day);
+    const fuTasks = db.prepare("SELECT id, title, type, due_date, assigned_to, customer_id FROM customer_issues WHERE due_date IS NOT NULL AND due_date<>'' AND due_date<=? AND status NOT IN ('Resolved','Verified','Closed') ORDER BY due_date, id LIMIT 200").all(day);
+    const follow_ups = [
+      ...fuLeads.map(l => ({ kind: 'lead', id: l.id, date: l.follow_up_date, who: l.company || l.contact_name || 'Lead #' + l.id, what: l.follow_up_note || 'Lead follow-up', owner: l.assigned_to || null, overdue: l.follow_up_date < day })),
+      ...fuCalls.map(c => ({ kind: 'callback', id: c.id, date: c.follow_up_date, who: c.company || c.contact_name || c.phone || 'Caller', what: 'Callback: ' + (c.summary || '').slice(0, 80), owner: c.assigned_to || null, overdue: c.follow_up_date < day })),
+      ...fuTasks.map(k => ({ kind: 'task', id: k.id, date: k.due_date, who: k.type, what: k.title, owner: k.assigned_to || null, overdue: k.due_date < day }))
+    ].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    res.json({ date: day, appointments: visits, follow_ups });
+  });
+
+  // Assistant: suggestions only. Each one is counted from the same rules as the lists and opens that list. Nothing is changed.
+  app.get('/api/admin/work-queue/assistant', auth, (req, res) => {
+    const c = {};
+    for (const d of ['messages', 'tasks', 'leads', 'calls']) { const list = items(d); c[d] = { list, count: (b) => list.filter(x => x.bucket === b).length }; }
+    const out = [];
+    const msgs = c.messages.count('new');
+    if (msgs) out.push({ text: 'Reply to ' + msgs + ' customer message' + (msgs === 1 ? '' : 's') + ' that ' + (msgs === 1 ? 'is' : 'are') + ' waiting for an answer.', count: msgs, dept: 'messages', bucket: 'new' });
+    const overdueTasks = c.tasks.count('overdue');
+    if (overdueTasks) out.push({ text: overdueTasks + ' task' + (overdueTasks === 1 ? ' is' : 's are') + ' overdue. Complete or reschedule them.', count: overdueTasks, dept: 'tasks', bucket: 'overdue' });
+    const untouched = c.leads.list.filter(x => x.needs_next_action || x.bucket === 'new').length;
+    if (untouched) out.push({ text: untouched + ' lead' + (untouched === 1 ? ' needs' : 's need') + ' a first contact or a next step.', count: untouched, dept: 'leads', bucket: 'new' });
+    const missed = c.calls.count('missed');
+    if (missed) out.push({ text: 'Call back ' + missed + ' missed call' + (missed === 1 ? '' : 's') + '.', count: missed, dept: 'calls', bucket: 'missed' });
+    const overdueLeads = c.leads.count('overdue');
+    if (overdueLeads) out.push({ text: overdueLeads + ' lead follow-up' + (overdueLeads === 1 ? ' is' : 's are') + ' overdue.', count: overdueLeads, dept: 'leads', bucket: 'overdue' });
+    res.json({ today: today(), suggestions: out, note: 'Suggestions only. Nothing is changed until a person acts on an item.' });
+  });
+
   app.get('/api/admin/work-queue/summary', auth, (req, res) => res.json({ today: today(), timezone: TZ, counts: summary() }));
 
   // ---- Actions (each one is audited) ----

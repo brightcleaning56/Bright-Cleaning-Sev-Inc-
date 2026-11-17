@@ -1183,6 +1183,19 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(hook.status === 403, 'an unsigned text should be refused, got ' + hook.status);
     return 'inbox loads with 9 boxes; note saved to the lead history; a lead with no messages is not a conversation (404); unknown number refused (400); unsigned text refused (403)';
   });
+  await check("Today's Work", 'Client messages are a department; the schedule and the assistant load; suggestions are counted, not acted on', async () => {
+    const dept = await req('GET', '/api/admin/work-queue?dept=messages&bucket=all', { token: T });
+    assert(dept.status === 200 && Array.isArray(dept.data.items), 'messages department should load: ' + dept.status);
+    const sum = await req('GET', '/api/admin/work-queue/summary', { token: T });
+    assert(sum.status === 200 && sum.data.counts && sum.data.counts.messages, 'summary should include messages');
+    const day = await req('GET', '/api/admin/work-queue/schedule', { token: T });
+    assert(day.status === 200 && Array.isArray(day.data.appointments) && Array.isArray(day.data.follow_ups), 'schedule should load: ' + day.status);
+    const bad = await req('GET', '/api/admin/work-queue/schedule?date=not-a-date', { token: T });
+    assert(bad.status === 200 && bad.data.date === day.data.date, 'a bad date should fall back to today');
+    const help = await req('GET', '/api/admin/work-queue/assistant', { token: T });
+    assert(help.status === 200 && Array.isArray(help.data.suggestions) && /Suggestions only/.test(help.data.note), 'assistant should load with its note');
+    return 'messages department, summary, schedule and assistant load; suggestions only';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

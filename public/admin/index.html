@@ -589,6 +589,8 @@
       <div class="pagehead"><div><h1>Today’s work</h1><p>What needs attention now. Future items wait in Scheduled, handled items move to Completed, and nothing is deleted.</p><p class="muted" id="wqDate"></p></div>
         <div class="headact"><button class="btn ghost" id="wqCloseoutBtn" type="button">End-of-day report</button></div></div>
       <div class="kpis small" id="wqKpis"></div>
+      <div class="wqcards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:8px 0"><div class="card" id="wqAssist" aria-label="AI work assistant"></div><div class="card" id="wqSchedule" aria-label="Today’s schedule"></div></div>
+      <div class="segtabs" role="group" aria-label="Whose work" style="margin:6px 0"><button type="button" id="wqScopeMine">My work</button><button type="button" id="wqScopeAll" class="on">All work</button></div>
       <div class="wqtabs" id="wqDepts" role="tablist" aria-label="Department"></div>
       <div class="wqchips" id="wqBuckets" aria-label="View"></div>
       <div class="toolbar"><input type="search" id="wqSearch" placeholder="Search name, company or subject" aria-label="Search today’s work"><select id="wqPriority" aria-label="Priority" hidden><option value="">Any priority</option><option value="Urgent">Urgent</option><option value="High">High</option><option value="Normal">Normal</option><option value="Low">Low</option></select><select id="wqOwnerFilter" aria-label="Owner"><option value="">Everyone</option><option value="unassigned">Unassigned</option></select><span class="muted" id="wqCount"></span></div>

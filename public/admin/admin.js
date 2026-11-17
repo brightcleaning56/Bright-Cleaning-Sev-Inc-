@@ -3503,7 +3503,7 @@
 
   // ---------- Email Center ----------
   // ---------- Today's work: one daily queue across emails, calls, leads and tasks ----------
-  const WQ_DEPTS = [['emails', 'Emails'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks']];
+  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks']];
   const WQ_BUCKETS = {
     emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
     sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
@@ -3573,6 +3573,30 @@
     $('#wqCount').textContent = `${shown.length} item${shown.length === 1 ? '' : 's'}${j.items.length === 500 ? ' (first 500 shown)' : ''}`;
   }
 
+  // Today's Work: the assistant (suggestions only), the day's schedule, and My work / All work.
+  function setWqScope(mine) {
+    wq.owner = mine ? ((state.me && state.me.email) || '') : '';
+    const sel = $('#wqOwnerFilter'); if (sel) sel.value = wq.owner;
+    $('#wqScopeMine').classList.toggle('on', !!mine); $('#wqScopeAll').classList.toggle('on', !mine);
+    wqRender().catch(err => toast(err.message, true));
+  }
+  async function loadWqAssist() {
+    const box = $('#wqAssist'); if (!box) return;
+    let r; try { r = await api('/api/admin/work-queue/assistant'); } catch (err) { box.innerHTML = '<p class="muted">The assistant could not load: ' + esc(err.message) + '</p>'; return; }
+    box.innerHTML = '<h3 class="secth" style="margin-top:0">AI work assistant</h3>'
+      + (r.suggestions.length ? '<ul class="plain">' + r.suggestions.map((s, i) => '<li style="margin:6px 0">' + esc(s.text) + ' <button type="button" class="btn small ghost" data-wq-go="' + i + '">Open</button></li>').join('') + '</ul>' : '<p class="muted">Nothing needs attention right now.</p>')
+      + '<p class="muted" style="margin:6px 0 0;font-size:12px">' + esc(r.note) + '</p>';
+    box.querySelectorAll('[data-wq-go]').forEach(b => b.onclick = () => { const s = r.suggestions[Number(b.dataset.wqGo)]; wq.dept = s.dept; wq.bucket = s.bucket; wqRender().catch(err => toast(err.message, true)); });
+  }
+  async function loadWqSchedule() {
+    const box = $('#wqSchedule'); if (!box) return;
+    let r; try { r = await api('/api/admin/work-queue/schedule'); } catch (err) { box.innerHTML = '<p class="muted">The schedule could not load: ' + esc(err.message) + '</p>'; return; }
+    box.innerHTML = '<h3 class="secth" style="margin-top:0">Today’s schedule · ' + esc(fmtDate(r.date)) + '</h3>'
+      + (r.appointments.length ? '<ul class="plain">' + r.appointments.map(v => '<li style="margin:4px 0"><b>' + esc(v.start_time || 'Any time') + '</b> ' + esc(v.title) + ' <small class="muted">' + esc(v.type) + (v.address ? ' · ' + esc(v.address) : '') + ' · ' + esc(v.status) + '</small></li>').join('') + '</ul>' : '<p class="muted">No appointments today.</p>')
+      + '<h4 style="margin:10px 0 4px">Follow-ups due</h4>'
+      + (r.follow_ups.length ? '<ul class="plain">' + r.follow_ups.map(f => '<li style="margin:4px 0">' + (f.overdue ? '<span class="badge red">Overdue</span> ' : '') + esc(fmtDate(f.date)) + ' · ' + esc(f.who) + ' <small class="muted">' + esc(f.what) + '</small></li>').join('') + '</ul>' : '<p class="muted">No follow-ups due.</p>');
+  }
+
   async function loadWorkQueue() {
     await wqLoadUsers();
     const s = await api('/api/admin/work-queue/summary');
@@ -3581,6 +3605,9 @@
     const nav = $('#navToday'); if (nav) { nav.hidden = !dueNow; nav.textContent = String(dueNow); }
     $('#wqDate').textContent = `Business day ${s.today} · ${s.timezone}`;
     wqKpis(s.counts);
+    $('#wqScopeMine').onclick = () => setWqScope(true);
+    $('#wqScopeAll').onclick = () => setWqScope(false);
+    loadWqAssist(); loadWqSchedule();
     await wqRender();
   }
 

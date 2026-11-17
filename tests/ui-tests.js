@@ -618,6 +618,17 @@ async function check(area, name, fn) {
     assert(opened, 'a conversation should open with a reply box and the assistant');
     return boxes + ' inbox boxes; ' + (first ? 'a conversation opens with reply box and assistant' : 'no conversations yet: empty state shown');
   });
+  await check("Today's Work UI", 'Client messages tab, assistant and schedule cards, and My work / All work switch are present and work', async () => {
+    await nav('workqueue'); await sleep(900);
+    const tabs = [...d.querySelectorAll('#wqDepts button')].map(b => b.textContent.trim());
+    assert(tabs.some(t => /Client messages/.test(t)), 'Client messages tab missing: ' + tabs.join(','));
+    assert(!!d.querySelector('#wqAssist') && !!d.querySelector('#wqSchedule'), 'assistant or schedule card missing');
+    d.querySelector('#wqScopeMine').click(); await sleep(500);
+    const mine = d.querySelector('#wqScopeMine').classList.contains('on') && !d.querySelector('#wqScopeAll').classList.contains('on');
+    d.querySelector('#wqScopeAll').click(); await sleep(400);
+    assert(mine && d.querySelector('#wqScopeAll').classList.contains('on'), 'My work / All work switch did not switch');
+    return 'Client messages tab present; assistant and schedule cards shown; My work / All work switches';
+  });
   await check('Contracts UI', 'Contract list: search narrows the cards, sort by value puts the highest first, Export CSV builds the filtered list', async () => {
     await api('POST', '/api/admin/contracts', { company: 'SortLo Co', customer_name: 'Lo Sort', title: 'Sort low', value: 111, status: 'Draft' }, T);
     await api('POST', '/api/admin/contracts', { company: 'SortHi Co', customer_name: 'Hi Sort', title: 'Sort high', value: 999999, status: 'Draft' }, T);
