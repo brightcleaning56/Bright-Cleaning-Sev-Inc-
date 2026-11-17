@@ -337,14 +337,14 @@ async function check(area, name, fn) {
     const mods = txt('#ccMods'); const h1 = txt('#v-overview h1');
     const cc = await api('GET', '/api/admin/command-center?days=30', null, T);
     const leadTile = txt('#ccKpis .kpi:first-child b');
-    assert(h1 === 'Command Center' && tiles === 5 && stages === 4 && qa === 13 && portals.length === 5 && /Call Center/.test(mods) && /Setup needed/.test(mods) && leadTile === String(cc.kpis.new_leads.value) && txt('#nav [data-view="overview"]') === 'Command Center', `${h1} ${tiles} ${stages} ${qa} ${mods}`);
+    assert(h1 === 'Command Center' && tiles === 6 && stages === 4 && qa === 9 && portals.length === 5 && /Call Center/.test(mods) && /Setup needed/.test(mods) && leadTile === String(cc.kpis.new_leads.value) && txt('#nav [data-view="overview"]') === 'Command Center', `${h1} ${tiles} ${stages} ${qa} ${mods}`);
     return `tiles ${tiles}, stages ${stages}, quick actions ${qa}, portals ${portals.length}; new-leads tile ${leadTile} = API`;
   });
   await check('Command Center UI', 'Period selector reloads figures; quick action opens the estimator; tile opens its section', async () => {
     $('#ccDays').value = '7'; $('#ccDays').dispatchEvent(new w.Event('change')); await sleep(600);
     const cc7 = await api('GET', '/api/admin/command-center?days=7', null, T);
     const ok7 = txt('#ccKpis .kpi:first-child b') === String(cc7.kpis.new_leads.value) && /last 7 days/.test(txt('#ccPipe') + txt('#ccKpis'));
-    [...d.querySelectorAll('#ccQuick button')].find(b => /New estimate/.test(b.textContent)).click(); await sleep(500);
+    [...d.querySelectorAll('#ccQuick button')].find(b => /Create Estimate/i.test(b.textContent)).click(); await sleep(500);
     const est = $('#v-estimator').classList.contains('active');
     await nav('overview'); await sleep(400);
     d.querySelectorAll('#ccKpis .kpi')[4].click(); await sleep(500);
@@ -476,7 +476,7 @@ async function check(area, name, fn) {
   });
   await check('Suite UI', 'Quick action Log call creates a call and a lead; Command Center Calls panel shows it', async () => {
     await nav('overview'); await sleep(500);
-    [...d.querySelectorAll('#ccQuick button')].find(b => /Log call/.test(b.textContent)).click(); await sleep(700);
+    [...d.querySelectorAll('#ccQuick button')].find(b => /Log call/i.test(b.textContent)).click(); await sleep(700);
     const f = $('#genForm'); f.elements.contact_name.value = 'UI Caller'; f.elements.company.value = 'UI Towers'; f.elements.purpose.value = 'Bid request'; f.elements.summary.value = '80,000 SF final clean'; f.elements.create_lead.checked = true;
     $('#genSave').click(); await sleep(1200);
     const calls = (await api('GET', '/api/admin/calls', null, T)).calls; const c = calls.find(x => x.company === 'UI Towers');

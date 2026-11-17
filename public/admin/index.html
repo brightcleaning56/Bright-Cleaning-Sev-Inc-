@@ -563,16 +563,14 @@
     <section class="view" id="v-overview">
       <div class="pagehead"><div><h1>Command Center</h1><p id="todayLine"></p></div>
         <div class="headact"><select id="ccDays" aria-label="Period"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select>
-        <button class="btn" data-action="new-estimate">New estimate</button></div></div>
+        <button class="btn" id="ccNewBtn" type="button">+ New</button></div></div>
       <div class="kpis" id="ccKpis"></div>
       <div class="card" style="margin:12px 0"><p><button class="btn ghost" type="button" data-view-link="workqueue">Open Today’s work</button></p></div>
       <div id="ccLive" class="cclive" aria-live="polite"></div>
-      <div class="cc3" style="margin-top:12px"><div class="card" id="ccAlerts" aria-label="Needs attention"></div><div class="card" id="ccComms" aria-label="Communications"></div><div class="card" id="ccSched" aria-label="Today’s schedule"></div></div>
-      <div class="cc3">
-        <div class="card"><h2>Pipeline</h2><div id="ccPipe" class="funnel"></div></div>
-        <div class="card"><div class="cardhead"><h2>Recent activity</h2><button class="linklike" data-view-link="activity">View all</button></div><div class="activity" id="ccAct"></div></div>
-        <div class="card"><h2>Quick actions</h2><div class="qa" id="ccQuick"></div></div>
-      </div>
+      <div class="ccrow2" style="display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:14px;margin-top:14px"><div class="card" id="ccTrend" aria-label="Revenue and activity trend"></div><div class="card"><h2>Sales pipeline</h2><div id="ccPipe" class="funnel"></div></div></div>
+      <div class="ccrow3" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px"><div class="card" id="ccAlerts" aria-label="Alerts and attention"></div><div class="card" id="ccSched" aria-label="Today’s schedule"></div><div class="card"><h2>Quick actions</h2><div class="qa" id="ccQuick" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px"></div></div></div>
+      <div class="card" id="ccComms" aria-label="Communications" style="margin-top:14px"></div>
+      <div class="cc3" style="margin-top:14px"><div class="card"><div class="cardhead"><h2>Recent activity</h2><button class="linklike" data-view-link="activity">View all</button></div><div class="activity" id="ccAct"></div></div></div>
       <div class="card"><div class="cardhead"><h2>Request a quote — service forms</h2><small class="muted">Opens the guided quote form on your public website, set to that service.</small></div><div class="portals" id="ccPortals"></div></div>
       <div class="mods" id="ccMods"></div>
       <div class="two"><div class="card"><div class="cardhead"><h2>Calls</h2><button class="linklike" data-view-link="calls">Call log</button></div><div id="ccCalls"></div></div>

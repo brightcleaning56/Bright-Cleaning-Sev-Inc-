@@ -597,10 +597,30 @@
       footer: '<button class="btn ghost" data-close>Close</button>' });
     $$('#drawerRoot [data-drill]').forEach(b => b.onclick = () => openDrill(b.dataset.drill));
   }
+  // Revenue & activity trend: collected money and proposal value by month, with win rate.
+  function renderCcTrend(t) {
+    const box = $('#ccTrend'); if (!box || !t || !t.months) return;
+    const W = 640, H = 220, P = 34, n = t.months.length, bw = (W - 2 * P) / n;
+    const max = Math.max(1, ...t.months.map(m => Math.max(m.revenue, m.estimates)));
+    const y = v => H - P - (v / max) * (H - 2 * P);
+    let bars = '', labels = '', pts = [];
+    t.months.forEach((m, i) => {
+      const x = P + i * bw;
+      bars += '<rect x="' + (x + bw * 0.12).toFixed(1) + '" y="' + y(m.revenue).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + (H - P - y(m.revenue)).toFixed(1) + '" fill="#1f6fd1" rx="3"><title>Collected ' + money(m.revenue) + '</title></rect>';
+      bars += '<rect x="' + (x + bw * 0.5).toFixed(1) + '" y="' + y(m.estimates).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + (H - P - y(m.estimates)).toFixed(1) + '" fill="#9cc4f2" rx="3"><title>Proposals sent ' + money(m.estimates) + '</title></rect>';
+      labels += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="12" fill="#6b7a8c">' + esc(m.label) + '</text>';
+      if (m.win_rate != null) pts.push((x + bw / 2).toFixed(1) + ',' + (H - P - (m.win_rate / 100) * (H - 2 * P)).toFixed(1));
+    });
+    const line = pts.length ? '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#1f9d55" stroke-width="2.5"/>' + pts.map(p => '<circle cx="' + p.split(',')[0] + '" cy="' + p.split(',')[1] + '" r="3.5" fill="#1f9d55"/>').join('') : '';
+    box.innerHTML = '<div class="cardhead"><h2>Revenue &amp; activity trend</h2><small class="muted">Last ' + n + ' months</small></div>'
+      + '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto" role="img" aria-label="Collected, proposals sent and win rate by month">' + bars + line + labels + '</svg>'
+      + '<p class="muted" style="margin:4px 0 0;font-size:12px"><span style="color:#1f6fd1">■</span> Collected &nbsp; <span style="color:#9cc4f2">■</span> Proposals sent &nbsp; <span style="color:#1f9d55">●</span> Win rate</p>';
+  }
+
   // Command Center cards: what needs attention (opens Today's Work), communications (opens each center), and today's schedule.
   async function loadCcExtras() {
     const days = $('#ccDays') ? $('#ccDays').value : 30;
-    const alerts = $('#ccAlerts');
+    const alerts = null; // the attention list is built from the records in loadOverview
     if (alerts) {
       try {
         const a = await api('/api/admin/work-queue/assistant');
@@ -643,12 +663,21 @@
     $('#todayLine').innerHTML = esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })) + ` · <span class="live">Live</span> <small class="muted">updated ${esc(new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</small>`;
     const k = cc.kpis, per = `last ${cc.days} days`;
     const att = k.attention.parts;
+    const ALERTS = [['Proposals awaiting approval', att.awaiting_approval, 'proposals'], ['Open complaints', att.open_complaints, 'issues'], ['Overdue tasks', att.overdue_tasks, 'workqueue'], ['Overdue invoices', att.overdue_invoices, 'invoices'], ['Late projects', att.late_projects, 'projects'], ['Leads waiting 2+ days', att.leads_waiting_2_days, 'leads'], ['Failed emails (7 days)', att.failed_emails_7_days, 'emails']];
+    if ($('#ccAlerts')) {
+      $('#ccAlerts').innerHTML = '<div class="cardhead"><h2>Alerts &amp; attention</h2><small class="muted">' + k.attention.value + ' total</small></div>' + ALERTS.map(([l, n, v]) => '<button type="button" class="ccq" data-ccal="' + v + '" style="display:flex;justify-content:space-between;width:100%"><span>' + esc(l) + '</span><b' + (n ? ' style="color:#b42318"' : '') + '>' + n + '</b></button>').join('');
+      $$('#ccAlerts [data-ccal]').forEach(b => b.onclick = () => go(b.dataset.ccal));
+    }
+    api('/api/admin/command-center/trend?months=6').then(renderCcTrend).catch(() => { /* chart is optional */ });
+    if ($('#ccNewBtn')) $('#ccNewBtn').onclick = () => openDrawer({ title: 'New', sub: 'Start something new', body: '<div class="qa" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">' + [['New lead', 'newLead'], ['Log call', 'logCall'], ['New estimate', 'openEstimator'], ['Add customer', 'addCustomer'], ['Create task', 'createTask'], ['Upload drawings', 'uploadDocs']].map(([l, k2]) => '<button type="button" class="btn ghost" data-newk="' + k2 + '">' + esc(l) + '</button>').join('') + '</div>', footer: '<button class="btn ghost" data-close>Close</button>' });
+    $$('[data-newk]').forEach(b => b.onclick = () => { closeDrawer(); ({ newLead: () => newLead(), logCall: () => logCall(), openEstimator: () => openEstimator(), addCustomer: () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }, createTask: () => { wq.dept = 'tasks'; go('workqueue'); }, uploadDocs: () => uploadDocs() })[b.dataset.newk](); });
     const tiles = [
       { label: 'New leads', sub: per, value: k.new_leads.value, change: k.new_leads.change, icon: 'leads', c: '#1f6fd1', to: 'leads', drill: 'new_leads' },
       { label: 'Proposals sent', sub: per, value: k.proposals_sent.value, change: k.proposals_sent.change, icon: 'doc', c: '#2f80ed', to: 'proposals' },
       { label: 'Won', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
       { label: 'Collected this month', value: money(k.collected_month.value), icon: 'dollar', c: '#178a4c', to: 'invoices' },
       { label: 'Active projects', value: k.active_projects.value, icon: 'cal', c: '#2563eb', to: 'projects' },
+      { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: 'workqueue', alert: k.attention.value > 0 },
     ];
     $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
     $$('#ccKpis .kpi').forEach(b => b.onclick = () => { const t = tiles[b.dataset.i]; if (t.label === 'Needs attention') return openAttention(); if (t.drill === 'new_leads') return openLeadList('all', ''); if (t.drill) return openDrill(t.drill); go(t.to); });
@@ -665,10 +694,10 @@
       + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
     $('#ccAct').innerHTML = renderActivity(cc.activity) || '<p class="empty">No activity yet.</p>';
     const QA = [
-      ['New lead', 'user', () => newLead()], ['Log call', 'inbox', () => logCall()], ['Send SMS', 'inbox', () => go('clientmsgs')], ['Send email', 'inbox', () => go('emails')], ['Create task', 'cal', () => { wq.dept = 'tasks'; go('workqueue'); }], ['Schedule visit', 'cal', () => scheduleVisit()], ['Upload drawings', 'layers', () => uploadDocs()],
-      ['New estimate', 'plus', () => openEstimator()], ['Add customer', 'user', () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }],
-      ['Create invoice', 'inv', () => openRecord('invoices', null)], ['Add scope item', 'layers', () => { go('scopes'); setTimeout(() => $('#scopeAdd').click(), 400); }],
-      ['Review leads', 'inbox', () => go('leads')], ['Back up now', 'save', async () => { try { const r = await api('/api/admin/backups', { method: 'POST' }); toast('Backup created: ' + r.name); } catch (e) { toast(e.message, true); } }]
+      ['New Lead', 'user', () => newLead()], ['Log Call', 'calls', () => logCall()], ['Send Email', 'emails', () => go('emails')],
+      ['Send SMS', 'calls', () => go('clientmsgs')], ['Create Estimate', 'proposals', () => openEstimator()], ['New Proposal', 'proposals', () => openEstimator()],
+      ['Create Task', 'issues', () => { wq.dept = 'tasks'; go('workqueue'); }], ['Add Customer', 'customers', () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }],
+      ['Upload Drawings', 'layers', () => uploadDocs()]
     ];
     $('#ccQuick').innerHTML = QA.map(([l, ic], i) => `<button type="button" data-qa="${i}">${svg(ic)}${esc(l)}</button>`).join('');
     $$('#ccQuick [data-qa]').forEach(b => b.onclick = QA[b.dataset.qa][2]);

@@ -127,6 +127,21 @@ module.exports = function mountCommand(app, ctx) {
     if (!list) { const r = db.prepare(`SELECT COUNT(*) n${m.amount ? `, COALESCE(SUM(${m.amount}),0) v` : ''} ${base}`).get(...p); return { n: r.n, v: m.amount ? Math.round(r.v * 100) / 100 : null }; }
     return db.prepare(`SELECT ${m.id || idc} id, ${m.title} title, ${m.sub} sub${m.amount ? `, ${m.amount} amount` : ''}, ${m.date} date ${base} ORDER BY ${m.date} DESC LIMIT 200`).all(...p);
   };
+  // Monthly trend: collected money, proposal value sent and win rate, for the Command Center chart.
+  app.get('/api/admin/command-center/trend', auth, (req, res) => {
+    const months = Math.min(12, Math.max(3, Number(req.query.months) || 6));
+    const now = new Date(), out = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1), end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const a = iso(start), b = iso(end);
+      const revenue = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=? AND received_at<?`, a, b).v;
+      const estimates = one(`SELECT COALESCE(SUM(proposal_total),0) v FROM estimates WHERE sent_at>=? AND sent_at<?`, a, b).v;
+      const sent = one(`SELECT COUNT(*) n FROM estimates WHERE sent_at>=? AND sent_at<?`, a, b).n;
+      const won = one(`SELECT COUNT(*) n FROM estimates WHERE sent_at>=? AND sent_at<? AND status='Approved'`, a, b).n;
+      out.push({ label: start.toLocaleString('en-US', { month: 'short' }), revenue, estimates, win_rate: sent ? Math.round(won / sent * 100) : null });
+    }
+    res.json({ months: out });
+  });
   app.get('/api/admin/command-center/metrics', auth, (req, res) => {
     const _rl = roleOfReq(req), _x = (() => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; return ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e) || {}).role) || 'staff'; })(), _money = require('./roles').seesMoney(_rl);
     const d = daysOf(req.query), out = [];
