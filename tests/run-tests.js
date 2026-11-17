@@ -1009,8 +1009,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const list = (await req('GET', '/api/admin/issues?customer_id=' + cust0.id, { token: T })).data;
     const after = (await req('GET', '/api/admin/command-center', { token: T })).data.kpis.attention;
     const log = (await req('GET', '/api/admin/audit-log', { token: T })).data.events.find(e => e.entity === 'complaint' && e.entity_id === complaintId);
-    assert(r.status === 201 && r.data.issue.overdue && list.issues.some(i => i.id === complaintId) && list.counts.open_complaints >= 1 && after.value === before.value + 2 && after.parts.open_complaints >= 1 && log, JSON.stringify({ before, after }));
-    return `#${complaintId} created, overdue flag on; listed on the customer; attention ${before.value} -> ${after.value} (complaint + overdue); logged`;
+    assert(r.status === 201 && r.data.issue.overdue && list.issues.some(i => i.id === complaintId) && list.counts.open_complaints >= 1 && after.value === before.value + 1 && after.parts.open_complaints >= 1 && log, JSON.stringify({ before, after }));
+    return `#${complaintId} created, overdue flag on; listed on the customer; attention ${before.value} -> ${after.value} (the complaint counted once); logged`;
   });
   await check('Issues', 'Validation: title, type, real assignee, real customer, valid date', async () => {
     const bad = async j => (await req('POST', '/api/admin/issues', { token: T, json: j })).data.error;
@@ -1241,6 +1241,17 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const hook = await req('POST', '/api/webhooks/postmark?token=anything', { json: { RecordType: 'Delivery', MessageID: 'x' } });
     assert(hook.status === 503 || hook.status === 403, 'postmark events should be refused until configured, got ' + hook.status);
     return 'empty draft refused; draft saved, edited, listed and discarded; archive keeps the email; assist refuses unknown items; delivery events refused until configured';
+  });
+  await check('Command Center figures', 'The attention total equals the sum of its parts (a complaint is counted once); the attention wording matches the records', async () => {
+    const cc = await req('GET', '/api/admin/command-center?days=30', { token: T });
+    assert(cc.status === 200, 'command center should load: ' + cc.status);
+    const a = cc.data.kpis.attention;
+    const sum = Object.values(a.parts).reduce((x, y) => x + Number(y || 0), 0);
+    assert(a.value === sum, 'attention ' + a.value + ' should equal the parts ' + sum + ': ' + JSON.stringify(a.parts));
+    const work = await req('GET', '/api/admin/work-queue/assistant', { token: T });
+    const leadLine = (work.data.suggestions || []).find(x => x.dept === 'leads' && x.bucket === 'overdue');
+    assert(!leadLine || !/follow-up/.test(leadLine.text), 'untouched leads must not be called follow-ups: ' + (leadLine && leadLine.text));
+    return 'attention total = sum of 7 parts; untouched leads described as not contacted, not as follow-ups';
   });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});

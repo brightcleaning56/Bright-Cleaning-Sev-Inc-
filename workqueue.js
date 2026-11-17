@@ -224,7 +224,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const missed = c.calls.count('missed');
     if (missed) out.push({ text: 'Call back ' + missed + ' missed call' + (missed === 1 ? '' : 's') + '.', count: missed, dept: 'calls', bucket: 'missed' });
     const overdueLeads = c.leads.count('overdue');
-    if (overdueLeads) out.push({ text: overdueLeads + ' lead follow-up' + (overdueLeads === 1 ? ' is' : 's are') + ' overdue.', count: overdueLeads, dept: 'leads', bucket: 'overdue' });
+    if (overdueLeads) out.push({ text: overdueLeads + ' new lead' + (overdueLeads === 1 ? ' has' : 's have') + ' not been contacted since an earlier day.', count: overdueLeads, dept: 'leads', bucket: 'overdue' });
     res.json({ today: today(), suggestions: out, note: 'Suggestions only. Nothing is changed until a person acts on an item.' });
   });
 
