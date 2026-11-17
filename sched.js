@@ -517,6 +517,12 @@ module.exports = function mountSched(app, ctx) {
     for (const c of crewOf(v.id)) await reachCrew(getEmp(c.id), `Job ${decision === 'approve' ? 'approved' : 'returned'}: ${v.title} ${v.date}`, `${text}\nOpen your job: ${SIGNIN_URL}`, text.slice(0, 300));
     res.json({ ok: true, review_status: status });
   });
+  // Photos taken on a job (Before / After / Issue), so the office can check them before approving
+  app.get('/api/admin/visits/:id/photos', auth, (req, res) => {
+    const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
+    let photos = []; try { photos = db.prepare("SELECT id, title, file_name, file_url, created_at, uploaded_by FROM documents WHERE visit_id=? AND kind='Photos' ORDER BY id").all(v.id); } catch { photos = []; }
+    res.json({ photos });
+  });
   // Crew photo upload (before/after): stored as project/visit documents.
   try {
     const multer = require('multer'), path = require('path'), fs = require('fs');

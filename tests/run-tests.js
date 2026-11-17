@@ -1386,6 +1386,10 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(sub.status === 200 && sub.data.review_status === 'Submitted', 'submit should work: ' + sub.status);
     const early2 = await req('POST', `/api/crew/${tk}/jobs/${vid}/complete`, { json: {} });
     assert(early2.status === 409, 'complete must wait for approval, got ' + early2.status);
+    const shown = await req('GET', `/api/admin/visits/${vid}/photos`, { token: T });
+    assert(shown.status === 200 && (shown.data.photos || []).length === 2, 'office should see both photos on the job, got ' + shown.status + ' ' + JSON.stringify(shown.data).slice(0, 200));
+    const noVis = await req('GET', '/api/admin/visits/999999/photos', { token: T });
+    assert(noVis.status === 404, 'unknown job photos should be 404, got ' + noVis.status);
     const ret = await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'return' } });
     assert(ret.status === 400, 'returning needs a note, got ' + ret.status);
     const back = await req('POST', `/api/admin/visits/${vid}/review`, { token: T, json: { decision: 'return', note: 'Redo the entrance mat' } });
