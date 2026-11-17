@@ -108,6 +108,12 @@
   }
 
   // What the phone should show for one job: finished, in progress, or waiting to send.
+  function currentSpot() {
+    return new Promise(res => {
+      if (!navigator.geolocation) return res({});
+      navigator.geolocation.getCurrentPosition(p => res({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }), () => res({}), { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 });
+    });
+  }
   function fmtMins(m) { m = Math.max(0, Math.round(m || 0)); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; }
   function jobState(j, ov, q) {
     const o = ov[j.id] || {};
@@ -261,7 +267,9 @@
           catch (e) { say(isOffline(e) ? 'Breaks need signal. Try again when you are connected.' : e.message); b.disabled = false; }
           return;
         }
-        queueChange(id, a, {});
+        // Check-in records where the phone was, if the crew allows location. Without it, check-in still works.
+        const geo = a === 'checkin' ? await currentSpot() : {};
+        queueChange(id, a, geo);
         const refusal = await flush();
         const done = { checkin: 'Checked in.', checkout: 'Checked out.', complete: 'Job marked complete. Thank you!', onmyway: 'On my way. The client has been told.' }[a];
         const saved = { checkin: 'Check-in', checkout: 'Check-out', complete: 'Job completion', onmyway: 'On my way' }[a];

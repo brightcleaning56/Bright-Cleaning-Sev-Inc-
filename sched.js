@@ -400,6 +400,8 @@ module.exports = function mountSched(app, ctx) {
       db.prepare("UPDATE visits SET arrived_at=COALESCE(arrived_at,?), status=CASE WHEN status IN ('Scheduled','Tentative') THEN 'In progress' ELSE status END, updated_at=? WHERE id=?").run(t, t, v.id);
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'checked in', 'visit', v.id, v.title, t);
       if (!v.arrived_at) await clientNote(v, `${v.title}: crew arrived`, 'The crew has arrived and started the job.');
+      // Where the phone was at check-in (only if the crew allowed location). Recorded, not checked against the address.
+      if (!v.arrived_at && Number.isFinite(Number(req.body.lat)) && Number.isFinite(Number(req.body.lng))) db.prepare('UPDATE visits SET arrived_lat=?, arrived_lng=?, arrived_accuracy=? WHERE id=?').run(Number(req.body.lat), Number(req.body.lng), Number(req.body.accuracy) || null, v.id);
       return res.json({ ok: true });
     }
     if (a === 'checkout') {
@@ -541,7 +543,8 @@ module.exports = function mountSched(app, ctx) {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
     let photos = []; try { photos = db.prepare("SELECT id, title, file_name, file_url, created_at, uploaded_by FROM documents WHERE visit_id=? AND kind='Photos' ORDER BY id").all(v.id); } catch { photos = []; }
     const notes = db.prepare('SELECT n.id, n.body, n.created_at, e.name AS by FROM visit_notes n JOIN employees e ON e.id=n.employee_id WHERE n.visit_id=? ORDER BY n.id').all(v.id);
-    res.json({ photos, notes, track_url: trackUrl(v), client_email: (clientOf(v) || {}).email || null, time: siteTime(v, null), money: jobMoney(v) });
+    const arrival = v.arrived_lat != null ? { lat: v.arrived_lat, lng: v.arrived_lng, accuracy: v.arrived_accuracy, map: `https://www.google.com/maps?q=${v.arrived_lat},${v.arrived_lng}` } : null;
+    res.json({ photos, notes, track_url: trackUrl(v), client_email: (clientOf(v) || {}).email || null, time: siteTime(v, null), money: jobMoney(v), arrival });
   });
   // ---------- Client job tracking: every job has a private link the client can follow, no sign-up needed ----------
   const trackToken = v => {

@@ -3989,8 +3989,10 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(om.status === 200, 'on my way should work, got ' + om.status);
     const s2 = await req('GET', '/api/track/' + tok);
     assert(s2.data.status === 'On the way' && s2.data.steps[1].at, 'tracking should show On the way');
-    const ci = await req('POST', `/api/crew/${tk}/jobs/${vid}/checkin`, { json: {} });
+    const ci = await req('POST', `/api/crew/${tk}/jobs/${vid}/checkin`, { json: { lat: 41.5868, lng: -93.625, accuracy: 12 } });
     assert(ci.status === 200, 'check-in should work, got ' + ci.status);
+    const arr = (await req('GET', `/api/admin/visits/${vid}/photos`, { token: T })).data.arrival;
+    assert(arr && Math.abs(arr.lat - 41.5868) < 0.0001 && arr.accuracy === 12, 'office should see where the crew checked in, got ' + JSON.stringify(arr));
     const s3 = await req('GET', '/api/track/' + tok);
     assert(s3.data.status === 'In progress' && s3.data.steps[2].at, 'tracking should show In progress with arrival, got ' + s3.data.status);
     const b1 = await req('POST', `/api/crew/${tk}/jobs/${vid}/break`, { json: {} });
