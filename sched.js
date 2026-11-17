@@ -190,7 +190,13 @@ module.exports = function mountSched(app, ctx) {
   app.post('/api/admin/dispatch/visits/:id/crew', auth, async (req, res) => {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
     const b = req.body || {}, e = getEmp(b.employee_id); if (!e) return res.status(400).json({ error: 'Choose an employee.' });
-    if (b.remove) { db.prepare('DELETE FROM visit_crew WHERE visit_id=? AND employee_id=?').run(v.id, e.id); logAction(req, 'unassigned', 'visit', v.id, `${e.name} from ${v.title} ${v.date}`); return res.json({ crew: crewOf(v.id) }); }
+    if (b.remove) {
+      db.prepare('DELETE FROM visit_crew WHERE visit_id=? AND employee_id=?').run(v.id, e.id);
+      logAction(req, 'unassigned', 'visit', v.id, `${e.name} from ${v.title} ${v.date}`);
+      // Someone already sent the job should hear that it is off their list, not find it gone
+      if (v.dispatched_at) await reachCrew(e, `Removed from job: ${v.title} ${v.date}`, `You've been taken off ${v.title} on ${v.date} ${v.start_time || ''}. Please don't go unless the office confirms.\nSign in any time to see your jobs: ${SIGNIN_URL}`, `Bright Clean: you've been taken off ${v.title} ${v.date}. Sign in any time to see your jobs: ${SIGNIN_URL}`);
+      return res.json({ crew: crewOf(v.id) });
+    }
     const c = check(e, v);
     if (c.block.length) return res.status(409).json({ error: 'Cannot assign: ' + c.block.join('; ') + '.', block: c.block });
     const reason = clean(b.override_reason, 300);
@@ -202,7 +208,6 @@ module.exports = function mountSched(app, ctx) {
     db.prepare('UPDATE visits SET assigned_to=?, updated_at=? WHERE id=?').run(crewOf(v.id).map(x => x.name).join(', '), now(), v.id);
     logAction(req, 'assigned', 'visit', v.id, `${e.name} to ${v.title} ${v.date}${reason ? ' (override: ' + reason + ')' : ''}`);
     if (v.dispatched_at) { const how = await reachCrew(e, `Job update: ${v.title} ${v.date}`, `You've been added to ${v.title} on ${v.date} ${v.start_time || ''}.\nAddress: ${v.address || ''}\nYour job: ${process.env.PUBLIC_URL || 'https://brightclean.net'}/crew/${e.token}\nSign in any time: ${SIGNIN_URL}`, `Bright Clean: you've been added to ${v.title} ${v.date}. Your job: ${process.env.PUBLIC_URL || 'https://brightclean.net'}/crew/${e.token} Sign in any time: ${SIGNIN_URL}`); if (how) db.prepare('UPDATE visit_crew SET notified_at=? WHERE visit_id=? AND employee_id=?').run(now(), v.id, e.id); }
-      db.prepare('UPDATE visit_crew SET notified_at=? WHERE visit_id=? AND employee_id=?').run(now(), v.id, e.id);
     res.json({ crew: crewOf(v.id), warnings: c.warn });
   });
   // Reaches a crew member: email first, then text if they have no email. Returns how, or null.
