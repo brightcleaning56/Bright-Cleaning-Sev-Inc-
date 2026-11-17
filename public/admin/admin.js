@@ -513,6 +513,9 @@
     inv: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9.5 13.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/>',
     layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
     inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    calls: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    emails: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/>',
+    customers: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3M16 3.13a4 4 0 0 1 0 7.75"/>',
     save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>'
   };
   const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
@@ -692,7 +695,8 @@
     });
     const colors = ['#1d4f91', '#2563eb', '#1497b5', '#1f9d55'];
     // Each stage shows its share of the stage before it, so you can see where deals stall
-    $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => { const prev = i ? cc.pipeline[i - 1].n : 0; const conv = prev ? ` · ${Math.round(p.n / prev * 100)}% of previous` : ''; return `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]}"><span>${esc(p.stage)} (${p.n})${esc(conv)}</span><span>${p.valued ? money(p.v) : ''}</span></div>`; }).join('')
+    // A percentage chip between stages shows how many move on from the stage before (like the mockup)
+    $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => { const prev = i ? cc.pipeline[i - 1].n : 0; const chip = i && prev ? `<div style="text-align:center;margin:-2px 0"><span style="display:inline-block;padding:1px 10px;border-radius:999px;background:#eef3fb;color:#1d4f91;font-size:12px;font-weight:600">${Math.min(999, Math.round(p.n / prev * 100))}%</span></div>` : ''; return chip + `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]}"><span>${esc(p.stage)} (${p.n})</span><span>${p.valued ? money(p.v) : ''}</span></div>`; }).join('')
       + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
     $('#ccAct').innerHTML = renderActivity(cc.activity) || '<p class="empty">No activity yet.</p>';
     const QA = [
