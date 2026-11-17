@@ -636,7 +636,8 @@
         const c = await api('/api/admin/communications-summary?days=' + encodeURIComponent(days));
         const tile = (label, n, go_, note) => '<button type="button" class="ccq" data-cc-go="' + go_ + '" style="display:flex;justify-content:space-between;width:100%"><span>' + esc(label) + (note ? '<small class="muted"> ' + esc(note) + '</small>' : '') + '</span><b>' + n + '</b></button>';
         comms.innerHTML = '<div class="cardhead"><h2>Communications</h2><small class="muted">Last ' + c.days + ' days</small></div>'
-          + tile('Calls', c.calls, 'calls', c.missed + ' missed') + tile('Voicemails', c.voicemails, 'calls', '') + tile('Texts received', c.texts_in, 'clientmsgs', c.texts_out + ' sent') + tile('Emails sent', c.emails_sent, 'emails', c.emails_received + ' received');
+          + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">'
+          + tile('Calls', c.calls, 'calls', c.missed + ' missed') + tile('Voicemails', c.voicemails, 'calls', '') + tile('Texts received', c.texts_in, 'clientmsgs', c.texts_out + ' sent') + tile('Emails sent', c.emails_sent, 'emails', c.emails_received + ' received') + '</div>';
         comms.querySelectorAll('[data-cc-go]').forEach(b => b.onclick = () => go(b.dataset.ccGo));
       } catch (err) { comms.innerHTML = '<p class="muted">Communications could not load: ' + esc(err.message) + '</p>'; }
     }
@@ -690,13 +691,14 @@
       requestAnimationFrame(step);
     });
     const colors = ['#1d4f91', '#2563eb', '#1497b5', '#1f9d55'];
-    $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]}"><span>${esc(p.stage)} (${p.n})</span><span>${p.valued ? money(p.v) : ''}</span></div>`).join('')
+    // Each stage shows its share of the stage before it, so you can see where deals stall
+    $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => { const prev = i ? cc.pipeline[i - 1].n : 0; const conv = prev ? ` · ${Math.round(p.n / prev * 100)}% of previous` : ''; return `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]}"><span>${esc(p.stage)} (${p.n})${esc(conv)}</span><span>${p.valued ? money(p.v) : ''}</span></div>`; }).join('')
       + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
     $('#ccAct').innerHTML = renderActivity(cc.activity) || '<p class="empty">No activity yet.</p>';
     const QA = [
       ['New Lead', 'user', () => newLead()], ['Log Call', 'calls', () => logCall()], ['Send Email', 'emails', () => go('emails')],
-      ['Send SMS', 'calls', () => go('clientmsgs')], ['Create Estimate', 'proposals', () => openEstimator()], ['New Proposal', 'proposals', () => openEstimator()],
-      ['Create Task', 'issues', () => { wq.dept = 'tasks'; go('workqueue'); }], ['Add Customer', 'customers', () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }],
+      ['Send SMS', 'calls', () => go('clientmsgs')], ['Create Estimate', 'doc', () => openEstimator()], ['New Proposal', 'doc', () => openEstimator()],
+      ['Create Task', 'alert', () => { wq.dept = 'tasks'; go('workqueue'); }], ['Add Customer', 'customers', () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }],
       ['Upload Drawings', 'layers', () => uploadDocs()]
     ];
     $('#ccQuick').innerHTML = QA.map(([l, ic], i) => `<button type="button" data-qa="${i}">${svg(ic)}${esc(l)}</button>`).join('');
@@ -717,9 +719,11 @@
     const list = (el, rows, render, empty) => {
       $(el).innerHTML = rows.length ? rows.map(render).join('') : `<li class="empty" style="cursor:default">${esc(empty)}</li>`;
     };
-    list('#ovNew', d.newLeads, l => `<li data-lead="${l.id}"><span><b>${esc(l.contact_name || 'Unnamed')}</b><small>${esc(KIND_LABEL[l.kind] || l.kind)}${l.company ? ' · ' + esc(l.company) : ''}${l.project_name ? ' · ' + esc(l.project_name) : ''}</small></span><span class="r"><small>${esc(ago(l.created_at))}</small></span></li>`, 'No new leads. You’re caught up.');
+    list('#ovNew', d.newLeads, l => `<li data-lead="${l.id}"><span style="flex:none;width:30px;height:30px;border-radius:50%;background:#e8f0fb;color:#1f6fd1;display:inline-flex;align-items:center;justify-content:center;font-weight:600;font-size:12px">${esc((l.contact_name || '?').trim().split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase())}</span><span style="min-width:0"><b>${esc(l.contact_name || 'Unnamed')}</b><small>${esc(KIND_LABEL[l.kind] || l.kind)}${l.company ? ' · ' + esc(l.company) : ''}${l.project_name ? ' · ' + esc(l.project_name) : ''}</small></span><span class="r"><span class="badge">${esc(l.status || 'New')}</span><small>${esc(ago(l.created_at))}</small></span></li>`, 'No new leads. You’re caught up.');
     list('#ovAwait', d.awaitingResponse, e => `<li data-est="${e.id}"><span><b>${esc(e.customer_name)}</b><small>${esc(e.project_name || e.company || '')}</small></span><span class="r">${money(e.proposal_total)}<small>${esc(e.status)} ${esc(ago(e.updated_at))}</small></span></li>`, d.draftProposals ? `Nothing sent is waiting. ${d.draftProposals} draft proposal(s) not sent yet.` : 'Nothing waiting on a customer.');
-    list('#ovDue', d.dueProjects, p => `<li data-rec="projects:${p.id}"><span><b>${esc(p.name || 'Project')}</b><small>${esc(p.company || p.customer_name || '')} · ${esc(p.status)} · ${Number(p.progress || 0)}%</small></span><span class="r">${p.due_date < todayISO() ? '<span class="badge red">Past due</span>' : ''}<small>Due ${fmtDate(p.due_date)}</small></span></li>`, 'No projects due in the next two weeks.');
+    list('#ovDue', d.dueProjects, p => `<li data-rec="projects:${p.id}"><span><b>${esc(p.name || 'Project')}</b><small>${esc(p.company || p.customer_name || '')} · ${esc(p.status)} · ${Number(p.progress || 0)}%</small><div style="height:6px;background:#e5e7eb;border-radius:4px;margin-top:4px"><i style="display:block;height:100%;width:${Math.min(100, Math.max(0, Number(p.progress || 0)))}%;background:#1f9d55;border-radius:4px"></i></div></span><span class="r">${p.due_date < todayISO() ? '<span class="badge red">Past due</span>' : ''}<small>Due ${fmtDate(p.due_date)}</small></span></li>`, 'No projects due in the next two weeks.');
+    const it = cc.kpis.invoice_tiles;
+    if (it && $('#ovInvTiles')) $('#ovInvTiles').innerHTML = [['Overdue', it.overdue.n + ' · ' + money(it.overdue.v), '#fdecec', '#b42318'], ['Open', it.open.n + ' · ' + money(it.open.v), '#e8f0fb', '#1f6fd1'], ['Collected this month', money(it.collected_month), '#e7f6ee', '#178a4c']].map(([l, v, bg, fg]) => `<div style="background:${bg};color:${fg};border-radius:8px;padding:8px 10px"><small>${esc(l)}</small><b style="display:block">${esc(v)}</b></div>`).join('');
     list('#ovOverdue', d.overdueInvoices, i => `<li data-rec="invoices:${i.id}"><span><b>${esc(i.invoice_number)}</b><small>${esc(i.company || i.customer_name || '')}</small></span><span class="r">${money(i.amount - i.paid_amount)}<small>Due ${fmtDate(i.due_date)}</small></span></li>`, 'No overdue invoices.');
     $('#ovRenewCard').hidden = !d.renewals.length;
     list('#ovRenew', d.renewals, c => `<li data-rec="contracts:${c.id}"><span><b>${esc(c.title || 'Contract')}</b><small>${esc(c.company || c.customer_name || '')}</small></span><span class="r"><small>Ends ${fmtDate(c.end_date)}</small></span></li>`, '');

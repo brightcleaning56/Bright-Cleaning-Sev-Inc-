@@ -31,6 +31,9 @@ module.exports = function mountCommand(app, ctx) {
     const activeProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived')`).n;
 
     const overdueInvoices = one(`SELECT COUNT(*) n FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND due_date<>'' AND due_date IS NOT NULL AND due_date<? AND paid_amount<amount`, today).n;
+    // Command Center invoice tiles: what is open, what is overdue, and what came in this month
+    const invOpen = one(`SELECT COUNT(*) n, COALESCE(SUM(amount-COALESCE(paid_amount,0)),0) v FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<amount`);
+    const invOver = one(`SELECT COUNT(*) n, COALESCE(SUM(amount-COALESCE(paid_amount,0)),0) v FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<amount AND due_date<>'' AND due_date IS NOT NULL AND due_date<?`, today);
     const lateProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled') AND due_date<>'' AND due_date IS NOT NULL AND due_date<?`, today).n;
     const staleLeads = one(`SELECT COUNT(*) n FROM leads WHERE kind IN ('bid','inquiry') AND status='New' AND created_at<?`, iso(new Date(now - 2 * 864e5))).n;
     const iss = one(`SELECT SUM(type='complaint') complaints, SUM(type<>'complaint' AND due_date IS NOT NULL AND due_date<>'' AND due_date<?) overdue FROM customer_issues WHERE status NOT IN ('Resolved','Verified','Closed')`, today);
@@ -57,6 +60,7 @@ module.exports = function mountCommand(app, ctx) {
         proposals_sent: { value: sent.n, amount: sent.v, change: pct(sent.n, sentPrev.n) },
         won: { value: won.n, amount: won.v, change: pct(won.n, wonPrev.n) },
         collected_month: { value: collectedMonth },
+        invoice_tiles: { open: invOpen, overdue: invOver, collected_month: collectedMonth },
         active_projects: { value: activeProjects },
         attention: { value: overdueInvoices + lateProjects + staleLeads + failedEmails + openComplaints + overdueItems + awaitingApproval,
           parts: { awaiting_approval: awaitingApproval, open_complaints: openComplaints, overdue_tasks: overdueItems, overdue_invoices: overdueInvoices, late_projects: lateProjects, leads_waiting_2_days: staleLeads, failed_emails_7_days: failedEmails } }
