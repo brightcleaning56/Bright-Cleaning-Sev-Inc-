@@ -7,7 +7,8 @@ module.exports = function (app, { db, auth }) {
   const MAILBOXES = ['All', 'Customer', 'Lead inquiries', 'Estimates & proposals', 'Contracts', 'Invoices', 'Sent', 'Needs reply', 'Scheduled', 'Drafts', 'Archived'];
 
   db.exec(`CREATE TABLE IF NOT EXISTS email_drafts(id INTEGER PRIMARY KEY AUTOINCREMENT, to_addr TEXT, subject TEXT, body TEXT, customer_id INTEGER, lead_id INTEGER, created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS email_archive(key TEXT PRIMARY KEY, archived_at TEXT NOT NULL, archived_by TEXT);`);
+    CREATE TABLE IF NOT EXISTS email_archive(key TEXT PRIMARY KEY, archived_at TEXT NOT NULL, archived_by TEXT);
+    CREATE TABLE IF NOT EXISTS email_flags(key TEXT PRIMARY KEY, read_at TEXT, starred INTEGER NOT NULL DEFAULT 0);`);
   const who = req => String((req.user && req.user.email) || '');
   for (const col of ['provider_id TEXT', 'delivered_at TEXT', 'bounced_at TEXT', 'bounce_reason TEXT']) { try { db.exec('ALTER TABLE email_log ADD COLUMN ' + col); } catch { /* already there */ } }
   const ES = require('./emailsuppress');
@@ -66,7 +67,8 @@ module.exports = function (app, { db, auth }) {
     });
     const all = [...out, ...ins].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
     const arch = new Set(safe('SELECT key FROM email_archive').map(r => r.key));
-    for (const m of all) m.archived = arch.has(m.key);
+    const flags = new Map(safe('SELECT key, read_at, starred FROM email_flags').map(r => [r.key, r]));
+    for (const m of all) { m.archived = arch.has(m.key); const f = flags.get(m.key); m.read = !!(f && f.read_at); m.starred = !!(f && f.starred); }
     const live = all.filter(m => !m.archived);
     const scheduled = safe("SELECT f.id, f.due_date, f.channel, f.message, f.estimate_id, e.email, e.project_name FROM proposal_followups f LEFT JOIN estimates e ON e.id=f.estimate_id WHERE f.status='Scheduled' AND f.channel='email' ORDER BY f.due_date");
     const drafts = safe('SELECT * FROM email_drafts ORDER BY updated_at DESC LIMIT 200').map(d => ({ key: 'draft-' + d.id, id: d.id, direction: 'out', source: 'draft', at: d.updated_at, from: 'Bright Clean', to: d.to_addr || '', subject: d.subject || '(no subject)', preview: String(d.body || '').slice(0, 160), body: d.body || '', status: 'draft', delivery: 'Draft', reply: '', sent_by: d.created_by || '', link: d.to_addr ? linkFor(d.to_addr, cache) : null, category: 'Drafts', archived: false }));
@@ -136,6 +138,17 @@ module.exports = function (app, { db, auth }) {
   });
 
   // Archive: a separate record. The email itself is never changed or removed.
+  // Read and star are kept for the team, per email. Opening an email does not mark it read; someone presses Mark read.
+  app.post('/api/admin/email-center/:key/flags', auth, (req, res) => {
+    const key = String(req.params.key);
+    if (!/^(out|in)-\d+$/.test(key)) return res.status(400).json({ error: 'Only received and sent emails can be marked.' });
+    const b = req.body || {};
+    const cur = db.prepare('SELECT * FROM email_flags WHERE key=?').get(key) || { read_at: null, starred: 0 };
+    const read_at = 'read' in b ? (b.read ? new Date().toISOString() : null) : cur.read_at;
+    const starred = 'starred' in b ? (b.starred ? 1 : 0) : cur.starred;
+    db.prepare('INSERT INTO email_flags(key,read_at,starred) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET read_at=excluded.read_at, starred=excluded.starred').run(key, read_at, starred);
+    res.json({ ok: true, read: !!read_at, starred: !!starred });
+  });
   app.post('/api/admin/email-center/:key/archive', auth, (req, res) => {
     const key = String(req.params.key);
     if (!/^(out|in)-\d+$/.test(key)) return res.status(400).json({ error: 'Only received and sent emails can be archived.' });

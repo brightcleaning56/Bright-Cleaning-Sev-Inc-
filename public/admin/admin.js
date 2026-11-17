@@ -4033,7 +4033,7 @@
       && (!q || [m.from, m.to, m.subject, m.preview, m.link && m.link.name].join(' ').toLowerCase().includes(q)));
     $('#emailsRows').innerHTML = rows.length ? rows.map(m => '<tr class="click' + (mailState.selKey === m.key ? ' on' : '') + '" data-mkey="' + esc(m.key) + '"><td>' + esc(fmtWhen(m.at)) + '</td>'
       + '<td>' + esc(m.direction === 'in' ? m.from : m.to) + (m.link ? ' <small class="muted">' + (m.link.type === 'customer' ? custBtn({ customer_id: m.link.id, company: m.link.company, customer_name: m.link.name, email: '' }, m.link.company || m.link.name) : esc(m.link.company || m.link.name || '')) + '</small>' : '') + '</td>'
-      + '<td>' + esc(m.subject) + (m.preview ? '<small class="muted">' + esc(String(m.preview).slice(0, 90)) + '</small>' : '') + '</td>'
+      + '<td>' + (m.starred ? '<span style="color:#e0a100">★</span> ' : '') + (m.direction === 'in' && !m.read ? '<b>' : '') + esc(m.subject) + (m.direction === 'in' && !m.read ? '</b>' : '') + (m.preview ? '<small class="muted">' + esc(String(m.preview).slice(0, 90)) + '</small>' : '') + '</td>'
       + '<td><span class="pill" style="font-size:11px">' + esc(m.category) + '</span></td>'
       + '<td>' + esc(m.delivery) + (m.reply ? '<small class="muted">' + esc(m.reply) + '</small>' : '') + '</td></tr>').join('')
       : '<tr><td class="emptyrow" colspan="5">' + (box === 'Drafts' ? 'No drafts saved.' : box === 'Archived' ? 'Nothing archived yet.' : 'No emails in this mailbox yet.') + '</td></tr>';
@@ -4111,6 +4111,7 @@
     const draft = m.direction === 'in' ? 'Hi ' + first + ', thanks for your message about ' + (m.subject || 'your request') + '. We have your details and are checking the next steps. We will reply with the details today.\n\nBright Cleaning Sev Inc.' : '';
     box.innerHTML = `
       <h3 style="margin:0;overflow-wrap:anywhere">${esc(m.subject)}</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button type="button" class="btn small ghost" id="emReplyAll">Reply all</button><button type="button" class="btn small ghost" id="emMarkRead">${m.read ? 'Mark unread' : 'Mark read'}</button><button type="button" class="btn small ghost" id="emStar">${m.starred ? '★ Starred' : '☆ Star'}</button></div>
       <p style="margin:4px 0"><span class="pill" style="font-size:11px">${esc(m.category)}</span> <span class="badge ${m.status === 'failed' ? 'red' : ''}">${esc(delivery)}</span>${m.reply ? '<span class="badge' + (m.reply === 'Needs reply' ? ' amber' : '') + '">' + esc(m.reply) + '</span>' : ''}</p>
       <p class="muted" style="margin:4px 0">${m.direction === 'in' ? 'From' : 'To'} ${esc(who)} · ${esc(fmtWhen(m.at))}${m.sent_by ? ' · ' + esc(m.sent_by) : ''}</p>
       <p style="margin:6px 0">Linked: ${linked}${proposal}</p>
@@ -4139,6 +4140,10 @@
       try { await api('/api/admin/customers/' + L.id + '/email', { method: 'POST', json: { to: addr, subject: 'Re: ' + (m.subject || ''), body } }); toast('Reply sent'); mailState.center = await api('/api/admin/email-center').catch(() => null); renderEmails(); renderEmailView(key); }
       catch (err) { toast(err.message, true); }
     };
+    const flagAndRedraw = async body => { try { await api('/api/admin/email-center/' + encodeURIComponent(key) + '/flags', { method: 'POST', json: body }); mailState.center = await api('/api/admin/email-center').catch(() => null); renderEmails(); renderEmailView(key); } catch (err) { toast(err.message, true); } };
+    if ($('#emMarkRead')) $('#emMarkRead').onclick = () => flagAndRedraw({ read: !m.read });
+    if ($('#emStar')) $('#emStar').onclick = () => flagAndRedraw({ starred: !m.starred });
+    if ($('#emReplyAll')) $('#emReplyAll').onclick = () => { const f = $('#emDraft'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } else toast('Replies to leads are sent from the lead record.', true); };
     if ($('#emCopySum')) $('#emCopySum').onclick = () => { const t = $('#emView').innerText.split('AI Summary')[1] || ''; if (navigator.clipboard) navigator.clipboard.writeText(t.trim().slice(0, 2000)).then(() => toast('Summary copied'), () => toast('Select the text and copy it', true)); };
     if ($('#emFwdBtn')) $('#emFwdBtn').onclick = () => openEmailCompose({ subject: 'Fwd: ' + (m.subject || ''), body: '\n\n---- Forwarded ----\n' + (m.body || ''), customer_id: L && L.type === 'customer' ? L.id : undefined });
     if ($('#emNoteBtn')) $('#emNoteBtn').onclick = async () => {

@@ -1253,6 +1253,20 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(!leadLine || !/follow-up/.test(leadLine.text), 'untouched leads must not be called follow-ups: ' + (leadLine && leadLine.text));
     return 'attention total = sum of 7 parts; untouched leads described as not contacted, not as follow-ups';
   });
+  await check('Email flags', 'Mark read and star are saved per email and show on the next load', async () => {
+    const list = (await req('GET', '/api/admin/email-center', { token: T })).data.messages;
+    const m = list.find(x => /^(out|in)-/.test(x.key));
+    if (m) {
+      const on = await req('POST', '/api/admin/email-center/' + m.key + '/flags', { token: T, json: { read: true, starred: true } });
+      assert(on.status === 200 && on.data.read && on.data.starred, 'flags should save');
+      const again = (await req('GET', '/api/admin/email-center', { token: T })).data.messages.find(x => x.key === m.key);
+      assert(again.read && again.starred, 'flags should show on reload');
+      await req('POST', '/api/admin/email-center/' + m.key + '/flags', { token: T, json: { read: false, starred: false } });
+    }
+    const bad = await req('POST', '/api/admin/email-center/draft-1/flags', { token: T, json: { read: true } });
+    assert(bad.status === 400, 'drafts cannot be flagged this way, got ' + bad.status);
+    return 'flags save and show on reload; drafts refused';
+  });
   await check('Audit fixes', 'Marking a proposal Sent by hand runs the same insurance check as Send; the extra-fields route answers 404 for unknown tables', async () => {
     const e = await est({});
     const put = await req('PUT', '/api/admin/estimates/' + e.id + '/insurance', { token: T, json: { required: ['general_liability'] } });
