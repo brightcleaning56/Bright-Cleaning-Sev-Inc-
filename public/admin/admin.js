@@ -3727,7 +3727,8 @@
       const c = counts[k] || {};
       return `<div class="st"><span>${l}</span><b>${(c.new || 0) + (c.missed || 0) + (c.contact_today || 0)}</b><small>need attention · ${c.today || 0} due today · ${c.overdue || 0} overdue</small></div>`;
     }).join('');
-    const sum = b => WQ_DEPTS.reduce((n, [k]) => n + (((counts[k] || {})[b]) || 0), 0);
+    // Untouched leads sit in the overdue bucket by rule, but they are not overdue follow-ups: keep them out of these totals.
+    const sum = b => WQ_DEPTS.reduce((n, [k]) => n + (k === 'leads' && b === 'overdue' ? 0 : (((counts[k] || {})[b]) || 0)), 0);
     const g = $('#wqGlance');
     if (g) g.innerHTML = '<h3 class="secth" style="margin-top:0">Today at a glance</h3>' + [
       ['Follow-ups due', sum('today') + sum('overdue'), ''],
