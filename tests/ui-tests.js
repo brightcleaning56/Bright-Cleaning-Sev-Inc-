@@ -340,6 +340,8 @@ async function check(area, name, fn) {
   });
   await check('Command Center UI', '6 KPI tiles, pipeline, activity, quick actions, service pages and module status render from live data', async () => {
     await nav('overview'); await sleep(400);
+    // The Command Center loads from the API; wait for the service links (up to 5 seconds) instead of reading once.
+    for (let i = 0; i < 25 && d.querySelectorAll('#ccPortals a').length !== 5; i++) await sleep(200);
     const tiles = d.querySelectorAll('#ccKpis .kpi').length, stages = d.querySelectorAll('#ccPipe .st').length, qa = d.querySelectorAll('#ccQuick button').length;
     const portals = [...d.querySelectorAll('#ccPortals a')].map(a => a.getAttribute('href'));
     const mods = txt('#ccMods'); const h1 = txt('#v-overview h1');
@@ -349,9 +351,14 @@ async function check(area, name, fn) {
     return `tiles ${tiles}, stages ${stages}, quick actions ${qa}, portals ${portals.length}; new-leads tile ${leadTile} = API`;
   });
   await check('Command Center UI', 'Period selector reloads figures; quick action opens the estimator; tile opens its section', async () => {
-    $('#ccDays').value = '7'; $('#ccDays').dispatchEvent(new w.Event('change')); await sleep(600);
-    const cc7 = await api('GET', '/api/admin/command-center?days=7', null, T);
-    const ok7 = txt('#ccKpis .kpi:first-child b') === String(cc7.kpis.new_leads.value) && /prior 7 days|no prior data/.test(txt('#ccKpis'));
+    $('#ccDays').value = '7'; $('#ccDays').dispatchEvent(new w.Event('change'));
+    // The figures reload asynchronously; poll for up to 5 seconds rather than reading once.
+    let cc7 = null, ok7 = false;
+    for (let i = 0; i < 25 && !ok7; i++) {
+      await sleep(200);
+      cc7 = await api('GET', '/api/admin/command-center?days=7', null, T);
+      ok7 = txt('#ccKpis .kpi:first-child b') === String(cc7.kpis.new_leads.value) && /prior 7 days|no prior data/.test(txt('#ccKpis'));
+    }
     [...d.querySelectorAll('#ccQuick button')].find(b => /Create Estimate/i.test(b.textContent)).click(); await sleep(500);
     const est = $('#v-estimator').classList.contains('active');
     await nav('overview'); await sleep(400);

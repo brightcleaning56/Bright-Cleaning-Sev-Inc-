@@ -480,7 +480,15 @@
 @media (max-width:720px){.cwpanel{padding:14px}.cwframe{height:60vh}}
 .cwSplit{display:grid;grid-template-columns:minmax(300px,380px) minmax(0,1fr);gap:18px;align-items:start}
 .cwList{min-width:0}
-#regKpis-contracts{grid-template-columns:repeat(2,minmax(0,1fr))!important;margin-bottom:10px}
+.regtop{margin-bottom:6px}
+#regKpis-contracts{margin-bottom:12px}
+[id^="regTabs-"]{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;margin-bottom:14px;padding-bottom:2px}
+[id^="regTabs-"] button{flex:none;white-space:nowrap}
+#v-contracts .cwList .toolbar{gap:8px}
+#v-contracts .cwList .toolbar input[type=search]{flex:1 1 100%;max-width:none}
+#v-contracts .cwList .toolbar select{flex:1 1 120px;min-width:0}
+@media (max-width:900px){#v-contracts.has-contract .regtop{display:none}}
+@media (max-width:700px){[id^="regTabs-"]{flex-wrap:wrap;overflow:visible}}
 .cwCards{display:grid;gap:10px}
 .cwCard{background:#fff;border:1px solid #e1e8f0;border-radius:12px;padding:12px 14px;cursor:pointer;display:grid;gap:4px}
 .cwCard:hover{border-color:#9bbde0}
@@ -544,6 +552,8 @@
   /* Cards */
   .card { border-radius: 14px; border-color: var(--line); box-shadow: 0 1px 2px rgba(16,38,62,.04), 0 6px 18px rgba(16,38,62,.05); padding: 18px 20px; }
   .card h2 { font-size: 16px; font-weight: 800; }
+  .card { min-width: 0; }
+  .card:has(> table.t) { overflow-x: auto; }
   .cardhead { margin-bottom: 12px; align-items: center; }
   .cardhead h2 { margin: 0; }
   .cardhead .linklike { color: var(--blue); font-weight: 700; font-size: 13px; }
@@ -557,6 +567,17 @@
   .kpi b { font-size: 24px; font-weight: 800; margin: 2px 0 3px; }
   .kpi small { font-size: 12.5px; }
   .kpi.alert { border-color: #f3c2c2; }
+  /* Register and workspace KPI tiles (kt helper): tinted by the chip tone, same look as the Command Center */
+  .ktile { border-color: transparent; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,38,62,.05), 0 6px 18px rgba(16,38,62,.05); }
+  .ktile:has(.chip.blue) { background: linear-gradient(180deg,#f2f7fe,#fff 75%); }
+  .ktile:has(.chip.green) { background: linear-gradient(180deg,#f0faf4,#fff 75%); }
+  .ktile:has(.chip.purple) { background: linear-gradient(180deg,#f7f3fe,#fff 75%); }
+  .ktile:has(.chip.amber) { background: linear-gradient(180deg,#fff9ec,#fff 75%); }
+  .ktile:has(.chip.red) { background: linear-gradient(180deg,#fff5f5,#fff 75%); }
+  .ktile:has(.chip.teal) { background: linear-gradient(180deg,#eff9f8,#fff 75%); }
+  .ktile:has(.chip.navy) { background: linear-gradient(180deg,#f2f5f9,#fff 75%); }
+  .ktile b { font-weight: 800; }
+  .stats > .stat { background: linear-gradient(180deg,#f3f8ff,#fff 75%); border: 0; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,38,62,.05), 0 6px 18px rgba(16,38,62,.05); }
   /* Six tiles on a laptop-width screen: keep the collected amount on one line */
   @media (max-width: 1600px) { .kpi { padding: 14px 12px; gap: 10px; } .kpi .ic { width: 40px; height: 40px; } .kpi b { font-size: 21px; } }
 
@@ -1025,9 +1046,11 @@
 
     <section class="view" id="v-contracts">
       <div class="pagehead"><div><h1>Contracts</h1><p>Create, manage and track service contracts, signatures, renewals and amendments.</p></div><button class="btn" data-new="contracts">New contract</button></div>
+      <div class="regtop">
+        <div class="kpis6" id="regKpis-contracts"></div><div class="segtabs" id="regTabs-contracts" role="tablist"></div>
+      </div>
       <div class="cwSplit">
         <div class="cwList">
-          <div class="kpis6" id="regKpis-contracts"></div><div class="segtabs" id="regTabs-contracts" role="tablist"></div>
           <div class="toolbar"><input type="search" data-search="contracts" placeholder="Search contracts…" aria-label="Search contracts"><select data-filter="contracts" aria-label="Filter by status"></select><select data-sort="contracts" aria-label="Sort contracts"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="value">Highest value</option><option value="customer">Customer A–Z</option><option value="ending">Ending soonest</option></select><button type="button" class="btn ghost small" id="cwExport">Export CSV</button></div>
           <div id="rows-contracts" class="cwCards"></div>
           <div class="cwpager" id="cwPager"></div>
