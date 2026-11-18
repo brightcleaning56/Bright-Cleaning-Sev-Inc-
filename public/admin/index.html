@@ -578,6 +578,35 @@
   .ktile:has(.chip.navy) { background: linear-gradient(180deg,#f2f5f9,#fff 75%); }
   .ktile b { font-weight: 800; }
   .stats > .stat { background: linear-gradient(180deg,#f3f8ff,#fff 75%); border: 0; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,38,62,.05), 0 6px 18px rgba(16,38,62,.05); }
+  /* Secondary strips (Leads stages, invoice aging, Today's work counts): tinted tiles that match the KPI row */
+  #leadPipe, #invAging { background: none; border: 0; box-shadow: none; padding: 0; margin-bottom: 14px; gap: 10px; }
+  #leadPipe button, #invAging .st, #wqKpis .st { background: linear-gradient(180deg,#f5f8fc,#fff 75%); border: 0; border-left: 4px solid var(--tone, #9fb3c8); border-radius: 14px; box-shadow: 0 1px 2px rgba(16,38,62,.05), 0 6px 18px rgba(16,38,62,.05); padding: 12px 14px; min-width: 0; }
+  #leadPipe button.pt-blue, #invAging .st.pt-blue, #wqKpis .st.pt-blue { --tone: #1f6fd1; background: linear-gradient(180deg,#f2f7fe,#fff 75%); }
+  #leadPipe button.pt-green, #invAging .st.pt-green, #wqKpis .st.pt-green { --tone: #17904c; background: linear-gradient(180deg,#f0faf4,#fff 75%); }
+  #leadPipe button.pt-amber, #invAging .st.pt-amber, #wqKpis .st.pt-amber { --tone: #d98a00; background: linear-gradient(180deg,#fff9ec,#fff 75%); }
+  #leadPipe button.pt-purple, #invAging .st.pt-purple, #wqKpis .st.pt-purple { --tone: #7a4bd8; background: linear-gradient(180deg,#f7f3fe,#fff 75%); }
+  #leadPipe button.pt-red, #invAging .st.pt-red, #wqKpis .st.pt-red { --tone: #d1382f; background: linear-gradient(180deg,#fff5f5,#fff 75%); }
+  #leadPipe button.pt-teal, #invAging .st.pt-teal, #wqKpis .st.pt-teal { --tone: #128a85; background: linear-gradient(180deg,#eff9f8,#fff 75%); }
+  #leadPipe button span, #invAging .st span, #wqKpis .st span { font-size: 13px; font-weight: 600; color: var(--muted); display: block; }
+  #leadPipe button b, #invAging .st b, #wqKpis .st b { font-size: 22px; font-weight: 800; color: #10263e; display: block; margin-top: 4px; }
+  #leadPipe button.on { outline: 2px solid var(--tone, #1f6fd1); outline-offset: 1px; }
+  #invAging .st small, #wqKpis .st small { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  #wqKpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  #wqKpis .st:nth-child(1) { --tone: #1f6fd1; } #wqKpis .st:nth-child(2) { --tone: #d1382f; } #wqKpis .st:nth-child(3) { --tone: #7a4bd8; } #wqKpis .st:nth-child(4) { --tone: #17904c; } #wqKpis .st:nth-child(5) { --tone: #128a85; } #wqKpis .st:nth-child(6) { --tone: #d98a00; }
+  @media (max-width: 1100px) { #wqKpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { #wqKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* Projects: status tabs on one line (scroll inside their strip), wrap on phones; KPI tiles in a 4-column grid so labels fit */
+  #pjTabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+  #pjTabs button { flex: none; white-space: nowrap; padding: 9px 12px; }
+  @media (max-width: 700px) { #pjTabs { flex-wrap: wrap; overflow: visible; } }
+  #pjKpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #pjKpis .ktile span { white-space: normal; line-height: 1.25; }
+  #pjKpis .ktile b { font-size: 20px; }
+  @media (max-width: 700px) { #pjKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* KPI chips: the icon takes the chip's tone colour (it was forced white, so pale chips looked empty) */
+  .kpi .chip .ic { color: inherit; }
+  /* Customer tabs: keep each label on one line; the strip scrolls sideways instead of breaking words */
+  .ctabs2 button span { overflow-wrap: normal; white-space: nowrap; }
   /* Six tiles on a laptop-width screen: keep the collected amount on one line */
   @media (max-width: 1600px) { .kpi { padding: 14px 12px; gap: 10px; } .kpi .ic { width: 40px; height: 40px; } .kpi b { font-size: 21px; } }
 
@@ -889,7 +918,7 @@
       <div class="pagehead"><div><h1>Email Center</h1><p>Every email the team sends or receives, linked to the customer, lead, proposal or contract it belongs to.</p></div><div class="headact"><button class="btn" id="emCompose" type="button">Compose</button><button class="btn ghost" id="emSettings" type="button">Email Settings</button></div></div>
       <div class="kpis small" id="emailsKpis" style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px"></div>
       <div class="segtabs" id="emTabs" role="tablist" aria-label="Mailbox" style="margin:6px 0"><button type="button" data-emtab="All" class="on">Inbox</button><button type="button" data-emtab="Sent">Sent</button><button type="button" data-emtab="Drafts">Drafts</button><button type="button" data-emtab="Scheduled">Scheduled</button><button type="button" data-emtab="Archived">Archived</button><button type="button" id="emTplBtn">Email Templates</button></div>
-      <style>.emgrid{display:grid;grid-template-columns:200px minmax(260px,340px) minmax(0,1fr) 300px;gap:14px;align-items:start}.emgrid .card{min-width:0}@media (max-width:1280px){.emgrid{grid-template-columns:200px minmax(0,1fr)}#emView{grid-column:1/-1}#emPanel{display:none}}@media (max-width:820px){.emgrid{grid-template-columns:1fr}}</style>
+      <style>.emgrid{display:grid;grid-template-columns:200px minmax(260px,340px) minmax(0,1fr) 300px;gap:14px;align-items:start}.emgrid .card{min-width:0}@media (max-width:1600px){.emgrid{grid-template-columns:200px minmax(0,1fr)}#emView,#emPanel{grid-column:1/-1;position:static!important}}@media (max-width:1280px){.emgrid{grid-template-columns:200px minmax(0,1fr)}#emView{grid-column:1/-1}#emPanel{display:none}}@media (max-width:820px){.emgrid{grid-template-columns:1fr}}</style>
       <div class="emgrid">
         <aside class="card" aria-label="Mailboxes" style="padding:10px"><div id="emBoxes"></div><div id="emOutlook" style="margin-top:12px"></div></aside>
         <div style="min-width:0">

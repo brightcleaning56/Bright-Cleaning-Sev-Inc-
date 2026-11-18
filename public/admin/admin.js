@@ -1091,7 +1091,7 @@
       if ($('#leadKpis')) arrangeKpis('#leadKpis', 'bc_leadkpi_order');
       wireTiles('#leadKpis', { 'New bid requests': () => leadView('bid', 'New'), 'Open pipeline': () => leadView('bid', 'open'), 'Won': () => leadView('bid', 'Won'), 'Lost': () => leadView('bid', 'Lost'), 'Win rate': () => leadView('bid', 'Won'), 'Messages & applicants': () => leadView('inquiry', 'open') });
       const stages = ['New', 'In Review', 'Site Walkthrough', 'Proposal in Progress', 'Proposal Sent', 'Won', 'Lost'];
-      if ($('#leadPipe')) { $('#leadPipe').innerHTML = stages.map(st => `<button type="button" data-pipe="${esc(st)}" class="${leadStatusSel.value === st && state.leadKind === 'bid' ? 'on' : ''}"><span>${esc(st)}</span><b>${L.filter(l => l.status === st).length}</b></button>`).join('');
+      if ($('#leadPipe')) { $('#leadPipe').innerHTML = stages.map(st => `<button type="button" data-pipe="${esc(st)}" class="pt-${TONE[st] || 'blue'} ${leadStatusSel.value === st && state.leadKind === 'bid' ? 'on' : ''}"><span>${esc(st)}</span><b>${L.filter(l => l.status === st).length}</b></button>`).join('');
         $$('#leadPipe [data-pipe]').forEach(b => b.onclick = () => { state.leadKind = 'bid'; leadStatusSel.value = leadStatusSel.value === b.dataset.pipe ? 'open' : b.dataset.pipe; renderLeads(); }); } }
     { const fo = leadStatusSel.querySelector('option[value="stage:followup"]'); if (fo) fo.textContent = `Follow-ups scheduled (${state.leads.filter(l => l.stage === 'followup').length})`; }
     $$('#leadKinds button').forEach(b => {
@@ -2517,7 +2517,7 @@
       const live = R.filter(i => i.status !== 'Void' && i.status !== 'Draft'), billed = live.reduce((s, i) => s + Number(i.amount || 0), 0), paid = live.reduce((s, i) => s + Number(i.paid_amount || 0), 0), od = live.filter(i => invoiceState(i) === 'Overdue');
       kp.innerHTML = [kt('invoices', 'blue', 'Billed', money(billed), `${live.length} sent invoices`), kt('check', 'green', 'Collected', money(paid), billed ? Math.round(paid / billed * 100) + '% of billed' : ''), kt('money', 'navy', 'Outstanding', money(Math.max(0, billed - paid)), ''),
         kt('issues', 'red', 'Overdue', money(od.reduce((s, i) => s + Math.max(0, i.amount - i.paid_amount), 0)), `${od.length} invoice(s)`), kt('proposals', 'purple', 'Drafts (not sent)', R.filter(i => i.status === 'Draft').length, ''), kt('check', 'teal', 'Paid in full', live.filter(i => invoiceState(i) === 'Paid').length, '')].join('');
-      if ($('#invAging') && !regHeader.agingLoading) { regHeader.agingLoading = true; api('/api/admin/reports/aging').then(a => { $('#invAging').innerHTML = `<div class="st"><span>Open balance</span><b>${money(a.total || 0)}</b><small>A/R aging</small></div>` + Object.entries(a.buckets || {}).map(([k, v]) => `<div class="st"><span>${k === 'Current' ? 'Current (not due)' : esc(k) + ' days late'}</span><b style="color:${k !== 'Current' && v > 0 ? '#c0362d' : 'inherit'}">${money(v)}</b></div>`).join(''); }).catch(() => { $('#invAging').hidden = true; }).finally(() => { regHeader.agingLoading = false; }); }
+      if ($('#invAging') && !regHeader.agingLoading) { regHeader.agingLoading = true; api('/api/admin/reports/aging').then(a => { $('#invAging').innerHTML = `<div class="st pt-blue"><span>Open balance</span><b>${money(a.total || 0)}</b><small>A/R aging</small></div>` + Object.entries(a.buckets || {}).map(([k, v], i) => `<div class="st pt-${['green', 'amber', 'amber', 'red', 'red'][i] || 'red'}"><span>${k === 'Current' ? 'Current (not due)' : esc(k) + ' days late'}</span><b style="color:${k !== 'Current' && v > 0 ? '#c0362d' : 'inherit'}">${money(v)}</b></div>`).join(''); }).catch(() => { $('#invAging').hidden = true; }).finally(() => { regHeader.agingLoading = false; }); }
     }
   }
   function renderFinance() {
@@ -3885,7 +3885,7 @@
   function wqKpis(counts) {
     $('#wqKpis').innerHTML = WQ_DEPTS.map(([k, l]) => {
       const c = counts[k] || {};
-      return `<div class="st"><span>${l}</span><b>${(c.new || 0) + (c.missed || 0) + (c.contact_today || 0)}</b><small>need attention · ${c.today || 0} due today · ${c.overdue || 0} overdue</small></div>`;
+      return `<div class="st pt-${['blue', 'red', 'purple', 'green', 'teal', 'amber'][WQ_DEPTS.findIndex(d => d[0] === k)] || 'blue'}"><span>${l}</span><b>${(c.new || 0) + (c.missed || 0) + (c.contact_today || 0)}</b><small>need attention · ${c.today || 0} due today · ${c.overdue || 0} overdue</small></div>`;
     }).join('');
     // Untouched leads sit in the overdue bucket by rule, but they are not overdue follow-ups: keep them out of these totals.
     const sum = b => WQ_DEPTS.reduce((n, [k]) => n + (k === 'leads' && b === 'overdue' ? 0 : (((counts[k] || {})[b]) || 0)), 0);
