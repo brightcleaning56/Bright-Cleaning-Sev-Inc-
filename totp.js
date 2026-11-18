@@ -36,20 +36,23 @@ function codeAt(secret, counter) {
 }
 
 // Accepts the current code and the one before and after it (clock drift of up to 30 seconds).
-function verify(secret, code, now = Date.now()) {
+// Returns the time step (counter) the code matched, or null. Callers that sign people in must refuse any step
+// at or below the last one accepted for that account, so a code cannot be used twice.
+function matchStep(secret, code, now = Date.now()) {
   const c = String(code || '').replace(/\s/g, '');
-  if (!/^\d{6}$/.test(c) || !secret) return false;
+  if (!/^\d{6}$/.test(c) || !secret) return null;
   const counter = Math.floor(now / 1000 / 30);
   for (const d of [-1, 0, 1]) {
     const expect = codeAt(secret, counter + d);
-    if (crypto.timingSafeEqual(Buffer.from(expect), Buffer.from(c))) return true;
+    if (crypto.timingSafeEqual(Buffer.from(expect), Buffer.from(c))) return counter + d;
   }
-  return false;
+  return null;
 }
+function verify(secret, code, now = Date.now()) { return matchStep(secret, code, now) !== null; }
 
 function otpauthUri(secret, account, issuer = 'Bright Clean') {
   const label = encodeURIComponent(`${issuer}:${account}`);
   return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 }
 
-module.exports = { newSecret, verify, codeAt, otpauthUri, base32Encode, base32Decode };
+module.exports = { newSecret, verify, matchStep, codeAt, otpauthUri, base32Encode, base32Decode };

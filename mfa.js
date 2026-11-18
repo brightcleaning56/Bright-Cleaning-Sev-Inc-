@@ -7,7 +7,11 @@ const totp = require('./totp');
 
 function mountMfa(app, ctx) {
   const { db, auth, jwt, rateLimit, signToken, logAction, clean } = ctx;
-  db.exec(`CREATE TABLE IF NOT EXISTS mfa_factors(email TEXT PRIMARY KEY, secret TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, created_at TEXT, enabled_at TEXT)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS mfa_factors(email TEXT PRIMARY KEY, secret TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, created_at TEXT, enabled_at TEXT, last_step INTEGER)`);
+  // F-14.3a: the last time step a code was accepted for, so the same code cannot be used twice.
+  if (!db.prepare('PRAGMA table_info(mfa_factors)').all().some(c => c.name === 'last_step')) db.exec('ALTER TABLE mfa_factors ADD COLUMN last_step INTEGER');
+  // F-14.3b: each second-step challenge is single-use. Its id is recorded here when it completes sign-in.
+  db.exec(`CREATE TABLE IF NOT EXISTS mfa_challenges_used(jti TEXT PRIMARY KEY, used_at TEXT NOT NULL)`);
   const lower = e => String(e || '').toLowerCase();
   const factor = email => db.prepare('SELECT * FROM mfa_factors WHERE email=?').get(lower(email));
   const who = req => lower(req.user && req.user.email);
@@ -39,8 +43,10 @@ function mountMfa(app, ctx) {
     const email = who(req), f = factor(email);
     if (!f) return res.status(409).json({ error: 'Start the set-up first.' });
     if (f.enabled) return res.status(409).json({ error: 'Two-step sign-in is already on.' });
-    if (!totp.verify(f.secret, (req.body || {}).code)) return res.status(400).json({ error: 'That code is not right. Check the time on your phone and try again.' });
-    db.prepare('UPDATE mfa_factors SET enabled=1, enabled_at=? WHERE email=?').run(new Date().toISOString(), email);
+    const step = totp.matchStep(f.secret, (req.body || {}).code);
+    if (step === null) return res.status(400).json({ error: 'That code is not right. Check the time on your phone and try again.' });
+    // The code that turns the factor on is spent, so it cannot also be used for the first sign-in.
+    db.prepare('UPDATE mfa_factors SET enabled=1, enabled_at=?, last_step=? WHERE email=?').run(new Date().toISOString(), step, email);
     audit(email, 'two-step sign-in turned on', '');
     // A fresh token that has passed the code check, so the session can use the whole app now.
     res.json({ ok: true, token: signToken(email, true) });
@@ -63,8 +69,24 @@ function mountMfa(app, ctx) {
     if (!p || p.purpose !== 'mfa') return bad();
     const f = factor(p.email);
     if (!f || !f.enabled) return bad();
-    if (!totp.verify(f.secret, (req.body || {}).code)) { audit(lower(p.email), 'two-step sign-in failed', 'wrong code'); return res.status(401).json({ error: 'That code is not right. Check the time on your phone and try again.' }); }
+    if (!p.jti) return bad();
+    const step = totp.matchStep(f.secret, (req.body || {}).code);
+    if (step === null) { audit(lower(p.email), 'two-step sign-in failed', 'wrong code'); return res.status(401).json({ error: 'That code is not right. Check the time on your phone and try again.' }); }
     const email = lower(p.email), row = db.prepare('SELECT * FROM admin_users WHERE email=?').get(email), now = new Date().toISOString();
+    // Spend the code and the challenge together. A code whose time step is not newer than the last one accepted is a
+    // replay (F-14.3a); a challenge id that is already recorded was used before (F-14.3b). Either way nothing is granted.
+    const spend = db.transaction(() => {
+      const used = db.prepare('UPDATE mfa_factors SET last_step=? WHERE email=? AND (last_step IS NULL OR last_step < ?)').run(step, email, step);
+      if (used.changes !== 1) return false;
+      db.prepare('INSERT INTO mfa_challenges_used(jti, used_at) VALUES(?, ?)').run(String(p.jti), now);
+      return true;
+    });
+    let ok = false;
+    try { ok = spend(); } catch { ok = false; }
+    if (!ok) {
+      audit(email, 'two-step sign-in refused', 'code or challenge already used');
+      return res.status(401).json({ error: 'That code was already used. Wait for the next code in your app, then try again.' });
+    }
     if (row) db.prepare('UPDATE admin_users SET last_login_at=? WHERE id=?').run(now, row.id);
     audit(email, 'signed in', 'with two-step code');
     res.json({ token: signToken(email, true), email });
@@ -73,5 +95,5 @@ function mountMfa(app, ctx) {
 
 // Used by sign-in: is a factor on for this account?
 mountMfa.enabledFor = (db, email) => { try { const f = db.prepare('SELECT enabled FROM mfa_factors WHERE email=?').get(String(email || '').toLowerCase()); return !!(f && f.enabled); } catch { return false; } };
-mountMfa.challenge = email => require('jsonwebtoken').sign({ purpose: 'mfa', email: String(email).toLowerCase() }, process.env.JWT_SECRET, { expiresIn: '5m' });
+mountMfa.challenge = email => require('jsonwebtoken').sign({ purpose: 'mfa', email: String(email).toLowerCase(), jti: require('crypto').randomUUID() }, process.env.JWT_SECRET, { expiresIn: '5m' });
 module.exports = mountMfa;

@@ -189,7 +189,8 @@ async function check(area, name, fn) {
     q('#mfaCode').value = '000000'; submit(); await sleep(700);
     const wrongIn = !!w2.localStorage.getItem('bc_admin_token');
     const wrongMsg = /not right/.test(q('#loginStatus').textContent);
-    q('#mfaCode').value = totp.codeAt(su.secret, Math.floor(Date.now() / 30000)); submit(); await sleep(1200);
+    // The enabling code is spent (F-14.3a), so sign-in uses the next 30-second code.
+    q('#mfaCode').value = totp.codeAt(su.secret, Math.floor(Date.now() / 30000) + 1); submit(); await sleep(1200);
     const rightIn = !!w2.localStorage.getItem('bc_admin_token');
     assert(step && !wrongIn && wrongMsg && rightIn, JSON.stringify({ step, wrongIn, wrongMsg, rightIn, msg: q('#loginStatus').textContent }));
     return 'password step → code step; wrong code refused with message; right code signs in';

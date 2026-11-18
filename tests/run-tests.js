@@ -314,7 +314,8 @@ async function startServer(env, dataDir) {
     const en = await req('POST', '/api/admin/mfa/enable', { token: l1.data.token, json: { code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000)) } });
     const l2 = await req('POST', '/api/admin/login', { json: { email, password: pw } });
     const wrong = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: '000000' } });
-    const right = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000)) } });
+    // The enabling code is spent (F-14.3a), so sign-in uses the next 30-second code.
+    const right = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000) + 1) } });
     const me = await req('GET', '/api/admin/me', { token: right.data.token });
     const cancelOn = await req('POST', '/api/admin/mfa/cancel', { token: l1.data.token });
     assert(cancelOn.status === 200 && (await req('GET', '/api/admin/mfa', { token: l1.data.token })).data.enabled === true, 'cancel does not turn off a set-up that is on');

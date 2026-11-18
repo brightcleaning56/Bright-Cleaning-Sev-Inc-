@@ -137,5 +137,6 @@ Commits on `claude/bright-cleaning-rebuild-nt1y6e`, in order: `7e0b998` (must-fi
 - Admin token kept in localStorage (known risk, item 6).
 - Script CSP stays report-only (item 7).
 - Legal: SMS follow-ups and callbacks need counsel's review before automatic use is turned on.
-- TOTP replay and challenge reuse (F-14.3a/b) not fixed; `mfa.js` and `totp.js` are outside the reviewed scope.
+- TOTP replay and challenge reuse (F-14.3a/b): fixed in code. A code's time step is recorded per account and a challenge is single-use; `tests/mfa-replay-test.js` (6/6) fails on the old code and passes on the new. The code that turns two-step sign-in on is also spent, so the first sign-in needs the next code.
+- TOTP secrets stored in plain text (F-14.3c) not changed; needs an encryption key decision.
 - Stripe end-to-end and live provider paths (Twilio, Postmark, Microsoft 365, B2 status) not tested live.
