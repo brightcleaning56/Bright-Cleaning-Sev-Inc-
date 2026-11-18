@@ -607,6 +607,38 @@
   .kpi .chip .ic { color: inherit; }
   /* Customer tabs: keep each label on one line; the strip scrolls sideways instead of breaking words */
   .ctabs2 button span { overflow-wrap: normal; white-space: nowrap; }
+  /* Eight screens to the tile standard: keep controls on one line, keep wide tables inside their own card */
+  .clhead .btn { white-space: nowrap; flex: none; }
+  .ctabs2 { flex-wrap: wrap; overflow: visible; }
+  .ctabs2 button { flex: 0 0 auto; }
+  /* Calls: the side panel drops under the table below 1600 px so the Callback column has room */
+  @media (max-width: 1600px) { .ccwrap { grid-template-columns: 200px minmax(0, 1fr) !important; } #callPanel { grid-column: 1 / -1; position: static !important; } }
+  @media (max-width: 1100px) { .ccwrap { grid-template-columns: 1fr !important; } }
+  /* Client messages search: same field style as the other screens */
+  #cmSearch { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ccd5df; border-radius: 10px; font: inherit; font-size: 14px; background: #fff; }
+  #cmSearch:focus { outline: 2px solid var(--blue2); outline-offset: 0; border-color: var(--blue2); }
+  /* Estimates & proposals: compact cells, action buttons on one line, dates kept whole; the card scrolls, not the page */
+  #v-proposals table.isst th, #v-proposals table.isst td { padding: 10px 8px; font-size: 13px; }
+  #v-proposals table.isst td:last-child { white-space: nowrap; }
+  #v-proposals table.isst td:last-child .btn { display: inline-block; margin: 2px 0; }
+  #v-proposals table.isst th:nth-child(5), #v-proposals table.isst td:nth-child(5), #v-proposals table.isst th:nth-child(6), #v-proposals table.isst td:nth-child(6) { white-space: nowrap; }
+  /* Quality: one line of tabs at desktop (scrolls inside the strip), wrap only on phones */
+  #qTabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+  #qTabs button { flex: none; white-space: nowrap; padding: 8px 11px; }
+  @media (max-width: 700px) { #qTabs { flex-wrap: wrap; overflow: visible; } }
+  #qcComplaints .segtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+  #qcComplaints .segtabs button { flex: none; white-space: nowrap; padding: 8px 11px; }
+  @media (max-width: 700px) { #qcComplaints .segtabs { flex-wrap: wrap; overflow: visible; } }
+  /* Reports: tighter table cells so the last columns sit inside their card */
+  #v-reports table.t th, #v-reports table.t td { padding: 9px 8px; font-size: 13px; }
+  #v-reports table.t th { white-space: normal; }
+  /* Settings: one line of section tabs (scrolls inside the strip only if needed); cards match the tile style */
+  #v-settings .stabs { flex-wrap: nowrap; overflow-x: auto; }
+  #v-settings .stab { padding: 8px 9px; font-size: 13px; white-space: nowrap; flex: none; }
+  #v-settings .sgrid .card { background: linear-gradient(180deg,#f5f8fc,#fff 70%); border: 1px solid #dfe8f2; box-shadow: 0 1px 2px rgba(16,38,62,.05), 0 6px 18px rgba(16,38,62,.05); }
+  /* Subscriptions KPI row (numbers the screen already loads) */
+  #subsKpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
+  @media (max-width: 760px) { #subsKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   /* Six tiles on a laptop-width screen: keep the collected amount on one line */
   @media (max-width: 1600px) { .kpi { padding: 14px 12px; gap: 10px; } .kpi .ic { width: 40px; height: 40px; } .kpi b { font-size: 21px; } }
 
@@ -1106,6 +1138,7 @@
 
     <section class="view" id="v-subscriptions">
       <div class="pagehead"><div><h1>Subscriptions</h1><p>Monthly service plans for ongoing customers. Each month, billing creates one draft invoice per active subscription. Drafts are reviewed and sent from Invoices.</p></div></div>
+      <div class="kpis6" id="subsKpis" hidden></div>
       <div class="card" id="subsCard" hidden style="margin-bottom:14px"></div>
     </section>
     <section class="view" id="v-invoices">
