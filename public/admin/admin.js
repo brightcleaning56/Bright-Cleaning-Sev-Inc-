@@ -281,6 +281,9 @@
     } catch (err) { st.className = 'msg err'; st.textContent = err.message; if (mfaToken && /Start again/.test(err.message)) showMfaStep(false); }
   });
   $('#logout').addEventListener('click', () => signOut());
+  // Narrow screens: the sidebar sits behind a Menu button; choosing a section closes it.
+  $('#navToggle').addEventListener('click', () => { const open = document.querySelector('.side').classList.toggle('open'); $('#navToggle').setAttribute('aria-expanded', String(open)); });
+  $('#nav').addEventListener('click', e => { if (e.target.closest('button[data-view]')) { document.querySelector('.side').classList.remove('open'); $('#navToggle').setAttribute('aria-expanded', 'false'); } });
 
   // Owners and managers must set up two-step sign-in before using the app: send them straight to the Security card.
   // Restricted session: only Settings stays open, and the redirect runs at most once every few seconds, so a
@@ -515,6 +518,8 @@
     inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     calls: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
     emails: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/>',
+    chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    voicemail: '<circle cx="6" cy="12" r="4"/><circle cx="18" cy="12" r="4"/><path d="M6 16h12"/>',
     customers: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3M16 3.13a4 4 0 0 1 0 7.75"/>',
     save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>'
   };
@@ -603,21 +608,30 @@
   // Revenue & activity trend: collected money and proposal value by month, with win rate.
   function renderCcTrend(t) {
     const box = $('#ccTrend'); if (!box || !t || !t.months) return;
-    const W = 640, H = 220, P = 34, n = t.months.length, bw = (W - 2 * P) / n;
-    const max = Math.max(1, ...t.months.map(m => Math.max(m.revenue, m.estimates)));
-    const y = v => H - P - (v / max) * (H - 2 * P);
-    let bars = '', labels = '', pts = [];
+    // Stacked bars per month: collected (revenue) at the base, proposals sent (estimates) on top; win rate as a green line on a 0-100% scale.
+    const W = 640, H = 280, PL = 58, PR = 44, PT = 14, PB = 30, n = t.months.length, cw = (W - PL - PR) / n, bw = Math.min(56, cw * 0.5);
+    const top = Math.max(1000, ...t.months.map(m => Number(m.revenue) + Number(m.estimates)));
+    const mag = Math.pow(10, Math.floor(Math.log10(top))), scale = Math.ceil(top / mag) * mag;
+    const y = v => PT + (H - PT - PB) * (1 - v / scale);
+    const kfmt = v => v >= 1000 ? '$' + Math.round(v / 1000) + 'K' : '$' + Math.round(v);
+    let grid = '', bars = '', labels = '', pts = [];
+    for (let k = 0; k <= 4; k++) {
+      const v = scale * k / 4, yy = y(v).toFixed(1);
+      grid += '<line x1="' + PL + '" x2="' + (W - PR) + '" y1="' + yy + '" y2="' + yy + '" stroke="#e9eef4"/>'
+        + '<text x="' + (PL - 8) + '" y="' + (Number(yy) + 4) + '" text-anchor="end" font-size="11" fill="#6b7a8c">' + kfmt(v) + '</text>'
+        + '<text x="' + (W - PR + 8) + '" y="' + (Number(yy) + 4) + '" text-anchor="start" font-size="11" fill="#6b7a8c">' + (k * 25) + '%</text>';
+    }
     t.months.forEach((m, i) => {
-      const x = P + i * bw;
-      bars += '<rect x="' + (x + bw * 0.12).toFixed(1) + '" y="' + y(m.revenue).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + (H - P - y(m.revenue)).toFixed(1) + '" fill="#1f6fd1" rx="3"><title>Collected ' + money(m.revenue) + '</title></rect>';
-      bars += '<rect x="' + (x + bw * 0.5).toFixed(1) + '" y="' + y(m.estimates).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + (H - P - y(m.estimates)).toFixed(1) + '" fill="#9cc4f2" rx="3"><title>Proposals sent ' + money(m.estimates) + '</title></rect>';
-      labels += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="12" fill="#6b7a8c">' + esc(m.label) + '</text>';
-      if (m.win_rate != null) pts.push((x + bw / 2).toFixed(1) + ',' + (H - P - (m.win_rate / 100) * (H - 2 * P)).toFixed(1));
+      const rev = Number(m.revenue) || 0, est = Number(m.estimates) || 0, x = PL + i * cw + (cw - bw) / 2, cx = PL + i * cw + cw / 2;
+      if (rev > 0) bars += '<rect x="' + x.toFixed(1) + '" y="' + y(rev).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(0) - y(rev)).toFixed(1) + '" fill="#1f5fd6" rx="3"><title>Collected ' + money(rev) + '</title></rect>';
+      if (est > 0) bars += '<rect x="' + x.toFixed(1) + '" y="' + y(rev + est).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(rev) - y(rev + est)).toFixed(1) + '" fill="#9cc4f2" rx="3"><title>Proposals sent ' + money(est) + '</title></rect>';
+      labels += '<text x="' + cx.toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="12" fill="#6b7a8c">' + esc(m.label) + '</text>';
+      if (m.win_rate != null) pts.push(cx.toFixed(1) + ',' + (PT + (H - PT - PB) * (1 - Number(m.win_rate) / 100)).toFixed(1));
     });
     const line = pts.length ? '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#1f9d55" stroke-width="2.5"/>' + pts.map(p => '<circle cx="' + p.split(',')[0] + '" cy="' + p.split(',')[1] + '" r="3.5" fill="#1f9d55"/>').join('') : '';
-    box.innerHTML = '<div class="cardhead"><h2>Revenue &amp; activity trend</h2><small class="muted">Last ' + n + ' months</small></div>'
-      + '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto" role="img" aria-label="Collected, proposals sent and win rate by month">' + bars + line + labels + '</svg>'
-      + '<p class="muted" style="margin:4px 0 0;font-size:12px"><span style="color:#1f6fd1">■</span> Collected &nbsp; <span style="color:#9cc4f2">■</span> Proposals sent &nbsp; <span style="color:#1f9d55">●</span> Win rate</p>';
+    box.innerHTML = '<div class="cardhead"><h2>Revenue &amp; Activity Trend</h2><small class="muted">Last ' + n + ' months</small></div>'
+      + '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto" role="img" aria-label="Collected, proposals sent and win rate by month">' + grid + bars + line + labels + '</svg>'
+      + '<p class="muted" style="margin:6px 0 0;font-size:12px;text-align:center"><span style="color:#1f5fd6">■</span> Revenue (collected) &nbsp; <span style="color:#9cc4f2">■</span> Estimates (proposals sent) &nbsp; <span style="color:#1f9d55">●</span> Win Rate</p>';
   }
 
   // Command Center cards: what needs attention (opens Today's Work), communications (opens each center), and today's schedule.
@@ -637,11 +651,10 @@
     if (comms) {
       try {
         const c = await api('/api/admin/communications-summary?days=' + encodeURIComponent(days));
-        const tile = (label, n, go_, note) => '<button type="button" class="ccq" data-cc-go="' + go_ + '" style="display:flex;justify-content:space-between;width:100%"><span>' + esc(label) + (note ? '<small class="muted"> ' + esc(note) + '</small>' : '') + '</span><b>' + n + '</b></button>';
-        comms.innerHTML = '<div class="cardhead"><h2>Communications</h2><small class="muted">Last ' + c.days + ' days</small></div>'
-          + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">'
-          + tile('Calls', c.calls, 'calls', c.missed + ' missed') + tile('Messages (SMS)', (c.texts_in || 0) + (c.texts_out || 0), 'clientmsgs', c.texts_in + ' in · ' + c.texts_out + ' out') + tile('Emails', (c.emails_sent || 0) + (c.emails_received || 0), 'emails', c.emails_sent + ' sent · ' + c.emails_received + ' in') + tile('Voicemails', c.voicemails, 'calls', '') + '</div>'
-          + '<div style="text-align:right;margin-top:8px"><button type="button" class="linklike" data-cc-all="1">View all communications →</button></div>';
+        const tile = (label, n, go_, note, ic, col, bg) => '<button type="button" class="ccq" data-cc-go="' + go_ + '"><span class="cicon" style="background:' + bg + ';color:' + col + '">' + svg(ic) + '</span><span><small>' + esc(label) + '</small><b>' + n + '</b>' + (note ? '<span class="note">' + esc(note) + '</span>' : '') + '</span></button>';
+        comms.innerHTML = '<div class="cardhead"><h2>Communications <small class="muted" style="font-weight:500">(Last ' + c.days + ' days)</small></h2><button type="button" class="linklike" data-cc-all="1">View all communications →</button></div>'
+          + '<div class="commrow">'
+          + tile('Calls', c.calls, 'calls', c.missed + ' missed', 'calls', '#1f6fd1', '#e6f0fd') + tile('Messages (SMS)', (c.texts_in || 0) + (c.texts_out || 0), 'clientmsgs', c.texts_in + ' in · ' + c.texts_out + ' out', 'chat', '#1f9d55', '#e6f6ec') + tile('Emails', (c.emails_sent || 0) + (c.emails_received || 0), 'emails', c.emails_sent + ' sent · ' + c.emails_received + ' in', 'emails', '#7c4dd6', '#f0eafc') + tile('Voicemails', c.voicemails, 'calls', '', 'voicemail', '#d64545', '#fdeaea') + '</div>';
         comms.querySelectorAll('[data-cc-go]').forEach(b => b.onclick = () => go(b.dataset.ccGo));
         comms.querySelectorAll('[data-cc-all]').forEach(b => b.onclick = () => go('calls'));
       } catch (err) { comms.innerHTML = '<p class="muted">Communications could not load: ' + esc(err.message) + '</p>'; }
@@ -650,9 +663,9 @@
     if (sched) {
       try {
         const r = await api('/api/admin/work-queue/schedule');
-        sched.innerHTML = '<div class="cardhead"><h2>Today’s schedule</h2><button class="linklike" data-view-link="workqueue">Open</button></div>'
-          + (r.appointments.length ? '<ul class="plain">' + r.appointments.map(v => '<li style="margin:4px 0"><b>' + esc(v.start_time || 'Any time') + '</b> ' + esc(v.title) + ' <small class="muted">' + esc(v.status) + '</small></li>').join('') + '</ul>' : '<p class="muted">No appointments today.</p>')
-          + '<p style="margin:8px 0 2px"><b>Follow-ups due</b> ' + r.follow_ups.length + '</p>'
+        sched.innerHTML = '<div class="cardhead"><h2>Today’s Schedule</h2><button class="linklike" data-view-link="schedule">View calendar →</button></div>'
+          + (r.appointments.length ? r.appointments.map(v => '<div class="srow"><span class="tpill">' + esc(v.start_time || 'Any time') + '</span><span style="flex:1;min-width:0">' + esc(v.title) + '</span><small class="muted">' + esc(v.status) + '</small></div>').join('') : '<p class="muted">No appointments today.</p>')
+          + '<p style="margin:10px 0 2px"><b>Follow-ups due</b> ' + r.follow_ups.length + '</p>'
           + (r.follow_ups.slice(0, 5).map(f => '<div class="muted" style="margin:2px 0">' + (f.overdue ? '<span class="badge red">Overdue</span> ' : '') + esc(f.who) + ' · ' + esc(f.what) + '</div>').join(''));
       } catch (err) { sched.innerHTML = '<p class="muted">Schedule could not load: ' + esc(err.message) + '</p>'; }
     }
@@ -673,21 +686,22 @@
     const ALERTS = [['Leads not contacted (2+ days)', att.leads_waiting_2_days, 'leads'], ['Overdue tasks', att.overdue_tasks, 'workqueue'], ['Follow-ups due today', att.follow_ups_today, 'calls'], ['Open issues / complaints', att.open_complaints, 'issues'], ['Invoices past due', att.overdue_invoices, 'invoices']];
     if ($('#ccAlerts')) {
       const alertTotal = ALERTS.reduce((s, a) => s + (Number(a[1]) || 0), 0);
-      $('#ccAlerts').innerHTML = '<div class="cardhead"><h2>Alerts &amp; attention</h2><small class="muted">' + alertTotal + ' total</small></div>' + ALERTS.map(([l, n, v]) => '<button type="button" class="ccq" data-ccal="' + v + '" style="display:flex;justify-content:space-between;width:100%"><span>' + esc(l) + '</span><span><b' + (n ? ' style="color:#b42318"' : '') + '>' + n + '</b> <span aria-hidden="true">›</span></span></button>').join('');
+      const AICON = { leads: 'user', workqueue: 'check', calls: 'cal', issues: 'alert', invoices: 'inv' };
+      $('#ccAlerts').innerHTML = '<div class="cardhead"><h2>Alerts &amp; Attention</h2><span class="badge red" aria-label="' + alertTotal + ' items">' + alertTotal + '</span></div>' + ALERTS.map(([l, n, v]) => '<button type="button" class="arow" data-ccal="' + v + '"><span class="achip" style="background:var(--tint-red);color:var(--red)">' + svg(AICON[v]) + '</span><span class="alabel">' + esc(l) + '</span><span class="acount">' + n + '</span><svg class="achev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>').join('');
       $$('#ccAlerts [data-ccal]').forEach(b => b.onclick = () => go(b.dataset.ccal));
     }
     api('/api/admin/command-center/trend?months=6').then(renderCcTrend).catch(() => { /* chart is optional */ });
     if ($('#ccNewBtn')) $('#ccNewBtn').onclick = () => openDrawer({ title: 'New', sub: 'Start something new', body: '<div class="qa" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">' + [['New lead', 'newLead'], ['Log call', 'logCall'], ['New estimate', 'openEstimator'], ['Add customer', 'addCustomer'], ['Create task', 'createTask'], ['Upload drawings', 'uploadDocs']].map(([l, k2]) => '<button type="button" class="btn ghost" data-newk="' + k2 + '">' + esc(l) + '</button>').join('') + '</div>', footer: '<button class="btn ghost" data-close>Close</button>' });
     $$('[data-newk]').forEach(b => b.onclick = () => { closeDrawer(); ({ newLead: () => newLead(), logCall: () => logCall(), openEstimator: () => openEstimator(), addCustomer: () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }, createTask: () => { wq.dept = 'tasks'; go('workqueue'); }, uploadDocs: () => uploadDocs() })[b.dataset.newk](); });
     const tiles = [
-      { label: 'New leads', sub: per, value: k.new_leads.value, change: k.new_leads.change, icon: 'leads', c: '#1f6fd1', to: 'leads', drill: 'new_leads' },
-      { label: 'Proposals sent', sub: per, value: k.proposals_sent.value, change: k.proposals_sent.change, icon: 'doc', c: '#2f80ed', to: 'proposals' },
-      { label: 'Won', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
-      { label: 'Revenue (collected)', sub: per, value: money(k.collected_period.value), change: k.collected_period.change, icon: 'dollar', c: '#178a4c', to: 'invoices', drill: 'collected' },
-      { label: 'Active projects', value: k.active_projects.value, icon: 'cal', c: '#2563eb', to: 'projects' },
+      { label: 'New Leads', sub: per, value: k.new_leads.value, change: k.new_leads.change, icon: 'leads', c: '#1f6fd1', to: 'leads', drill: 'new_leads' },
+      { label: 'Proposals Sent', sub: per, value: k.proposals_sent.value, change: k.proposals_sent.change, icon: 'doc', c: '#7c4dd6', to: 'proposals' },
+      { label: 'Won / Closed', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
+      { label: 'Revenue (Collected)', sub: per, value: money(k.collected_period.value), change: k.collected_period.change, icon: 'dollar', c: '#178a4c', to: 'invoices', drill: 'collected' },
+      { label: 'Active Projects', value: k.active_projects.value, icon: 'cal', c: '#d68a1f', to: 'projects' },
       { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: 'workqueue', alert: k.attention.value > 0 },
     ];
-    $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
+    $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}" style="background:linear-gradient(180deg,${t.c}1f,#fff 80%)"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
     $$('#ccKpis .kpi').forEach(b => b.onclick = () => { const t = tiles[b.dataset.i]; if (t.label === 'Needs attention') return openAttention(); if (t.drill === 'new_leads') return openLeadList('all', ''); if (t.drill) return openDrill(t.drill); go(t.to); });
     loadLive();
     if (!window.matchMedia || !matchMedia('(prefers-reduced-motion: reduce)').matches) $$('#ccKpis .kpi b').forEach(el => {
@@ -700,10 +714,11 @@
     const colors = ['#1d4f91', '#2563eb', '#1497b5', '#1f9d55'];
     // Each stage shows its share of the stage before it, so you can see where deals stall
     // A percentage chip between stages shows how many move on from the stage before (like the mockup)
-    $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => { const prev = i ? cc.pipeline[i - 1].n : 0; const chip = i && prev ? `<div style="text-align:center;margin:-2px 0"><span style="display:inline-block;padding:1px 10px;border-radius:999px;background:#eef3fb;color:#1d4f91;font-size:12px;font-weight:600">${Math.min(999, Math.round(p.n / prev * 100))}%</span></div>` : ''; return chip + `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]}"><span>${esc(p.stage)} (${p.n})</span><span>${p.valued ? money(p.v) : ''}</span></div>`; }).join('')
+    // Funnel: bars in column 1, the conversion from the stage before in column 2, between the two bars.
+    $('#ccPipe').innerHTML = cc.pipeline.map((p, i) => { const prev = i ? cc.pipeline[i - 1] : null; const conv = prev ? `<div class="conv" style="grid-row:${2 * i}"><b>${prev.n ? Math.min(999, Math.round(p.n / prev.n * 100)) + '%' : '—'}</b>${esc(prev.stage)} → ${esc(p.stage)}</div>` : ''; return conv + `<div class="st" style="--w:${100 - i * 10}%;--c:${colors[i]};grid-row:${2 * i + 1}"><span>${esc(p.stage)} (${p.n})</span><span>${p.valued ? money(p.v) : ''}</span></div>`; }).join('')
       + (cc.pipeline.every(p => !p.n) ? '<p class="empty" style="margin-top:6px">Your pipeline fills in as leads, estimates and proposals come in.</p>' : '');
     // Total value: the sum of the stages that carry money (the mockup's "Total Value" header)
-    if ($('#ccPipeTotal')) $('#ccPipeTotal').textContent = money(cc.pipeline.reduce((s, p) => s + (p.valued ? Number(p.v) || 0 : 0), 0)) + ' total value';
+    if ($('#ccPipeTotal')) $('#ccPipeTotal').textContent = money(cc.pipeline.reduce((s, p) => s + (p.valued ? Number(p.v) || 0 : 0), 0)) + ' Total Value';
     $('#ccAct').innerHTML = renderActivity(cc.activity) || '<p class="empty">No activity yet.</p>';
     const QA = [
       ['New Lead', 'user', () => newLead()], ['Log Call', 'calls', () => logCall()], ['Send Email', 'emails', () => go('emails')],
@@ -733,7 +748,7 @@
     list('#ovAwait', d.awaitingResponse, e => `<li data-est="${e.id}"><span><b>${esc(e.customer_name)}</b><small>${esc(e.project_name || e.company || '')}</small></span><span class="r">${money(e.proposal_total)}<small>${esc(e.status)} ${esc(ago(e.updated_at))}</small></span></li>`, d.draftProposals ? `Nothing sent is waiting. ${d.draftProposals} draft proposal(s) not sent yet.` : 'Nothing waiting on a customer.');
     list('#ovDue', d.dueProjects, p => `<li data-rec="projects:${p.id}"><span><b>${esc(p.name || 'Project')}</b><small>${esc(p.company || p.customer_name || '')} · ${esc(p.status)} · ${Number(p.progress || 0)}%</small><div style="height:6px;background:#e5e7eb;border-radius:4px;margin-top:4px"><i style="display:block;height:100%;width:${Math.min(100, Math.max(0, Number(p.progress || 0)))}%;background:#1f9d55;border-radius:4px"></i></div></span><span class="r">${p.due_date < todayISO() ? '<span class="badge red">Past due</span>' : ''}<small>Due ${fmtDate(p.due_date)}</small></span></li>`, 'No projects due in the next two weeks.');
     const it = cc.kpis.invoice_tiles;
-    if (it && $('#ovInvTiles')) $('#ovInvTiles').innerHTML = [['Overdue', it.overdue.n + ' · ' + money(it.overdue.v), '#fdecec', '#b42318'], ['Open', it.open.n + ' · ' + money(it.open.v), '#e8f0fb', '#1f6fd1'], ['Collected this month', money(it.collected_month), '#e7f6ee', '#178a4c']].map(([l, v, bg, fg]) => `<div style="background:${bg};color:${fg};border-radius:8px;padding:8px 10px"><small>${esc(l)}</small><b style="display:block">${esc(v)}</b></div>`).join('');
+    if (it && $('#ovInvTiles')) $('#ovInvTiles').innerHTML = [['Overdue', money(it.overdue.v), it.overdue.n, '#fdecec', '#b42318'], ['Open', money(it.open.v), it.open.n, '#e8f0fb', '#1f6fd1'], ['Collected this month', money(it.collected_month), null, '#e7f6ee', '#178a4c']].map(([l, v, n, bg, fg]) => `<div style="background:${bg};color:${fg}"><b>${esc(v)}</b><small>${esc(l)}${n == null ? '' : ' (' + n + ')'}</small></div>`).join('');
     list('#ovOverdue', d.overdueInvoices, i => `<li data-rec="invoices:${i.id}"><span><b>${esc(i.invoice_number)}</b><small>${esc(i.company || i.customer_name || '')}</small></span><span class="r">${money(i.amount - i.paid_amount)}<small>Due ${fmtDate(i.due_date)}</small></span></li>`, 'No overdue invoices.');
     $('#ovRenewCard').hidden = !d.renewals.length;
     list('#ovRenew', d.renewals, c => `<li data-rec="contracts:${c.id}"><span><b>${esc(c.title || 'Contract')}</b><small>${esc(c.company || c.customer_name || '')}</small></span><span class="r"><small>Ends ${fmtDate(c.end_date)}</small></span></li>`, '');
@@ -3034,6 +3049,8 @@
     setDot('#tbAlerts', iss ? (iss.issues || []).filter(i => i.type === 'complaint' || i.overdue).length : 0);
     setDot('#tbMail', mail && mail.summary ? mail.summary.failed_30d : 0);
     setDot('#tbCalls', calls ? calls.follow_ups_due || 0 : 0);
+    // Phone pill: shows the real phone-capture state from the calls intel status; hidden if that cannot be read.
+    get('/api/admin/calls-intel').then(x => { const p = $('#tbPhone'); if (!p || !x) return; p.hidden = false; p.classList.toggle('off', !x.connected); p.querySelector('span').textContent = x.connected ? 'Phone: Online' : 'Phone: Not connected'; });
   }
   setInterval(() => { if (document.visibilityState === 'visible' && token) loadTopbar(); }, 60000);
 
