@@ -104,3 +104,11 @@ function backfill(db) {
 }
 
 module.exports = { ensureTables, conversationFor, addMessage, thread, backfill };
+
+// Used by the message write paths: records the shared copy and never blocks the legacy write.
+// A failure here is logged; the original message row has already been saved.
+function mirror(db, opts) {
+  try { return addMessage(db, opts); }
+  catch (err) { console.error('shared message not recorded:', err.message); return null; }
+}
+module.exports.mirror = mirror;

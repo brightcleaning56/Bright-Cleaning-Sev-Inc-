@@ -8,6 +8,8 @@ const PORTAL_FALLBACK_SECRET = crypto.randomBytes(32).toString('hex');
 const fs = require('fs'), path = require('path');
 module.exports = function mountPortal(app, ctx) {
   const { db, getMailer, auth, syncLead, ops, afterDecision, upload, uploadDir } = ctx;
+  // Shared conversation record: create its tables and copy in existing customer and crew messages (safe to repeat).
+  { const conv = require('./conversations'); conv.ensureTables(db); try { conv.backfill(db); } catch (err) { console.error('shared message backfill failed:', err.message); } }
   // One proposal as the customer sees it in the portal. Only this customer's own proposal, never internal notes.
   const todayStr = () => require('./bizdate').today();
   const numberOf = p => 'P-' + (String(p.created_at || '').slice(0, 4) || '2026') + '-' + String(1000 + p.id);
@@ -173,6 +175,7 @@ module.exports = function mountPortal(app, ctx) {
     if (body.length < 2) return res.status(400).json({ error: 'Write the reply first.' });
     const by = (req.user && req.user.email) || 'staff';
     const id = db.prepare('INSERT INTO portal_message_replies(message_id,body,by_user,created_at) VALUES(?,?,?,?)').run(m.id, body, by, new Date().toISOString()).lastInsertRowid;
+    require('./conversations').mirror(db, { kind: 'customer', customerEmail: m.email, role: 'office', senderRef: by, body, legacyRef: 'portal_reply:' + id });
     const mailer2 = getMailer && getMailer();
     let emailed = false;
     if (mailer2 && wantsEmail(m.email, 'messages')) {
@@ -194,6 +197,7 @@ module.exports = function mountPortal(app, ctx) {
     if (body.length < 5) return res.status(400).json({ error: 'Write your message first.' });
     const at = now();
     const id = db.prepare('INSERT INTO portal_messages(email,subject,body,created_at) VALUES(?,?,?,?)').run(sess.email, subject, body, at).lastInsertRowid;
+    require('./conversations').mirror(db, { kind: 'customer', customerEmail: sess.email, subject, role: 'customer', senderRef: sess.email, body, legacyRef: 'portal:' + id });
     const m = getMailer && getMailer();
     if (m) {
       const from = process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net';
@@ -272,6 +276,7 @@ module.exports = function mountPortal(app, ctx) {
     const subject = 'Change request: ' + number + ' ' + (e.project_name || 'proposal');
     const at = now();
     const id = db.prepare('INSERT INTO portal_messages(email,subject,body,created_at) VALUES(?,?,?,?)').run(sess.email, subject.slice(0, 200), body, at).lastInsertRowid;
+    require('./conversations').mirror(db, { kind: 'customer', customerEmail: sess.email, subject: subject.slice(0, 200), role: 'customer', senderRef: sess.email, body, legacyRef: 'portal:' + id });
     const m = getMailer && getMailer();
     if (m) { try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: process.env.NOTIFY_EMAIL || 'info@brightclean.net', subject: 'Change request on ' + number, text: 'From: ' + sess.email + '\n\n' + body + '\n\nReply to this email to answer the customer.', replyTo: sess.email }); } catch (err) { console.error('change request notice not sent', err.message); } }
     res.status(201).json({ ok: true, id, message: 'Thank you. Your change request was sent to the Bright Cleaning Sev Inc. team. We will send an updated proposal.' });

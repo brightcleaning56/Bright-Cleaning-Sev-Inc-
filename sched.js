@@ -549,6 +549,7 @@ module.exports = function mountSched(app, ctx) {
     if (req.body.visit_id) { const v = assigned(e, req.body.visit_id); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); vid = v.id; }
     const t = now();
     const id = db.prepare("INSERT INTO crew_messages(employee_id,visit_id,direction,body,created_at,seen_by_office,seen_by_crew) VALUES(?,?,'crew',?,?,0,1)").run(e.id, vid, body, t).lastInsertRowid;
+    require('./conversations').mirror(db, { kind: 'crew', employeeId: e.id, role: 'crew', senderRef: String(e.id), body, visitId: vid, legacyRef: 'crew:' + id });
     if (adminEmail) await notify(adminEmail, `Message from ${e.name}`, `${body}\n\nReply in the admin: https://brightclean.net/admin/#schedule`);
     res.status(201).json({ id });
   };
@@ -578,7 +579,8 @@ module.exports = function mountSched(app, ctx) {
     const body = clean((req.body || {}).body, 1000);
     if (!body) return res.status(400).json({ error: 'Write a message first.' });
     const vid = req.body.visit_id ? Number(req.body.visit_id) || null : null;
-    db.prepare("INSERT INTO crew_messages(employee_id,visit_id,direction,body,created_at,seen_by_office,seen_by_crew) VALUES(?,?,'office',?,?,1,0)").run(e.id, vid, body, now());
+    const cmId = db.prepare("INSERT INTO crew_messages(employee_id,visit_id,direction,body,created_at,seen_by_office,seen_by_crew) VALUES(?,?,'office',?,?,1,0)").run(e.id, vid, body, now()).lastInsertRowid;
+    require('./conversations').mirror(db, { kind: 'crew', employeeId: e.id, role: 'office', senderRef: 'office', body, visitId: vid, legacyRef: 'crew:' + cmId });
     const how = await reachCrew(e, 'Message from the Bright Clean office', `${body}\n\nReply or see your jobs: ${SIGNIN_URL}`, `Bright Clean office: ${body.slice(0, 120)} Sign in: ${SIGNIN_URL}`);
     logAction(req, 'messaged crew', 'employee', e.id, body.slice(0, 80));
     res.status(201).json({ ok: true, reached: how });

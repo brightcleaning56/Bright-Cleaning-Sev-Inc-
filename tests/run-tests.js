@@ -4962,6 +4962,16 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'three posts accepted per IP in the window; the fourth and the careers post got 429 with no lead and no acknowledgement';
   });
 
+  await check('Messaging', 'Every customer and crew message is also in the shared conversation record (legacy count equals shared count)', async () => {
+    const mdb = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true });
+    const has = t => !!mdb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
+    const legacy = ['portal_messages', 'portal_message_replies', 'crew_messages'].filter(has).reduce((s, t) => s + mdb.prepare(`SELECT COUNT(*) n FROM ${t}`).get().n, 0);
+    const shared = has('conversation_messages') ? mdb.prepare('SELECT COUNT(*) n FROM conversation_messages').get().n : -1;
+    mdb.close();
+    assert(legacy > 0 && shared === legacy, `legacy ${legacy}, shared ${shared}`);
+    return `${legacy} legacy messages, ${shared} in the shared record`;
+  });
+
   server.child.kill(); smtp.close();
   const pass = results.filter(r => r.status === 'PASS').length;
   fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify({ run_at: new Date().toISOString(), node: process.version, pass, fail: results.length - pass, results }, null, 2));
