@@ -116,3 +116,26 @@ Full report: `docs/audit/workflow-end-to-end.md`. Result: 8 of 12 steps passed, 
 - **Money defect:** the estimate was entered at $3,200.00. The proposal and invoice used $751.38, calculated from labor and cost inputs. A typed price cannot override the calculated one, and the customer would be billed the calculated figure.
 - **Sign-off before work:** a customer sign-off on a project still "Ready to mobilize" returned 200. Acceptance should require completed work.
 - **Inconsistent send behavior:** contract send returns the signing link when email is missing, but proposal send returns 503.
+
+## Remediation status (updated after the fix rounds)
+
+Commits on `claude/bright-cleaning-rebuild-nt1y6e`, in order: `7e0b998` (must-fix items), `56802c7` (proposals, invoice status, weekly hours), `57487e5` (company name), `3429991` (labor defaults and no $0 sends), `47fe128`, `01a14ab`, `c4c6d9a`, `363d4ba`, `7665f8f` (admin look), `c0a43b2` (signed-out pages stop calling the API). Live build `8d05e74d6e67` as of the last check.
+
+**Fixed in code and tested (API 297/297, UI 93/93):**
+- Money: invoices send only through the send route; drafts excluded from receivables; expenses can be corrected and removed; overpayments refused honestly; held refunds visible to owners and managers; labor dated in the business time zone; estimates default to the saved productive labor cost and cannot be sent at $0 or without labor; sent proposals and superseded contracts are locked.
+- Customers: portal sessions bound to one customer; invoice notes and issue date owner-only; proposals show assumptions and exclusions; accepted proposals cannot be revised.
+- Crew and projects: offline times within a sane window; PIN lockout keyed on the employee; sessions expire and are revoked; field actions refused on cancelled or done jobs; dispatch re-checks conflicts; pay rates owner-only; sign-off owner-only and needs a completed visit; new projects start in Planning.
+- Intake and messaging: honeypot and rate limit on public forms; repeat bids keep intake data; automatic SMS follow-ups off by default; task assignment needs a real user; reminders marked sent only on delivery; Postmark sends attachments; callbacks stop after three placed calls; AI information-request email off by default; transcripts appended.
+- Company name: customer-facing documents, emails and pages say Bright Cleaning Sev Inc.
+- Admin: Command Center matches mockup 105; Leads, Invoices, Projects, Contracts, Customers, Calls, Client messages, Estimates, Subscriptions, Quality, Settings match the tile style; Reports tables verified on live with data.
+- Admin session: a signed-out page stops calling the API (c0a43b2). Verified on a normal signed-in session on live (all 200). Not yet verified by an actual sign-out.
+
+**Still open (owner action or decision):**
+- Uptime monitor and one test alert (owner action list, items 1-2).
+- Render restart and deploy settings (item 3).
+- Restore drill on a separate instance from a real B2 backup (item 4, must fix before launch).
+- Admin token kept in localStorage (known risk, item 6).
+- Script CSP stays report-only (item 7).
+- Legal: SMS follow-ups and callbacks need counsel's review before automatic use is turned on.
+- TOTP replay and challenge reuse (F-14.3a/b) not fixed; `mfa.js` and `totp.js` are outside the reviewed scope.
+- Stripe end-to-end and live provider paths (Twilio, Postmark, Microsoft 365, B2 status) not tested live.
