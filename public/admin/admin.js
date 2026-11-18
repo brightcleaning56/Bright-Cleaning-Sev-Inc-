@@ -2416,6 +2416,7 @@
       <div class="cwbody">
       <form id="kForm" class="cwmain">
         <section class="cwpanel" ${panel('overview')}>
+          <div style="margin-bottom:12px"><label for="kTitle"><small class="muted">Contract title</small></label><input id="kTitle" name="title" maxlength="200" value="${esc(k.title || '')}" ${signed ? 'disabled' : ''} style="width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line2,#d6dde6);border-radius:8px;margin-top:4px"></div>
           <div class="cwcards">
             <div><small>Contract value</small><b>${money(k.value)}</b></div>
             <div><small>Term</small><b>${esc(k.start_date || '—')} → ${esc(k.end_date || 'open')}</b></div>
