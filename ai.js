@@ -139,11 +139,11 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
 
   // ---------- Routes ----------
   const fail = (res, e) => res.status(e.code === 'AI_OFF' ? 503 : 502).json({ error: e.message, ai_off: e.code === 'AI_OFF' });
-  app.get('/api/admin/ai/status', auth, (req, res) => res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', true), auto_draft_estimates: setting('auto_draft_estimates', true) }));
+  app.get('/api/admin/ai/status', auth, (req, res) => res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', false), auto_draft_estimates: setting('auto_draft_estimates', true) }));
   app.put('/api/admin/ai/settings', auth, (req, res) => {
     for (const k of ['auto_triage', 'auto_request_info', 'auto_draft_estimates', 'auto_intro_email']) if (k in (req.body || {})) db.prepare("INSERT INTO ai_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k, req.body[k] ? '1' : '0');
     logAction(req, 'changed', 'ai settings', 0, `auto_triage ${!!req.body.auto_triage}`);
-    res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', true), auto_draft_estimates: setting('auto_draft_estimates', true) });
+    res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', false), auto_draft_estimates: setting('auto_draft_estimates', true) });
   });
   app.post('/api/admin/ai/leads/:id/triage', auth, async (req, res) => {
     try { const ai = await triageLead(Number(req.params.id)); logAction(req, 'ran AI triage', 'lead', Number(req.params.id), ai.summary.slice(0, 120)); res.json({ ai }); }
@@ -310,10 +310,11 @@ Only report what you can read on a sheet, and always give the sheet. Never guess
     res.json({ ok: true });
   });
 
-  // Automatic information request: when the AI finds missing information, it emails the customer its
-  // reply draft (questions only, never prices). Once per lead; can be turned off in Settings.
+  // Automatic information request: when the AI finds missing information, it can email the customer its
+  // reply draft (questions only, never prices). OFF by default: the owner must turn on auto_request_info in Settings.
+  // With it off, the draft is kept on the lead for staff to review and send.
   async function maybeRequestInfo(id, ai) {
-    if (!ai || !ai.missing || !ai.missing.length || !setting('auto_request_info', true)) return;
+    if (!ai || !ai.missing || !ai.missing.length || !setting('auto_request_info', false)) return;
     const l = db.prepare('SELECT * FROM leads WHERE id=?').get(id);
     if (!l || !l.email || !isEmail(l.email) || /^test\b|\btest\b/i.test(`${l.contact_name} ${l.company}`)) return;
     if (/\$\s?\d/.test(ai.reply_body || '') || !ai.reply_subject || !ai.reply_body) return;

@@ -20,7 +20,12 @@ async function check(area, name, fn) {
 
 (async () => {
   const OWNER = 'owner@brightclean.test', PW = 'owner-password-1234';
-  const env = { ...process.env, PRICEBOOK_IMPORT: 'on', ONBOARD_FROM: '2099-01-01T00:00:00.000Z', PORT: String(PORT), RATE_LIMIT_PUBLIC: '5000', NODE_ENV: 'staging', JWT_SECRET: crypto.randomBytes(40).toString('hex'), ADMIN_EMAIL: OWNER, ADMIN_PASSWORD_HASH: await bcrypt.hash(PW, 10), DATA_DIR: path.join(work, 'data'), UPLOAD_DIR: path.join(work, 'up'), DISABLE_SCHEDULER: '1' };
+  // Local SMTP capture so sends work without a real mail provider (nothing leaves this machine).
+  const { SMTPServer } = require('smtp-server');
+  const SMTP_PORT_UI = 2650 + Math.floor(Math.random() * 50);
+  const smtpCapture = new SMTPServer({ authOptional: true, allowInsecureAuth: true, disabledCommands: ['STARTTLS'], onAuth(a, s, cb) { cb(null, { user: a.username }); }, onData(stream, s, cb) { stream.on('data', () => {}); stream.on('end', cb); } });
+  await new Promise(r => smtpCapture.listen(SMTP_PORT_UI, '127.0.0.1', r));
+  const env = { ...process.env, SMTP_HOST: '127.0.0.1', SMTP_PORT: String(SMTP_PORT_UI), SMTP_USER: 'info@brightclean.test', SMTP_PASS: 'test', FROM_EMAIL: 'info@brightclean.test', PRICEBOOK_IMPORT: 'on',ONBOARD_FROM: '2099-01-01T00:00:00.000Z', PORT: String(PORT), RATE_LIMIT_PUBLIC: '5000', NODE_ENV: 'staging', JWT_SECRET: crypto.randomBytes(40).toString('hex'), ADMIN_EMAIL: OWNER, ADMIN_PASSWORD_HASH: await bcrypt.hash(PW, 10), DATA_DIR: path.join(work, 'data'), UPLOAD_DIR: path.join(work, 'up'), DISABLE_SCHEDULER: '1' };
   const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: 'ignore' });
   for (let i = 0; i < 50; i++) { try { if ((await fetch(B + '/health')).ok) break; } catch { } await sleep(150); }
   const api = async (m, u, j, t) => (await fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: j ? JSON.stringify(j) : undefined })).json();
@@ -123,8 +128,11 @@ async function check(area, name, fn) {
   await check('Invoices UI', 'New invoice form has billing email, auto number; payment recorded from list', async () => {
     await nav('invoices'); d.querySelector('[data-new="invoices"]').click(); await sleep(700);
     assert($('#r_email') && /^BC-\d{4}-\d{4}$/.test($('#r_invoice_number').value), 'no email field / number');
-    $('#r_email').value = 'ap@prairie.test'; $('#r_amount').value = '800'; $('#r_company').value = 'Prairie'; $('#r_status').value = 'Sent';
+    $('#r_email').value = 'ap@prairie.test'; $('#r_amount').value = '800'; $('#r_company').value = 'Prairie';
     $('#recSave').click(); await sleep(900);
+    // A new invoice is a Draft. It becomes Sent only through the send route, so send it the same way the app does.
+    { const li = (await api('GET', '/api/admin/invoices', null, T)).invoices[0]; await api('POST', '/api/admin/invoices/' + li.id + '/send', null, T); }
+    await nav('invoices'); await sleep(500);
     d.querySelector('#rows-invoices [data-pay]').click(); await sleep(900);
     $('#genForm [name=amount]').value = '800'; $('#genSave').click(); await sleep(900);
     const inv = (await api('GET', '/api/admin/invoices', null, T)).invoices[0];
@@ -133,7 +141,7 @@ async function check(area, name, fn) {
   await check('Settings UI', 'Automation panel: email status, four toggles, toggling saves, run-now works, log shows', async () => {
     await nav('settings'); await sleep(400);
     const toggles = d.querySelectorAll('[data-auto]');
-    assert(toggles.length === 4 && /not set up/i.test(txt('#autoEmail')), toggles.length + ' ' + txt('#autoEmail'));
+    assert(toggles.length === 4 && /Email is set up/i.test(txt('#autoEmail')) && !/not set up/i.test(txt('#autoEmail')), toggles.length + ' ' + txt('#autoEmail'));
     const cb = d.querySelector('[data-auto="auto_invoice_reminders"]'); cb.checked = true; cb.dispatchEvent(new w.Event('change')); await sleep(500);
     const s = await api('GET', '/api/admin/settings', null, T);
     $('#autoRun').click(); await sleep(900);

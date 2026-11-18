@@ -236,12 +236,12 @@ module.exports = function mountSuite(app, ctx) {
     const decided = db.prepare(`SELECT SUM(status='Approved') w, SUM(status='Declined') l, COALESCE(SUM(CASE WHEN status='Approved' THEN proposal_total END),0) wv FROM estimates WHERE archived_at IS NULL AND COALESCE(decided_at,updated_at)>=? AND status IN ('Approved','Declined')`).get(start);
     const byService = db.prepare(`SELECT COALESCE(scope_category,'unspecified') k, COUNT(*) n, ROUND(AVG(proposal_total),2) avg, COALESCE(SUM(proposal_total),0) total FROM estimates WHERE archived_at IS NULL AND status='Approved' AND COALESCE(decided_at,updated_at)>=? GROUP BY k ORDER BY total DESC`).all(start);
     const pipeline = db.prepare(`SELECT status k, COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates GROUP BY status`).all();
-    const topCustomers = db.prepare(`SELECT COALESCE(NULLIF(company,''),customer_name) k, COUNT(*) n, COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) paid FROM invoices GROUP BY k ORDER BY billed DESC LIMIT 8`).all();
+    const topCustomers = db.prepare(`SELECT COALESCE(NULLIF(company,''),customer_name) k, COUNT(*) n, COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) paid FROM invoices WHERE status NOT IN ('Draft','Void') GROUP BY k ORDER BY billed DESC LIMIT 8`).all();
     const w = decided.w || 0, l = decided.l || 0;
     const one = (sql, ...a) => { try { return db.prepare(sql).get(...a) || {}; } catch { return {}; } };
     const all = (sql, ...a) => { try { return db.prepare(sql).all(...a); } catch { return []; } };
     const calls = byMonth(`SELECT substr(created_at,1,7) m, COUNT(*) n, SUM(outcome IN ('Missed','Voicemail')) v FROM calls WHERE created_at>=? GROUP BY m`);
-    const billed = byMonth(`SELECT substr(created_at,1,7) m, COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE created_at>=? AND status<>'Void' GROUP BY m`);
+    const billed = byMonth(`SELECT substr(created_at,1,7) m, COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE created_at>=? AND status NOT IN ('Draft','Void') GROUP BY m`);
     const quality = byMonth(`SELECT substr(date,1,7) m, COUNT(*) n, ROUND(AVG(score),1) v FROM inspections WHERE date>=? GROUP BY m`);
     // Start-to-finish flow for the period: every stage a job passes through.
     const flow = [
@@ -256,12 +256,12 @@ module.exports = function mountSuite(app, ctx) {
       ['Projects', one(`SELECT COUNT(*) n FROM projects WHERE created_at>=?`, start).n],
       ['Site visits & phases scheduled', one(`SELECT COUNT(*) n FROM visits WHERE created_at>=?`, start).n],
       ['Inspections', one(`SELECT COUNT(*) n FROM inspections WHERE created_at>=?`, start).n],
-      ['Invoices issued', one(`SELECT COUNT(*) n FROM invoices WHERE created_at>=? AND status<>'Void'`, start).n],
+      ['Invoices issued', one(`SELECT COUNT(*) n FROM invoices WHERE created_at>=? AND status NOT IN ('Draft','Void')`, start).n],
       ['Invoices paid in full', one(`SELECT COUNT(*) n FROM invoices WHERE created_at>=? AND status='Paid'`, start).n]
     ].map(([k, n]) => ({ k, n: n || 0 }));
     const today = new Date().toISOString().slice(0, 10);
     const recv = one(`SELECT COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) paid, COALESCE(SUM(CASE WHEN paid_amount<amount THEN amount-paid_amount END),0) outstanding,
-      COALESCE(SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN amount-paid_amount END),0) overdue, SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN 1 END) overdue_n FROM invoices WHERE status<>'Void'`, today, today);
+      COALESCE(SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN amount-paid_amount END),0) overdue, SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN 1 END) overdue_n FROM invoices WHERE status NOT IN ('Draft','Void')`, today, today);
     const ops = {
       projects_active: one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived')`).n || 0,
       projects_completed: one(`SELECT COUNT(*) n FROM projects WHERE status='Completed'`).n || 0,
@@ -290,7 +290,7 @@ module.exports = function mountSuite(app, ctx) {
     const approved = one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v, SUM(CASE WHEN total_cost>0 THEN proposal_total-total_cost END) gp, SUM(total_cost>0) costed FROM estimates WHERE archived_at IS NULL AND status='Approved' AND COALESCE(decided_at,updated_at)>=?`, start);
     const signed = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE archived_at IS NULL AND signature_status IN ('Signed','Executed','Fully signed') AND created_at>=?`, start);
     const unsigned = one(`SELECT COUNT(*) n, COALESCE(SUM(value),0) v FROM contracts WHERE archived_at IS NULL AND COALESCE(signature_status,'Not sent') NOT IN ('Signed','Executed','Fully signed') AND status NOT IN ('Closed','Cancelled','Void','Archived','Superseded')`);
-    const invoiced = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE status<>'Void' AND created_at>=?`, start);
+    const invoiced = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM invoices WHERE status NOT IN ('Draft','Void') AND created_at>=?`, start);
     const cash = one(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, start);
     const executive = {
       approved_proposals: { value: approved.v, count: approved.n || 0 },
@@ -298,7 +298,7 @@ module.exports = function mountSuite(app, ctx) {
       unsigned_contracts: { value: unsigned.v, count: unsigned.n || 0 },
       invoiced: { value: invoiced.v, count: invoiced.n || 0 },
       collected: { value: cash.v, count: cash.n || 0 },
-      outstanding: { value: recv.outstanding, count: one(`SELECT COUNT(*) n FROM invoices WHERE status<>'Void' AND paid_amount<amount`).n || 0 },
+      outstanding: { value: recv.outstanding, count: one(`SELECT COUNT(*) n FROM invoices WHERE status NOT IN ('Draft','Void') AND paid_amount<amount`).n || 0 },
       overdue: { value: recv.overdue, count: recv.overdue_n || 0 },
       active_projects: ops.projects_active, completed_projects: ops.projects_completed,
       est_gross_profit: { value: approved.gp == null ? null : Math.round(approved.gp * 100) / 100, based_on: approved.costed || 0, of: approved.n || 0, note: 'Estimate: approved proposal price minus estimated cost. Not recorded profit.' },

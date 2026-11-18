@@ -1912,7 +1912,7 @@
     toast('Linked to ' + (c.company || c.name || 'customer'));
   }
   const DEFAULTS = { area_sqft: 0, production_rate: 0, labor_hours: 0, labor_rate: 0, supplies_cost: 0, equipment_cost: 0, other_cost: 0, overhead_pct: 10, margin_pct: 25, tax_pct: 0, visits: 1, crew_size: 1, shift_hours: 8, travel_cost: 0, mobilization_cost: 0, subcontractor_cost: 0, disposal_cost: 0, insurance_pct: 0, contingency_pct: 0, minimum_charge: 0 };
-  const EXTRA_KEYS = ['visits', 'crew_size', 'shift_hours', 'travel_cost', 'mobilization_cost', 'subcontractor_cost', 'disposal_cost', 'insurance_pct', 'contingency_pct', 'minimum_charge', 'template_key', 'windows_interior_panes', 'windows_interior_rate', 'windows_exterior_panes', 'windows_exterior_rate', 'windows_cost'];
+  const EXTRA_KEYS = ['visits', 'weekly_hours', 'crew_size', 'shift_hours', 'travel_cost', 'mobilization_cost', 'subcontractor_cost', 'disposal_cost', 'insurance_pct', 'contingency_pct', 'minimum_charge', 'template_key', 'windows_interior_panes', 'windows_interior_rate', 'windows_exterior_panes', 'windows_exterior_rate', 'windows_cost'];
   let templates = [];
   async function loadTemplates() {
     if (templates.length) return;
@@ -1951,15 +1951,17 @@
     if (est) {
       ['id', 'lead_id', 'customer_name', 'company', 'email', 'project_name', 'site_address', 'scope', 'area_sqft', 'production_rate', 'labor_rate', 'supplies_cost', 'equipment_cost', 'other_cost', 'overhead_pct', 'margin_pct', 'tax_pct', 'expires_on', 'terms']
         .forEach(k => { if (ef.elements[k]) ef.elements[k].value = est[k] ?? ''; });
-      const derived = est.area_sqft && est.production_rate ? est.area_sqft / est.production_rate : 0;
-      ef.elements.labor_hours.value = Math.abs(derived - est.labor_hours) > 0.01 ? est.labor_hours : 0;
+      // M6: pin labor hours only when the saved total is not what the estimate's own lines or area/rate produce.
+      // Otherwise reopening would freeze the labor and ignore later scope-line changes.
       scopeLines = (est.line_items || []).filter(i => i.scope_id);
+      const visitsSaved = Math.max(1, Number(est.visits) || 1);
+      const derived = est.area_sqft && est.production_rate ? est.area_sqft / est.production_rate : scopeLines.reduce((t, l) => t + Number(l.hours || 0), 0);
+      const perVisitSaved = (Number(est.labor_hours) || 0) / visitsSaved;
+      ef.elements.labor_hours.value = Math.abs(derived - perVisitSaved) > 0.01 ? +perVisitSaved.toFixed(2) : 0;
       ef.elements.line_items_text.value = (est.line_items || []).filter(i => !i.scope_id).map(i => `${i.description} | ${i.amount}`).join('\n');
       $('#slCat').dataset.want = est.scope_category || '';
       EXTRA_KEYS.forEach(k => { if (ef.elements[k] && est[k] !== undefined && est[k] !== null) ef.elements[k].value = est[k]; });
       ef.elements.use_line_items.checked = !!est.use_line_items;
-      if (est.visits > 1 && Math.abs(derived * est.visits - est.labor_hours) < 0.01) ef.elements.labor_hours.value = 0;
-      else if (est.visits > 1) ef.elements.labor_hours.value = +(est.labor_hours / est.visits).toFixed(2);
     }
     if (!est && !(lead && lead.intake)) $('#slCat').dataset.want = '';
     syncScopeCat(); renderScopeLines();
@@ -2052,6 +2054,15 @@
     });
   }
 
+  // Overtime per person per week, same rule as overtimeManHours in estimating.js (weekly 0 = whole job in one week).
+  function overtimeManHours(hours, weekly, crew) {
+    if (!(hours > 0)) return 0;
+    const wk = weekly > 0 ? Math.min(hours, weekly) : hours;
+    const fullWeeks = Math.floor(hours / wk + 1e-9);
+    const rest = Math.max(0, hours - fullWeeks * wk);
+    const over = man => crew * Math.max(0, man / crew - 40);
+    return fullWeeks * over(wk) + over(rest);
+  }
   // Mirrors estimating.js on the server.
   function estimateMath(v) {
     const n = k => Math.max(0, Number(v[k] || 0));
@@ -2059,7 +2070,9 @@
     const scopeHours = scopeLines.reduce((t, l) => t + Number(l.hours || 0), 0);
     const perVisit = n('labor_hours') || (n('area_sqft') && n('production_rate') ? n('area_sqft') / n('production_rate') : 0) || scopeHours;
     const hours = perVisit * visits;
-    const labor = hours * n('labor_rate');
+    const crew = Math.max(1, n('crew_size') || 1);
+    const overtime = overtimeManHours(hours, n('weekly_hours'), crew);
+    const labor = hours * n('labor_rate') + overtime * n('labor_rate') * 0.5;
     const windowsTotal = n('windows_interior_panes') * n('windows_interior_rate') + n('windows_exterior_panes') * n('windows_exterior_rate');
     const direct = labor + n('supplies_cost') + n('equipment_cost') + n('other_cost') + n('travel_cost') * visits + n('mobilization_cost') + n('subcontractor_cost') + n('disposal_cost') + n('windows_cost');
     const insurance = direct * n('insurance_pct') / 100;
@@ -2068,10 +2081,17 @@
     const cost = direct + insurance + contingency + overhead;
     let price = cost / (1 - Math.min(90, n('margin_pct')) / 100);
     const items = [...scopeLines, ...parseLines(v.line_items_text)];
+    // Unit-condition add-on (price book), on any deep clean line. Same rule as lineItemsOf in estimating.js.
+    const condLevels = { light: 40, moderate: 60, heavy: 80 };
+    const condAmount = condLevels[String(v.unit_condition || '').toLowerCase()] || 0;
+    const isDeep = items.some(i => /deep/i.test(i.description) && !/add-on/i.test(i.description));
+    const condition = condAmount && isDeep ? condAmount : 0;
+    if (condition) items.push({ description: 'Unit condition add-on', amount: condition });
     const itemsTotal = items.reduce((s, i) => s + i.amount, 0);
     const useItems = !!v.use_line_items && itemsTotal > 0;
     if (useItems) price = itemsTotal;
     price += windowsTotal; // windows are always added, even when line items are the price
+    if (!useItems) price += condition; // cost pricing: the add-on is priced too
     const minApplied = !useItems && n('minimum_charge') > 0 && price < n('minimum_charge');
     if (minApplied) price = n('minimum_charge');
     const total = price * (1 + n('tax_pct') / 100);

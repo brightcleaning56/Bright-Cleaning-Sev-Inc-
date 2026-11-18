@@ -27,7 +27,7 @@ const EXTRA_COLUMNS = [
   ['decided_at', 'TEXT'], ['decision_ip', 'TEXT'], ['decision_agent', 'TEXT'], ['unit_condition', 'TEXT'],
   ['windows_interior_panes', 'REAL DEFAULT 0'], ['windows_interior_rate', 'REAL DEFAULT 0'],
   ['windows_exterior_panes', 'REAL DEFAULT 0'], ['windows_exterior_rate', 'REAL DEFAULT 0'], ['windows_cost', 'REAL DEFAULT 0'],
-  ['archived_at', 'TEXT'], ['archived_by', 'TEXT']
+  ['archived_at', 'TEXT'], ['archived_by', 'TEXT'], ['weekly_hours', 'REAL DEFAULT 0']
 ];
 
 // Unit condition charge added on top of every deep clean line (price book: Light $40, Moderate $60, Heavy $80).
@@ -55,15 +55,26 @@ function lineItemsOf(b) {
 const OVERTIME_AFTER = 40;
 const OVERTIME_MULTIPLIER = 1.5;
 
+// Overtime is counted per person per week. `hours` are crew man-hours for the whole job, `weekly` is the crew's
+// man-hours on this job in one week (0 = the whole job falls in one week, the conservative default), `crew` the headcount.
+// Each person's hours in a week are weekly / crew. Returns overtime man-hours across all weeks.
+function overtimeManHours(hours, weekly, crew) {
+  if (!(hours > 0)) return 0;
+  const wk = weekly > 0 ? Math.min(hours, weekly) : hours;
+  const fullWeeks = Math.floor(hours / wk + 1e-9);
+  const rest = Math.max(0, hours - fullWeeks * wk);
+  const over = man => crew * Math.max(0, man / crew - OVERTIME_AFTER);
+  return fullWeeks * over(wk) + over(rest);
+}
+
 function estimateMath(b) {
   const visits = Math.max(1, num(b.visits) || 1);
   const sqft = num(b.area_sqft), rate = num(b.production_rate);
   const scopeHours = lineItemsOf(b).reduce((t, i) => t + (i.scope_id ? i.hours : 0), 0);
   const perVisit = num(b.labor_hours) || (sqft && rate ? sqft / rate : 0) || scopeHours;
   const hours = perVisit * visits;
-  // weekly_hours: the crew's total hours on this job in one week (defaults to this estimate's hours).
-  const weeklyHours = num(b.weekly_hours) || hours;
-  const overtimeHours = Math.min(hours, Math.max(0, weeklyHours - OVERTIME_AFTER));
+  const crew = Math.max(1, num(b.crew_size) || 1);
+  const overtimeHours = overtimeManHours(hours, num(b.weekly_hours), crew);
   const labor = hours * num(b.labor_rate) + overtimeHours * num(b.labor_rate) * (OVERTIME_MULTIPLIER - 1);
   const windowsTotal = windowsCharge(b);
   const direct = labor + num(b.supplies_cost) + num(b.equipment_cost) + num(b.other_cost)
@@ -80,6 +91,8 @@ function estimateMath(b) {
   const useItems = !!(b.use_line_items && b.use_line_items !== '0' && b.use_line_items !== 'false') && itemsTotal > 0;
   if (useItems) price = itemsTotal;
   price += windowsTotal; // windows are always added, even when line items are the price
+  // The unit-condition add-on is a price-book amount. Line-item pricing already includes it; cost pricing adds it here.
+  if (!useItems) price += conditionTotal(items);
   const minimum = num(b.minimum_charge);
   const minimumApplied = !useItems && minimum > 0 && price < minimum;
   if (minimumApplied) price = minimum;
@@ -92,6 +105,10 @@ function estimateMath(b) {
     windows_total: round2(windowsTotal),
     breakdown: { direct: round2(direct), insurance: round2(insurance), contingency: round2(contingency), overhead: round2(overhead), price: round2(price) }
   };
+}
+
+function conditionTotal(items) {
+  return items.filter(i => /^Unit condition add-on/.test(i.description)).reduce((s, i) => s + i.amount, 0);
 }
 
 // Window cleaning, priced per pane and added to the calculated price.
@@ -113,7 +130,7 @@ function extraValues(b, m) {
     unit_condition: ['Light', 'Moderate', 'Heavy'].includes(b.unit_condition) ? b.unit_condition : null,
     windows_interior_panes: num(b.windows_interior_panes), windows_interior_rate: num(b.windows_interior_rate),
     windows_exterior_panes: num(b.windows_exterior_panes), windows_exterior_rate: num(b.windows_exterior_rate),
-    windows_cost: num(b.windows_cost)
+    windows_cost: num(b.windows_cost), weekly_hours: num(b.weekly_hours)
   };
 }
 
@@ -128,4 +145,4 @@ function migrate(db) {
   for (const [c, t] of EXTRA_COLUMNS) if (!cols.includes(c)) db.exec(`ALTER TABLE estimates ADD COLUMN ${c} ${t}`);
 }
 
-module.exports = { estimateMath, saveExtras, migrate, lineItemsOf, num };
+module.exports = { estimateMath, saveExtras, migrate, lineItemsOf, num, overtimeManHours };

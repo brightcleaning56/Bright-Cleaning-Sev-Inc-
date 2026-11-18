@@ -278,18 +278,28 @@ module.exports = function mountIssues(app, ctx) {
   });
 
   // Reminders: email the assignee when a reminder time passes (once per reminder).
+  let sweeping = false;
   const sweep = async () => {
+    // One sweep at a time: the timer and a manual run must not both send the same reminder.
+    if (sweeping) return;
+    sweeping = true;
     try {
       const due = db.prepare(`${SELECT} WHERE i.reminder_at IS NOT NULL AND i.reminder_at<=? AND i.reminded_at IS NULL AND i.${OPEN_SQL}`).all(now()).map(decorate);
       for (const it of due) {
         const to = it.assigned_to || (adminEmail || '').toLowerCase();
-        await notify(to, `Reminder: ${it.number} ${it.title}`, `Reminder for ${TYPES[it.type]} ${it.number}: ${it.title}${it.due_date ? `\nDue: ${it.due_date}` : ''}\n\nhttps://brightclean.net/admin/#issues`);
+        const sent = await notify(to, `Reminder: ${it.number} ${it.title}`, `Reminder for ${TYPES[it.type]} ${it.number}: ${it.title}${it.due_date ? `\nDue: ${it.due_date}` : ''}\n\nhttps://brightclean.net/admin/#issues`);
+        // Only a delivered reminder counts as sent. A failed one stays due and is tried again on the next sweep.
+        if (!sent) { console.error(`Reminder for ${it.number} was not delivered to ${to || 'nobody'}; it will be retried.`); continue; }
         db.prepare('UPDATE customer_issues SET reminded_at=? WHERE id=?').run(now(), it.id);
         db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('system', 'sent reminder', TYPES[it.type].toLowerCase(), it.id, `to ${to}`, now());
       }
     } catch (e) { console.error('issue reminder sweep', e.message); }
+    finally { sweeping = false; }
   };
   setInterval(sweep, Number(process.env.ISSUE_SWEEP_MS) || 60000).unref();
   app.locals.issueSweep = sweep;
+  // Shared with the work queue, so a task is assigned by the same rule as an issue (a real user) and the assignee is told the same way.
+  app.locals.issueUsers = users;
+  app.locals.issueNotify = notify;
   app.post('/api/admin/issues/run-reminders', auth, async (req, res) => { await sweep(); res.json({ ok: true }); });
 };

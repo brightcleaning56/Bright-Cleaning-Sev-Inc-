@@ -64,7 +64,9 @@ module.exports = function mountSched(app, ctx) {
     return { block, warn, week_hours: Math.round(total * 10) / 10 };
   }
   // The crew link is a login for that cleaner's clock-in page: only operations roles may see it.
-  for (const col of ['pin_hash TEXT', 'pin_set_at TEXT', 'last_login_at TEXT']) { try { db.exec('ALTER TABLE employees ADD COLUMN ' + col); } catch { /* already there */ } }
+  for (const col of ['pin_hash TEXT', 'pin_set_at TEXT', 'last_login_at TEXT', 'crew_session_v INTEGER DEFAULT 0']) { try { db.exec('ALTER TABLE employees ADD COLUMN ' + col); } catch { /* already there */ } }
+  // Device time (when the phone recorded it) and sync time (when the server received it), plus a flag when they were not trusted.
+  for (const col of ['device_clock_in TEXT', 'device_clock_out TEXT', 'synced_at TEXT', 'time_flag TEXT']) { try { db.exec('ALTER TABLE time_entries ADD COLUMN ' + col); } catch { /* already there */ } }
   const empPublic = (e, withLink = false) => ({ ...e, token: undefined, pin_hash: undefined, crew_link: withLink && e.token ? `/crew/${e.token}` : null });
 
   // ---------- Employees ----------
@@ -95,8 +97,23 @@ module.exports = function mountSched(app, ctx) {
     if ('active' in b) out.active = b.active ? 1 : 0;
     return { out, errs };
   }
+  // Pay and payroll fields: a change to one of them is refused unless the signed-in role may make it.
+  const PAY_DEFAULTS = { hourly_rate: 0, max_week_hours: 40, payroll_id: null };
+  const PAY_LABEL = { hourly_rate: 'hourly pay rate', max_week_hours: 'weekly hour limit', payroll_id: 'payroll file number' };
+  function payRefusal(req, out, cur) {
+    const R = require('./roles'), role = roleOf(req);
+    for (const k of Object.keys(PAY_DEFAULTS)) {
+      if (!(k in out)) continue;
+      const was = cur ? cur[k] : PAY_DEFAULTS[k];
+      if (String(out[k] ?? '') !== String(was ?? '') && !R.canEditEmployeeField(role, k)) {
+        return `Only an ${R.PAY_FIELD_ROLES[k].join(' or ')} can change the ${PAY_LABEL[k]}.`;
+      }
+    }
+    return null;
+  }
   app.post('/api/admin/employees', auth, (req, res) => {
     const { out, errs } = empValidate(req.body || {}, null); if (errs.length) return res.status(400).json({ error: errs.join(' ') });
+    const refused = payRefusal(req, out, null); if (refused) return res.status(403).json({ error: refused });
     if (out.email && db.prepare('SELECT 1 FROM employees WHERE lower(email)=?').get(out.email)) return res.status(409).json({ error: 'An employee with that email already exists.' });
     const c = Object.keys(out), t = now();
     const id = db.prepare(`INSERT INTO employees(${c.join(',')},token,created_at,updated_at) VALUES(${c.map(() => '?').join(',')},?,?,?)`).run(...c.map(k => out[k]), crypto.randomBytes(18).toString('hex'), t, t).lastInsertRowid;
@@ -106,10 +123,14 @@ module.exports = function mountSched(app, ctx) {
   app.patch('/api/admin/employees/:id', auth, (req, res) => {
     const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
     const { out, errs } = empValidate(req.body || {}, e); if (errs.length) return res.status(400).json({ error: errs.join(' ') });
+    const refused = payRefusal(req, out, e); if (refused) return res.status(403).json({ error: refused });
     if ((req.body || {}).new_link) out.token = crypto.randomBytes(18).toString('hex');
+    // A new link, or taking the person off the crew, ends their signed-in crew sessions.
+    if (out.token || ('active' in out && !out.active)) out.crew_session_v = (e.crew_session_v || 0) + 1;
     const c = Object.keys(out); if (!c.length) return res.json({ ok: true });
     db.prepare(`UPDATE employees SET ${c.map(k => k + '=?').join(',')}, updated_at=? WHERE id=?`).run(...c.map(k => out[k]), now(), e.id);
-    logAction(req, out.token ? 'reset crew link for' : 'updated', 'employee', e.id, e.name);
+    const payChanged = Object.keys(PAY_DEFAULTS).filter(k => k in out && String(out[k] ?? '') !== String(e[k] ?? ''));
+    logAction(req, out.token ? 'reset crew link for' : 'updated', 'employee', e.id, e.name + (payChanged.length ? ` (changed: ${payChanged.map(k => PAY_LABEL[k] + ' ' + (e[k] ?? '–') + ' → ' + (out[k] ?? '–')).join('; ')})` : ''));
     res.json({ employee: empPublic(getEmp(e.id)) });
   });
   // The crew link is only shown to owners/managers (it grants access to the crew page).
@@ -251,6 +272,9 @@ module.exports = function mountSched(app, ctx) {
     const crew = crewOf(v.id); if (!crew.length) return res.status(409).json({ error: 'Assign at least one crew member before dispatching.' });
     if (v.status === 'Tentative') return res.status(409).json({ error: 'This work order is still tentative: the project needs dispatch approval first.' });
     if (v.project_id) { const p = db.prepare('SELECT status, dispatch_approved_by FROM projects WHERE id=?').get(v.project_id); if (p && !p.dispatch_approved_by && p.status === 'Planning') return res.status(409).json({ error: 'The project is still in Planning: approve dispatch on the project first.' }); }
+    // Assignments are checked when made; time off or a new clash added since then must stop the dispatch, not just show on the board.
+    const clashes = crew.map(c => ({ name: c.name, ...check(getEmp(c.id), v) })).filter(x => x.block.length);
+    if (clashes.length) return res.status(409).json({ error: 'Cannot dispatch: ' + clashes.map(p => `${p.name}: ${p.block.join('; ')}`).join(' | ') + '. Remove or replace that crew member first.', conflicts: clashes });
     db.prepare('UPDATE visits SET dispatched_at=?, dispatched_by=?, updated_at=? WHERE id=?').run(now(), who(req), now(), v.id);
     let sent = 0;
     const notReached = [];
@@ -316,7 +340,8 @@ module.exports = function mountSched(app, ctx) {
     if (!t.clock_out) return res.status(409).json({ error: 'The employee is still clocked in.' });
     if (t.approved_by) return res.status(409).json({ error: 'Already approved.' });
     let costId = null; const cost = Math.round(t.minutes / 60 * (t.hourly_rate || 0) * 100) / 100;
-    if (t.project_id && cost > 0) { try { costId = db.prepare("INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at) VALUES(?,'Labor',?,?,?,?,?)").run(t.project_id, `Time: ${t.name} ${(t.minutes / 60).toFixed(2)} h`, cost, t.clock_in.slice(0, 10), who(req), now()).lastInsertRowid; } catch { /* projects module absent */ } }
+    // The cost is dated on the business day of the shift (company time zone), not the UTC day.
+    if (t.project_id && cost > 0) { try { costId = db.prepare("INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at) VALUES(?,'Labor',?,?,?,?,?)").run(t.project_id, `Time: ${t.name} ${(t.minutes / 60).toFixed(2)} h`, cost, require('./bizdate').today(new Date(t.clock_in)), who(req), now()).lastInsertRowid; } catch { /* projects module absent */ } }
     db.prepare('UPDATE time_entries SET approved_by=?, approved_at=?, cost_id=? WHERE id=?').run(who(req), now(), costId, t.id);
     logAction(req, 'approved time', 'employee', t.employee_id, `${t.name}: ${(t.minutes / 60).toFixed(2)} h${costId ? `, $${cost} labor posted to project` : ''}`);
     res.json({ ok: true, cost, posted: !!costId });
@@ -354,34 +379,53 @@ module.exports = function mountSched(app, ctx) {
     if (!h) return null;
     let p; try { p = jwt.verify(h, crewSecret()); } catch { return null; }
     if (!p || p.kind !== 'crew') return null;
-    return db.prepare('SELECT * FROM employees WHERE id=? AND active=1').get(p.emp) || null;
+    const e = db.prepare('SELECT * FROM employees WHERE id=? AND active=1').get(p.emp);
+    // A session is good only while it matches the employee's current session version (bumped on PIN reset, link reset or deactivation).
+    if (!e || typeof p.v !== 'number' || p.v !== (e.crew_session_v || 0)) return null;
+    return e;
   };
-  const loginFails = new Map();
+  // Failed PIN tries are counted per employee (or per normalized login when no employee matches), so
+  // writing the phone number another way does not reset the count. Five failures lock for 15 minutes.
+  const loginFails = new Map(), LOCK_TRIES = 5, LOCK_MS = 15 * 60000;
+  const CREW_SESSION = (Number(process.env.CREW_SESSION_DAYS) || 7) + 'd';
   app.post('/api/crew/login', (req, res) => {
-    const login = clean((req.body || {}).login, 120).toLowerCase(), pin = String((req.body || {}).pin || '').trim();
-    const f = loginFails.get(login) || { n: 0, until: 0 };
-    if (f.until > Date.now()) return res.status(429).json({ error: 'Too many tries. Wait 15 minutes, then try again.' });
+    const raw = clean((req.body || {}).login, 120).toLowerCase(), pin = String((req.body || {}).pin || '').trim();
     let e = null;
-    if (login.includes('@')) e = db.prepare('SELECT * FROM employees WHERE lower(email)=? AND active=1').get(login);
-    else { const d = login.replace(/\D/g, '').slice(-10); if (d.length === 10) e = db.prepare("SELECT * FROM employees WHERE active=1 AND substr(replace(replace(replace(replace(replace(replace(phone,' ',''),'-',''),'(',''),')',''),'.',''),'+',''),-10)=? ORDER BY id LIMIT 1").get(d) || null; }
+    if (raw.includes('@')) e = db.prepare('SELECT * FROM employees WHERE lower(email)=? AND active=1').get(raw);
+    else { const d = raw.replace(/\D/g, '').slice(-10); if (d.length === 10) e = db.prepare("SELECT * FROM employees WHERE active=1 AND substr(replace(replace(replace(replace(replace(replace(phone,' ',''),'-',''),'(',''),')',''),'.',''),'+',''),-10)=? ORDER BY id LIMIT 1").get(d) || null; }
+    const key = e ? 'emp:' + e.id : 'login:' + (raw.includes('@') ? raw : raw.replace(/\D/g, '').slice(-10));
+    const f = loginFails.get(key) || { n: 0, until: 0 };
+    if (f.until > Date.now()) return res.status(429).json({ error: 'Too many tries. Wait 15 minutes, then try again.' });
     if (!e || !e.pin_hash || !pin || !bcrypt.compareSync(pin, e.pin_hash)) {
-      loginFails.set(login, { n: f.n + 1, until: f.n + 1 >= 5 ? Date.now() + 15 * 60000 : 0 });
+      const n = f.n + 1;
+      loginFails.set(key, { n, until: n >= LOCK_TRIES ? Date.now() + LOCK_MS : 0 });
       return res.status(401).json({ error: 'That phone or email and PIN do not match. Ask your supervisor if you need a PIN.' });
     }
-    loginFails.delete(login);
+    loginFails.delete(key);
     db.prepare('UPDATE employees SET last_login_at=? WHERE id=?').run(now(), e.id);
-    res.json({ token: jwt.sign({ kind: 'crew', emp: e.id }, crewSecret(), { expiresIn: '90d' }), employee: { name: e.name } });
+    res.json({ token: jwt.sign({ kind: 'crew', emp: e.id, v: e.crew_session_v || 0 }, crewSecret(), { expiresIn: CREW_SESSION }), employee: { name: e.name } });
   });
   // Owner or manager sets (or resets) a crew member's PIN. The PIN itself is never shown again.
+  // A reset ends every signed-in crew session for that person.
   app.post('/api/admin/employees/:id/crew-pin', auth, (req, res) => {
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can set crew PINs.' });
     const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
     const pin = String((req.body || {}).pin || '').trim();
-    if (!/^\d{4,8}$/.test(pin)) return res.status(400).json({ error: 'The PIN is 4 to 8 digits.' });
-    db.prepare('UPDATE employees SET pin_hash=?, pin_set_at=? WHERE id=?').run(bcrypt.hashSync(pin, 10), now(), e.id);
+    if (!/^\d{6,8}$/.test(pin)) return res.status(400).json({ error: 'The PIN is 6 to 8 digits.' });
+    db.prepare('UPDATE employees SET pin_hash=?, pin_set_at=?, crew_session_v=COALESCE(crew_session_v,0)+1 WHERE id=?').run(bcrypt.hashSync(pin, 10), now(), e.id);
     logAction(req, 'set crew PIN', 'employee', e.id, e.name);
     res.json({ ok: true, login: e.phone || e.email || '' });
   });
+  // Device time for an offline action: trusted when it is no more than 24 hours old and at most 5 minutes ahead of the server.
+  const DEVICE_MAX_AGE_MS = 24 * 3600000, DEVICE_SKEW_MS = 5 * 60000;
+  function actionTime(raw, serverIso) {
+    if (raw == null || raw === '') return { at: serverIso, device: null, flag: null };
+    const d = Date.parse(raw), s = Date.parse(serverIso);
+    if (isNaN(d)) return { at: serverIso, device: null, flag: 'unreadable device time; server time used' };
+    const device = new Date(d).toISOString();
+    if (d > s + DEVICE_SKEW_MS || d < s - DEVICE_MAX_AGE_MS) return { at: serverIso, device, flag: 'device time outside the 24 h window; server time used' };
+    return { at: device, device, flag: null };
+  }
   const crewAction = async (req, res, next) => {
     if (req.params.action === 'photos') return next(); // photo uploads have their own route below (was unreachable: D-22)
     const e = crewAuth(req, res); if (!e) return;
@@ -394,11 +438,27 @@ module.exports = function mountSched(app, ctx) {
       const sendOnce = res.json.bind(res);
       res.json = body => { if (res.statusCode < 300) { try { db.prepare('INSERT OR IGNORE INTO crew_actions(client_id,employee_id,action,visit_id,created_at) VALUES(?,?,?,?,?)').run(cid, e.id, a, v.id, t); } catch { /* recorded best effort */ } } return sendOnce(body); };
     }
+    // Closed jobs take no more field actions. An incident is still accepted, so a safety report is never refused.
+    if (['Cancelled', 'Skipped', 'Done'].includes(v.status) && a !== 'incident') {
+      const why = v.status === 'Done' ? 'already complete' : v.status === 'Skipped' ? 'skipped' : 'cancelled';
+      return res.status(409).json({ error: `This job is ${why}, so nothing more can be recorded on it. Ask the office if you think this is wrong.` });
+    }
+    // Offline actions carry the time the phone recorded. That time is the action time when it is within a day of the
+    // server clock and not in the future; otherwise the server time is used. Both are kept (device and sync time).
+    const ev = actionTime(req.body && req.body.device_at, t), et = ev.at;
+    // Closes an open time entry at the action time, never before its check-in.
+    const closeAt = entry => {
+      const early = Date.parse(et) < Date.parse(entry.clock_in);
+      const when = early ? t : et, flag = early ? 'device time before check-in; server time used' : ev.flag;
+      const m = closeEntry(entry, when, 'crew');
+      db.prepare('UPDATE time_entries SET device_clock_out=?, synced_at=?, time_flag=COALESCE(?, time_flag) WHERE id=?').run(ev.device, t, flag, entry.id);
+      return { m, when };
+    };
     if (a === 'checkin') {
       if (db.prepare('SELECT 1 FROM time_entries WHERE employee_id=? AND clock_out IS NULL').get(e.id)) return res.status(409).json({ error: 'You are already checked in. Check out of the other job first.' });
-      db.prepare('INSERT INTO time_entries(employee_id,visit_id,project_id,clock_in,source,created_at) VALUES(?,?,?,?,?,?)').run(e.id, v.id, v.project_id, t, 'crew', t);
-      db.prepare("UPDATE visits SET arrived_at=COALESCE(arrived_at,?), status=CASE WHEN status IN ('Scheduled','Tentative') THEN 'In progress' ELSE status END, updated_at=? WHERE id=?").run(t, t, v.id);
-      db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'checked in', 'visit', v.id, v.title, t);
+      db.prepare('INSERT INTO time_entries(employee_id,visit_id,project_id,clock_in,source,created_at,device_clock_in,synced_at,time_flag) VALUES(?,?,?,?,?,?,?,?,?)').run(e.id, v.id, v.project_id, et, 'crew', t, ev.device, t, ev.flag);
+      db.prepare("UPDATE visits SET arrived_at=COALESCE(arrived_at,?), status=CASE WHEN status IN ('Scheduled','Tentative') THEN 'In progress' ELSE status END, updated_at=? WHERE id=?").run(et, t, v.id);
+      db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'checked in', 'visit', v.id, v.title + (ev.flag ? ` (${ev.flag})` : ''), t);
       if (!v.arrived_at) await clientNote(v, `${v.title}: crew arrived`, 'The crew has arrived and started the job.');
       // Where the phone was at check-in (only if the crew allowed location). Recorded, not checked against the address.
       if (!v.arrived_at && Number.isFinite(Number(req.body.lat)) && Number.isFinite(Number(req.body.lng))) db.prepare('UPDATE visits SET arrived_lat=?, arrived_lng=?, arrived_accuracy=? WHERE id=?').run(Number(req.body.lat), Number(req.body.lng), Number(req.body.accuracy) || null, v.id);
@@ -407,15 +467,15 @@ module.exports = function mountSched(app, ctx) {
     if (a === 'checkout') {
       const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND visit_id=? AND clock_out IS NULL').get(e.id, v.id);
       if (!open) return res.status(409).json({ error: 'You are not checked in to this job.' });
-      const m = closeEntry(open, t, 'crew');
-      db.prepare('UPDATE visits SET departed_at=?, updated_at=? WHERE id=?').run(t, t, v.id);
-      db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'checked out', 'visit', v.id, `${v.title}: ${(m / 60).toFixed(2)} h`, t);
+      const { m, when } = closeAt(open);
+      db.prepare('UPDATE visits SET departed_at=?, updated_at=? WHERE id=?').run(when, t, v.id);
+      db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'checked out', 'visit', v.id, `${v.title}: ${(m / 60).toFixed(2)} h${ev.flag ? ` (${ev.flag})` : ''}`, t);
       return res.json({ ok: true, minutes: m });
     }
     if (a === 'checklist') {
       const list = J(v.checklist, []), i = Number((req.body || {}).index);
       if (!list[i]) return res.status(400).json({ error: 'Unknown checklist item.' });
-      list[i] = { ...list[i], done: !!req.body.done, by: e.name, at: t };
+      list[i] = { ...list[i], done: !!req.body.done, by: e.name, at: et };
       db.prepare('UPDATE visits SET checklist=?, updated_at=? WHERE id=?').run(JSON.stringify(list), t, v.id);
       return res.json({ checklist: list });
     }
@@ -437,8 +497,9 @@ module.exports = function mountSched(app, ctx) {
       if (left) return res.status(409).json({ error: `${left} checklist item(s) are not done yet.` });
       if (v.type === 'Corrective work') { let n = 0; try { n = db.prepare("SELECT COUNT(*) n FROM documents WHERE visit_id=? AND kind='Photos' AND title LIKE 'After –%'").get(v.id).n; } catch { n = 0; } if (!n) return res.status(409).json({ error: 'Take at least one AFTER photo of the corrected area before completing this job.' }); }
       if (v.review_status !== 'Approved') return res.status(409).json({ error: v.review_status === 'Submitted' ? 'Waiting for the office to approve this job.' : 'Submit the job for review before completing it.' });
-      const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND visit_id=? AND clock_out IS NULL').get(e.id, v.id); if (open) closeEntry(open, t, 'crew');
-      db.prepare("UPDATE visits SET status='Done', completed_at=?, departed_at=COALESCE(departed_at,?), updated_at=? WHERE id=?").run(t, t, t, v.id);
+      const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND visit_id=? AND clock_out IS NULL').get(e.id, v.id);
+      const doneAt = open ? closeAt(open).when : et;
+      db.prepare("UPDATE visits SET status='Done', completed_at=?, departed_at=COALESCE(departed_at,?), updated_at=? WHERE id=?").run(doneAt, doneAt, t, v.id);
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'completed', 'visit', v.id, v.title, t);
       await clientNote(v, `${v.title}: complete`, 'The job is complete. Photos and the completion record are on your tracking page.');
       try { if (app.locals.onVisitDone) app.locals.onVisitDone(v.id, e.name); } catch (err) { console.error('visit done hook:', err.message); }
@@ -447,13 +508,13 @@ module.exports = function mountSched(app, ctx) {
     if (a === 'notes') return noteAdd(req, res);
     if (a === 'break') {
       const open = db.prepare('SELECT * FROM visit_breaks WHERE visit_id=? AND employee_id=? AND end_at IS NULL').get(v.id, e.id);
-      if (open) db.prepare('UPDATE visit_breaks SET end_at=? WHERE id=?').run(t, open.id);
-      else db.prepare('INSERT INTO visit_breaks(visit_id,employee_id,start_at) VALUES(?,?,?)').run(v.id, e.id, t);
+      if (open) db.prepare('UPDATE visit_breaks SET end_at=? WHERE id=?').run(et, open.id);
+      else db.prepare('INSERT INTO visit_breaks(visit_id,employee_id,start_at) VALUES(?,?,?)').run(v.id, e.id, et);
       return res.json({ ok: true, on_break: !open });
     }
     if (a === 'onmyway') {
       if (!v.on_my_way_at) {
-        db.prepare('UPDATE visits SET on_my_way_at=?, updated_at=? WHERE id=?').run(t, t, v.id);
+        db.prepare('UPDATE visits SET on_my_way_at=?, updated_at=? WHERE id=?').run(et, t, v.id);
         await clientNote(v, `${v.title}: crew on the way`, `The crew is on the way to ${v.address || 'your site'}.`);
       }
       return res.json({ ok: true });
@@ -642,7 +703,7 @@ module.exports = function mountSched(app, ctx) {
     const dir = uploadDir || path.join(process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'));
     const up = multer({ storage: multer.diskStorage({ destination: (r, f, cb) => { fs.mkdirSync(dir, { recursive: true }); cb(null, dir); }, filename: (r, f, cb) => cb(null, crypto.randomBytes(12).toString('hex') + (path.extname(f.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '') || '.jpg')) }),
       limits: { fileSize: 12 * 1024 * 1024, files: 6 }, fileFilter: (r, f, cb) => cb(null, /^image\//.test(f.mimetype)) });
-    app.post(['/api/crew/:token/jobs/:vid/photos', '/api/crew/me/jobs/:vid/photos'], (req, res, next) => { const e = crewAuth(req, res); if (!e) return; const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); req.crewEmp = e; req.crewVisit = v; next(); }, up.array('photos', 6), require('./filecheck').verifyUploads, (req, res) => {
+    app.post(['/api/crew/:token/jobs/:vid/photos', '/api/crew/me/jobs/:vid/photos'], (req, res, next) => { const e = crewAuth(req, res); if (!e) return; const v = assigned(e, req.params.vid); if (!v) return res.status(404).json({ error: 'This job is not assigned to you.' }); if (['Cancelled', 'Skipped', 'Done'].includes(v.status)) return res.status(409).json({ error: `This job is ${v.status === 'Done' ? 'already complete' : v.status.toLowerCase()}, so photos can no longer be added to it.` }); req.crewEmp = e; req.crewVisit = v; next(); }, up.array('photos', 6), require('./filecheck').verifyUploads, (req, res) => {
       const files = req.files || []; if (!files.length) return res.status(400).json({ error: 'Choose at least one photo.' });
       const stage = ['Before', 'During', 'After', 'Issue'].includes(req.body.stage) ? req.body.stage : 'After', t = now();
       try { if (!db.prepare('PRAGMA table_info(documents)').all().some(c => c.name === 'visit_id')) db.exec('ALTER TABLE documents ADD COLUMN visit_id INTEGER'); } catch { /* */ }

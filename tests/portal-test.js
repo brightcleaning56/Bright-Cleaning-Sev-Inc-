@@ -6,8 +6,8 @@ const Database = require(path.join(root, 'node_modules', 'better-sqlite3'));
 const db = new Database(':memory:');
 db.exec(`
 CREATE TABLE estimates(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, project_name TEXT, status TEXT, proposal_total REAL, public_token TEXT, created_at TEXT, lead_id INTEGER, customer_name TEXT, company TEXT, site_address TEXT, scope TEXT, area_sqft REAL, line_items TEXT, terms TEXT, tax_pct REAL, expires_on TEXT, decided_at TEXT, decline_reason TEXT, signer_name TEXT, signer_title TEXT, signed_at TEXT, updated_at TEXT, decision_ip TEXT, decision_agent TEXT, line_items_total REAL, use_line_items INTEGER);
-CREATE TABLE contracts(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, title TEXT, value REAL, status TEXT, signature_status TEXT, public_token TEXT, created_at TEXT, signed_at TEXT, customer_name TEXT, company TEXT);
-CREATE TABLE invoices(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, invoice_number TEXT, amount REAL, paid_amount REAL DEFAULT 0, due_date TEXT, status TEXT, created_at TEXT);
+CREATE TABLE contracts(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, email TEXT, title TEXT, value REAL, status TEXT, signature_status TEXT, public_token TEXT, created_at TEXT, signed_at TEXT, customer_name TEXT, company TEXT);
+CREATE TABLE invoices(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, email TEXT, invoice_number TEXT, amount REAL, paid_amount REAL DEFAULT 0, due_date TEXT, status TEXT, created_at TEXT);
 CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT);
 CREATE TABLE leads(id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT, email TEXT, kind TEXT, status TEXT, contact_name TEXT, company TEXT, phone TEXT, address TEXT, service TEXT, project_name TEXT, details TEXT, created_at TEXT, updated_at TEXT);
 CREATE TABLE projects(id INTEGER PRIMARY KEY AUTOINCREMENT, contract_id INTEGER, customer_id INTEGER, name TEXT, status TEXT, progress REAL, site_address TEXT);
@@ -30,13 +30,14 @@ db.prepare("INSERT INTO visits(title,type,date,start_time,end_time,address,statu
 
 db.exec(`CREATE TABLE inspections(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, project_id INTEGER, date TEXT, area TEXT, score REAL, passed INTEGER, status TEXT, itype TEXT, signed_name TEXT, signed_at TEXT);`);
 db.prepare("INSERT INTO customers(email) VALUES(?)").run(EMAIL);
+db.prepare("INSERT INTO customers(email) VALUES(?)").run('someone.else@example.com');
 db.prepare("INSERT INTO inspections(customer_id,project_id,date,area,score,passed,status,itype,signed_name,signed_at) VALUES(1,1,?,?,?,?,?,?,?,?)").run('2026-11-05', 'Lobby', 92, 1, 'Completed', 'Final', 'Eric Moore', '2026-11-05T12:00:00Z');
 db.prepare("INSERT INTO inspections(customer_id,project_id,date,area,score,passed,status,itype,signed_name,signed_at) VALUES(2,NULL,?,?,?,?,?,?,?,?)").run('2026-11-06', 'Other', 50, 0, 'Completed', 'Final', 'Someone', '2026-11-06T12:00:00Z');
 db.exec(`CREATE TABLE documents(id INTEGER PRIMARY KEY AUTOINCREMENT, estimate_id INTEGER, title TEXT, kind TEXT, file_name TEXT, file_url TEXT, size INTEGER, uploaded_by TEXT, created_at TEXT, status TEXT, version INTEGER);`);
 db.prepare("INSERT INTO documents(estimate_id,title,kind,file_name,file_url,size,uploaded_by,created_at,status,version) VALUES(1,?,?,?,?,?,?,?,'Current',1)").run('Site plan', 'Customer upload', 'plan.pdf', '/api/portal/files/abc123.pdf', 12, EMAIL, '2026-11-08T12:00:00Z');
 const crypto2 = require('crypto');
 const SECRET2 = process.env.JWT_SECRET + ':client-portal';
-function sign(p) { const body = Buffer.from(JSON.stringify(p)).toString('base64url'); return body + '.' + crypto2.createHmac('sha256', SECRET2).update(body).digest('base64url'); }
+function sign(p) { p = Object.assign({ cid: p.email === EMAIL ? 1 : p.email === 'someone.else@example.com' ? 2 : null }, p); const body = Buffer.from(JSON.stringify(p)).toString('base64url'); return body + '.' + crypto2.createHmac('sha256', SECRET2).update(body).digest('base64url'); }
 const routes = {};
 const app = { locals: {}, get: (p, ...f) => { routes['GET ' + p] = f[f.length - 1]; }, post: (p, ...f) => { routes['POST ' + p] = f[f.length - 1]; }, put: (p, ...f) => { routes['PUT ' + p] = f[f.length - 1]; }, patch: (p, ...f) => { routes['PATCH ' + p] = f[f.length - 1]; } };
 const staffAuth = (req, res, next) => next();
@@ -253,6 +254,26 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
   for (let i = 0; i < 6; i++) await call('POST /api/portal/login', { email: EMAIL, password: 'wrong-' + i + '-guess' }, {}, '10.8.8.' + i);
   const pwLimited429 = await call("POST /api/portal/login", { email: EMAIL, password: "new-horse-5678" }, {}, "10.8.8.99");
   check("login: repeated wrong guesses are slowed down", pwLimited429.code === 429, pwLimited429.code);
+
+  // 12. Shared mailbox and customer binding (F-13.4): an email on two customer records gives no access, and a session only shows its own customer record
+  db.prepare("INSERT INTO customers(email) VALUES(?)").run("shared.box@example.com");
+  db.prepare("INSERT INTO customers(email) VALUES(?)").run("shared.box@example.com");
+  db.prepare("INSERT INTO estimates(email,project_name,status,proposal_total,public_token,created_at) VALUES(?,?,?,?,?,?)").run("shared.box@example.com", "Shared site", "Sent", 100, "tok-shared", "2026-11-01T10:00:00Z");
+  const sentS = sent.length;
+  const sharedReq = await call("POST /api/portal/request", { email: "shared.box@example.com" }, {}, "10.4.4.4");
+  check("shared mailbox: same generic answer", sharedReq.code === 200 && sharedReq.body.ok, sharedReq);
+  check("shared mailbox: no sign-in link sent", sent.length === sentS, sent.length - sentS);
+  const sharedLogins = db.prepare("SELECT COUNT(*) n FROM portal_logins WHERE email=?").get("shared.box@example.com").n;
+  check("shared mailbox: no sign-in link stored", sharedLogins === 0, sharedLogins);
+  const forgedShared = await call("GET /api/portal/me", {}, { authorization: "Bearer " + sign({ email: "shared.box@example.com", cid: 3, iat: Date.now(), exp: Date.now() + 3600000 }) });
+  check("shared mailbox: a session bound to one of the records is refused", forgedShared.code === 401, forgedShared.code);
+  db.prepare("INSERT INTO invoices(customer_id,email,invoice_number,amount,paid_amount,status,created_at) VALUES(2,?,?,?,0,?,?)").run(EMAIL, "BC-2026-9999", 55, "Sent", "2026-11-04T10:00:00Z");
+  const bind = await call("GET /api/portal/me", {}, { authorization: "Bearer " + sign({ email: EMAIL, cid: 1, iat: Date.now(), exp: Date.now() + 3600000 }) });
+  check("binding: an invoice that belongs to another customer record is not shown", bind.code === 200 && !bind.body.invoices.some(i => i.number === "BC-2026-9999") && bind.body.invoices.some(i => i.number === "BC-2026-0007"), bind.body.invoices);
+  const bindWrong = await call("GET /api/portal/me", {}, { authorization: "Bearer " + sign({ email: EMAIL, cid: 2, iat: Date.now(), exp: Date.now() + 3600000 }) });
+  check("binding: a session with another customer id is refused", bindWrong.code === 401, bindWrong.code);
+  const noCid = await call("GET /api/portal/me", {}, { authorization: "Bearer " + sign({ email: EMAIL, cid: null, iat: Date.now(), exp: Date.now() + 3600000 }) });
+  check("binding: a session without a customer id is refused", noCid.code === 401, noCid.code);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

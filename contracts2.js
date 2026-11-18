@@ -102,14 +102,20 @@ module.exports = function mountContracts(app, ctx) {
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can countersign contracts.' });
     // A client's online proposal approval only stands for the original contract; amendments and renewals need their own signature.
     const approvedOnline = k.proposal_status === 'Approved' && !k.parent_id && (k.kind || 'Contract') === 'Contract';
+    // M1: a superseded, closed or voided version can never become Active again, and an executed contract keeps its first countersignature.
+    if (['Superseded', 'Closed', 'Void'].includes(k.status)) return res.status(409).json({ error: `This contract is ${k.status.toLowerCase()}. Countersign the current version instead.` });
+    if (k.countersigned_at) return res.status(409).json({ error: 'This contract has already been countersigned.' });
     if (k.signature_status !== 'Customer signed' && !approvedOnline) return res.status(409).json({ error: 'The customer has not approved or signed this contract yet.' });
+    let pe = null;
     if (approvedOnline) {
       // The client approved the proposal's price, not whatever the contract says now: it must still match, and a declined contract cannot be executed.
       if (['Declined', 'Void'].includes(k.signature_status) || k.status === 'Void') return res.status(409).json({ error: 'This contract was declined or voided. It cannot be countersigned.' });
-      const pe = k.estimate_id ? db.prepare('SELECT proposal_total FROM estimates WHERE id=?').get(k.estimate_id) : null;
+      pe = k.estimate_id ? db.prepare('SELECT proposal_total, signer_name, signer_title, signed_at, decision_ip FROM estimates WHERE id=?').get(k.estimate_id) : null;
       if (!pe || Math.abs(Number(k.value || 0) - Number(pe.proposal_total || 0)) > 0.5) return res.status(409).json({ error: 'The contract value no longer matches the proposal the client approved. Check it against the proposal before countersigning.' });
     }
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Type your full name to countersign.' });
+    // M8: the customer's acceptance of the proposal is the customer's signature on the contract, so the executed copy records it.
+    if (approvedOnline && !k.signed_at && pe && pe.signed_at) db.prepare('UPDATE contracts SET signer_name=?, signer_title=?, signed_at=?, signed_ip=? WHERE id=?').run(pe.signer_name || null, pe.signer_title || null, pe.signed_at, pe.decision_ip || null, k.id);
     db.prepare("UPDATE contracts SET signature_status='Signed', status='Active', countersigned_by=?, countersigned_at=?, updated_at=? WHERE id=?").run(`${name} (${who(req)})`, now(), now(), k.id);
     if (k.parent_id) { db.prepare("UPDATE contracts SET status='Superseded', superseded_by=? WHERE (id=? OR parent_id=?) AND id<>? AND status<>'Closed'").run(k.id, k.parent_id, k.parent_id, k.id); db.prepare('UPDATE projects SET contract_id=? WHERE contract_id IN (SELECT id FROM contracts WHERE (id=? OR parent_id=?) AND id<>?)').run(k.id, k.parent_id, k.parent_id, k.id); }
     // Office sign-off creates the job if the contract has none, then moves it to Contracted (it can now be scheduled).

@@ -3,6 +3,8 @@
 // - Follow-ups are visible on the proposal, can be changed, cancelled or sent now, and are sent automatically when due.
 // - A follow-up is skipped (Cancelled) when the proposal was approved, declined, withdrawn or expired before it is due.
 // - Texts (SMS) go through Twilio. They are sent only when someone presses Send, or for a follow-up set to text.
+// - Automatic texts are OFF by default (setting sms_auto_followups, owner-only switch). Without a recorded opt-in, the
+//   system never texts a customer on its own. Staff-chosen texts are unchanged.
 module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   const bizdate = require('./bizdate');
   const ES = require('./emailsuppress');
@@ -37,6 +39,8 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   // ---- Texts (Twilio). Needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_SMS_FROM (a Twilio number that can send texts). ----
   const smsConfig = () => ({ sid: process.env.TWILIO_ACCOUNT_SID || '', token: process.env.TWILIO_AUTH_TOKEN || '', from: process.env.TWILIO_SMS_FROM || '', base: (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '') });
   const smsReady = () => { const c = smsConfig(); return !!(c.sid && c.token && c.from); };
+  // Automatic texts are off unless the owner has switched them on (default off, see the header).
+  const smsAutoOn = () => { try { const r = db.prepare("SELECT value FROM settings WHERE key='sms_auto_followups'").get(); return !!r && r.value === '1'; } catch { return false; } };
   async function sendSms(to, body) {
     const c = smsConfig();
     if (!smsReady()) throw new Error('Texting is not set up yet. The owner needs to add TWILIO_ACCOUNT_SID and TWILIO_SMS_FROM in Render.');
@@ -61,7 +65,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   function scheduleAuto(estId) {
     const e = estOf(estId); if (!e || DECIDED.includes(e.status)) return;
     if (db.prepare("SELECT id FROM proposal_followups WHERE estimate_id=? AND auto=1 AND status='Scheduled'").get(e.id)) return;
-    const channel = isEmail(e.email) ? 'email' : (phoneOf(e) ? 'sms' : null);
+    const channel = isEmail(e.email) ? 'email' : (phoneOf(e) && smsAutoOn() ? 'sms' : null);
     if (!channel) return;
     db.prepare("INSERT INTO proposal_followups(estimate_id,due_date,channel,message,status,auto,created_by,created_at) VALUES(?,?,?,?,'Scheduled',1,'system',?)")
       .run(e.id, addDays(bizdate.today(), 2), channel, defaultMessage(e), new Date().toISOString());
@@ -81,6 +85,8 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     const e = estOf(f.estimate_id);
     if (!e) return done('Failed', 'Proposal not found');
     if (DECIDED.includes(e.status)) return done('Cancelled', 'Proposal was ' + e.status.toLowerCase() + ' before this follow-up was due');
+    // A text the system would send on its own needs the owner's switch on. Staff pressing Send is a person's decision.
+    if (f.channel === 'sms' && f.auto === 1 && by === 'system' && !smsAutoOn()) return done('Cancelled', 'Automatic texts are off (owner setting sms_auto_followups)');
     try {
       if (f.channel === 'email') {
         if (!isEmail(e.email)) throw new Error('No email address on the proposal');
@@ -99,6 +105,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   if (process.env.NODE_ENV !== 'test') setInterval(() => runDue().catch(err => console.error('follow-up run failed', err.message)), 15 * 60 * 1000).unref();
 
   app.locals.sendSms = (to, body) => sendSms(to, body);
+  app.locals.runFollowupsDue = () => runDue();
   app.locals.smsReady = () => smsReady();
 
   // ---- Routes ----
@@ -108,8 +115,18 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
       followups: db.prepare('SELECT * FROM proposal_followups WHERE estimate_id=? ORDER BY due_date, id').all(e.id),
       texts: db.prepare('SELECT id,to_number,body,status,error,created_by,created_at FROM sms_messages WHERE estimate_id=? ORDER BY id DESC LIMIT 30').all(e.id),
       viewed: { count: e.view_count || 0, first: e.viewed_at || null, last: e.last_viewed_at || null },
-      status: e.status, email: e.email || '', phone: phoneOf(e), text_ready: smsReady(), sent_at: e.sent_at || null
+      status: e.status, email: e.email || '', phone: phoneOf(e), text_ready: smsReady(), sent_at: e.sent_at || null, auto_sms_enabled: smsAutoOn()
     });
+  });
+
+  // Owner only: turn automatic texts on or off. Off is the default. Turning it on is a recorded decision.
+  app.put('/api/admin/followups/auto-sms', auth, (req, res) => {
+    const ow = String(process.env.ADMIN_EMAIL || '').toLowerCase();
+    if (!ow || me(req).toLowerCase() !== ow) return res.status(403).json({ error: 'Only the owner can turn automatic texts on or off.' });
+    const on = !!(req.body || {}).enabled;
+    db.prepare("INSERT INTO settings(key,value,updated_at) VALUES('sms_auto_followups',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(on ? '1' : '0', new Date().toISOString());
+    logAction(req, on ? 'turned on' : 'turned off', 'setting', 0, 'automatic texts for proposal follow-ups');
+    res.json({ enabled: on });
   });
 
   app.post('/api/admin/estimates/:id/followups', auth, (req, res) => {

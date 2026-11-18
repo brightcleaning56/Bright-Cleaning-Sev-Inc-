@@ -12,6 +12,7 @@ module.exports = function mountInvoices(app, ctx) {
   const who = req => (req.user && req.user.email) || null;
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
   const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const money2 = n => Math.round(Number(n || 0) * 100) / 100;
   const get = id => db.prepare('SELECT * FROM invoices WHERE id=?').get(Number(id));
   // Contract behind an invoice (through its project).
   const contractFor = inv => { if (!inv.project_id) return null; const p = db.prepare('SELECT contract_id FROM projects WHERE id=?').get(inv.project_id); return p && p.contract_id ? db.prepare('SELECT id, title, value, signature_status FROM contracts WHERE id=?').get(p.contract_id) : null; };
@@ -81,5 +82,14 @@ module.exports = function mountInvoices(app, ctx) {
     db.prepare("UPDATE invoices SET status=CASE WHEN status IN ('Draft') THEN 'Sent' ELSE status END, sent_at=COALESCE(sent_at,?), sent_to=?, send_count=COALESCE(send_count,0)+1, email=COALESCE(NULLIF(email,''),?), issue_date=COALESCE(issue_date,?) WHERE id=?").run(t, to, to, today(), inv.id);
     logAction(req, resend ? 'resent invoice' : 'sent invoice', 'invoice', inv.id, `${inv.invoice_number} ${money(inv.amount)} to ${to}${chk.ok ? '' : ' (above contract value — reason recorded)'}`);
     res.json({ ok: true, to, resend, invoice: get(inv.id) });
+  });
+  // Online card payments held for the owner (audit MF-5): money received that was not applied, because the payment was more than
+  // the balance or the invoice was Draft or Void. The owner refunds these at Stripe. Owner or manager only.
+  app.get('/api/admin/invoices/needs-refund', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can see held payments.' });
+    const rows = db.prepare(`SELECT op.id, op.invoice_id, op.amount, op.email, op.stripe_session_id, op.created_at, op.paid_at, i.invoice_number, i.status AS invoice_status, i.amount AS invoice_amount, i.paid_amount
+      FROM online_payments op LEFT JOIN invoices i ON i.id=op.invoice_id WHERE op.status='Needs refund' ORDER BY op.paid_at DESC, op.id DESC`).all();
+    const total = money2(rows.reduce((s, r) => s + Number(r.amount || 0), 0));
+    res.json({ count: rows.length, total, needs_refund: rows });
   });
 };

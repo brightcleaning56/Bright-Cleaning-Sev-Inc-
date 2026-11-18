@@ -49,7 +49,9 @@ module.exports = function mountCalls(app, ctx) {
     const live = lines.map(l => `${l.w}: ${l.t}`).join('\n');
     const prev = String(c.transcript || ''), cut = prev.indexOf('[Live transcript]');
     const manual = (cut >= 0 ? prev.slice(0, cut) : prev).trim();
-    db.prepare('UPDATE calls SET transcript=? WHERE id=?').run(((manual ? manual + '\n\n' : '') + '[Live transcript]\n' + live).slice(0, 60000), c.id);
+    // Sections added after the live transcript (a voicemail transcription) are kept, not overwritten.
+    const tail = cut >= 0 ? ((prev.slice(cut).match(/\n\n\[(?!Live transcript\])[\s\S]*$/) || [''])[0]) : '';
+    db.prepare('UPDATE calls SET transcript=? WHERE id=?').run(((manual ? manual + '\n\n' : '') + '[Live transcript]\n' + live + tail).slice(0, 60000), c.id);
   }
   const softphone = () => !!(process.env.TWILIO_API_KEY && process.env.TWILIO_API_SECRET && acctSid() && twNumber());
   // Phones to ring: admin setting overrides env. Lenient: pulls every valid US number out of the text ("+1 469-267-8472, 515.303.3024").
@@ -144,8 +146,11 @@ module.exports = function mountCalls(app, ctx) {
     db.prepare('UPDATE calls SET recording_url=? WHERE id=?').run(url.slice(0, 400), c.id); res.type('text/xml').send('<Response/>');
   }));
   app.post('/api/webhooks/twilio/transcription', hook((req, res) => {
-    const b = req.body || {}, c = db.prepare('SELECT id FROM calls WHERE provider_sid=?').get(clean(b.CallSid, 64)); if (!c) return res.status(404).send('unknown call');
-    db.prepare('UPDATE calls SET transcript=? WHERE id=?').run(String(b.TranscriptionText || '').slice(0, 60000), c.id); res.type('text/xml').send('<Response/>');
+    const b = req.body || {}, c = db.prepare('SELECT id, transcript FROM calls WHERE provider_sid=?').get(clean(b.CallSid, 64)); if (!c) return res.status(404).send('unknown call');
+    // Keep what is already on the call (live transcript, AI conversation, notes) and add this transcription after it.
+    const text = String(b.TranscriptionText || '').trim(), prev = String(c.transcript || '').trim();
+    if (text && !prev.includes(text)) db.prepare('UPDATE calls SET transcript=? WHERE id=?').run(((prev ? prev + '\n\n' : '') + '[Transcription]\n' + text).slice(0, 60000), c.id);
+    res.type('text/xml').send('<Response/>');
   }));
   app.get('/api/admin/calls/:id/detail', auth, (req, res) => {
     const c = db.prepare('SELECT c.*, cu.company customer_company, cu.name customer_name FROM calls c LEFT JOIN customers cu ON cu.id=c.customer_id WHERE c.id=?').get(Number(req.params.id));
@@ -528,6 +533,8 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
   // recorded call), and presses 1 to be connected to the team. Calls stay inside business hours and under a daily limit.
   const OB_KEY = 'outbound_callbacks';
   const obDefaults = { enabled: false, legal_review_confirmed: false, daily_limit: 10, start_hour: 9, end_hour: 17 };
+  // Most automatic calls to one lead before the sweep stops (a lead that never answers is not called every day forever).
+  const OB_MAX_ATTEMPTS = Math.max(1, Number(process.env.OUTBOUND_CALLBACK_MAX_ATTEMPTS) || 3);
   const obGet = () => { try { return { ...obDefaults, ...(JSON.parse(getS(OB_KEY) || '{}')) }; } catch { return { ...obDefaults }; } };
   const localHour = () => { try { return Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: process.env.BUSINESS_TZ || 'America/Chicago' }).format(new Date())) % 24; } catch { return new Date().getHours(); } };
   const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
@@ -543,7 +550,8 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     const remaining = Math.max(0, s.daily_limit - obSentToday());
     if (!remaining) return { skipped: 'daily limit reached' };
     const day = new Date(Date.now() - 86400000).toISOString();
-    const leads = db.prepare("SELECT id, phone FROM leads WHERE callback_requested=1 AND phone IS NOT NULL AND phone<>'' AND stage NOT IN ('done','converted') AND (follow_up_date IS NULL OR follow_up_date='' OR follow_up_date<=?) AND (last_callback_at IS NULL OR last_callback_at<?) ORDER BY id LIMIT ?").all(today(), day, remaining);
+    // Attempt cap: a lead that has had OB_MAX_ATTEMPTS automatic calls placed is not called again by the sweep (staff can still call).
+    const leads = db.prepare("SELECT id, phone FROM leads WHERE callback_requested=1 AND phone IS NOT NULL AND phone<>'' AND stage NOT IN ('done','converted') AND (follow_up_date IS NULL OR follow_up_date='' OR follow_up_date<=?) AND (last_callback_at IS NULL OR last_callback_at<?) AND COALESCE(callback_calls,0)<? ORDER BY id LIMIT ?").all(today(), day, OB_MAX_ATTEMPTS, remaining);
     const placed = [];
     const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
     for (const l of leads) {

@@ -3,13 +3,17 @@
 // Same schema as server.js. Used by the list and by the website's repeat-bid path, so the table exists before either writes.
 const SCHEMA = "CREATE TABLE IF NOT EXISTS duplicate_reviews(id INTEGER PRIMARY KEY AUTOINCREMENT, lead_id INTEGER NOT NULL, payload TEXT NOT NULL, files TEXT, status TEXT NOT NULL DEFAULT 'open', result_lead_id INTEGER, created_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT)";
 const ensureTable = db => db.exec(SCHEMA);
+// The service field can arrive as a list (checkboxes). Stored as one line, like the first-bid path in server.js.
+const svcText = v => (Array.isArray(v) ? v.join('; ') : String(v || '')).trim();
+// The same details layout as the first-bid path (server.js POST /api/bids), so a repeat bid keeps every answer it gave.
+const intakeDetails = p => [p.details, p.floors_units && ('Floors / units: ' + p.floors_units), p.occupancy && ('Occupancy: ' + p.occupancy), p.client_role && ('Client role: ' + p.client_role), p.contact_method && ('Preferred contact: ' + p.contact_method), p.walkthrough_date && ('Walkthrough date: ' + p.walkthrough_date), p.completion_date && ('Completion date: ' + p.completion_date), p.access_notes && ('Access / security: ' + p.access_notes), p.site_conditions && ('Site logistics: ' + p.site_conditions), p.insurance_requirements && ('Insurance / vendor requirements: ' + p.insurance_requirements), p.billing_requirements && ('Billing / procurement: ' + p.billing_requirements)].filter(Boolean).join('\n\n');
 module.exports = function (app, { db, auth, logAction, clean }) {
   const who = req => String((req.user && req.user.email) || '');
   const safeList = s => { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
   const open = r => {
     let p = {}; try { p = JSON.parse(r.payload || '{}'); } catch { p = {}; }
     const lead = db.prepare('SELECT id, contact_name, company, project_name, address, status FROM leads WHERE id=?').get(r.lead_id) || null;
-    return { id: r.id, created_at: r.created_at, status: r.status, lead, bid: { contact_name: p.contact_name || '', company: p.company || '', email: p.email || '', phone: p.phone || '', project_name: p.project_name || '', address: p.address || '', service: p.service || '', details: p.details || '' }, files: safeList(r.files) };
+    return { id: r.id, created_at: r.created_at, status: r.status, lead, bid: { contact_name: p.contact_name || '', company: p.company || '', email: p.email || '', phone: p.phone || '', project_name: p.project_name || '', project_type: p.project_type || '', address: p.address || '', service: svcText(p.service), square_footage: p.square_footage || '', bid_due_date: p.bid_due_date || '', start_date: p.start_date || '', frequency: p.frequency || '', walkthrough: p.walkthrough || '', details: intakeDetails(p) }, files: safeList(r.files) };
   };
   app.get('/api/admin/duplicate-reviews', auth, (req, res) => {
     // Owner-facing list. If the query itself fails, say why (the error text, not the stack) so it can be fixed.
@@ -20,7 +24,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       rows = db.prepare("SELECT * FROM duplicate_reviews WHERE status='open' ORDER BY id DESC LIMIT 200").all();
     }
     catch (err) { console.error('duplicate-reviews query failed:', err.stack || err.message); return res.status(500).json({ error: 'Repeat bids could not be loaded.', detail: String(err.message || err).slice(0, 300) }); }
-    res.json({ reviews: rows.map(r => { try { return open(r); } catch (err) { console.error('duplicate review ' + r.id + ' could not be shown:', err.message); return { id: r.id, created_at: r.created_at, status: r.status, lead: null, bid: { contact_name: '', company: '', email: '', phone: '', project_name: '', address: '', service: '', details: '' }, files: [] }; } }) });
+    res.json({ reviews: rows.map(r => { try { return open(r); } catch (err) { console.error('duplicate review ' + r.id + ' could not be shown:', err.message); return { id: r.id, created_at: r.created_at, status: r.status, lead: null, bid: { contact_name: '', company: '', email: '', phone: '', project_name: '', project_type: '', address: '', service: '', square_footage: '', bid_due_date: '', start_date: '', frequency: '', walkthrough: '', details: '' }, files: [] }; } }) });
   });
   app.post('/api/admin/duplicate-reviews/:id/merge', auth, (req, res) => {
     const r = db.prepare("SELECT * FROM duplicate_reviews WHERE id=? AND status='open'").get(Number(req.params.id));
@@ -31,7 +35,14 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     let fl = []; try { fl = JSON.parse(lead.files || '[]'); } catch { fl = []; }
     let newFiles = []; try { newFiles = JSON.parse(r.files || '[]'); } catch { newFiles = []; }
     const t = new Date().toISOString();
-    db.prepare('UPDATE leads SET files=?, details=?, updated_at=? WHERE id=?').run(JSON.stringify(fl.concat(newFiles)), clean((lead.details || '') + '\n\n[Repeat bid merged ' + t.slice(0, 16).replace('T', ' ') + ' UTC] ' + (p.details || ''), 20000), t, lead.id);
+    const bidSvc = svcText(p.service), bidType = String(p.project_type || '').trim();
+    // Service and project type fill a blank on the lead. If the repeat bid asks for something different, it is kept in the notes so nothing is lost.
+    const extra = [];
+    if (bidSvc && bidSvc !== (lead.service || '')) extra.push('Service in repeat bid: ' + bidSvc);
+    if (bidType && bidType !== (lead.project_type || '')) extra.push('Project type in repeat bid: ' + bidType);
+    const addition = [intakeDetails(p), ...extra].filter(Boolean).join('\n\n');
+    db.prepare("UPDATE leads SET files=?, details=?, service=COALESCE(NULLIF(service,''),?), project_type=COALESCE(NULLIF(project_type,''),?), updated_at=? WHERE id=?")
+      .run(JSON.stringify(fl.concat(newFiles)), clean((lead.details || '') + '\n\n[Repeat bid merged ' + t.slice(0, 16).replace('T', ' ') + ' UTC] ' + addition, 20000), clean(bidSvc, 500) || null, clean(bidType, 100) || null, t, lead.id);
     db.prepare("UPDATE duplicate_reviews SET status='merged', result_lead_id=?, decided_at=?, decided_by=? WHERE id=?").run(lead.id, t, who(req), r.id);
     logAction(req, 'merged repeat bid', 'lead', lead.id, 'review #' + r.id);
     res.json({ ok: true, lead_id: lead.id });
@@ -41,8 +52,8 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     if (!r) return res.status(404).json({ error: 'That review is already decided or does not exist.' });
     let p = {}; try { p = JSON.parse(r.payload || '{}'); } catch { p = {}; }
     const t = new Date().toISOString();
-    const id = db.prepare("INSERT INTO leads(kind,contact_name,company,email,phone,project_name,address,details,files,status,created_at,updated_at) VALUES('bid',?,?,?,?,?,?,?,?,'New',?,?)")
-      .run(clean(p.contact_name, 150), clean(p.company, 200), clean(p.email, 254), clean(p.phone, 60), clean(p.project_name, 200), clean(p.address, 300), clean(p.details, 20000), r.files || '[]', t, t).lastInsertRowid;
+    const id = db.prepare("INSERT INTO leads(kind,contact_name,company,email,phone,project_name,project_type,service,address,square_footage,bid_due_date,start_date,frequency,walkthrough,details,files,status,created_at,updated_at) VALUES('bid',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'New',?,?)")
+      .run(clean(p.contact_name, 150), clean(p.company, 200), clean(p.email, 254), clean(p.phone, 60), clean(p.project_name, 200), clean(p.project_type, 100), clean(svcText(p.service), 500), clean(p.address, 500), clean(p.square_footage, 60), clean(p.bid_due_date, 30), clean(p.start_date, 30), clean(p.frequency, 100), clean(p.walkthrough, 100), clean(intakeDetails(p), 20000), r.files || '[]', t, t).lastInsertRowid;
     db.prepare("UPDATE duplicate_reviews SET status='new_lead', result_lead_id=?, decided_at=?, decided_by=? WHERE id=?").run(id, t, who(req), r.id);
     logAction(req, 'created lead from repeat bid', 'lead', id, 'review #' + r.id);
     res.json({ ok: true, lead_id: id });

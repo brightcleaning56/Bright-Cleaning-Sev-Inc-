@@ -22,7 +22,9 @@ function evaluate(e) {
   const r = rules(), reasons = [];
   if (!(Number(e.proposal_total) > 0)) return { blocked: 'The proposal total is $0. Price it before sending.', required: true, reasons: ['Total is $0'], approval: null };
   const m = actualMargin(e);
-  if (Number(e.total_cost) > 0 && m < r.min_margin_pct) reasons.push(`Margin ${m.toFixed(1)}% is below your ${r.min_margin_pct}% minimum`);
+  // M7: with no cost entered the margin is unknown, so the proposal needs a second look rather than passing unchecked.
+  if (!(Number(e.total_cost) > 0)) reasons.push('No costs entered, so the margin cannot be checked');
+  else if (m < r.min_margin_pct) reasons.push(`Margin ${m.toFixed(1)}% is below your ${r.min_margin_pct}% minimum`);
   if (r.max_total > 0 && Number(e.proposal_total) > r.max_total) reasons.push(`Total $${Number(e.proposal_total).toLocaleString('en-US', { maximumFractionDigits: 2 })} is above $${Number(r.max_total).toLocaleString('en-US')}`);
   if (r.flag_pre_pricing && e.lead_id) {
     const l = DB.prepare('SELECT intake FROM leads WHERE id=?').get(e.lead_id);

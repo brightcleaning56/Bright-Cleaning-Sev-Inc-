@@ -30,6 +30,14 @@ module.exports = function mountPortal(app, ctx) {
   const norm = e => String(e || '').trim().toLowerCase().slice(0, 254);
   const isEmail = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
   const sha = s => crypto.createHash('sha256').update(s).digest('hex');
+  // A portal session belongs to one customer record (customers.id), not to an email address. An email used by
+  // several customer records (a shared mailbox) gets no portal access at all until staff separate them.
+  // Returns the customer id, or null when the email has no record or more than one.
+  const customerFor = email => { const rows = db.prepare('SELECT id FROM customers WHERE lower(email)=? LIMIT 2').all(String(email || '').toLowerCase()); return rows.length === 1 ? rows[0].id : null; };
+  // Shared by every customer-owned query: records carry a customer_id; older rows without one fall back to the email,
+  // which is safe only because customerFor() guarantees that email belongs to this customer alone.
+  // idExpr / emailExpr are SQL column expressions; the query binds (customer id, email) in that order.
+  const ownRecord = (idExpr, emailExpr) => `(${idExpr}=? OR (${idExpr} IS NULL AND lower(${emailExpr})=?))`;
   db.exec(`CREATE TABLE IF NOT EXISTS portal_profiles(email TEXT PRIMARY KEY, name TEXT, company TEXT, phone TEXT, notify TEXT, valid_after TEXT, updated_at TEXT)`);
   // A session is valid only if it was issued after the customer last signed out everywhere.
   const sessionOk = p => { const r = db.prepare('SELECT valid_after FROM portal_profiles WHERE email=?').get(p.email); return !(r && r.valid_after && (!p.iat || p.iat < Date.parse(r.valid_after))); };
@@ -38,7 +46,7 @@ module.exports = function mountPortal(app, ctx) {
     const [body, sig] = String(tok || '').split('.'); if (!body || !sig) return null;
     const good = crypto.createHmac('sha256', SECRET()).update(body).digest('base64url');
     if (sig.length !== good.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good))) return null;
-    try { const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); return p.exp > Date.now() && sessionOk(p) ? p : null; } catch { return null; }
+    try { const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); return p.exp > Date.now() && p.cid != null && customerFor(p.email) === p.cid && sessionOk(p) ? p : null; } catch { return null; }
   };
   const base = () => (process.env.PUBLIC_BASE_URL || 'https://brightclean.net').replace(/\/$/, '');
 
@@ -55,6 +63,10 @@ module.exports = function mountPortal(app, ctx) {
     if (recent && Date.now() - Date.parse(recent.created_at) < 60000) return done(); // one link a minute
     const onFile = db.prepare(`SELECT 1 FROM estimates WHERE lower(email)=? UNION SELECT 1 FROM contracts WHERE lower(email)=? UNION SELECT 1 FROM invoices WHERE lower(email)=? UNION SELECT 1 FROM customers WHERE lower(email)=? UNION SELECT 1 FROM leads WHERE lower(email)=? LIMIT 1`).get(email, email, email, email, email);
     if (!onFile) return done();
+    if (!customerFor(email)) { // shared or unlinked mailbox: no link, and staff are told why
+      try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','portal sign-in refused','portal',0,?,?)").run('email is not on exactly one customer record; separate or merge the records', now()); } catch { /* */ }
+      return done();
+    }
     const token = crypto.randomBytes(24).toString('base64url');
     db.prepare('INSERT INTO portal_logins(email,token_hash,expires_at,created_at) VALUES(?,?,?,?)').run(email, sha(token), new Date(Date.now() + 30 * 60000).toISOString(), now());
     done(); // answer the same way whether or not the email is on file; the send happens after the reply
@@ -70,42 +82,43 @@ module.exports = function mountPortal(app, ctx) {
     const token = String((req.body || {}).token || '');
     if (!token) return res.status(400).json({ error: 'This sign-in link is not valid.' });
     const row = db.prepare('SELECT * FROM portal_logins WHERE token_hash=? AND used_at IS NULL').get(sha(token));
-    if (!row || Date.parse(row.expires_at) < Date.now()) return res.status(401).json({ error: 'This sign-in link has expired or was already used. Request a new one.' });
+    const cid = row ? customerFor(row.email) : null;
+    if (!row || Date.parse(row.expires_at) < Date.now() || cid == null) return res.status(401).json({ error: 'This sign-in link has expired or was already used. Request a new one.' });
     db.prepare('UPDATE portal_logins SET used_at=? WHERE id=?').run(now(), row.id);
-    res.json({ session: sign({ email: row.email, iat: Date.now(), exp: Date.now() + 8 * 3600000 }), email: row.email });
+    res.json({ session: sign({ email: row.email, cid, iat: Date.now(), exp: Date.now() + 8 * 3600000 }), email: row.email });
   });
 
   // Step 3: the customer's own records only (non-draft), read-only.
   app.get('/api/portal/me', (req, res) => {
     const s = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
     if (!s) return res.status(401).json({ error: 'Please sign in again.' });
-    const e = s.email;
+    const e = s.email, cid = s.cid; // cid: the customer record this session is bound to; every record below must belong to it
     const proposals = db.prepare(`SELECT id, project_name, customer_name, company, site_address, scope, area_sqft, line_items, terms, tax_pct, proposal_total, status, public_token, expires_on, decided_at, decline_reason, signer_name, lead_id, created_at FROM estimates WHERE lower(email)=? AND status NOT IN ('Draft','Ready','Superseded','Withdrawn') ORDER BY created_at DESC`).all(e)
       .map(portalProposal);
-    const contracts = db.prepare(`SELECT id, title, value, status, signature_status, public_token FROM contracts WHERE lower(email)=? AND status NOT IN ('Draft','Superseded') ORDER BY id DESC`).all(e)
+    const contracts = db.prepare(`SELECT id, title, value, status, signature_status, public_token FROM contracts WHERE ${ownRecord('customer_id', 'email')} AND status NOT IN ('Draft','Superseded') ORDER BY id DESC`).all(cid, e)
       .map(k => ({ id: k.id, title: k.title || 'Contract', value: k.value, status: k.status, signature: k.signature_status, link: k.public_token && k.signature_status !== 'Signed' ? `/contract/${k.public_token}` : null }));
-    const invoices = db.prepare(`SELECT id, invoice_number, amount, paid_amount, due_date, status FROM invoices WHERE lower(email)=? AND status NOT IN ('Draft','Void') ORDER BY id DESC`).all(e)
+    const invoices = db.prepare(`SELECT id, invoice_number, amount, paid_amount, due_date, status FROM invoices WHERE ${ownRecord('customer_id', 'email')} AND status NOT IN ('Draft','Void') ORDER BY id DESC`).all(cid, e)
       .map(i => ({ id: i.id, number: i.invoice_number, amount: i.amount, paid: i.paid_amount || 0, balance: Math.max(0, (i.amount || 0) - (i.paid_amount || 0)), due: i.due_date, status: i.status }));
-    const projects = db.prepare(`SELECT p.name, p.status, p.progress, p.site_address FROM projects p JOIN contracts k ON k.id=p.contract_id WHERE lower(k.email)=? ORDER BY p.id DESC`).all(e)
+    const projects = db.prepare(`SELECT p.name, p.status, p.progress, p.site_address FROM projects p LEFT JOIN contracts k ON k.id=p.contract_id WHERE ${ownRecord('COALESCE(p.customer_id,k.customer_id)', 'k.email')} ORDER BY p.id DESC`).all(cid, e)
       .map(p => ({ name: p.name, status: p.status, progress: p.progress || 0, site: p.site_address || '' }));
     // Scheduled visits: confirmed or in progress (tentative visits are not shown until they are confirmed).
     // Scheduled visits: confirmed, in progress, or done in the last two weeks. Tentative visits are not shown.
     // Visits show for the customer whether the project's job is a contract (by contract email) or a customer record (by customer email); a project with no contract still counts.
-    const visits = db.prepare(`SELECT v.id, v.title, v.type, v.date, v.start_time, v.end_time, v.address, v.status, p.name AS project FROM visits v JOIN projects p ON p.id=v.project_id LEFT JOIN contracts k ON k.id=p.contract_id LEFT JOIN customers cu ON cu.id=p.customer_id WHERE (lower(k.email)=? OR lower(cu.email)=?) AND v.status IN ('Scheduled','In progress','Done') AND v.date >= date('now','-14 days') ORDER BY v.date, v.start_time LIMIT 25`).all(e, e)
+    const visits = db.prepare(`SELECT v.id, v.title, v.type, v.date, v.start_time, v.end_time, v.address, v.status, p.name AS project FROM visits v JOIN projects p ON p.id=v.project_id LEFT JOIN contracts k ON k.id=p.contract_id WHERE ${ownRecord('COALESCE(p.customer_id,k.customer_id)', 'k.email')} AND v.status IN ('Scheduled','In progress','Done') AND v.date >= date('now','-14 days') ORDER BY v.date, v.start_time LIMIT 25`).all(cid, e)
       .map(v => ({ id: v.id, title: v.title || v.type, type: v.type, date: v.date, start: v.start_time || '', end: v.end_time || '', address: v.address || '', status: v.status, project: v.project || '' }));
     // Recent activity: only this customer's own records, newest first. No internal notes.
     const activity = [];
     db.prepare(`SELECT project_name, status, created_at FROM estimates WHERE lower(email)=? AND status NOT IN ('Draft','Ready','Superseded','Withdrawn') ORDER BY created_at DESC LIMIT 10`).all(e)
       .forEach(x => activity.push({ at: x.created_at, text: 'Proposal: ' + (x.project_name || 'Proposal') + ' (' + x.status + ')' }));
-    db.prepare(`SELECT title, signature_status, created_at, signed_at FROM contracts WHERE lower(email)=? AND status NOT IN ('Draft','Superseded') ORDER BY id DESC LIMIT 10`).all(e)
+    db.prepare(`SELECT title, signature_status, created_at, signed_at FROM contracts WHERE ${ownRecord('customer_id', 'email')} AND status NOT IN ('Draft','Superseded') ORDER BY id DESC LIMIT 10`).all(cid, e)
       .forEach(x => activity.push({ at: x.signed_at || x.created_at, text: 'Contract: ' + (x.title || 'Contract') + ' (' + x.signature_status + ')' }));
-    db.prepare(`SELECT invoice_number, status, created_at FROM invoices WHERE lower(email)=? AND status NOT IN ('Draft','Void') ORDER BY id DESC LIMIT 10`).all(e)
+    db.prepare(`SELECT invoice_number, status, created_at FROM invoices WHERE ${ownRecord('customer_id', 'email')} AND status NOT IN ('Draft','Void') ORDER BY id DESC LIMIT 10`).all(cid, e)
       .forEach(x => activity.push({ at: x.created_at, text: 'Invoice ' + x.invoice_number + ' (' + x.status + ')' }));
     visits.filter(v => v.status === 'Done').forEach(v => activity.push({ at: v.date, text: 'Service completed: ' + v.title }));
     activity.sort((x, y) => String(y.at).localeCompare(String(x.at)));
     // Properties: the site addresses on this customer's projects, proposals and visits.
-    const siteRows = db.prepare(`SELECT p.site_address AS a, p.name AS n, p.status AS s FROM projects p JOIN contracts k ON k.id=p.contract_id WHERE lower(k.email)=? AND p.site_address IS NOT NULL AND p.site_address<>''
-      UNION SELECT site_address AS a, project_name AS n, status AS s FROM estimates WHERE lower(email)=? AND site_address IS NOT NULL AND site_address<>'' AND status NOT IN ('Draft','Ready','Superseded','Withdrawn')`).all(e, e);
+    const siteRows = db.prepare(`SELECT p.site_address AS a, p.name AS n, p.status AS s FROM projects p LEFT JOIN contracts k ON k.id=p.contract_id WHERE ${ownRecord('COALESCE(p.customer_id,k.customer_id)', 'k.email')} AND p.site_address IS NOT NULL AND p.site_address<>''
+      UNION SELECT site_address AS a, project_name AS n, status AS s FROM estimates WHERE lower(email)=? AND site_address IS NOT NULL AND site_address<>'' AND status NOT IN ('Draft','Ready','Superseded','Withdrawn')`).all(cid, e, e);
     const seen = new Map();
     siteRows.forEach(r => { const k = String(r.a).trim().toLowerCase(); if (!seen.has(k)) seen.set(k, { address: r.a, name: r.n || r.a, status: r.s || '' }); });
     const properties = [...seen.values()];
@@ -120,8 +133,8 @@ module.exports = function mountPortal(app, ctx) {
     let inspections = [];
     try {
       inspections = db.prepare(`SELECT i.id, i.date, i.area, i.score, i.passed, i.status, i.itype, i.signed_name, i.signed_at, p.name AS project
-        FROM inspections i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN projects p ON p.id=i.project_id LEFT JOIN contracts k ON k.id=p.contract_id
-        WHERE i.signed_at IS NOT NULL AND i.status <> 'Cancelled' AND (lower(c.email)=? OR lower(k.email)=?) ORDER BY i.date DESC, i.id DESC LIMIT 20`).all(e, e)
+        FROM inspections i LEFT JOIN projects p ON p.id=i.project_id LEFT JOIN contracts k ON k.id=p.contract_id
+        WHERE i.signed_at IS NOT NULL AND i.status <> 'Cancelled' AND ${ownRecord('COALESCE(i.customer_id,p.customer_id,k.customer_id)', 'k.email')} ORDER BY i.date DESC, i.id DESC LIMIT 20`).all(cid, e)
         .map(i => ({ id: i.id, date: i.date || String(i.signed_at || '').slice(0, 10), area: i.area || '', score: i.score == null ? null : Math.round(i.score), passed: !!i.passed, status: i.status || '', project: i.project || '', signed_by: i.signed_name || '' }));
     } catch { inspections = []; }
     // Files the customer uploaded from the portal (kept with their records).
@@ -325,8 +338,9 @@ module.exports = function mountPortal(app, ctx) {
       return res.status(429).json({ error: 'Too many attempts. Please wait 15 minutes, or use the emailed sign-in link.' });
     const r = email ? db.prepare('SELECT password_hash FROM portal_profiles WHERE email=?').get(email) : null;
     const ok = bcryptP.compareSync(pass, r && r.password_hash ? r.password_hash : DUMMY_HASH);
-    if (!r || !r.password_hash || !ok) return bad();
-    res.json({ ok: true, email, session: sign({ email, iat: Date.now(), exp: Date.now() + 8 * 3600000 }) });
+    const cid = email ? customerFor(email) : null;
+    if (!r || !r.password_hash || !ok || cid == null) return bad();
+    res.json({ ok: true, email, session: sign({ email, cid, iat: Date.now(), exp: Date.now() + 8 * 3600000 }) });
   });
   // Set a password (signed in). Changing one needs the current password and signs out the other devices.
   app.post('/api/portal/password', (req, res) => {
@@ -340,12 +354,14 @@ module.exports = function mountPortal(app, ctx) {
       if (pwLimited('cur:' + sess.email, 8)) return res.status(429).json({ error: 'Too many attempts. Please wait 15 minutes.' });
       if (!bcryptP.compareSync(cur, row.password_hash)) return res.status(401).json({ error: 'Your current password is not right.' });
     }
+    const cid = customerFor(sess.email);
+    if (cid == null) return res.status(403).json({ error: 'Your account is not linked to a single Bright Clean customer record yet. Message Bright Clean for help.' });
     const hash = bcryptP.hashSync(pw, 12), t = now(), validAfter = new Date().toISOString();
     db.prepare(`INSERT INTO portal_profiles(email,password_hash,password_set_at,valid_after,updated_at) VALUES(?,?,?,?,?)
       ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash, password_set_at=excluded.password_set_at, valid_after=excluded.valid_after, updated_at=excluded.updated_at`)
       .run(sess.email, hash, t, validAfter, t);
     // This device gets a fresh session; every other session stops working.
-    res.json({ ok: true, message: 'Password saved. Other devices were signed out.', session: sign({ email: sess.email, iat: Date.parse(validAfter), exp: Date.now() + 8 * 3600000 }) });
+    res.json({ ok: true, message: 'Password saved. Other devices were signed out.', session: sign({ email: sess.email, cid, iat: Date.parse(validAfter), exp: Date.now() + 8 * 3600000 }) });
   });
   app.post('/api/portal/request-service', async (req, res) => {
     const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));

@@ -66,6 +66,10 @@ module.exports = function mountAdminExt(app, ctx) {
       const norm = v => v === true ? '1' : v === false ? '0' : (v === null || v === undefined) ? '' : String(v).trim();
       const same = (a, z) => (a !== '' && z !== '' && isFinite(Number(a)) && isFinite(Number(z))) ? Number(a) === Number(z) : norm(a) === norm(z);
       const changed = locked.filter(f => f in b && !(b[f] === '' && f === 'proposal_total') && !same(b[f], e[f]));
+      // M2: the line items and expiry date are part of the offer the client received. Compare what would be saved, so an omitted field cannot blank them.
+      const { lineItemsOf } = require('./estimating');
+      if (JSON.stringify(lineItemsOf({ line_items: e.line_items })) !== JSON.stringify(lineItemsOf(b))) changed.push('line_items');
+      if (norm(String(clean(b.expires_on, 30) || '')) !== norm(e.expires_on)) changed.push('expires_on');
       if (changed.length) return res.status(409).json({ error: `This proposal was already sent to the client, so ${changed.join(', ')} cannot change on it. Duplicate the proposal to revise it.` });
     }
     if (!required(b.customer_name) || !required(b.scope)) return res.status(400).json({ error: 'Customer and scope are required.' });
@@ -147,7 +151,7 @@ module.exports = function mountAdminExt(app, ctx) {
     if (inv.status === 'Draft') return res.status(409).json({ error: 'Send this invoice before recording a payment on it.' });
     const balance = Math.round((Number(inv.amount || 0) - Number(inv.paid_amount || 0)) * 100) / 100;
     if (balance <= 0) return res.status(409).json({ error: 'This invoice is already paid in full.' });
-    if (amt > balance + 0.005) return res.status(400).json({ error: `That is more than the balance due ($${balance.toFixed(2)}). Record the exact amount, or record the extra as a separate credit.` });
+    if (amt > balance + 0.005) return res.status(400).json({ error: `That is more than the balance due ($${balance.toFixed(2)}). Record only the balance. This app does not hold customer credits yet, so return the extra to the customer outside the app.` });
     const paid = Math.round((Number(inv.paid_amount || 0) + amt) * 100) / 100;
     const status = paid >= Number(inv.amount || 0) ? 'Paid' : 'Partially Paid';
     // Dated payment record (feeds "collected this month" on the Command Center).

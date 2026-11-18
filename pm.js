@@ -29,6 +29,7 @@ module.exports = function mountPM(app, ctx) {
     CREATE INDEX IF NOT EXISTS ptasks_p ON project_tasks(project_id);
     CREATE TABLE IF NOT EXISTS project_costs(id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, cost_date TEXT, entered_by TEXT, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS pcosts_p ON project_costs(project_id);
+    CREATE TABLE IF NOT EXISTS project_cost_log(id INTEGER PRIMARY KEY AUTOINCREMENT, cost_id INTEGER NOT NULL, project_id INTEGER NOT NULL, action TEXT NOT NULL, before_json TEXT, after_json TEXT, reason TEXT, by TEXT, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS project_updates(id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT 'Update', body TEXT NOT NULL, author TEXT, created_at TEXT NOT NULL);`);
   const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
@@ -70,7 +71,8 @@ module.exports = function mountPM(app, ctx) {
     if (!p.signoff_name && !p.signoff_waiver) why.push('customer sign-off (or a recorded reason it is not needed) is missing');
     const openCorrective = db.prepare("SELECT COUNT(*) n FROM inspections WHERE project_id=? AND status='Corrective action'").get(p.id).n;
     if (openCorrective) why.push(`${openCorrective} inspection(s) still have corrective work open`);
-    const passed = db.prepare("SELECT COUNT(*) n FROM inspections WHERE project_id=? AND signed_at IS NOT NULL AND ((passed=1 AND status IN ('Completed','Closed','Customer accepted')) OR status='Accepted with exceptions')").get(p.id).n;
+    // "Accepted with exceptions" is not a pass. It counts only once an owner has recorded a waiver of those exceptions.
+    const passed = db.prepare("SELECT COUNT(*) n FROM inspections WHERE project_id=? AND signed_at IS NOT NULL AND ((passed=1 AND status IN ('Completed','Closed','Customer accepted')) OR (status='Accepted with exceptions' AND exception_waiver_by IS NOT NULL))").get(p.id).n;
     if (!passed) why.push('a signed, passing quality inspection is required');
     return why.length ? why.join('; ') : null;
   }
@@ -210,8 +212,10 @@ module.exports = function mountPM(app, ctx) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return res.status(400).json({ error: 'Start date must be a date.' });
     if (!start) return res.status(400).json({ error: 'Set the planned start date on the project first, so the visits land on the right day.' });
     // Once the job is contracted (office sign-off) the visits are scheduled: staff see them and the customer sees them in the portal.
-    const contracted = ['Contracted', 'Ready to mobilize', 'Mobilization', 'In Progress', 'Quality Review', 'Completed'].includes(p.status);
-    const n = step ? count : 1, ids = [], status = (p.dispatch_approved_by || contracted) ? 'Scheduled' : 'Tentative', title = `${(SERVICES[p.service] || {}).label || 'Service'} – ${p.name || number(p)}`;
+    // Use the status derived from the record, not the stored label (a label can be set by hand, which is how visits went out early).
+    const derived = syncStatus(p, false).status;
+    const scheduledNow = !!p.dispatch_approved_by || ['Contracted', 'Ready to mobilize', 'Mobilization', 'In Progress', 'Quality Review', 'Completed'].includes(derived);
+    const n = step ? count : 1, ids = [], status = scheduledNow ? 'Scheduled' : 'Tentative', title = `${(SERVICES[p.service] || {}).label || 'Service'} – ${p.name || number(p)}`;
     for (let i = 0; i < n; i++) {
       const d = new Date(start + 'T12:00:00Z'); if (freq === 'monthly') d.setUTCMonth(d.getUTCMonth() + i); else d.setUTCDate(d.getUTCDate() + i * step);
       const ds = d.toISOString().slice(0, 10);
@@ -268,9 +272,46 @@ module.exports = function mountPM(app, ctx) {
     const b = req.body || {}, amt = Number(String(b.amount ?? '').replace(/[$,]/g, ''));
     if (!COST_CATS.includes(b.category)) return res.status(400).json({ error: 'Choose a cost category.' });
     if (!(amt > 0 && amt < 1e8)) return res.status(400).json({ error: 'Enter the amount spent.' });
+    if (b.cost_date && !validDate(b.cost_date)) return res.status(400).json({ error: 'Enter a valid cost date (YYYY-MM-DD).' });
     const id = db.prepare('INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at) VALUES(?,?,?,?,?,?,?)').run(p.id, b.category, clean(b.description, 300), Math.round(amt * 100) / 100, clean(b.cost_date, 10) || today(), who(req), now()).lastInsertRowid;
     logAction(req, 'recorded', 'project cost', id, `${number(p)}: ${b.category} $${amt.toFixed(2)}`);
     res.status(201).json({ id, costs: costs(p.id) });
+  });
+  // Recorded-cost corrections (audit MF-3). Owner or manager only. Every correction and removal is written to project_cost_log
+  // with the row as it was (and as corrected), so the trail survives a removal. A reason is required for both.
+  const validDate = s => { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return false; const d = new Date(s + 'T00:00:00Z'); return !isNaN(d) && d.toISOString().slice(0, 10) === s; };
+  const costRow = (p, cid) => db.prepare('SELECT * FROM project_costs WHERE id=? AND project_id=?').get(Number(cid), p.id);
+  app.patch('/api/admin/pm/projects/:id/costs/:costId', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can correct a recorded cost.' });
+    const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
+    const old = costRow(p, req.params.costId); if (!old) return res.status(404).json({ error: 'Cost not found on this project.' });
+    const b = req.body || {};
+    const reason = clean(b.reason || '', 300).trim(); if (reason.length < 3) return res.status(400).json({ error: 'Say why the cost is being corrected.' });
+    const category = 'category' in b ? b.category : old.category;
+    if (!COST_CATS.includes(category)) return res.status(400).json({ error: 'Choose a cost category.' });
+    const amount = 'amount' in b ? Number(String(b.amount ?? '').replace(/[$,]/g, '')) : Number(old.amount);
+    if (!(amount > 0 && amount < 1e8)) return res.status(400).json({ error: 'Enter the amount spent (greater than zero).' });
+    const cost_date = 'cost_date' in b ? String(b.cost_date || '') : String(old.cost_date || '');
+    if (!validDate(cost_date)) return res.status(400).json({ error: 'Enter a valid cost date (YYYY-MM-DD).' });
+    const next = { category, description: 'description' in b ? clean(b.description || '', 300) : old.description, amount: Math.round(amount * 100) / 100, cost_date };
+    db.transaction(() => {
+      db.prepare('UPDATE project_costs SET category=?,description=?,amount=?,cost_date=? WHERE id=?').run(next.category, next.description, next.amount, next.cost_date, old.id);
+      db.prepare('INSERT INTO project_cost_log(cost_id,project_id,action,before_json,after_json,reason,by,at) VALUES(?,?,?,?,?,?,?,?)').run(old.id, p.id, 'corrected', JSON.stringify(old), JSON.stringify(next), reason, who(req), now());
+    })();
+    logAction(req, 'corrected', 'project cost', old.id, `${number(p)}: ${old.category} $${Number(old.amount).toFixed(2)} -> ${next.category} $${next.amount.toFixed(2)} (${reason})`);
+    res.json({ id: old.id, costs: costs(p.id) });
+  });
+  app.delete('/api/admin/pm/projects/:id/costs/:costId', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can remove a recorded cost.' });
+    const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
+    const old = costRow(p, req.params.costId); if (!old) return res.status(404).json({ error: 'Cost not found on this project.' });
+    const reason = clean((req.body && req.body.reason) || req.query.reason || '', 300).trim(); if (reason.length < 3) return res.status(400).json({ error: 'Say why the cost is being removed.' });
+    db.transaction(() => {
+      db.prepare('DELETE FROM project_costs WHERE id=?').run(old.id);
+      db.prepare('INSERT INTO project_cost_log(cost_id,project_id,action,before_json,after_json,reason,by,at) VALUES(?,?,?,?,?,?,?,?)').run(old.id, p.id, 'removed', JSON.stringify(old), null, reason, who(req), now());
+    })();
+    logAction(req, 'removed', 'project cost', old.id, `${number(p)}: ${old.category} $${Number(old.amount).toFixed(2)} (${reason})`);
+    res.json({ ok: true, costs: costs(p.id) });
   });
   app.post('/api/admin/pm/projects/:id/updates', auth, (req, res) => {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
@@ -304,6 +345,9 @@ module.exports = function mountPM(app, ctx) {
   // Customer sign-off and completion; billing handoff creates a DRAFT invoice for the unbilled contract value.
   app.post('/api/admin/pm/projects/:id/signoff', auth, (req, res) => {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
+    // The customer's acceptance is recorded by the owner only, and only after work has actually been completed on site.
+    if (roleOf(req) !== 'owner') return res.status(403).json({ error: 'Only the owner can record customer sign-off.' });
+    if (!db.prepare("SELECT 1 FROM visits WHERE project_id=? AND (status='Done' OR completed_at IS NOT NULL) LIMIT 1").get(p.id)) return res.status(409).json({ error: 'Customer sign-off needs a completed visit on this project first.' });
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Enter the name of the customer representative who accepted the work.' });
     db.prepare('UPDATE projects SET signoff_name=?, signoff_title=?, signoff_at=?, updated_at=? WHERE id=?').run(name, clean(req.body.title, 120), now(), now(), p.id);
     logAction(req, 'recorded customer sign-off', 'project', p.id, `${number(p)}: ${name}`);

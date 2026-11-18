@@ -147,7 +147,9 @@
   }
 
   function queueChange(visitId, action, body) {
-    const item = { id: newId(), url: `/api/crew/${token}/jobs/${visitId}/${action}`, body: { ...(body || {}), client_id: newId() }, action, visitId, at: Date.now() };
+    // device_at is when the crew member acted on this phone; the server uses it as the time of the action, even if the change syncs later.
+    const at = Date.now();
+    const item = { id: newId(), url: `/api/crew/${token}/jobs/${visitId}/${action}`, body: { ...(body || {}), client_id: newId(), device_at: new Date(at).toISOString() }, action, visitId, at };
     const q = queue(); q.push(item); store.set(KEY_Q, q);
     const ov = overlay(), o = ov[visitId] || {};
     if (action === 'checklist') o.checklist = { ...(o.checklist || {}), [body.index]: !!body.done };

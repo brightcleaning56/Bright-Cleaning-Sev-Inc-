@@ -54,6 +54,8 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
   let leadId;
   await check('AI status on; new lead triaged automatically in the background (no click)', async () => {
     const st = (await api('GET', '/api/admin/ai/status', null, T)).data;
+    assert(st.auto_request_info === false, 'auto_request_info should default to off');
+    await api('PUT', '/api/admin/ai/settings', { auto_request_info: true }, T); // the owner turns it on explicitly
     const fd = new FormData(); Object.entries({ contact_name: 'Dana Ruiz', company: 'Ridge Builders', email: 'dana@ridge.test', phone: '515-555-0100', address: '1 Main, Ankeny IA', consent: 'yes', service_key: 'construction_final', gc_company: 'Ridge Builders', building_type: 'Office', square_footage: '80000', phases: 'Final clean', windows: 'Interior only', plans: 'Will send them later' }).forEach(([k, v]) => fd.append(k, v));
     const q = await (await fetch(B + '/api/quotes', { method: 'POST', body: fd })).json(); leadId = q.id;
     let ai = null; for (let i = 0; i < 30 && !ai; i++) { await sleep(300); const l = (await api('GET', '/api/admin/leads/' + leadId, null, T)).data.lead; ai = l.ai ? JSON.parse(l.ai) : null; }

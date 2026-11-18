@@ -45,12 +45,16 @@ async function req(method, url, { token, json, form, body, headers = {} } = {}) 
   return { status: r.status, data, headers: r.headers };
 }
 const mailsTo = (to, since = 0) => mail.slice(since).filter(m => m.to.includes(to));
+// Invoices reach Sent only through the send route (send checks, then the PDF is emailed to the SMTP mock). Fixtures are created as
+// Draft and moved to Sent here; payments are then recorded through POST /api/admin/invoices/:id/payment as before.
+const sendInvoice = (token, id, to) => req('POST', `/api/admin/invoices/${id}/send`, { token, json: to ? { to } : {} });
 
 function startSmtp() {
   return new Promise(res => {
     const s = new SMTPServer({
       authOptional: true, allowInsecureAuth: true, disabledCommands: ['STARTTLS'],
       onAuth(auth, session, cb) { cb(null, { user: auth.username }); },
+      onRcptTo(address, session, cb) { if (/rejectme/.test(address.address)) { const e = new Error('550 mailbox unavailable'); e.responseCode = 550; return cb(e); } cb(); },
       onData(stream, session, cb) {
         let raw = ''; stream.on('data', d => raw += d); stream.on('end', () => {
           const subject = (raw.match(/^Subject: (.*)$/mi) || [])[1] || '';
@@ -86,7 +90,7 @@ async function startServer(env, dataDir) {
   const OWNER = 'owner@brightclean.test', OWNER_PW = 'owner-password-1234';
   const env = {
     NODE_ENV: 'staging', JWT_SECRET: (globalThis.__jwtSecret = crypto.randomBytes(40).toString('hex')), ADMIN_EMAIL: OWNER,
-    ADMIN_PASSWORD_HASH: await bcrypt.hash(OWNER_PW, 10), RATE_LIMIT_PUBLIC: '5000', TWILIO_AUTH_TOKEN: 'tw-test-token', SMTP_HOST: '127.0.0.1', SMTP_PORT: String(SMTP_PORT), SMTP_SECURE: 'false',
+    ADMIN_PASSWORD_HASH: await bcrypt.hash(OWNER_PW, 10), RATE_LIMIT_PUBLIC: '5000', INTAKE_RATE_LIMIT: '5000', TWILIO_AUTH_TOKEN: 'tw-test-token', SMTP_HOST: '127.0.0.1', SMTP_PORT: String(SMTP_PORT), SMTP_SECURE: 'false',
     SMTP_USER: 'info@brightclean.net', SMTP_PASS: 'test', FROM_EMAIL: 'info@brightclean.net', NOTIFY_EMAIL: 'info@brightclean.net', AUTOBID_SWEEP_MS: '500',
     PUBLIC_BASE_URL: 'https://brightclean.net', MONITORING_TEST_ROUTE: '1', PRICEBOOK_IMPORT: 'on', ONBOARD_FROM: '2099-01-01T00:00:00.000Z', MS365_CLIENT_ID: 'test-client', MS365_CLIENT_SECRET: 'test-secret', MS365_TENANT_ID: 'tenant1', MS365_LOGIN_BASE: TW_API, MS365_GRAPH_BASE: TW_API, TWILIO_API_BASE: TW_API, TWILIO_API_KEY: 'SK' + 'b'.repeat(32), TWILIO_API_SECRET: 'test-api-secret', DISABLE_SCHEDULER: '1', DOTENV_CONFIG_PATH: '/nonexistent'
   };
@@ -388,6 +392,30 @@ async function startServer(env, dataDir) {
     assert(a.proposal_total === 250 && a.minimum_applied && b.proposal_total === 1050 && b.used_line_items, JSON.stringify([a, b]));
     return 'min charge $250 applied over $25; line items $1,000 + 5% tax = $1,050';
   });
+  await check('Estimating', 'Overtime is per person per week: 3 people at 8 hours per visit have none; 10-hour weekly visits have none', async () => {
+    const a = estimateMath({ labor_hours: 24, visits: 5, crew_size: 3, labor_rate: 20 });
+    const b = estimateMath({ labor_hours: 10, visits: 6, labor_rate: 20, weekly_hours: 10 });
+    const c = estimateMath({ labor_hours: 150, visits: 1, crew_size: 3, labor_rate: 20 });
+    assert(a.labor_cost === 2400 && a.overtime_hours === 0 && b.labor_cost === 1200 && c.overtime_hours === 30 && c.labor_cost === 3300, JSON.stringify([a.labor_cost, b.labor_cost, c.labor_cost, c.overtime_hours]));
+    return '3 people, 120 man-hours: $2,400 with no overtime; weekly 10-hour visits: $1,200; 150 man-hours in one visit by 3 people: 30 overtime hours, $3,300';
+  });
+  await check('Estimating', 'Unit-condition add-on is priced on a cost-priced deep clean, and counted once with line-item pricing', async () => {
+    const base = { labor_hours: 1, labor_rate: 20, margin_pct: 30, line_items: [{ description: 'Deep clean kitchen', amount: 0 }] };
+    const none = estimateMath(base), heavy = estimateMath({ ...base, unit_condition: 'Heavy' });
+    const li = estimateMath({ labor_hours: 1, labor_rate: 20, margin_pct: 30, use_line_items: '1', unit_condition: 'Heavy', line_items: [{ description: 'Deep clean kitchen', amount: 150 }] });
+    assert(Math.abs(heavy.proposal_total - none.proposal_total - 80) < 0.01 && li.proposal_total === 230, JSON.stringify([none.proposal_total, heavy.proposal_total, li.proposal_total]));
+    return 'Heavy adds $80 to the cost-priced total; line-item deep clean $150 + $80 = $230';
+  });
+  await check('Estimating', 'Admin preview overtime rule matches the server (helper taken from admin.js and compared on sample inputs)', async () => {
+    const src = fs.readFileSync(path.join(ROOT, 'public', 'admin', 'admin.js'), 'utf8');
+    const start = src.indexOf('  function overtimeManHours('), end = src.indexOf('  // Mirrors estimating.js on the server.');
+    assert(start > 0 && end > start, 'preview overtime helper not found in admin.js');
+    const preview = new Function(src.slice(start, end) + '\nreturn overtimeManHours;')();
+    const { overtimeManHours } = require('../estimating');
+    const samples = [[120, 0, 3], [150, 0, 3], [60, 10, 1], [50, 30, 1], [50, 0, 1], [100, 25, 4], [17, 0, 2], [0, 0, 1]];
+    for (const [h, w, c] of samples) assert(Math.abs(preview(h, w, c) - overtimeManHours(h, w, c)) < 1e-9, `${h},${w},${c}`);
+    return `${samples.length} sample jobs give the same overtime in the preview and on the server`;
+  });
   await check('Estimating', 'Six quote templates available, production rates left blank for Bright Clean to set', async () => {
     const t = (await req('GET', '/api/admin/templates', { token: T })).data.templates;
     assert(t.length === 6 && t.every(x => x.scope && !x.production_rate), t.length); return t.map(x => x.name).join('; ');
@@ -533,6 +561,52 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'admin “Approved” refused (409), no contract; manual contract on an unapproved proposal refused; client approved online → 1 contract + 1 project (second approval did not duplicate)';
   });
 
+  await check('Proposals', 'A sent proposal keeps its line items and expiry date; an unchanged save still passes', async () => {
+    const base = { customer_name: 'Locked Lines', company: 'Lock Co', email: 'locked@test.test', scope: 'Office clean', labor_hours: 2, labor_rate: 20, margin_pct: 40, expires_on: '2027-06-30', line_items: [] };
+    const r = await req('POST', '/api/admin/estimates', { token: T, json: base });
+    const id = r.data.estimate.id;
+    const sent = await req('POST', `/api/admin/estimates/${id}/send`, { token: T });
+    const lines = await req('PUT', '/api/admin/estimates/' + id, { token: T, json: { ...base, line_items: [{ description: 'Added after sending', amount: 50 }] } });
+    const exp = await req('PUT', '/api/admin/estimates/' + id, { token: T, json: { ...base, expires_on: '2028-12-31' } });
+    const same = await req('PUT', '/api/admin/estimates/' + id, { token: T, json: base });
+    assert(sent.status === 200 && lines.status === 409 && /line_items/.test(lines.data.error) && exp.status === 409 && /expires_on/.test(exp.data.error) && same.status === 200,
+      JSON.stringify([sent.status, lines.status, lines.data, exp.status, exp.data, same.status]));
+    // Decline it so the proposal-reminder checks further down do not count it.
+    await req('POST', `/api/proposal/${r.data.estimate.public_token}/respond`, { json: { decision: 'decline' } });
+    return 'sent; line-item change 409; expiry change 409; unchanged save 200';
+  });
+  await check('Proposals', 'A proposal with a price but no costs needs owner approval before it can be sent', async () => {
+    const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'No Cost', company: 'NoCost Co', email: 'nocost@test.test', scope: 'Lump sum clean', minimum_charge: 500 } });
+    const id = r.data.estimate.id;
+    const ap = await req('GET', `/api/admin/estimates/${id}/approval`, { token: T });
+    const send = await req('POST', `/api/admin/estimates/${id}/send`, { token: T });
+    assert(r.data.estimate.proposal_total === 500 && ap.data.required && ap.data.reasons.some(x => /No costs/.test(x)) && send.status === 409 && /owner approval/.test(send.data.error),
+      JSON.stringify([r.data.estimate.proposal_total, ap.data, send.status, send.data]));
+    return '$500 price with $0 cost: approval required (No costs entered); send refused 409';
+  });
+  await check('Workflow', 'Executed contract records the proposal acceptance; a superseded version cannot be countersigned back to Active', async () => {
+    const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Super Seded', company: 'Super Co', email: 'superseded@test.test', scope: 'Quarterly clean', labor_hours: 2, labor_rate: 20, margin_pct: 40 } });
+    const id = r.data.estimate.id, tok = r.data.estimate.public_token;
+    await req('POST', `/api/admin/estimates/${id}/send`, { token: T });
+    const ok = await req('POST', `/api/proposal/${tok}/respond`, { json: { decision: 'approve', signer_name: 'Pat Yes', signer_title: 'Owner', agree: true } });
+    await sleep(300);
+    const root = (await req('GET', '/api/admin/contracts2', { token: T })).data.contracts.find(x => x.estimate_id === id);
+    await req('PATCH', '/api/admin/contracts2/' + root.id, { token: T, json: { start_date: '2027-01-01', end_date: '2027-12-31' } });
+    const cs = await req('POST', `/api/admin/contracts2/${root.id}/countersign`, { token: T, json: { name: 'Eric Moore' } });
+    const rootAfterCs = (await req('GET', `/api/admin/contracts2/${root.id}`, { token: T })).data.contract;
+    const amend = await req('POST', `/api/admin/contracts2/${root.id}/amend`, { token: T, json: { reason: 'Add window cleaning' } });
+    const aid = amend.data.id;
+    const sendA = await req('POST', `/api/admin/contracts2/${aid}/send`, { token: T });
+    const at = String(sendA.data.link || '').split('/contract/')[1] || '';
+    const signA = await req('POST', `/api/contract/${at}/sign`, { json: { name: 'Pat Yes', title: 'Owner', agree: true } });
+    const cA = await req('POST', `/api/admin/contracts2/${aid}/countersign`, { token: T, json: { name: 'Eric Moore' } });
+    const again = await req('POST', `/api/admin/contracts2/${root.id}/countersign`, { token: T, json: { name: 'Eric Moore' } });
+    const rootNow = (await req('GET', `/api/admin/contracts2/${root.id}`, { token: T })).data.contract;
+    assert(ok.status === 200 && cs.status === 200 && rootAfterCs.signer_name === 'Pat Yes' && !!rootAfterCs.signed_at && sendA.status === 200 && signA.status === 200 && cA.status === 200 && again.status === 409 && rootNow.status === 'Superseded',
+      JSON.stringify([ok.status, cs.status, rootAfterCs.signer_name, sendA.status, signA.status, cA.status, again.status, rootNow.status]));
+    return `root countersigned with signer "Pat Yes" copied; amendment executed; root re-countersign 409 and stays Superseded`;
+  });
+
   // ---------- Contracts, projects, invoices ----------
   let contractId, projectId, invId;
   await check('Workflow', 'Contract and project can be updated through execution to completion', async () => {
@@ -547,6 +621,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     if (!(noStart.status === 409 && /planned start date/.test(noStart.data.error) && setStart.status === 200)) throw new Error('start date gate: ' + JSON.stringify({ noStart: noStart.data, setStart: setStart.data }));
     const b = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'In Progress', progress: 50, manager: 'Eric', due_date: '2026-11-15' } });
     const noSign = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'Completed', progress: 100 } });
+    { const vq = new Database(path.join(dataDir, 'brightclean.db')); const nowIso = new Date().toISOString(); vq.prepare("INSERT INTO visits(title,type,date,start_time,end_time,project_id,status,completed_at,created_at,updated_at) VALUES('Signoff visit','Work order','2026-11-14','08:00','10:00',?,'Done',?,?,?)").run(projectId, nowIso, nowIso, nowIso); vq.close(); } // a completed visit is needed before customer sign-off
     await req('POST', `/api/admin/pm/projects/${projectId}/signoff`, { token: T, json: { name: 'Dana Builder', title: 'Owner rep' } });
     const noInsp = await req('PATCH', '/api/admin/projects/' + projectId, { token: T, json: { status: 'Completed', progress: 100 } });
     const tplI = (await req('GET', '/api/admin/qc/templates', { token: T })).data.templates[0];
@@ -561,11 +636,13 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   });
   await check('Invoices', 'Invoice numbering, creation with billing email, invalid email and duplicate number rejected', async () => {
     const n = (await req('GET', '/api/admin/next-invoice-number', { token: T })).data.number;
-    const r = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: n, project_id: projectId, customer_name: 'Dana Builder', company: 'Prairie Construction', email: 'ap@prairie.test', amount: 2000, paid_amount: 0, due_date: '2026-11-30', status: 'Sent' } });
+    const r = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: n, project_id: projectId, customer_name: 'Dana Builder', company: 'Prairie Construction', email: 'ap@prairie.test', amount: 2000, paid_amount: 0, due_date: '2026-11-30', status: 'Draft' } });
     const bad = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'X-1', email: 'ap@', amount: 1 } });
     const dup = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: n, amount: 5 } });
     invId = r.data.id;
-    assert(r.status === 201 && bad.status === 400 && dup.status === 409 && /^BC-\d{4}-0001$/.test(n), `${r.status} ${bad.status} ${dup.status} ${n}`);
+    // The contract on this project is worth less than the invoice, so the owner records the reason to send (send gate, contract value).
+    const sentR = await req('POST', `/api/admin/invoices/${invId}/send`, { token: T, json: { to: 'ap@prairie.test', over_contract_reason: 'Owner-approved change order (test fixture)' } });
+    assert(r.status === 201 && bad.status === 400 && dup.status === 409 && sentR.status === 200 && /^BC-\d{4}-0001$/.test(n), `${r.status} ${bad.status} ${dup.status} ${sentR.status} ${n} ${JSON.stringify(sentR.data)}`);
     return `${n} created; bad email 400; duplicate number 409`;
   });
   await check('Invoices', 'Partial then full payment updates balance and status; customer balance follows', async () => {
@@ -687,8 +764,9 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   await check('Automation', 'Invoice reminders: 3 days before due, 1 day overdue, 7 days overdue, once each; paid invoices skipped', async () => {
     await req('PUT', '/api/admin/settings', { token: T, json: { auto_invoice_reminders: true } });
     const due = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);
-    const r = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'BC-TEST-REM', customer_name: 'AP', email: 'ap2@test.test', amount: 1000, paid_amount: 0, due_date: due, status: 'Sent' } });
+    const r = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'BC-TEST-REM', customer_name: 'AP', email: 'ap2@test.test', amount: 1000, paid_amount: 0, due_date: due, status: 'Draft' } });
     inv2 = r.data.id;
+    await sendInvoice(T, inv2);
     const dueMs = new Date(due + 'T12:00:00Z').getTime(), at = d => new Date(dueMs + d * 864e5).toISOString();
     m0 = mail.length;
     const seq = [];
@@ -923,7 +1001,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   await check('Command Center', 'Payments are stored with dates; a back-dated payment counts in its own month', async () => {
     const inv = (await req('POST', '/api/admin/invoices', { token: T, json: { customer_name: 'Date Test', amount: 900, due_date: '2026-12-01', billing_email: 'd@t.test' } })).data;
     const id = inv.id || (inv.invoice && inv.invoice.id);
-    const lastMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0, 10);
+    await sendInvoice(T, id, 'd@t.test');
+    const lastMonth =new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0, 10);
     const a = await req('POST', `/api/admin/invoices/${id}/payment`, { token: T, json: { amount: 300, received_on: lastMonth } });
     const future = await req('POST', `/api/admin/invoices/${id}/payment`, { token: T, json: { amount: 100, received_on: '2099-01-01' } });
     const k = (await req('GET', '/api/admin/command-center', { token: T })).data.kpis;
@@ -1053,8 +1132,12 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   const est = async extra => (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Approval Test', email: 'appr@t.test', scope: 'Final clean', area_sqft: 20000, production_rate: 400, labor_rate: 30, tax_pct: 0, overhead_pct: 0, ...extra } })).data.estimate;
   let lowId;
   await check('Audit fixes', 'A sent invoice keeps its issue date: saving the same date is fine, changing it is refused', async () => {
-    const c = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'AUD-' + Date.now(), customer_name: 'Lock Test', email: 'lock@test.invalid', amount: 500, paid_amount: 0, status: 'Sent', due_date: '2026-12-31' } });
+    smtp = await startSmtp(); await sleep(300); // the proposal email-failure check above closed the mail mock; the send below needs it
+    const c =await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'AUD-' + Date.now(), customer_name: 'Lock Test', email: 'lock@test.invalid', amount: 500, paid_amount: 0, status: 'Draft', due_date: '2026-12-31' } });
     assert(c.status === 201 || c.status === 200, 'create failed ' + c.status + ' ' + JSON.stringify(c.data));
+    const sentC = await sendInvoice(T, c.data.id);
+    await new Promise(r => { smtp.close(() => r()); setTimeout(r, 1000); }); // back to the mail-down state the later checks expect
+    assert(sentC.status === 200, 'send failed ' + sentC.status + ' ' + JSON.stringify(sentC.data));
     const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(x => x.id === c.data.id);
     const day = require('../bizdate').invoiceDay(inv);
     const same = await req('PATCH', '/api/admin/extra/invoices/' + c.data.id, { token: T, json: { notes: 'checked', issue_date: day } });
@@ -1291,11 +1374,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(eid, 'employee not created: ' + made.status + ' ' + JSON.stringify(made.data));
     const short = await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '12' } });
     assert(short.status === 400, 'a short PIN should be refused, got ' + short.status);
-    const set = await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '4821' } });
+    const set = await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '482159' } });
     assert(set.status === 200, 'PIN should be set, got ' + set.status);
-    const byEmail = await req('POST', '/api/crew/login', { json: { login: 'crewlogin@t.test', pin: '4821' } });
+    const byEmail = await req('POST', '/api/crew/login', { json: { login: 'crewlogin@t.test', pin: '482159' } });
     assert(byEmail.status === 200 && byEmail.data.token, 'sign in by email should work: ' + byEmail.status);
-    const byPhone = await req('POST', '/api/crew/login', { json: { login: '(515) 555-0133', pin: '4821' } });
+    const byPhone = await req('POST', '/api/crew/login', { json: { login: '(515) 555-0133', pin: '482159' } });
     assert(byPhone.status === 200 && byPhone.data.token, 'sign in by phone should work: ' + byPhone.status);
     const bad = await req('POST', '/api/crew/login', { json: { login: 'crewlogin@t.test', pin: '0000' } });
     assert(bad.status === 401, 'a wrong PIN should be refused, got ' + bad.status);
@@ -1313,7 +1396,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const emp = await req('POST', '/api/admin/employees', { token: T, json: { name: 'Dispatch Crew Test', email: 'dispatch.crew@t.test', phone: '5155550144', role: 'Cleaner' } });
     const eid = emp.data.id || (emp.data.employee && emp.data.employee.id);
     assert(eid, 'employee not created: ' + emp.status);
-    await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '7351' } });
+    await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '735142' } });
     const today = require('../bizdate').today();
     const vis = await req('POST', '/api/admin/visits', { token: T, json: { title: 'Dispatch E2E job', date: today, start_time: '13:00', end_time: '15:00', address: '1 Crew St' } });
     const vid = vis.data.id || (vis.data.visit && vis.data.visit.id);
@@ -1327,7 +1410,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(crewRow && crewRow.crew_link, 'the crew member has a personal link');
     const onLink = await req('GET', crewRow.crew_link.replace('/crew/', '/api/crew/'));
     assert(onLink.status === 200 && (onLink.data.jobs || []).some(j => j.id === vid), 'the job should be on the personal link');
-    const si = await req('POST', '/api/crew/login', { json: { login: 'dispatch.crew@t.test', pin: '7351' } });
+    const si = await req('POST', '/api/crew/login', { json: { login: 'dispatch.crew@t.test', pin: '735142' } });
     assert(si.status === 200 && si.data.token, 'crew should sign in: ' + si.status);
     const mine = await req('GET', '/api/crew/me', { headers: { Authorization: 'Bearer ' + si.data.token } });
     assert(mine.status === 200 && (mine.data.jobs || []).some(j => j.id === vid), 'the signed-in crew should see the dispatched job');
@@ -1714,7 +1797,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
 
   await check('Reports', 'Every stage from first call to payment reaches Reports, and the money ties out to the invoices', async () => {
     const r = (await req('GET', '/api/admin/reports', { token: T })).data;
-    const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.filter(i => i.status !== 'Void');
+    const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.filter(i => i.status !== 'Void' && i.status !== 'Draft'); // drafts are not receivables (MF-1)
     const calls = (await req('GET', '/api/admin/calls', { token: T })).data.calls;
     const out = inv.reduce((t, i) => t + (i.paid_amount < i.amount ? i.amount - i.paid_amount : 0), 0);
     const billed = inv.reduce((t, i) => t + i.amount, 0);
@@ -1727,7 +1810,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   await check('Reports', 'Executive figures stay separate (approved ≠ signed ≠ invoiced ≠ collected), win rate shows its sample, CSV export works and is protected', async () => {
     const r = (await req('GET', '/api/admin/reports', { token: T })).data, ex = r.executive;
     const ests = (await req('GET', '/api/admin/estimates', { token: T })).data.estimates.filter(e => e.status === 'Approved' && (e.decided_at || e.updated_at) >= r.period.start);
-    const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.filter(i => i.status !== 'Void' && i.created_at >= r.period.start);
+    const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.filter(i => i.status !== 'Void' && i.status !== 'Draft' && i.created_at >= r.period.start); // drafts are not invoiced (MF-1)
     const cons = (await req('GET', '/api/admin/contracts', { token: T })).data.contracts;
     const appr = Math.round(ests.reduce((t, e) => t + e.proposal_total, 0) * 100) / 100;
     const csv = await fetch(B + '/api/admin/reports/export.csv', { headers: { Authorization: 'Bearer ' + T } }); const text = await csv.text();
@@ -1835,9 +1918,12 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return `comment + attachment saved; emails logged: ${sent.length} (${[...new Set(sent.map(x => x.split(':')[0]))].join(', ')}); KPIs high ${kpi.high}, due today ${kpi.due_today}, escalated ${kpi.escalated}; filters work; completing created next weekly task due ${next.due_date}; history: ${[...new Set(det.history.map(h => h.action))].join(', ')}`;
   });
   await check('Issues', 'Reminder sends once when its time passes; categories configurable by owner only; staff cannot delete others\u2019 notes', async () => {
+    // An earlier check closes the mail mock. This check needs mail to deliver, so bring it up for its own duration and close it again after.
+    smtp = await startSmtp(); await sleep(300);
     const t = (await req('POST', '/api/admin/issues', { token: T, json: { type: 'follow_up', title: 'Call back about quote', reminder_at: new Date(Date.now() - 5000).toISOString(), assigned_to: OWNER } })).data.issue;
     await req('POST', '/api/admin/issues/run-reminders', { token: T }); await req('POST', '/api/admin/issues/run-reminders', { token: T });
     const rem = (await req('GET', '/api/admin/emails', { token: T })).data.emails.filter(e => e.subject === `Reminder: ${t.number} ${t.title}`).length;
+    await new Promise(r => { smtp.close(() => r()); setTimeout(r, 1000); }); // restore the mail-down state the later checks expect
     const st = (await req('POST', '/api/admin/login', { json: { email: 'crew1@brightclean.test', password: 'a-long-password-123' } })).data.token;
     const cfgStaff = await req('PUT', '/api/admin/issues/config', { token: st, json: { categories: ['A', 'B'] } });
     const cfg = await req('PUT', '/api/admin/issues/config', { token: T, json: { categories: ['Cleaning quality', 'Missed service', 'Billing / payment', 'Valet trash'] } });
@@ -1950,6 +2036,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const bad = await req('POST', `/api/admin/pm/projects/${id}/costs`, { token: T, json: { category: 'Labor', amount: -5 } });
     await req('POST', `/api/admin/pm/projects/${id}/costs`, { token: T, json: { category: 'Labor', amount: '1,200.50', description: 'Crew A 3 days' } });
     await req('POST', `/api/admin/pm/projects/${id}/costs`, { token: T, json: { category: 'Supplies', amount: 300 } });
+    { const vq = new Database(path.join(dataDir, 'brightclean.db')); const nowIso = new Date().toISOString(); vq.prepare("INSERT INTO visits(title,type,date,start_time,end_time,project_id,status,completed_at,created_at,updated_at) VALUES('Signoff visit','Work order','2026-11-14','08:00','10:00',?,'Done',?,?,?)").run(id, nowIso, nowIso, nowIso); vq.close(); } // a completed visit is needed before customer sign-off
     await req('POST', `/api/admin/pm/projects/${id}/signoff`, { token: T, json: { name: 'Pat Proj', title: 'Facilities' } });
     const blocked = await req('POST', `/api/admin/pm/projects/${id}/status`, { token: T, json: { status: 'Completed' } }); // completion is set by the work, never by hand
     let det = (await req('GET', '/api/admin/pm/projects/' + id, { token: T })).data;
@@ -2101,6 +2188,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
       await req('PATCH', '/api/admin/qc/inspections/' + i.id, { token: T, json: { items: i.items.map((x, n) => ({ ...x, result: fail && n === 0 ? 'Fail' : 'Pass', note: fail && n === 0 ? 'Trash left in office 3' : '' })) } });
       await req('POST', `/api/admin/qc/inspections/${i.id}/sign`, { token: T, json: { name: 'Eric Moore' } }); return i.id; };
     const w1 = await mk(true), w2 = await mk(true), w3 = await mk(false);
+    { const vq = new Database(path.join(dataDir, 'brightclean.db')); const nowIso = new Date().toISOString(); vq.prepare("INSERT INTO visits(title,type,date,start_time,end_time,project_id,status,completed_at,created_at,updated_at) VALUES('Signoff visit','Work order','2026-11-14','08:00','10:00',?,'Done',?,?,?)").run(pr, nowIso, nowIso, nowIso); vq.close(); } // a completed visit is needed before customer sign-off
     const blocked = await req('POST', `/api/admin/qc/inspections/${w1}/accept`, { token: T, json: { name: 'Pat Client' } });
     const exc = await req('POST', `/api/admin/qc/inspections/${w1}/accept`, { token: T, json: { name: 'Pat Client', with_exceptions: true } });
     const clean = await req('POST', `/api/admin/qc/inspections/${w3}/accept`, { token: T, json: { name: 'Pat Client', title: 'Office manager' } });
@@ -2182,9 +2270,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
 
   // ---------- Reports: P&L, aging, labor, PDF, schedules (#27) ----------
   await check('Reports+', 'P&L for a custom range: invoiced (no drafts/void), collected, recorded costs by category, gross profit and margin; project profitability; data checks', async () => {
-    const pr = (await req('POST', '/api/admin/projects', { token: T, json: { name: 'Report project', status: 'In Progress' } })).data.id;
-    const mkInv = async (amount, paid, status, due) => { const n = (await req('GET', '/api/admin/next-invoice-number', { token: T })).data.number; const created = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: n, project_id: pr, customer_name: 'Rep Co', company: 'Rep Co', email: 'ap@rep.test', amount, due_date: due, status: ['Paid', 'Partially Paid'].includes(status) ? 'Sent' : status } })).data; const iid = created.id || (created.invoice && created.invoice.id); if (paid > 0) await req('POST', `/api/admin/invoices/${iid}/payment`, { token: T, json: { amount: paid } }); return created; };
+    const pr = (await req('POST', '/api/admin/projects', { token: T, json: { name: 'Report project', status: 'Planning' } })).data.id; // new projects start in Planning (server gate)
+    const mkInv = async (amount, paid, status, due) => { const n = (await req('GET', '/api/admin/next-invoice-number', { token: T })).data.number; const created = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: n, project_id: pr, customer_name: 'Rep Co', company: 'Rep Co', email: 'ap@rep.test', amount, due_date: due, status: ['Sent', 'Paid', 'Partially Paid'].includes(status) ? 'Draft' : status } })).data; const iid = created.id || (created.invoice && created.invoice.id); if (['Sent', 'Paid', 'Partially Paid'].includes(status)) await sendInvoice(T, iid); if (paid > 0) await req('POST', `/api/admin/invoices/${iid}/payment`, { token: T, json: { amount: paid } }); return created; };
+    smtp = await startSmtp(); await sleep(300); // the invoice sends below need the mail mock up
     await mkInv(10000, 4000, 'Partially Paid', '2026-10-01'); await mkInv(5000, 0, 'Draft', '2026-12-01'); await mkInv(2000, 0, 'Void', '2026-12-01');
+    await new Promise(r => { smtp.close(() => r()); setTimeout(r, 1000); });
     await req('POST', `/api/admin/pm/projects/${pr}/costs`, { token: T, json: { category: 'Labor', amount: 3000, cost_date: require('../bizdate').today() } });
     await req('POST', `/api/admin/pm/projects/${pr}/costs`, { token: T, json: { category: 'Supplies', amount: 500, cost_date: require('../bizdate').today() } });
     const from = require('../bizdate').today(), to = from;
@@ -2390,7 +2480,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   await check('Customers', 'Invoice linked to a customer shows on their profile; a payment shows in the ledger', async () => {
     const cu = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Ledger Test', company: 'Ledger Test Co', email: 'ledger.test@example.com', phone: '515-555-0199', address: '1 Ledger Way' } });
     const cid = cu.status === 201 ? cu.data.id : (await req('GET', '/api/admin/customers', { token: T })).data.customers.find(x => x.company === 'Ledger Test Co').id;
-    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'LEDGER-' + Date.now(), customer_id: cid, customer_name: 'Ledger Test', company: 'Ledger Test Co', email: 'ledger.test@example.com', amount: 500, line_items: JSON.stringify([{ service: 'Windows', amount: 500 }]), status: 'Sent', issue_date: '2026-11-01', due_date: '2026-12-01' } });
+    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'LEDGER-' + Date.now(), customer_id: cid, customer_name: 'Ledger Test', company: 'Ledger Test Co', email: 'ledger.test@example.com', amount: 500, line_items: JSON.stringify([{ service: 'Windows', amount: 500 }]), status: 'Draft', issue_date: '2026-11-01', due_date: '2026-12-01' } });
+    await sendInvoice(T, inv.data.id);
     const pay = await req('POST', `/api/admin/invoices/${inv.data.id}/payment`, { token: T, json: { amount: 200 } });
     const prof = (await req('GET', `/api/admin/customers/${cid}/profile`, { token: T })).data;
     assert(inv.status === 201 && pay.status === 200 && prof.invoices.some(i => i.id === inv.data.id) && prof.payments.some(p => p.invoice_id === inv.data.id && p.amount === 200) && /Windows/.test((prof.invoices.find(i => i.id === inv.data.id) || {}).line_items || ''), JSON.stringify({ inv: inv.data, pay: pay.data, n: prof.invoices.length }));
@@ -2400,7 +2491,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   await check('Customers', 'A refund needs a reason and cannot exceed what was received; a partly paid invoice cannot be voided, but a fully refunded one can', async () => {
     const cu = await req('GET', '/api/admin/customers', { token: T });
     const cid = cu.data.customers.find(x => x.company === 'Ledger Test Co').id;
-    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'REFUND-' + Date.now(), customer_id: cid, customer_name: 'Ledger Test', company: 'Ledger Test Co', amount: 300, status: 'Sent', issue_date: '2026-11-01', due_date: '2026-12-01' } });
+    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'REFUND-' + Date.now(), customer_id: cid, customer_name: 'Ledger Test', company: 'Ledger Test Co', amount: 300, status: 'Draft', issue_date: '2026-11-01', due_date: '2026-12-01' } });
+    await sendInvoice(T, inv.data.id);
     const pay = await req('POST', `/api/admin/invoices/${inv.data.id}/payment`, { token: T, json: { amount: 300 } });
     const noReason = await req('POST', `/api/admin/invoices/${inv.data.id}/refund`, { token: T, json: { amount: 100 } });
     const tooMuch = await req('POST', `/api/admin/invoices/${inv.data.id}/refund`, { token: T, json: { amount: 400, note: 'Too much' } });
@@ -2412,6 +2504,85 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const refundRows = prof.payments.filter(p => p.invoice_id === inv.data.id && Number(p.amount) < 0);
     assert(pay.status === 200 && noReason.status === 400 && tooMuch.status === 409 && ref.status === 200 && ref.data.paid_amount === 200 && voidPartial.status === 409 && refRest.status === 200 && refRest.data.paid_amount === 0 && voidFull.status === 200 && refundRows.length === 2, JSON.stringify({ noReason: noReason.status, tooMuch: tooMuch.status, ref: ref.data, voidPartial: voidPartial.status, refRest: refRest.data, voidFull: voidFull.status, refunds: refundRows.length }));
     return 'refund needs a reason (400), cannot exceed the amount received (409); a partly paid invoice cannot be voided (409); after full refund it voids';
+  });
+
+  // A staff session for the money checks below. Login is rate limited (8 per 15 minutes, see the Security checks), so the token is
+  // signed directly with the test secret, for a staff user created here. It carries the same token version the server reads.
+  const mkStaff = async tag => { const em = tag + Date.now() + '@brightclean.test'; await req('POST', '/api/admin/users', { token: T, json: { email: em, name: 'Money Test', password: 'a-long-password-123' } }); const wdb = new Database(require('path').join(globalThis.__dataDir, 'brightclean.db'), { readonly: true }); const r = wdb.prepare('SELECT token_ver FROM admin_users WHERE lower(email)=?').get(em); wdb.close(); return require('jsonwebtoken').sign({ role: 'admin', email: em, tv: (r && r.token_ver) || 0, mfa: true, jti: crypto.randomUUID() }, globalThis.__jwtSecret, { expiresIn: '1h' }); };
+  await check('Finance', 'Draft invoices are not receivables: Reports outstanding, billed and executive figures ignore a draft, but count a sent invoice', async () => {
+    const r0 = (await req('GET', '/api/admin/reports', { token: T })).data;
+    const dr = await req('POST', '/api/admin/invoices', { token: T, json: { customer_name: 'Draft Test', company: 'Draft Test Co', email: 'draft@test.test', amount: 380, status: 'Draft', issue_date: '2026-11-01', due_date: '2026-12-01' } });
+    const r1 = (await req('GET', '/api/admin/reports', { token: T })).data;
+    const sent = await req('POST', '/api/admin/invoices', { token: T, json: { customer_name: 'Draft Test', company: 'Draft Test Co', email: 'draft@test.test', amount: 250, status: 'Draft', issue_date: '2026-11-01', due_date: '2026-12-01' } });
+    await sendInvoice(T, sent.data.id);
+    const r2 = (await req('GET', '/api/admin/reports', { token: T })).data;
+    const eq = (a, b) => Math.abs(a - b) < 0.005;
+    assert(dr.status === 201 && sent.status === 201 &&
+      eq(r1.receivables.outstanding, r0.receivables.outstanding) && eq(r1.receivables.billed, r0.receivables.billed) &&
+      eq(r1.executive.outstanding.value, r0.executive.outstanding.value) && eq(r1.executive.invoiced.value, r0.executive.invoiced.value) &&
+      eq(r2.receivables.outstanding, r1.receivables.outstanding + 250) && eq(r2.receivables.billed, r1.receivables.billed + 250) &&
+      eq(r2.executive.outstanding.value, r1.executive.outstanding.value + 250) && eq(r2.executive.invoiced.value, r1.executive.invoiced.value + 250),
+      JSON.stringify({ r0: r0.receivables, r1: r1.receivables, r2: r2.receivables, e2: r2.executive.outstanding }));
+    return 'a $380 draft leaves outstanding, billed and executive invoiced unchanged; a $250 sent invoice adds exactly $250';
+  });
+
+  await check('Invoices', 'An overpayment is refused with an honest message (no credit feature is claimed)', async () => {
+    const cu = (await req('GET', '/api/admin/customers', { token: T })).data.customers.find(x => x.company === 'Ledger Test Co');
+    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'OVERPAY-' + Date.now(), customer_id: cu.id, customer_name: 'Ledger Test', company: 'Ledger Test Co', amount: 150, status: 'Draft', issue_date: '2026-11-01', due_date: '2026-12-01' } });
+    await sendInvoice(T, inv.data.id);
+    const over = await req('POST', `/api/admin/invoices/${inv.data.id}/payment`, { token: T, json: { amount: 500 } });
+    const msg = String((over.data && over.data.error) || '');
+    const list = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices || [];
+    const stillOpen = list.find(x => x.id === inv.data.id);
+    assert(inv.status === 201 && over.status === 400 && /customer credits/.test(msg) && !/separate credit/.test(msg) && stillOpen && Number(stillOpen.paid_amount) === 0, JSON.stringify({ s: over.status, msg, paid: stillOpen && stillOpen.paid_amount }));
+    return 'a $500 payment on a $150 balance is refused (400) with a message that says no customer credit is held; nothing is recorded';
+  });
+
+  await check('Projects', 'Recorded costs: the date must be a real date; an owner can correct or remove a cost with a reason (logged); staff cannot', async () => {
+    const fst = await mkStaff('costst');
+    await req('POST', '/api/admin/projects', { token: T, json: { customer_name: 'Cost Test', company: 'Cost Test Co', name: 'Cost test job', status: 'Planning' } });
+    const list = (await req('GET', '/api/admin/pm/projects', { token: T })).data;
+    const pr = (list.projects || []).find(x => x.name === 'Cost test job');
+    assert(pr, 'no project to test against');
+    const base = `/api/admin/pm/projects/${pr.id}/costs`;
+    const badDate = await req('POST', base, { token: T, json: { category: 'Supplies', amount: 12, cost_date: 'not-a-date' } });
+    const feb30 = await req('POST', base, { token: T, json: { category: 'Supplies', amount: 12, cost_date: '2026-02-30' } });
+    const made = await req('POST', base, { token: T, json: { category: 'Supplies', amount: 40, description: 'Test bag', cost_date: '2026-11-05' } });
+    const cid = made.data.id;
+    const noReason = await req('PATCH', `${base}/${cid}`, { token: T, json: { amount: 45 } });
+    const staffPatch = await req('PATCH', `${base}/${cid}`, { token: fst, json: { amount: 45, reason: 'Typo' } });
+    const badDatePatch = await req('PATCH', `${base}/${cid}`, { token: T, json: { cost_date: '2026-13-01', reason: 'Date typo' } });
+    const fix = await req('PATCH', `${base}/${cid}`, { token: T, json: { amount: 45, reason: 'Receipt shows 45.00' } });
+    const noDelReason = await req('DELETE', `${base}/${cid}`, { token: T });
+    const staffDel = await req('DELETE', `${base}/${cid}`, { token: fst, json: { reason: 'Duplicate' } });
+    const del = await req('DELETE', `${base}/${cid}`, { token: T, json: { reason: 'Duplicate entry' } });
+    const gone = await req('DELETE', `${base}/${cid}`, { token: T, json: { reason: 'Again' } });
+    const events = (await req('GET', '/api/admin/audit-log', { token: T })).data.events || [];
+    const trail = events.filter(a => a.entity === 'project cost' && Number(a.entity_id) === Number(cid)).map(a => a.action);
+    const sameTotal = Math.abs(del.data.costs.total - (made.data.costs.total - 40)) < 0.005;
+    const fixDelta = Math.abs(fix.data.costs.total - (made.data.costs.total + 5)) < 0.005;
+    assert(badDate.status === 400 && feb30.status === 400 && made.status === 201 && noReason.status === 400 && staffPatch.status === 403 &&
+      badDatePatch.status === 400 && fix.status === 200 && fixDelta && noDelReason.status === 400 && staffDel.status === 403 &&
+      del.status === 200 && gone.status === 404 && sameTotal && trail.includes('corrected') && trail.includes('removed'),
+      JSON.stringify({ badDate: badDate.status, feb30: feb30.status, made: made.status, noReason: noReason.status, staffPatch: staffPatch.status, badDatePatch: badDatePatch.status, fix: fix.status, noDelReason: noDelReason.status, staffDel: staffDel.status, del: del.status, gone: gone.status, trail }));
+    return 'bad or impossible dates refused (400); correction needs a reason and changes the total by the difference; removal needs a reason; staff refused (403); both logged in the activity log';
+  });
+
+  await check('Customers', 'Held online payments (needs refund) are listed for owners and managers only', async () => {
+    const fst = await mkStaff('heldst');
+    const cu = (await req('GET', '/api/admin/customers', { token: T })).data.customers.find(x => x.company === 'Ledger Test Co');
+    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'HELD-' + Date.now(), customer_id: cu.id, customer_name: 'Ledger Test', company: 'Ledger Test Co', amount: 90, status: 'Draft', issue_date: '2026-11-01', due_date: '2026-12-01', email: 'held@test.test' } });
+    await sendInvoice(T, inv.data.id);
+    const sid = 'cs_test_held_' + Date.now();
+    const wdb = new Database(require('path').join(globalThis.__dataDir, 'brightclean.db'));
+    wdb.prepare("INSERT INTO online_payments(invoice_id,stripe_session_id,amount,email,status,created_at,paid_at) VALUES(?,?,?,?,?,?,?)").run(inv.data.id, sid, 120, 'held@test.test', 'Needs refund', new Date().toISOString(), new Date().toISOString());
+    wdb.close();
+    const owner = await req('GET', '/api/admin/invoices/needs-refund', { token: T });
+    const staff = await req('GET', '/api/admin/invoices/needs-refund', { token: fst });
+    const row = (owner.data.needs_refund || []).find(r => r.stripe_session_id === sid);
+    assert(owner.status === 200 && row && Number(row.amount) === 120 && row.invoice_id === inv.data.id && owner.data.total >= 120 && staff.status === 403,
+      JSON.stringify({ owner: owner.status, staff: staff.status, row }));
+    return 'the held $120 Stripe payment appears in the owner list with its invoice number; staff get 403';
   });
 
   await check('Insights', 'Insights show results and suggestions for owners only; staff are refused; nothing is changed automatically', async () => {
@@ -2435,6 +2606,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
   await check('Audit', 'Approval hand-off links the new project and contract to the proposal and the customer; files attach to a proposal (and its customer) and list on the proposal', async () => {
     const cu = (await req('POST', '/api/admin/customers', { token: T, json: { company: 'Handoff GC', name: 'Hana Off', email: 'hana@handoffgc.test' } })).data.id;
     const e = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Hana Off', company: 'Handoff GC', email: 'hana@handoffgc.test', project_name: 'Handoff job', scope: 'Final clean', area_sqft: 10000, use_line_items: 1, line_items: [{ description: 'Final clean', amount: 4000 }] } })).data.estimate;
+    await req('POST', `/api/admin/estimates/${e.id}/approve`, { token: T, json: { note: 'Owner approved: no costs entered' } });
     await req('PATCH', '/api/admin/estimates/' + e.id, { token: T, json: { status: 'Sent' } }); await req('POST', `/api/proposal/${e.public_token}/respond`, { json: { decision: 'approve', signer_name: 'Hana Off', signer_title: 'PM', agree: true } }); await sleep(300);
     const k = (await req('GET', '/api/admin/contracts', { token: T })).data.contracts.find(c => c.estimate_id === e.id);
     const pr = (await req('GET', '/api/admin/projects', { token: T })).data.projects.find(x => x.contract_id === (k && k.id));
@@ -2468,6 +2640,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const e = (await req('POST', '/api/admin/estimates', { token: T, json: { lead_id: j1.id, customer_name: 'Wanda Flow', company: co, email: em, project_name: 'WFA Clinic', site_address: '600 Flow Ave, Ankeny, IA', scope: 'Final clean, 12,000 SF', area_sqft: 12000, use_line_items: 1, tax_pct: 7, line_items: [{ description: 'Final clean', amount: 3600 }, { description: 'Interior windows', amount: 900 }] } })).data.estimate;
     ok('4 Estimate created from the lead with correct math', e && e.proposal_total === 4815 && e.line_items_total === 4500, e && `${e.line_items_total} + 7% = ${e.proposal_total}`);
     // 5 proposal sent by email
+    await req('POST', `/api/admin/estimates/${e.id}/approve`, { token: T, json: { note: 'Owner approved: no costs entered' } });
     const before = mail.length; const snd = await req('POST', `/api/admin/estimates/${e.id}/send`, { token: T }); await sleep(400);
     const sentMail = mail.find(m => m.to.includes(em) && m.raw.includes(e.public_token));
     ok('5 Proposal emailed to the client with its link', snd.status === 200 && sentMail && sentMail.raw.includes('/proposal/' + e.public_token), `${snd.status} ${JSON.stringify(snd.data).slice(0, 80)} mail:${!!sentMail}`);
@@ -2516,6 +2689,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const ins = (await req('POST', '/api/admin/qc/inspections', { token: T, json: { template_id: tpl.id, area: 'Whole building', date: require('../bizdate').today(), customer_id: cid, project_id: p0.id, crew: 'A', itype: 'Customer walkthrough' } })).data.inspection;
     const insUp = await req('PATCH', `/api/admin/qc/inspections/${ins.id}`, { token: T, json: { items: ins.items.map(i => ({ ...i, result: 'Pass' })) } });
     const isg = await req('POST', `/api/admin/qc/inspections/${ins.id}/sign`, { token: T, json: { name: 'Eric Moore' } });
+    { const vq = new Database(path.join(dataDir, 'brightclean.db')); const nowIso = new Date().toISOString(); vq.prepare("INSERT INTO visits(title,type,date,start_time,end_time,project_id,status,completed_at,created_at,updated_at) VALUES('Workflow A completed visit','Work order','2026-11-14','08:00','10:00',?,'Done',?,?,?)").run(p0.id, nowIso, nowIso, nowIso); vq.close(); } // customer acceptance follows a completed visit
     const acc = await req('POST', `/api/admin/qc/inspections/${ins.id}/accept`, { token: T, json: { name: 'Wanda Flow', title: 'PM' } });
     ok('12 Inspection passed, signed; customer acceptance recorded', insUp.status === 200 && isg.status === 200 && acc.status === 200, JSON.stringify({ up: [insUp.status, insUp.data.error], sign: [isg.status, isg.data.error], acc: [acc.status, acc.data.error] }));
     // 13 completion + billing hand-off
@@ -2527,7 +2701,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.project_id === p0.id);
     ok('13 Project completed (customer sign-off) and billing hand-off creates ONE draft invoice for the contract value', done.status === 200 && [200, 201].includes(bh.status) && inv && inv.status === 'Draft' && Math.abs(inv.amount - 4815) < 0.01, JSON.stringify({ done: [done.status, done.data.error], bh: [bh.status, bh.data.error], inv: inv && [inv.status, inv.amount] }));
     // 14 invoice sent, partial then full payment
-    const sendInv = await req('PATCH', '/api/admin/invoices/' + inv.id, { token: T, json: { status: 'Sent' } });
+    const sendInv = await sendInvoice(T, inv.id);
     const pay1 = await req('POST', `/api/admin/invoices/${inv.id}/payment`, { token: T, json: { amount: 2000 } });
     const mid = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === inv.id);
     const pay2 = await req('POST', `/api/admin/invoices/${inv.id}/payment`, { token: T, json: { amount: 2815 } });
@@ -2625,6 +2799,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
       const bdate = require('../bizdate').today(), addD = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
       await req('POST', '/api/admin/customers', { token: T, json: { company: 'Collect Co', name: 'Cora Lect', email: 'ap@collect.test' } });
       const e = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Cora Lect', company: 'Collect Co', email: 'ap@collect.test', project_name: 'Collect job', scope: 'Janitorial', area_sqft: 8000, use_line_items: 1, line_items: [{ description: 'Monthly janitorial', amount: 5000 }] } })).data.estimate;
+      await req('POST', `/api/admin/estimates/${e.id}/approve`, { token: T, json: { note: 'Owner approved: no costs entered' } });
       await req('PATCH', '/api/admin/estimates/' + e.id, { token: T, json: { status: 'Sent' } });
       await req('POST', `/api/proposal/${e.public_token}/respond`, { json: { decision: 'approve', signer_name: 'Cora Lect', signer_title: 'AP', agree: true } }); await sleep(300);
       const k = (await req('GET', '/api/admin/contracts', { token: T })).data.contracts.find(x => x.estimate_id === e.id);
@@ -2758,6 +2933,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
       ok('8 Risk/approval gate holds the large bid until owner approval; then sent before the deadline; lead → Proposal Sent', held.status === 409 && sent.status === 200 && leadNow.status === 'Proposal Sent', JSON.stringify({ held: [held.status, (held.data.error || '').slice(0, 60)], sent: sent.status, lead: leadNow.status }));
       const late = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Late GC', email: 'late@gc.test', scope: 'x', area_sqft: 1000, use_line_items: 1, line_items: [{ description: 'Clean', amount: 900 }] } })).data.estimate;
       await req('PATCH', '/api/admin/bids/' + late.id, { token: T, json: { bid_due_date: addD(bdate, -1) } });
+      await req('POST', `/api/admin/estimates/${late.id}/approve`, { token: T, json: { note: 'Owner approved: no costs entered' } });
       const l1 = await req('POST', `/api/admin/estimates/${late.id}/send`, { token: T }), l2 = await req('POST', `/api/admin/estimates/${late.id}/send`, { token: T, json: { late_ok: true } });
       ok('9 Sending after the bid deadline needs explicit confirmation (logged)', l1.status === 409 && l1.data.late && l2.status === 200, JSON.stringify([l1.status, l2.status]));
       const acc = await req('POST', `/api/proposal/${e.public_token}/respond`, { json: { decision: 'approve', signer_name: 'Ivy Estimator', signer_title: 'Chief Estimator', agree: true } }); await sleep(300);
@@ -3036,7 +3212,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     await req('PATCH', '/api/admin/contracts/' + sid, { token: T, json: { signature_status: 'Signed', status: 'Active', signer_name: 'Sam Signer', signed_on: '2026-11-01' } });
     out.ownerDelSigned = (await req('DELETE', '/api/admin/contracts/' + sid, { token: T })).status;
     const draftInv = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'PRB-DRAFT', customer_name: 'x', amount: 5, due_date: '2026-12-31', status: 'Draft' } })).data; out.ownerDelDraftInvoice = (await req('DELETE', '/api/admin/invoices/' + (draftInv.id || draftInv.invoice.id), { token: T })).status;
-    { const pi = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'PRB-EDIT', customer_name: 'x', amount: 50, due_date: '2026-12-31', status: 'Sent' } })).data; const pid = pi.id || pi.invoice.id; await req('POST', `/api/admin/invoices/${pid}/payment`, { token: T, json: { amount: 50 } }); const row = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === pid); out.editPaidNotes = (await req('PATCH', '/api/admin/invoices/' + pid, { token: T, json: { ...row, notes: 'PO 123' } })).status; }
+    { const pi = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'PRB-EDIT', customer_name: 'x', amount: 50, due_date: '2026-12-31', status: 'Draft' } })).data; const pid = pi.id || pi.invoice.id; await sendInvoice(T, pid, 'prb@test.test');await req('POST', `/api/admin/invoices/${pid}/payment`, { token: T, json: { amount: 50 } }); const row = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === pid); out.editPaidNotes = (await req('PATCH', '/api/admin/invoices/' + pid, { token: T, json: { ...row, notes: 'PO 123' } })).status; }
     out.postPaidInvoice = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'PRB-PAID', customer_name: 'x', amount: 5, paid_amount: 5, due_date: '2026-12-31', status: 'Paid' } })).status;
     assert(out.postSigned === 409 && out.patchActiveUnsigned === 409 && out.kAfter[0] === 'Draft' && out.staffDelInvoice === 403 && out.staffDelContract === 403 && out.staffPatchInvoicePaid === 409 && out.ownerPatchInvoicePaid === 409 && out.invAfter[0] === 'Draft' && out.ownerDelSigned === 409 && out.ownerDelDraftInvoice === 200 && out.postPaidInvoice === 409 && out.editPaidNotes === 200, JSON.stringify(out));
     return JSON.stringify(out);
@@ -3167,7 +3343,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const cu = (await req('POST', '/api/admin/customers', { token: T, json: { company: 'Consistency Co', name: 'Cy', email: 'cy@cons.test' } })).data.id;
     const pr = (await req('POST', '/api/admin/projects', { token: T, json: { name: 'Consistency project', company: 'Consistency Co', status: 'Active', customer_id: cu } })).data.id;
     const n = (await req('GET', '/api/admin/next-invoice-number', { token: T })).data.number, today = new Date().toISOString().slice(0, 10);
-    const inv = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: n, project_id: pr, customer_name: 'Cy', company: 'Consistency Co', email: 'cy@cons.test', amount: 1000, due_date: '2030-01-01', status: 'Sent' } })).data, iid = inv.id || inv.invoice.id;
+    const inv = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: n, project_id: pr, customer_name: 'Cy', company: 'Consistency Co', email: 'cy@cons.test', amount: 1000, due_date: '2030-01-01', status: 'Draft' } })).data, iid = inv.id || inv.invoice.id;
+    await sendInvoice(T, iid);
     const snap = async () => { const m = (await req('GET', '/api/admin/command-center/metrics?days=30', { token: T })).data.metrics, g = k => m.find(x => x.key === k); const f = (await req('GET', `/api/admin/reports/finance?from=2000-01-01&to=2100-01-01`, { token: T })).data; const iv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(x => x.id === iid); const od = (await req('GET', '/api/admin/command-center/drill/outstanding?days=30', { token: T })).data.rows.find(r => r.id === iid); return { out: g('outstanding').amount, col: g('collected').amount || 0, fin: f.collected, paid: iv.paid_amount, status: iv.status, rowBal: od ? od.amount : 0 }; };
     const a = await snap();
     const pay = await req('POST', `/api/admin/invoices/${iid}/payment`, { token: T, json: { amount: 400 } });
@@ -3325,6 +3502,136 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'a repeated offline check-in and check-out is applied once; the repeat is answered with duplicate';
   });
 
+  // ---- Review fixes: crew PIN and sessions, offline time, closed jobs, dispatch re-check, pay and sign-off roles ----
+  const mkEmp = async (name, phone, email) => { const r = await req('POST', '/api/admin/employees', { token: T, json: { name, phone, email, role: 'Cleaner' } }); return r.data.id || (r.data.employee && r.data.employee.id); };
+  const mkVisitFix = async (date, title, extra = {}) => { const r = await req('POST', '/api/admin/visits', { token: T, json: { title, date, start_time: '08:00', end_time: '10:00', address: '2 Fix St', ...extra } }); return (r.data.visit || r.data).id; };
+  const dbFix = () => new Database(path.join(dataDir, 'brightclean.db'));
+  await check('Crew controls', 'Crew PIN is 6 digits at least; failed tries are counted per person across phone formats; a PIN reset, a new link or deactivation ends signed-in sessions; sessions last 7 days', async () => {
+    const lockId = await mkEmp('Lock Test', '5155550199', 'lock.test@t.test');
+    const short = await req('POST', `/api/admin/employees/${lockId}/crew-pin`, { token: T, json: { pin: '1234' } });
+    assert(short.status === 400, 'a 4-digit PIN should be refused, got ' + short.status);
+    assert((await req('POST', `/api/admin/employees/${lockId}/crew-pin`, { token: T, json: { pin: '482159' } })).status === 200, 'a 6-digit PIN should be set');
+    for (let i = 0; i < 5; i++) await req('POST', '/api/crew/login', { json: { login: '515-555-0199', pin: '000000' } });
+    const lockedFormats = [];
+    for (const l of ['(515) 555-0199', '+15155550199', '5155550199', 'lock.test@t.test']) lockedFormats.push((await req('POST', '/api/crew/login', { json: { login: l, pin: '482159' } })).status);
+    assert(lockedFormats.every(s => s === 429), 'every spelling of the same person should stay locked, got ' + lockedFormats.join(','));
+    const sid = await mkEmp('Session Test', '5155550198', 'session.test@t.test');
+    await req('POST', `/api/admin/employees/${sid}/crew-pin`, { token: T, json: { pin: '246813' } });
+    const s1 = await req('POST', '/api/crew/login', { json: { login: 'session.test@t.test', pin: '246813' } });
+    assert(s1.status === 200 && s1.data.token, 'sign in should work, got ' + s1.status);
+    const jwtLib = require('../node_modules/jsonwebtoken'), dec = jwtLib.decode(s1.data.token);
+    assert(dec.exp - dec.iat <= 7 * 86400 && dec.exp - dec.iat >= 6 * 86400, 'session should last about 7 days, got ' + (dec.exp - dec.iat) + ' s');
+    const me = tok => req('GET', '/api/crew/me', { headers: { Authorization: 'Bearer ' + tok } });
+    assert((await me(s1.data.token)).status === 200, 'fresh session should work');
+    await req('POST', `/api/admin/employees/${sid}/crew-pin`, { token: T, json: { pin: '135790' } });
+    const afterPin = (await me(s1.data.token)).status;
+    const s2 = await req('POST', '/api/crew/login', { json: { login: 'session.test@t.test', pin: '135790' } });
+    await req('PATCH', `/api/admin/employees/${sid}`, { token: T, json: { new_link: true } });
+    const afterLink = (await me(s2.data.token)).status;
+    const s3 = await req('POST', '/api/crew/login', { json: { login: 'session.test@t.test', pin: '135790' } });
+    await req('PATCH', `/api/admin/employees/${sid}`, { token: T, json: { active: false } });
+    const afterDeact = (await me(s3.data.token)).status;
+    await req('PATCH', `/api/admin/employees/${sid}`, { token: T, json: { active: true } });
+    const afterReactivate = (await me(s3.data.token)).status;
+    assert(afterPin === 401 && afterLink === 401 && afterDeact === 401 && afterReactivate === 401, `old sessions must end: pin ${afterPin}, link ${afterLink}, deactivated ${afterDeact}, reactivated ${afterReactivate}`);
+    return 'PIN under 6 refused; 5 tries lock all four spellings (429); session 7 days; PIN reset, link reset and deactivation each end the session';
+  });
+  await check('Crew controls', 'Offline check-in and check-out keep the time the phone recorded; a time outside the window or in the future is flagged and the server time used; closed jobs refuse field actions but accept an incident', async () => {
+    const cid = await mkEmp('Clock Test', '5155550197', 'clock.test@t.test');
+    const tk = (await req('GET', `/api/admin/employees/${cid}/link`, { token: T })).data.url.split('/').pop();
+    const v1 = await mkVisitFix('2027-03-16', 'Clock job one'), v2 = await mkVisitFix('2027-03-17', 'Clock job two'), v3 = await mkVisitFix('2027-03-18', 'Skipped job'), v4 = await mkVisitFix('2027-03-19', 'Done job');
+    for (const v of [v1, v2, v3, v4]) await req('POST', `/api/admin/dispatch/visits/${v}/crew`, { token: T, json: { employee_id: cid } });
+    const now = Date.now(), iso = ms => new Date(ms).toISOString();
+    const J = (v, a, body) => req('POST', `/api/crew/${tk}/jobs/${v}/${a}`, { json: body });
+    const ci1 = await J(v1, 'checkin', { client_id: 'fix-in-1-' + now, device_at: iso(now - 2 * 3600e3) });
+    const co1 = await J(v1, 'checkout', { client_id: 'fix-out-1-' + now, device_at: iso(now - 3600e3) });
+    const ci2 = await J(v2, 'checkin', { client_id: 'fix-in-2-' + now, device_at: '2020-01-01T08:00:00.000Z' });
+    const co2 = await J(v2, 'checkout', { client_id: 'fix-out-2-' + now, device_at: iso(now + 3600e3) });
+    await req('POST', `/api/admin/dispatch/visits/${v3}/skip`, { token: T, json: { reason: 'Customer closed the site' } });
+    const skippedIn = await J(v3, 'checkin', {});
+    const skippedInc = await J(v3, 'incident', { title: 'Incident on a skipped job', description: 'Logged anyway' });
+    const dbx = dbFix(); dbx.prepare("UPDATE visits SET status='Done', completed_at=? WHERE id=?").run(iso(now - 86400e3), v4); dbx.close();
+    const doneIn = await J(v4, 'checkin', {});
+    const rows = (await req('GET', '/api/admin/time?from=2020-01-01&to=2030-01-01', { token: T })).data.entries || [];
+    const r1 = rows.find(x => x.visit_id === v1), r2 = rows.find(x => x.visit_id === v2);
+    const chk = {
+      inOut: ci1.status === 200 && co1.status === 200, minutes60: !!r1 && r1.minutes >= 59 && r1.minutes <= 61, deviceIn: !!r1 && Math.abs(Date.parse(r1.clock_in) - (now - 2 * 3600e3)) < 2000,
+      deviceKept: !!r1 && r1.device_clock_in === iso(now - 2 * 3600e3) && r1.time_flag == null, syncStored: !!r1 && !!r1.synced_at,
+      oldFlagged: ci2.status === 200 && !!r2 && /outside/.test(r2.time_flag || ''), oldUsesServer: !!r2 && Date.parse(r2.clock_in) > now - 60000,
+      futureFlagged: co2.status === 200 && !!r2 && Date.parse(r2.clock_out) < now + 60000,
+      skippedRefused: skippedIn.status === 409 && /skipped/.test(skippedIn.data.error || ''), incidentOk: skippedInc.status === 201,
+      doneRefused: doneIn.status === 409 && /already complete/.test(doneIn.data.error || '')
+    };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ r1, r2, done: doneIn.status, skipped: skippedIn.data }));
+    return 'device check-in 2 h ago and check-out 1 h ago = 60 min; 2020 check-in and future check-out flagged, server time used; skipped and done jobs refuse check-in (409), incident still saved';
+  });
+  await check('Crew controls', 'Dispatch re-checks the crew: a crew member given time off after assignment blocks the dispatch', async () => {
+    const did = await mkEmp('Dispatch Recheck', '5155550196', 'recheck.test@t.test');
+    const v = await mkVisitFix('2027-03-22', 'Recheck job');
+    const asg = await req('POST', `/api/admin/dispatch/visits/${v}/crew`, { token: T, json: { employee_id: did } });
+    const off = await req('POST', `/api/admin/employees/${did}/timeoff`, { token: T, json: { start_date: '2027-03-22', end_date: '2027-03-22', reason: 'Dentist' } });
+    const d = await req('POST', `/api/admin/dispatch/visits/${v}/dispatch`, { token: T });
+    assert(asg.status === 200 && off.status === 201 && d.status === 409 && /off on 2027-03-22/.test(d.data.error || ''), `assign ${asg.status}, timeoff ${off.status}, dispatch ${d.status} ${JSON.stringify(d.data).slice(0, 200)}`);
+    return 'assigned, then time off added: dispatch refused with 409 naming the time off';
+  });
+  await check('Crew controls', 'Only the owner changes crew pay rates; office staff cannot assign, move, skip or dispatch crew; the owner can', async () => {
+    const st = globalThis.__st; // office staff login (role staff) created earlier in this run
+    assert(st, 'staff login should exist from the earlier Issues check');
+    const pid = await mkEmp('Pay Test', '5155550195', 'pay.test@t.test');
+    const v = await mkVisitFix('2027-03-23', 'Staff schedule job');
+    const staffRate = await req('PATCH', `/api/admin/employees/${pid}`, { token: st, json: { hourly_rate: 99 } });
+    const staffName = await req('PATCH', `/api/admin/employees/${pid}`, { token: st, json: { name: 'Pay Test Renamed' } });
+    const staffNew = await req('POST', '/api/admin/employees', { token: st, json: { name: 'Staff Rate Attempt', hourly_rate: 30 } });
+    const ownerRate = await req('PATCH', `/api/admin/employees/${pid}`, { token: T, json: { hourly_rate: 24 } });
+    const staffAssign = await req('POST', `/api/admin/dispatch/visits/${v}/crew`, { token: st, json: { employee_id: pid } });
+    const staffSkip = await req('POST', `/api/admin/dispatch/visits/${v}/skip`, { token: st, json: { reason: 'Staff try' } });
+    const ownerAssign = await req('POST', `/api/admin/dispatch/visits/${v}/crew`, { token: T, json: { employee_id: pid } });
+    const chk = { staffRateRefused: staffRate.status === 403, staffRenameOk: staffName.status === 200, staffNewRateRefused: staffNew.status === 403, ownerRateOk: ownerRate.status === 200,
+      staffAssignRefused: staffAssign.status === 403, staffSkipRefused: staffSkip.status === 403, ownerAssignOk: ownerAssign.status === 200 };
+    const failed = Object.entries(chk).filter(([, x]) => !x).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ staffRate: staffRate.data, staffAssign: staffAssign.data, ownerAssign: ownerAssign.status }));
+    globalThis.__payTest = { pid, st };
+    return 'staff: pay rate refused (also on create), name change allowed, assign/skip refused; owner: rate and assignment allowed';
+  });
+  await check('Crew controls', 'Customer sign-off and acceptance are the owner\'s; sign-off needs a completed visit; an acceptance with exceptions does not pass completion until the owner waives it; labor cost is dated on the business day', async () => {
+    const { st } = globalThis.__payTest;
+    const pr = (await req('POST', '/api/admin/projects', { token: T, json: { name: 'Sign-off project', status: 'Planning' } })).data.id;
+    const offStaff = await req('POST', `/api/admin/pm/projects/${pr}/signoff`, { token: st, json: { name: 'Sam Signoff' } });
+    const offNoVisit = await req('POST', `/api/admin/pm/projects/${pr}/signoff`, { token: T, json: { name: 'Sam Signoff' } });
+    const vis = await mkVisitFix('2027-03-24', 'Signoff visit', { project_id: pr });
+    const dbx = dbFix(); dbx.prepare("UPDATE visits SET project_id=?, status='Done', completed_at=? WHERE id=?").run(pr, new Date().toISOString(), vis); dbx.close();
+    const offOwner = await req('POST', `/api/admin/pm/projects/${pr}/signoff`, { token: T, json: { name: 'Sam Signoff' } });
+    await req('PATCH', `/api/admin/pm/projects/${pr}`, { token: T, json: { actual_start: '2027-03-20' } });
+    const tpl = (await req('GET', '/api/admin/qc/templates', { token: T })).data.templates.find(x => x.name === 'Commercial janitorial');
+    const insp = (await req('POST', '/api/admin/qc/inspections', { token: T, json: { template_id: tpl.id, area: 'Sign-off HQ', date: '2027-03-24', project_id: pr, itype: 'Customer walkthrough', crew: 'C' } })).data.inspection;
+    await req('PATCH', '/api/admin/qc/inspections/' + insp.id, { token: T, json: { items: insp.items.map((x, n) => ({ ...x, result: n === 0 ? 'Fail' : 'Pass', note: n === 0 ? 'Trash left in office' : '' })) } });
+    await req('POST', `/api/admin/qc/inspections/${insp.id}/sign`, { token: T, json: { name: 'Eric Moore' } });
+    const accStaff = await req('POST', `/api/admin/qc/inspections/${insp.id}/accept`, { token: st, json: { name: 'Sam Signoff', with_exceptions: true } });
+    const accOwner = await req('POST', `/api/admin/qc/inspections/${insp.id}/accept`, { token: T, json: { name: 'Sam Signoff', with_exceptions: true } });
+    const pBefore = JSON.stringify((await req('GET', `/api/admin/pm/projects/${pr}`, { token: T })).data);
+    const waiveStaff = await req('POST', `/api/admin/qc/inspections/${insp.id}/exception-waiver`, { token: st, json: { reason: 'Staff trying to waive' } });
+    const waiveOwner = await req('POST', `/api/admin/qc/inspections/${insp.id}/exception-waiver`, { token: T, json: { reason: 'Owner accepts the one trash note' } });
+    const pAfter = JSON.stringify((await req('GET', `/api/admin/pm/projects/${pr}`, { token: T })).data);
+    // Labor cost date: 03:00 UTC on 1 March is still 28 February in Central time.
+    const te = await req('POST', '/api/admin/time', { token: T, json: { employee_id: globalThis.__payTest.pid, project_id: pr, clock_in: '2027-03-01T03:00:00.000Z', clock_out: '2027-03-01T05:00:00.000Z', note: 'Late shift' } });
+    const ap = await req('POST', `/api/admin/time/${te.data.id}/approve`, { token: T });
+    const dbl = dbFix(); const cost = dbl.prepare("SELECT cost_date FROM project_costs WHERE project_id=? AND category='Labor'").get(pr); dbl.close();
+    const chk = { signoffStaffRefused: offStaff.status === 403, signoffNeedsVisit: offNoVisit.status === 409, signoffOwnerOk: offOwner.status === 200,
+      accStaffRefused: accStaff.status === 403, accOwnerExceptions: accOwner.status === 200 && accOwner.data.inspection.status === 'Accepted with exceptions',
+      exceptionNotAPass: /passing quality inspection/.test(pBefore), waiveStaffRefused: waiveStaff.status === 403, waiveOwnerOk: waiveOwner.status === 200,
+      waiverCountsAsPass: !/passing quality inspection/.test(pAfter), laborDate: ap.status === 200 && !!cost && cost.cost_date === '2027-02-28' };
+    const failed = Object.entries(chk).filter(([, x]) => !x).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ cost, ap: ap.status, waiveOwner: waiveOwner.data, accOwner: accOwner.data }).slice(0, 500));
+    return 'sign-off: staff refused, needs a completed visit, owner ok; acceptance with exceptions is not a pass until an owner waiver; labor cost dated 2027-02-28 (Central)';
+  });
+  await check('Crew controls', 'Scheduling roles: staff cannot write schedule actions through the central gate', async () => {
+    const R = require('../roles');
+    const denied = R.check('staff', 'POST', '/api/admin/dispatch/visits/9/move'), allowed = R.check('supervisor', 'POST', '/api/admin/dispatch/visits/9/move');
+    assert(denied && !allowed, 'staff should be denied and supervisor allowed: ' + denied + ' / ' + allowed);
+    return 'central gate refuses staff on assign, move, skip and dispatch; supervisors and above allowed';
+  });
+
   await check('Projects', 'Milestone billing: a share of the contract bills once, only after the milestone is done; shares stay within 100%', async () => {
     const pid = globalThis.__pmId;
     const pr = (await req('GET', '/api/admin/pm/projects/' + pid, { token: T })).data.project;
@@ -3409,6 +3716,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const blocked = await req('POST', '/api/admin/estimates/' + est.id + '/send', { token: T });
     const cert = await req('POST', '/api/admin/insurance', { token: T, json: { holder: 'Attach Test Co', kind: 'general_liability', carrier: 'Attach Carrier', policy_no: 'ATT-1', expires_on: '2099-01-01' } });
     const attach = await req('POST', '/api/admin/estimates/' + est.id + '/insurance/' + cert.data.id, { token: T });
+    await req('POST', '/api/admin/estimates/' + est.id + '/approve', { token: T, json: { note: 'Owner approved: no costs entered' } });
     const sent = await req('POST', '/api/admin/estimates/' + est.id + '/send', { token: T }); await sleep(300);
     const pub = (await req('GET', '/api/proposal/' + est.public_token, { token: T })).data.proposal;
     const chk = {
@@ -3554,6 +3862,28 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return `0 inline scripts/handlers; report-only: ${ro}; violation stored (token redacted); staff 403`;
   });
 
+  await check('Security', 'Served pages (browser-free, F-14.7a): the public and admin pages the server sends have no executable inline script or inline event handler, so the script policy can be enforced later; the restore runbook does not claim a drill passed (F-15.3); the owner list has the audit items (F-15.5)', async () => {
+    const pages = ['/', '/admin/', '/portal.html', '/contact.html', '/crew.html', '/track.html', '/services/power-washing.html', '/services/restroom-cleaning.html'];
+    const bad = [];
+    for (const p of pages) {
+      const r = await fetch(B + p); const html = await r.text();
+      if (r.status !== 200) bad.push(p + ': status ' + r.status);
+      for (const m of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) {
+        const attrs = m[1] || '';
+        if (/\bsrc=/i.test(attrs)) continue;
+        if (/type=["']application\/ld\+json["']/i.test(attrs)) continue; // data block, not executed
+        if (m[2].trim()) bad.push(p + ': executable inline script');
+      }
+      if (/<[a-z][^>]*\son(click|change|submit|load|error|input)=/i.test(html)) bad.push(p + ': inline event handler');
+    }
+    const runbook = fs.readFileSync(path.join(ROOT, 'docs', 'RESTORE_RUNBOOK.md'), 'utf8');
+    const owner = fs.readFileSync(path.join(ROOT, 'docs', 'OWNER_ACTION_LIST.md'), 'utf8');
+    const chk = { pages: !bad.length, runbookNoPass: /No restore drill has been passed/.test(runbook) && !/Result: PASS/.test(runbook.replace(/Result: PASS \/ FAIL/, '')) && /Results log/.test(runbook), ownerHeading: /## From the 2026-11-18 audit/.test(owner) && /uptime monitor/i.test(owner) };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify(bad.slice(0, 5)));
+    return `${pages.length} served pages: no executable inline script or handler; runbook records no drill; owner list updated`;
+  });
+
   await check('Health', 'Monitoring: a server error is recorded (path normalised), counted in /health errors_1h, visible in System health, and the owner is emailed once per distinct error per hour', async () => {
     const before = mail.length;
     const b1 = await fetch(B + '/api/test/boom'), b2 = await fetch(B + '/api/test/boom'); await sleep(400);
@@ -3671,6 +4001,17 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const empty = await req('PUT', '/api/admin/account/name', { token: T, json: { name: '' } });
     assert(r.status === 200 && me.name === 'Eric Moore' && users.some(u => u.owner && u.name === 'Eric Moore') && empty.status === 400, JSON.stringify({ r: r.status, me, users: users.slice(0, 2), empty: empty.status }));
     return 'owner shown as Eric Moore';
+  });
+
+  await check('Security', 'Invoice notes and issue date are owner-only (F-14.2a): sales and supervisor PATCH is refused with 403 (denial logged); the owner PATCH is allowed', async () => {
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    const SA = mint('sales@roles.test'), SU = mint('sup@roles.test');
+    const salesTry = await req('PATCH', '/api/admin/extra/invoices/1', { token: SA, json: { notes: 'Sales edit' } });
+    const supTry = await req('PATCH', '/api/admin/extra/invoices/1', { token: SU, json: { issue_date: '2026-01-02' } });
+    const ownerTry = await req('PATCH', '/api/admin/extra/invoices/1', { token: T, json: { notes: 'Owner note' } });
+    const chk = { sales: salesTry.status === 403, supervisor: supTry.status === 403, owner: ownerTry.status === 200 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, sales: salesTry.status, sup: supTry.status, owner: ownerTry.status }));
+    return 'invoice PATCH: sales 403, supervisor 403, owner 200';
   });
 
   await check('Security', 'Sales role: enforced on the server — sales pages and leads/estimates/proposals/calls/email work; invoices, finance reports, settings writes, user admin and audit log are refused; no finance groups in Command Center', async () => {
@@ -4029,14 +4370,14 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const emp = await req('POST', '/api/admin/employees', { token: T, json: { name: 'Session Crew Test', email: 'session.crew@t.test', phone: '5155550155', role: 'Cleaner' } });
     const eid = emp.data.id || (emp.data.employee && emp.data.employee.id);
     assert(eid, 'employee not created: ' + emp.status);
-    await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '6604' } });
+    await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '660457' } });
     const today = require('../bizdate').today();
     const vis = await req('POST', '/api/admin/visits', { token: T, json: { title: 'Session job', date: today, start_time: '09:00', end_time: '10:00', address: '9 Photo Ave' } });
     const vid = vis.data.id || (vis.data.visit && vis.data.visit.id);
     assert(vid, 'visit not created');
     const asg = await req('POST', '/api/admin/dispatch/visits/' + vid + '/crew', { token: T, json: { employee_id: eid } });
     assert(asg.status === 200, 'assign should work, got ' + asg.status);
-    const si = await req('POST', '/api/crew/login', { json: { login: 'session.crew@t.test', pin: '6604' } });
+    const si = await req('POST', '/api/crew/login', { json: { login: 'session.crew@t.test', pin: '660457' } });
     assert(si.status === 200 && si.data.token, 'sign in should work');
     const auth = { Authorization: 'Bearer ' + si.data.token };
     const mine = await req('GET', '/api/crew/me', { headers: auth });
@@ -4130,6 +4471,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(tid, 'task not created: ' + JSON.stringify(created.data).slice(0, 200));
     const inT = async (b) => ((await req('GET', `/api/admin/work-queue?dept=tasks&bucket=${b}`, { token: T })).data.items || []).filter(i => i.id === tid).length;
     const today1 = await inT('today');
+    await req('POST', '/api/admin/users', { token: T, json: { email: 'office@brightclean.net', name: 'Office', password: 'a-long-password-123', role: 'staff' } });
     const moved = await req('POST', `/api/admin/tasks/${tid}/work`, { token: T, json: { due_date: '2099-03-01', assigned_to: 'office@brightclean.net' } });
     const sched = await inT('scheduled'), notToday = (await inT('today')) === 0;
     const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
@@ -4348,9 +4690,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,created_at) VALUES(?,?,?,?,?)").run(addr, 'Portal visible quote', 'Visible to them', 'sent', new Date().toISOString());
     pdb.prepare("INSERT INTO email_log(to_addr,subject,body,status,created_at) VALUES('someone.else@example.com','Not theirs','Private',?,?)").run('sent', new Date().toISOString());
     pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES('wq-portal-reply',?,'Portal Person','Their reply','Yes please',?,?)").run(addr, new Date().toISOString(), new Date().toISOString());
+    // A portal session is bound to one customer record: this address has exactly one.
+    const cidP = pdb.prepare("INSERT INTO customers(match_key,name,email,created_at,updated_at) VALUES(?,?,?,?,?)").run('email:' + addr, 'Portal Person', addr, new Date().toISOString(), new Date().toISOString()).lastInsertRowid;
     pdb.close();
     const crypto = require('crypto');
-    const payload = Buffer.from(JSON.stringify({ email: addr, iat: Date.now(), exp: Date.now() + 3600000 })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ email: addr, cid: Number(cidP), iat: Date.now(), exp: Date.now() + 3600000 })).toString('base64url');
     const sig = crypto.createHmac('sha256', globalThis.__jwtSecret + ':client-portal').update(payload).digest('base64url');
     const tok = payload + '.' + sig;
     const me = await req('GET', '/api/portal/me', { token: tok });
@@ -4359,6 +4703,245 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const chk = { status: me.status === 200, seesOwnSent: subjects.includes('Portal visible quote'), seesOwnReply: subjects.includes('Their reply'), hidesOthers: !subjects.includes('Not theirs'), signedOutRefused: signedOut.status === 401 };
     assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, status: me.status, sample: me.data && me.data.error }));
     return 'portal shows only the customer’s own sent emails and replies';
+  });
+
+  await check('Portal', 'Shared mailbox (F-13.4): an email on two customer records gets no sign-in link and no portal access; a session bound to one record is refused; a session for a single record shows only that record', async () => {
+    const addr = 'shared.office.box@example.com';
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const now2 = new Date().toISOString();
+    const c1 = pdb.prepare("INSERT INTO customers(match_key,name,email,created_at,updated_at) VALUES(?,?,?,?,?)").run('shared-a:' + addr, 'Site A Manager', addr, now2, now2).lastInsertRowid;
+    const c2 = pdb.prepare("INSERT INTO customers(match_key,name,email,created_at,updated_at) VALUES(?,?,?,?,?)").run('shared-b:' + addr, 'Site B Manager', addr, now2, now2).lastInsertRowid;
+    pdb.prepare("INSERT INTO estimates(customer_name,email,project_name,site_address,scope,proposal_total,status,public_token,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run('Site A Manager', addr, 'Shared site A office', '1 Shared St', 'Office', 500, 'Sent', 'tok-shared-a', now2, now2);
+    pdb.prepare("INSERT INTO invoices(customer_id,email,invoice_number,amount,paid_amount,status,created_at) VALUES(?,?,?,?,0,?,?)").run(c2, addr, 'BC-SHARED-B-1', 777, 'Sent', now2);
+    pdb.close();
+    const before = mail.length;
+    const r = await req('POST', '/api/portal/request', { json: { email: addr } });
+    await sleep(400);
+    const sentLinks = mailsTo(addr, before).filter(m => /sign-in link/i.test(m.subject || '')).length;
+    const pdb2 = new Database(path.join(dataDir, 'brightclean.db'));
+    const stored = pdb2.prepare('SELECT COUNT(*) n FROM portal_logins WHERE email=?').get(addr).n;
+    const refused = pdb2.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='portal sign-in refused'").get().n;
+    pdb2.close();
+    const sign2 = o => { const body = Buffer.from(JSON.stringify(o)).toString('base64url'); return body + '.' + crypto.createHmac('sha256', globalThis.__jwtSecret + ':client-portal').update(body).digest('base64url'); };
+    const forgedShared = await req('GET', '/api/portal/me', { token: sign2({ email: addr, cid: Number(c1), iat: Date.now(), exp: Date.now() + 3600000 }) });
+    const chk = { genericAnswer: r.status === 200 && r.data && r.data.ok === true, noLink: sentLinks === 0 && stored === 0, auditRefusal: refused >= 1, sessionRefused: forgedShared.status === 401 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, status: r.status, sentLinks, stored, refused, forged: forgedShared.status }));
+    // Clean up the shared records so later checks are not affected.
+    const pdb3 = new Database(path.join(dataDir, 'brightclean.db'));
+    pdb3.prepare('DELETE FROM invoices WHERE invoice_number=?').run('BC-SHARED-B-1');
+    pdb3.prepare("DELETE FROM estimates WHERE public_token='tok-shared-a'").run();
+    pdb3.prepare('DELETE FROM customers WHERE id IN (?,?)').run(c1, c2);
+    pdb3.close();
+    return 'shared mailbox: generic answer, no link sent or stored, refusal logged, session refused';
+  });
+
+  // ---------- Intake spam control, repeat-bid intake, task assignment, reminders, AI and SMS defaults, email attachments, call records ----------
+  await check('Intake', 'Website inquiry and careers: a filled honeypot is refused with no lead and no acknowledgement; a real inquiry is accepted and acknowledged', async () => {
+    const before = mail.length;
+    const bot = await req('POST', '/api/inquiries', { form: { name: 'Bot Person', email: 'bot.trap@t.test', message: 'Buy now', website_url: 'http://spam.test' } });
+    const botJob = await req('POST', '/api/careers', { form: { name: 'Bot Job', email: 'bot.job@t.test', message: 'x', website_url: 'http://spam.test' } });
+    const real = await req('POST', '/api/inquiries', { form: { name: 'Real Visitor', email: 'real.visitor@t.test', message: 'Need a quote', website_url: '' } });
+    await sleep(400);
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true });
+    const botLeads = pdb.prepare("SELECT COUNT(*) n FROM leads WHERE lower(email) IN ('bot.trap@t.test','bot.job@t.test')").get().n;
+    pdb.close();
+    const botMail = mail.slice(before).filter(m => m.to.some(t => /^bot\.(trap|job)@/.test(t))).length;
+    const chk = { botInquiryRefused: bot.status === 400, botCareersRefused: botJob.status === 400, noLeadForBots: botLeads === 0, noAckToBots: botMail === 0, realAccepted: real.status === 201, realAcked: mailsTo('real.visitor@t.test', before).length >= 1 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ bot: bot.status, botJob: botJob.status, real: real.status, botLeads, botMail }));
+    return 'honeypot posts refused (400) with no lead and no acknowledgement; the real inquiry was accepted and acknowledged';
+  });
+
+  await check('Repeat bids', 'A repeat bid keeps its service, project type and intake answers through merge and new-lead', async () => {
+    const base = { contact_name: 'Intake Dup', company: 'Intake Co', email: 'dup.intake@t.test', phone: '5155550199', project_type: 'Commercial', service: 'Commercial janitorial', project_name: 'Dup Project Gamma', address: '88 Intake Rd', consent: '1' };
+    const send = async f => { const fd = new FormData(); Object.entries(f).forEach(([k, v]) => fd.append(k, v)); return (await fetch(B + '/api/bids', { method: 'POST', body: fd })).status; };
+    assert(await send({ ...base, details: 'First walkthrough', access_notes: 'Gate code by phone' }) === 201, 'first bid should be accepted');
+    const leadRow = ((await req('GET', '/api/admin/leads', { token: T })).data.leads || []).find(l => l.email === 'dup.intake@t.test');
+    assert(leadRow, 'the first bid should be a lead');
+    assert(await send({ ...base, project_type: 'Residential', service: 'Window washing', details: 'Repeat with new scope', billing_requirements: 'PO required', access_notes: 'Use side door' }) === 201, 'repeat bid should be acknowledged');
+    const rv = ((await req('GET', '/api/admin/duplicate-reviews', { token: T })).data.reviews || []).find(x => x.lead && x.lead.id === leadRow.id);
+    assert(rv && rv.bid.service === 'Window washing' && rv.bid.project_type === 'Residential' && /Use side door/.test(rv.bid.details) && /PO required/.test(rv.bid.details), 'review should show the repeat intake: ' + JSON.stringify(rv && rv.bid));
+    const merged = await req('POST', '/api/admin/duplicate-reviews/' + rv.id + '/merge', { token: T });
+    assert(merged.status === 200, 'merge should work, got ' + merged.status);
+    const afterMerge = ((await req('GET', '/api/admin/leads', { token: T })).data.leads || []).find(l => l.id === leadRow.id);
+    assert(/Use side door/.test(afterMerge.details || '') && /PO required/.test(afterMerge.details || '') && /Service in repeat bid: Window washing/.test(afterMerge.details || '') && /Project type in repeat bid: Residential/.test(afterMerge.details || ''), 'merge should keep the repeat intake: ' + afterMerge.details);
+    assert(afterMerge.service === 'Commercial janitorial' && afterMerge.project_type === 'Commercial', 'merge keeps the lead service and type, got ' + afterMerge.service);
+    assert(await send({ ...base, service: 'Carpet cleaning', project_type: 'Residential', details: 'Third visit', access_notes: 'Use side door' }) === 201, 'third bid should be acknowledged');
+    const rv3 = ((await req('GET', '/api/admin/duplicate-reviews', { token: T })).data.reviews || []).find(x => x.bid.email === 'dup.intake@t.test' && /Third visit/.test(x.bid.details));
+    assert(rv3, 'the third bid should wait in review');
+    const made = await req('POST', '/api/admin/duplicate-reviews/' + rv3.id + '/new-lead', { token: T });
+    assert(made.status === 200 && made.data.lead_id, 'new lead should be created, got ' + made.status);
+    const nl = ((await req('GET', '/api/admin/leads', { token: T })).data.leads || []).find(l => l.id === made.data.lead_id);
+    assert(nl && nl.service === 'Carpet cleaning' && nl.project_type === 'Residential' && /Use side door/.test(nl.details || '') && /Third visit/.test(nl.details || ''), 'new lead should keep service, type and answers: ' + JSON.stringify(nl));
+    return 'merge keeps the repeat intake and records a differing service or type; the new lead keeps service, project type and answers';
+  });
+
+  await check('Tasks', 'Task assignment: a name that is not a user is refused and the task is unchanged; a real user is assigned and emailed', async () => {
+    await req('POST', '/api/admin/users', { token: T, json: { email: 'assignee.check@t.test', name: 'Assignee Check', password: 'a-long-password-123', role: 'staff' } });
+    const made = (await req('POST', '/api/admin/issues', { token: T, json: { type: 'task', title: 'Assign rule test' } })).data.issue;
+    const before = mail.length;
+    const bad = await req('POST', '/api/admin/tasks/' + made.id + '/work', { token: T, json: { assigned_to: 'Not A Real Person' } });
+    const mid = (await req('GET', '/api/admin/issues/' + made.id, { token: T })).data.issue;
+    const good = await req('POST', '/api/admin/tasks/' + made.id + '/work', { token: T, json: { assigned_to: 'assignee.check@t.test' } });
+    await sleep(400);
+    const row = (await req('GET', '/api/admin/issues/' + made.id, { token: T })).data.issue;
+    const chk = { badRefused: bad.status === 400, unchangedAfterBad: !mid.assigned_to, realAssigned: good.status === 200 && row.assigned_to === 'assignee.check@t.test', assigneeEmailed: mailsTo('assignee.check@t.test', before).some(m => m.subject === 'Assigned to you: Assign rule test') };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ bad: bad.status, good: good.status, assigned: row.assigned_to }));
+    return 'unknown name refused (400) and the task stayed unassigned; a real user was assigned and emailed';
+  });
+
+  await check('Issues', 'A reminder is marked sent only when its email was delivered; an undelivered one stays due', async () => {
+    await req('POST', '/api/admin/users', { token: T, json: { email: 'rejectme@t.test', name: 'Reject Me', password: 'a-long-password-123', role: 'staff' } });
+    const t = (await req('POST', '/api/admin/issues', { token: T, json: { type: 'follow_up', title: 'Undelivered reminder test', reminder_at: new Date(Date.now() - 5000).toISOString(), assigned_to: 'rejectme@t.test' } })).data.issue;
+    await req('POST', '/api/admin/issues/run-reminders', { token: T });
+    await req('POST', '/api/admin/issues/run-reminders', { token: T });
+    const row = (await req('GET', '/api/admin/issues/' + t.id, { token: T })).data.issue;
+    assert(!row.reminded_at, 'a reminder that was not delivered must not be marked sent: ' + row.reminded_at);
+    return 'the mail server refused the recipient; the reminder was not marked sent and stays due for the next sweep';
+  });
+
+  await check('AI', 'AI information requests are off by default (the draft is kept for staff)', async () => {
+    const st = await req('GET', '/api/admin/ai/status', { token: T });
+    assert(st.status === 200 && st.data.auto_request_info === false, 'auto_request_info should default to off: ' + JSON.stringify(st.data));
+    return 'auto_request_info is off by default; only an explicit setting turns it on';
+  });
+
+  await check('Follow-ups', 'Automatic texts are off by default; only the owner can turn them on; staff cannot', async () => {
+    const e = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'SMS Default', company: 'SMS Default Co', email: 'sms.default@t.test', scope: 'Janitorial', area_sqft: 1000, production_rate: 400, labor_rate: 30, margin_pct: 30 } })).data.estimate;
+    const g1 = await req('GET', '/api/admin/estimates/' + e.id + '/followups', { token: T });
+    const staffPut = await req('PUT', '/api/admin/followups/auto-sms', { token: globalThis.__st, json: { enabled: true } });
+    const on = await req('PUT', '/api/admin/followups/auto-sms', { token: T, json: { enabled: true } });
+    const g2 = await req('GET', '/api/admin/estimates/' + e.id + '/followups', { token: T });
+    const off = await req('PUT', '/api/admin/followups/auto-sms', { token: T, json: { enabled: false } });
+    const g3 = await req('GET', '/api/admin/estimates/' + e.id + '/followups', { token: T });
+    const chk = { offByDefault: g1.status === 200 && g1.data.auto_sms_enabled === false, staffRefused: staffPut.status === 403, ownerTurnsOn: on.status === 200 && g2.data.auto_sms_enabled === true, ownerTurnsOff: off.status === 200 && g3.data.auto_sms_enabled === false };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ g1: g1.data && g1.data.auto_sms_enabled, staffPut: staffPut.status, on: on.status }));
+    return 'automatic texts off by default; staff refused; only the owner can switch them on or off';
+  });
+
+  await check('Email', 'Postmark path sends invoice PDFs as Postmark attachments (Name, base64 Content, ContentType); no attachments field when there are none', async () => {
+    const seen = [];
+    const pm = require('http').createServer((rq, rs) => {
+      let bodyText = ''; rq.on('data', d => bodyText += d);
+      rq.on('end', () => { seen.push({ token: rq.headers['x-postmark-server-token'], body: JSON.parse(bodyText) }); rs.writeHead(200, { 'Content-Type': 'application/json' }); rs.end(JSON.stringify({ ErrorCode: 0, MessageID: 'pm-unit-1' })); });
+    });
+    await new Promise(r => pm.listen(0, '127.0.0.1', r));
+    try {
+      const mailer = require('../postmark')('pm-unit-token', { apiUrl: 'http://127.0.0.1:' + pm.address().port, stream: 'outbound' });
+      const pdf = Buffer.from('%PDF-1.4 unit invoice');
+      await mailer.sendMail({ from: 'info@brightclean.net', to: 'customer@t.test', subject: 'Invoice INV-1', text: 'Please find invoice INV-1 attached.', attachments: [{ filename: 'INV-1.pdf', content: pdf, contentType: 'application/pdf' }] });
+      await mailer.sendMail({ from: 'info@brightclean.net', to: 'plain@t.test', subject: 'No attachment', text: 'Plain' });
+    } finally { pm.close(); }
+    const withPdf = seen[0].body, plain = seen[1].body;
+    const att = withPdf.Attachments && withPdf.Attachments[0];
+    assert(seen[0].token === 'pm-unit-token' && withPdf.MessageStream === 'outbound' && withPdf.TextBody === 'Please find invoice INV-1 attached.', 'core fields changed');
+    assert(att && att.Name === 'INV-1.pdf' && att.ContentType === 'application/pdf' && Buffer.from(att.Content, 'base64').equals(Buffer.from('%PDF-1.4 unit invoice')), 'attachment not mapped: ' + JSON.stringify(att));
+    assert(plain.Attachments === undefined, 'a message without attachments should not carry the field');
+    return 'Postmark request carries the PDF as Attachments (Name, base64 Content, ContentType); plain mail is unchanged';
+  });
+
+  await check('Calls', 'Automatic callbacks stop after the attempt cap; a voicemail transcription is kept when live text arrives later', async () => {
+    const keys = ['TWILIO_AUTH_TOKEN', 'TWILIO_ACCOUNT_SID', 'TWILIO_NUMBER', 'DISABLE_SCHEDULER', 'PUBLIC_BASE_URL', 'OUTBOUND_CALLBACK_MAX_ATTEMPTS', 'TWILIO_SMS_FROM'];
+    const savedEnv = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+    const realFetch = global.fetch, placed = [];
+    const udb = new Database(':memory:');
+    try {
+      Object.assign(process.env, { TWILIO_AUTH_TOKEN: 'tw-unit-token', TWILIO_ACCOUNT_SID: 'AC' + 'a'.repeat(32), TWILIO_NUMBER: '+15153033024', DISABLE_SCHEDULER: '1', PUBLIC_BASE_URL: 'https://brightclean.net' });
+      delete process.env.OUTBOUND_CALLBACK_MAX_ATTEMPTS;
+      udb.exec(`CREATE TABLE leads(id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, stage TEXT, status TEXT, callback_requested INTEGER NOT NULL DEFAULT 0, follow_up_date TEXT, last_callback_at TEXT, callback_calls INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT);
+        CREATE TABLE calls(id INTEGER PRIMARY KEY AUTOINCREMENT, provider_sid TEXT, transcript TEXT, direction TEXT, created_at TEXT);
+        CREATE TABLE audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT, action TEXT, entity TEXT, entity_id INTEGER, details TEXT, created_at TEXT);`);
+      const ins = udb.prepare("INSERT INTO leads(id, phone, stage, callback_requested, callback_calls, created_at) VALUES(?,?,'new',1,?,?)");
+      ins.run(1, '5155550101', 0, new Date().toISOString()); ins.run(2, '5155550102', 3, new Date().toISOString()); ins.run(3, '5155550103', 2, new Date().toISOString());
+      const routes = {}, app = { locals: {}, use() {}, patch: (p, ...f) => { routes['PATCH ' + p] = f[f.length - 1]; }, delete: (p, ...f) => { routes['DELETE ' + p] = f[f.length - 1]; }, get: (p, ...f) => { routes['GET ' + p] = f[f.length - 1]; }, post: (p, ...f) => { routes['POST ' + p] = f[f.length - 1]; }, put: (p, ...f) => { routes['PUT ' + p] = f[f.length - 1]; } };
+      require('../calls2')(app, { db: udb, auth: (q, s, n) => n(), logAction: () => {}, clean: (v, n) => String(v == null ? '' : v).slice(0, n || 10000) });
+      udb.prepare("INSERT INTO settings(key,value,updated_at) VALUES('outbound_callbacks', ?, ?)").run(JSON.stringify({ enabled: true, legal_review_confirmed: true, start_hour: 0, end_hour: 24, daily_limit: 50 }), new Date().toISOString());
+      global.fetch = async (url, opts) => {
+        if (/\/Calls\.json$/.test(String(url))) { placed.push(new URLSearchParams(String(opts.body)).get('To')); return { ok: true, status: 201, text: async () => '', json: async () => ({}) }; }
+        return realFetch(url, opts);
+      };
+      await app.locals.runOutboundSweep();
+      const capped = udb.prepare('SELECT callback_calls FROM leads WHERE id=2').get().callback_calls;
+      const under = udb.prepare('SELECT callback_calls FROM leads WHERE id=3').get().callback_calls;
+      const chk = { cappedLeadNotCalled: !placed.includes('+15155550102'), oneUnderCapCalled: placed.includes('+15155550101') && placed.includes('+15155550103'), cappedCountUnchanged: capped === 3 && under === 3 };
+      // Transcription kept: live text first, the voicemail transcription after it, then more live text. Nothing is overwritten.
+      udb.prepare("INSERT INTO calls(provider_sid, transcript, direction, created_at) VALUES('CAunit1','Manual note from the office','Inbound',?)").run(new Date().toISOString());
+      const sign = (p, params) => require('crypto').createHmac('sha1', 'tw-unit-token').update('https://brightclean.net' + p + Object.keys(params).sort().map(k => k + params[k]).join('')).digest('base64');
+      const post = async (p, params) => { const res = { statusCode: 200, headersSent: false, status(c) { this.statusCode = c; return this; }, type() { return this; }, send() { return this; } }; await routes['POST ' + p]({ originalUrl: p, path: p, headers: { 'x-twilio-signature': sign(p, params) }, body: params }, res); return res; };
+      const live = (seq, track, text) => post('/api/webhooks/twilio/live-transcript', { CallSid: 'CAunit1', TranscriptionEvent: 'transcription-content', SequenceId: String(seq), Track: track, TranscriptionData: JSON.stringify({ transcript: text }) });
+      await live(1, 'inbound_track', 'Live words from the caller');
+      await post('/api/webhooks/twilio/transcription', { CallSid: 'CAunit1', TranscriptionText: 'Voicemail says call back Friday' });
+      await live(2, 'outbound_track', 'Sure, we can do Friday');
+      const t = udb.prepare("SELECT transcript FROM calls WHERE provider_sid='CAunit1'").get().transcript || '';
+      chk.keepsManualNote = t.includes('Manual note from the office');
+      chk.keepsLive = t.includes('Live words from the caller') && t.includes('Sure, we can do Friday');
+      chk.keepsTranscription = t.includes('Voicemail says call back Friday') && t.split('Voicemail says call back Friday').length === 2;
+      const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+      assert(!failed.length, 'failed: ' + failed.join(', ') + ' | placed ' + JSON.stringify(placed) + ' | transcript ' + JSON.stringify(t));
+    } finally {
+      global.fetch = realFetch; udb.close();
+      for (const k of keys) { if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k]; }
+    }
+    return 'capped lead (3 calls) not called again; leads under the cap called; voicemail transcription and live text all kept on the call';
+  });
+
+  await check('Follow-ups', 'Automatic text follow-ups are not scheduled while the switch is off; a due automatic text is cancelled while off and sent only when on', async () => {
+    const keys = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_SMS_FROM'];
+    const savedEnv = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+    keys.forEach(k => delete process.env[k]);
+    const udb = new Database(':memory:');
+    try {
+      udb.exec(`CREATE TABLE estimates(id INTEGER PRIMARY KEY AUTOINCREMENT, lead_id INTEGER, customer_name TEXT, company TEXT, email TEXT, project_name TEXT, status TEXT, public_token TEXT, view_count INTEGER DEFAULT 0, viewed_at TEXT, last_viewed_at TEXT, sent_at TEXT);
+        CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, company TEXT, email TEXT, phone TEXT);
+        CREATE TABLE leads(id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, contact_name TEXT, company TEXT, email TEXT, details TEXT, created_at TEXT);
+        CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);`);
+      udb.prepare("INSERT INTO leads(id, phone, created_at) VALUES(1, '5155550188', ?)").run(new Date().toISOString());
+      udb.prepare("INSERT INTO estimates(id, lead_id, customer_name, company, email, project_name, status, public_token) VALUES(1, 1, 'Text Only', 'Text Only Co', '', 'Text Project', 'Proposal Sent', 'unit-tok-1')").run();
+      const routes = {}, uses = [], app = { locals: {}, use: f => uses.push(f), get: (p, ...f) => { routes['GET ' + p] = f[f.length - 1]; }, post: (p, ...f) => { routes['POST ' + p] = f[f.length - 1]; }, put: (p, ...f) => { routes['PUT ' + p] = f[f.length - 1]; } };
+      require('../followups')(app, { db: udb, auth: (q, s, n) => n(), logAction: () => {}, clean: (v, n) => String(v == null ? '' : v).slice(0, n || 1000), getMailer: () => null });
+      const sendEvent = () => { const { EventEmitter } = require('events'); const res = new EventEmitter(); res.statusCode = 200; uses[0]({ method: 'POST', path: '/api/admin/estimates/1/send' }, res, () => {}); res.emit('finish'); };
+      sendEvent();
+      const offRows = udb.prepare("SELECT COUNT(*) n FROM proposal_followups WHERE channel='sms'").get().n;
+      udb.prepare("INSERT INTO settings(key,value,updated_at) VALUES('sms_auto_followups','1',?)").run(new Date().toISOString());
+      sendEvent();
+      const onRows = udb.prepare("SELECT COUNT(*) n FROM proposal_followups WHERE channel='sms' AND auto=1").get().n;
+      // Switch off again: the scheduled automatic text is due now and must be cancelled, not sent.
+      udb.prepare("UPDATE settings SET value='0' WHERE key='sms_auto_followups'").run();
+      udb.prepare("UPDATE proposal_followups SET due_date='2000-01-01' WHERE channel='sms'").run();
+      await app.locals.runFollowupsDue();
+      const offOutcome = udb.prepare("SELECT status, result FROM proposal_followups WHERE channel='sms' ORDER BY id DESC LIMIT 1").get();
+      // Switch on: the same kind of automatic text is attempted (it fails here only because texting is not configured in the test).
+      udb.prepare("UPDATE settings SET value='1' WHERE key='sms_auto_followups'").run();
+      udb.prepare("INSERT INTO proposal_followups(estimate_id,due_date,channel,message,status,auto,created_by,created_at) VALUES(1,'2000-01-01','sms','Checking in on the proposal.','Scheduled',1,'system',?)").run(new Date().toISOString());
+      await app.locals.runFollowupsDue();
+      const onOutcome = udb.prepare("SELECT status, result FROM proposal_followups WHERE channel='sms' ORDER BY id DESC LIMIT 1").get();
+      const chk = { noSmsScheduledWhileOff: offRows === 0, smsScheduledWhenOn: onRows === 1, cancelledWhileOff: offOutcome.status === 'Cancelled' && /Automatic texts are off/.test(offOutcome.result || ''), attemptedWhenOn: onOutcome.status !== 'Cancelled' };
+      const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+      assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ offRows, onRows, offOutcome, onOutcome }));
+    } finally {
+      udb.close();
+      for (const k of keys) { if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k]; }
+    }
+    return 'no automatic text scheduled while off; a due one is cancelled while off; with the switch on it is attempted';
+  });
+
+  await check('Intake', 'Public inquiries and careers are limited per IP: past the limit they get 429 with no lead and no acknowledgement', async () => {
+    await killWait(server.child);
+    server = await startServer({ ...env, INTAKE_RATE_LIMIT: '3' }, dataDir);
+    const before = mail.length;
+    const codes = [];
+    for (const n of ['1', '2', '3', '4']) codes.push((await req('POST', '/api/inquiries', { form: { name: 'Rate ' + n, email: `rate.${n}@t.test`, message: 'Hello' } })).status);
+    const career = (await req('POST', '/api/careers', { form: { name: 'Rate Job', email: 'rate.job@t.test', message: 'x' } })).status;
+    await sleep(400);
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true });
+    const lead4 = pdb.prepare("SELECT COUNT(*) n FROM leads WHERE email='rate.4@t.test'").get().n;
+    pdb.close();
+    const chk = { firstThreeAccepted: codes.slice(0, 3).every(c => c === 201), fourthLimited: codes[3] === 429, careersLimited: career === 429, noLeadPastLimit: lead4 === 0, noAckPastLimit: mailsTo('rate.4@t.test', before).length === 0 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ codes, career, lead4 }));
+    return 'three posts accepted per IP in the window; the fourth and the careers post got 429 with no lead and no acknowledgement';
   });
 
   server.child.kill(); smtp.close();

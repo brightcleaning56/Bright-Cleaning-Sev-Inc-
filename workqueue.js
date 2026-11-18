@@ -353,17 +353,27 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   });
 
   // Tasks: assign, or set the due date (scheduling moves it out of Today).
-  app.post('/api/admin/tasks/:id/work', auth, (req, res) => {
+  app.post('/api/admin/tasks/:id/work', auth, async (req, res) => {
     const id = Number(req.params.id);
-    const tk = db.prepare('SELECT id FROM customer_issues WHERE id=?').get(id);
+    const tk = db.prepare('SELECT id, title, assigned_to FROM customer_issues WHERE id=?').get(id);
     if (!tk) return res.status(404).json({ error: 'Task not found.' });
     const b = req.body || {}, t = nowIso();
-    if (b.assigned_to !== undefined) db.prepare('UPDATE customer_issues SET assigned_to=?, updated_at=? WHERE id=?').run(clean(b.assigned_to, 120) || null, t, id);
-    if (b.due_date !== undefined) {
-      if (b.due_date && !validDate(b.due_date)) return res.status(400).json({ error: 'Choose a valid date.' });
-      db.prepare('UPDATE customer_issues SET due_date=?, updated_at=? WHERE id=?').run(b.due_date || null, t, id);
+    // Validate everything before writing anything. The assignee must be a person with access to Bright Clean (the same rule as issues).
+    let assignee;
+    if (b.assigned_to !== undefined) {
+      assignee = clean(b.assigned_to, 254).toLowerCase();
+      const known = typeof app.locals.issueUsers === 'function' ? app.locals.issueUsers() : [];
+      if (assignee && !known.includes(assignee)) return res.status(400).json({ error: 'Assign to someone who has access to Bright Clean.' });
     }
-    logAction(req, 'updated task schedule', 'issue', id, `${b.due_date ? 'due ' + b.due_date : ''} ${b.assigned_to !== undefined ? 'assigned ' + (b.assigned_to || 'none') : ''}`.trim());
+    if (b.due_date !== undefined && b.due_date && !validDate(b.due_date)) return res.status(400).json({ error: 'Choose a valid date.' });
+    if (assignee !== undefined) db.prepare('UPDATE customer_issues SET assigned_to=?, updated_at=? WHERE id=?').run(assignee || null, t, id);
+    if (b.due_date !== undefined) db.prepare('UPDATE customer_issues SET due_date=?, updated_at=? WHERE id=?').run(b.due_date || null, t, id);
+    logAction(req, 'updated task schedule', 'issue', id, `${b.due_date ? 'due ' + b.due_date : ''} ${b.assigned_to !== undefined ? 'assigned ' + (assignee || 'none') : ''}`.trim());
+    // Tell the new assignee, as the issue route does (not when unassigned, or when they assign it to themselves).
+    const by = String((req.user && req.user.email) || '').toLowerCase();
+    if (assignee && assignee !== String(tk.assigned_to || '').toLowerCase() && assignee !== by && typeof app.locals.issueNotify === 'function') {
+      await app.locals.issueNotify(assignee, `Assigned to you: ${tk.title}`, `${by || 'Someone'} assigned you a task: ${tk.title}\n\nOpen Bright Clean: https://brightclean.net/admin/#issues`);
+    }
     res.json({ ok: true });
   });
 

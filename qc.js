@@ -24,6 +24,7 @@ module.exports = function mountQC(app, ctx) {
   for (const [c, t] of [['property_id', 'INTEGER'], ['visit_id', 'INTEGER'], ['crew', 'TEXT'], ['template_id', 'INTEGER'], ['itype', "TEXT DEFAULT 'Internal'"], ['status', "TEXT DEFAULT 'Completed'"], ['parent_id', 'INTEGER'],
     ['threshold', 'REAL'], ['signed_by', 'TEXT'], ['signed_name', 'TEXT'], ['signed_at', 'TEXT'], ['accepted_by', 'TEXT'], ['accepted_title', 'TEXT'], ['accepted_at', 'TEXT'], ['accept_notes', 'TEXT'], ['ai_summary', 'TEXT']])
     if (!icols.includes(c)) db.exec(`ALTER TABLE inspections ADD COLUMN ${c} ${t}`);
+  for (const [c, t] of [['exception_waiver_by', 'TEXT'], ['exception_waiver_at', 'TEXT'], ['exception_waiver_reason', 'TEXT']]) if (!icols.includes(c)) db.exec(`ALTER TABLE inspections ADD COLUMN ${c} ${t}`);
   for (const [tbl, c] of [['documents', 'inspection_id'], ['customer_issues', 'inspection_id'], ['customer_issues', 'inspection_item']]) { try { if (!db.prepare(`PRAGMA table_info(${tbl})`).all().some(x => x.name === c)) db.exec(`ALTER TABLE ${tbl} ADD COLUMN ${c} ${c === 'inspection_item' ? 'TEXT' : 'INTEGER'}`); } catch { /* */ } }
   const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   for (const [name, [service, items]] of Object.entries(BUILTIN)) if (!db.prepare('SELECT 1 FROM qc_templates WHERE name=?').get(name)) db.prepare('INSERT INTO qc_templates(name,service,items,builtin,updated_at) VALUES(?,?,?,1,?)').run(name, service, JSON.stringify(items), now());
@@ -156,7 +157,10 @@ module.exports = function mountQC(app, ctx) {
     res.status(201).json({ inspection: get(id), open_corrective: open });
   });
   // Customer acceptance on a walkthrough: records who accepted; if linked to a project, records the project sign-off.
+  // Customer acceptance is the owner's to record. A customer's name typed by staff is not acceptance.
+  const ownerOnly = req => { const em = String((req.user && req.user.email) || '').toLowerCase(); return (adminEmail && em === String(adminEmail).toLowerCase()) || ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role === 'owner'); };
   app.post('/api/admin/qc/inspections/:id/accept', auth, (req, res) => {
+    if (!ownerOnly(req)) return res.status(403).json({ error: 'Only the owner can record customer acceptance.' });
     const cur = get(req.params.id); if (!cur) return res.status(404).json({ error: 'Inspection not found.' });
     if (cur.itype !== 'Customer walkthrough') return res.status(400).json({ error: 'Customer acceptance is recorded on a customer walkthrough.' });
     if (!cur.signed_at) return res.status(409).json({ error: 'Sign the walkthrough first.' });
@@ -164,8 +168,20 @@ module.exports = function mountQC(app, ctx) {
     const outstanding = cur.items.filter(i => i.result === 'Fail').map(i => `${i.room}: ${i.label}`);
     if (outstanding.length && !b.with_exceptions) return res.status(409).json({ error: `${outstanding.length} deficiency(ies) are still open. Record acceptance "with exceptions" to list them, or fix them first.`, outstanding });
     db.prepare("UPDATE inspections SET accepted_by=?, accepted_title=?, accepted_at=?, accept_notes=?, status=?, updated_at=? WHERE id=?").run(name, clean(b.title, 120), now(), outstanding.length ? 'Accepted with exceptions: ' + outstanding.join('; ') : null, outstanding.length ? 'Accepted with exceptions' : 'Customer accepted', now(), cur.id);
-    if (cur.project_id && !outstanding.length) { try { db.prepare('UPDATE projects SET signoff_name=COALESCE(signoff_name,?), signoff_title=COALESCE(signoff_title,?), signoff_at=COALESCE(signoff_at,?) WHERE id=?').run(name, clean(b.title, 120), now(), cur.project_id); } catch { /* */ } }
+    // The project sign-off follows only a clean acceptance, and only once a visit on the project is complete.
+    if (cur.project_id && !outstanding.length && db.prepare("SELECT 1 FROM visits WHERE project_id=? AND (status='Done' OR completed_at IS NOT NULL) LIMIT 1").get(cur.project_id)) { try { db.prepare('UPDATE projects SET signoff_name=COALESCE(signoff_name,?), signoff_title=COALESCE(signoff_title,?), signoff_at=COALESCE(signoff_at,?) WHERE id=?').run(name, clean(b.title, 120), now(), cur.project_id); } catch { /* */ } }
     logAction(req, 'recorded customer acceptance', 'inspection', cur.id, `${number(cur)}: ${name}${outstanding.length ? ' (with exceptions)' : ''}`);
+    res.json({ inspection: get(cur.id) });
+  });
+
+  // Owner's decision on an acceptance with exceptions. Only a recorded waiver lets that acceptance count toward project completion.
+  app.post('/api/admin/qc/inspections/:id/exception-waiver', auth, (req, res) => {
+    if (!ownerOnly(req)) return res.status(403).json({ error: 'Only the owner can waive inspection exceptions.' });
+    const cur = get(req.params.id); if (!cur) return res.status(404).json({ error: 'Inspection not found.' });
+    if (cur.status !== 'Accepted with exceptions') return res.status(409).json({ error: 'Only an acceptance with exceptions can be waived.' });
+    const reason = clean((req.body || {}).reason, 500); if (reason.length < 5) return res.status(400).json({ error: 'Say why the exceptions are accepted (a few words).' });
+    db.prepare('UPDATE inspections SET exception_waiver_by=?, exception_waiver_at=?, exception_waiver_reason=?, updated_at=? WHERE id=?').run(who(req), now(), reason, now(), cur.id);
+    logAction(req, 'waived inspection exceptions', 'inspection', cur.id, `${number(cur)}: ${reason}`);
     res.json({ inspection: get(cur.id) });
   });
 

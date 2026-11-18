@@ -48,6 +48,9 @@ const INSPECTOR_ALLOW = [
 function check(role, method, path) {
   // Deleting records is for owners and managers only, on every delete route.
   if (method === 'DELETE' && !['owner', 'manager'].includes(role)) return 'Only an owner or manager can delete records.';
+  // Invoice notes and issue date (the issue date sets the business day revenue is reported in): owner only, every other role refused.
+  if (method === 'PATCH' && role !== 'owner' && /^\/api\/admin\/extra\/invoices\/\d+$/.test(path)) return 'Only the owner can change an invoice note or issue date.';
+  if (method === 'POST' && SCHEDULE_WRITE.test(path) && !canRunOperations(role)) return 'Only an owner, manager or supervisor can assign, move, skip or dispatch crew work.';
   if (role === 'supervisor') {
     for (const r of SUPERVISOR_DENY) { const [m, p] = Array.isArray(r) ? r : [null, r]; if ((!m || m.test(method)) && p.test(path)) return 'Supervisors do not have access to this (pricing, sales, finance and system settings stay with managers).'; }
     return null;
@@ -66,6 +69,11 @@ function check(role, method, path) {
 const isRole = r => Object.prototype.hasOwnProperty.call(ROLES, r);
 // Operational authority (dispatch crews, move complaint cases, schedule corrective work).
 const canRunOperations = r => ['owner', 'manager', 'supervisor'].includes(r);
+// Crew pay and payroll fields on an employee record. Changing one is limited to the roles listed here.
+const PAY_FIELD_ROLES = { hourly_rate: ['owner'], payroll_id: ['owner', 'manager'], max_week_hours: ['owner', 'manager'] };
+const canEditEmployeeField = (r, field) => !PAY_FIELD_ROLES[field] || PAY_FIELD_ROLES[field].includes(r);
+// Scheduling writes (assign crew, move, skip, dispatch) are for owners, managers and supervisors only.
+const SCHEDULE_WRITE = /^\/api\/admin\/dispatch\/visits\/\d+\/(crew|move|skip|dispatch)$/;
 const canInspect = r => ['owner', 'manager', 'supervisor', 'inspector'].includes(r);
 const seesMoney = r => ['owner', 'manager', 'staff'].includes(r); // sales figures (Command Center money) stay with managers and office staff
-module.exports = { ROLES, VIEWS, HOME, check, isRole, canRunOperations, canInspect, seesMoney };
+module.exports = { ROLES, VIEWS, HOME, check, isRole, canRunOperations, canInspect, seesMoney, PAY_FIELD_ROLES, canEditEmployeeField };
