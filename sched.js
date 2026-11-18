@@ -537,8 +537,9 @@ module.exports = function mountSched(app, ctx) {
   // ---------- Crew messages (office <-> crew member) ----------
   const msgGet = (req, res) => {
     const e = crewAuth(req, res); if (!e) return;
-    const rows = db.prepare('SELECT id, direction, body, visit_id, created_at FROM crew_messages WHERE employee_id=? ORDER BY id DESC LIMIT 100').all(e.id).reverse();
-    db.prepare("UPDATE crew_messages SET seen_by_crew=1 WHERE employee_id=? AND direction='office' AND seen_by_crew=0").run(e.id);
+    const conv = require('./conversations');
+    const rows = conv.crewThread(db, e.id, 100);
+    conv.markReadByCrew(db, e.id);
     res.json({ messages: rows });
   };
   const msgPost = async (req, res) => {
@@ -559,18 +560,15 @@ module.exports = function mountSched(app, ctx) {
   // Office side: the list of crew conversations, one thread, and a reply
   app.get('/api/admin/crew-messages', auth, (req, res) => {
     if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can read crew messages.' });
-    const threads = db.prepare(`SELECT e.id, e.name, e.role,
-        (SELECT body FROM crew_messages m WHERE m.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_body,
-        (SELECT created_at FROM crew_messages m WHERE m.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_at,
-        (SELECT COUNT(*) FROM crew_messages m WHERE m.employee_id=e.id AND m.direction='crew' AND m.seen_by_office=0) AS unread
-      FROM employees e WHERE e.id IN (SELECT DISTINCT employee_id FROM crew_messages) ORDER BY last_at DESC`).all();
+    const threads = require('./conversations').crewThreads(db);
     res.json({ threads });
   });
   app.get('/api/admin/crew-messages/:eid', auth, (req, res) => {
     if (!require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only owners, managers and supervisors can read crew messages.' });
     const e = getEmp(req.params.eid); if (!e) return res.status(404).json({ error: 'Employee not found.' });
-    const messages = db.prepare('SELECT id, direction, body, visit_id, created_at FROM crew_messages WHERE employee_id=? ORDER BY id DESC LIMIT 100').all(e.id).reverse();
-    db.prepare("UPDATE crew_messages SET seen_by_office=1 WHERE employee_id=? AND direction='crew' AND seen_by_office=0").run(e.id);
+    const conv = require('./conversations');
+    const messages = conv.crewThread(db, e.id, 100);
+    conv.markReadByOffice(db, e.id);
     res.json({ employee: { id: e.id, name: e.name }, messages });
   });
   app.post('/api/admin/crew-messages/:eid', auth, async (req, res) => {

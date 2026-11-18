@@ -128,8 +128,8 @@ module.exports = function mountPortal(app, ctx) {
     // Service requests this customer sent from the portal, with their status.
     const requests = db.prepare(`SELECT id, service, status, created_at FROM leads WHERE lower(email)=? AND details LIKE 'Source: client portal%' ORDER BY id DESC LIMIT 20`).all(e)
       .map(r => ({ id: r.id, service: r.service || 'Service request', status: r.status, at: r.created_at }));
-    const messages = db.prepare('SELECT id, subject, body, created_at FROM portal_messages WHERE lower(email)=? ORDER BY id DESC LIMIT 20').all(e)
-      .map(m => ({ id: m.id, subject: m.subject, body: m.body, at: m.created_at, replies: db.prepare('SELECT body, created_at FROM portal_message_replies WHERE message_id=? ORDER BY id').all(m.id).map(r => ({ body: r.body, at: r.created_at })) }));
+    const messages = require('./conversations').customerGroups(db, { email: e, limit: 20 })
+      .map(m => ({ id: m.id, subject: m.subject, body: m.body, at: m.created_at, replies: m.replies.map(r => ({ body: r.body, at: r.created_at })) }));
     const pr = db.prepare('SELECT name, company, phone, notify, password_hash FROM portal_profiles WHERE email=?').get(e) || {};
     const profile = { email: e, has_password: !!pr.password_hash, name: pr.name || '', company: pr.company || '', phone: pr.phone || '', notify: pr.notify ? JSON.parse(pr.notify) : { schedule: true, proposals: true, invoices: true, projects: true, messages: true } };
     // Inspection reports: signed inspections for this customer's properties and projects only.
@@ -164,8 +164,8 @@ module.exports = function mountPortal(app, ctx) {
   app.locals.portalWantsEmail = wantsEmail;
   // Staff: the messages customers sent from the portal, with replies.
   app.get('/api/admin/portal-messages', auth, (req, res) => {
-    const rows = db.prepare('SELECT id, email, subject, body, created_at FROM portal_messages ORDER BY id DESC LIMIT 100').all();
-    res.json({ messages: rows.map(m => ({ ...m, replies: db.prepare('SELECT id, body, by_user, created_at FROM portal_message_replies WHERE message_id=? ORDER BY id').all(m.id) })) });
+    const groups = require('./conversations').customerGroups(db, { limit: 100 });
+    res.json({ messages: groups.map(m => ({ id: m.id, email: m.email, subject: m.subject, body: m.body, created_at: m.created_at, replies: m.replies })) });
   });
   // Staff reply: saved to the conversation and emailed to the customer unless they turned message emails off.
   app.post('/api/admin/portal-messages/:id/reply', auth, async (req, res) => {
@@ -175,7 +175,7 @@ module.exports = function mountPortal(app, ctx) {
     if (body.length < 2) return res.status(400).json({ error: 'Write the reply first.' });
     const by = (req.user && req.user.email) || 'staff';
     const id = db.prepare('INSERT INTO portal_message_replies(message_id,body,by_user,created_at) VALUES(?,?,?,?)').run(m.id, body, by, new Date().toISOString()).lastInsertRowid;
-    require('./conversations').mirror(db, { kind: 'customer', customerEmail: m.email, role: 'office', senderRef: by, body, legacyRef: 'portal_reply:' + id });
+    require('./conversations').mirror(db, { kind: 'customer', customerEmail: m.email, role: 'office', senderRef: by, body, replyTo: 'portal:' + m.id, legacyRef: 'portal_reply:' + id });
     const mailer2 = getMailer && getMailer();
     let emailed = false;
     if (mailer2 && wantsEmail(m.email, 'messages')) {

@@ -23,6 +23,8 @@ function ensureTables(db) {
     sender_role TEXT NOT NULL CHECK (sender_role IN ('customer','crew','office')),
     sender_ref TEXT,
     body TEXT NOT NULL,
+    subject TEXT,
+    reply_to TEXT,
     visit_id INTEGER,
     project_id INTEGER,
     created_at TEXT NOT NULL,
@@ -49,7 +51,7 @@ function conversationFor(db, { kind, customerEmail, employeeId, subject }) {
 }
 
 // Adds one message. role: 'customer' | 'crew' | 'office'. Returns the message id.
-function addMessage(db, { kind, customerEmail, employeeId, subject, role, senderRef, body, visitId, projectId, legacyRef }) {
+function addMessage(db, { kind, customerEmail, employeeId, subject, role, senderRef, body, visitId, projectId, legacyRef, replyTo }) {
   if (!['customer', 'crew', 'office'].includes(role)) throw new Error('Unknown sender.');
   const text = String(body || '').trim();
   if (!text) throw new Error('A message needs text.');
@@ -60,8 +62,8 @@ function addMessage(db, { kind, customerEmail, employeeId, subject, role, sender
   const convId = conversationFor(db, { kind, customerEmail, employeeId, subject });
   const t = NOW();
   const direction = role === 'office' ? 'out' : 'in';
-  const id = db.prepare(`INSERT INTO conversation_messages(conversation_id,direction,sender_role,sender_ref,body,visit_id,project_id,created_at,seen_by_office,seen_by_other,legacy_ref)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(convId, direction, role, senderRef ? String(senderRef).slice(0, 200) : null, text.slice(0, 10000),
+  const id = db.prepare(`INSERT INTO conversation_messages(conversation_id,direction,sender_role,sender_ref,body,subject,reply_to,visit_id,project_id,created_at,seen_by_office,seen_by_other,legacy_ref)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(convId, direction, role, senderRef ? String(senderRef).slice(0, 200) : null, text.slice(0, 10000), subject ? String(subject).slice(0, 200) : null, replyTo || null,
     visitId || null, projectId || null, t, role === 'office' ? 1 : 0, role === 'office' ? 0 : 0, legacyRef || null).lastInsertRowid;
   db.prepare('UPDATE conversations SET last_message_at=? WHERE id=?').run(t, convId);
   return id;
@@ -85,9 +87,9 @@ function backfill(db) {
     }
     const hasReplies = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='portal_message_replies'").get();
     if (hasReplies) {
-      for (const r of db.prepare('SELECT r.id,r.body,r.by_user,r.created_at,m.email FROM portal_message_replies r JOIN portal_messages m ON m.id=r.message_id ORDER BY r.id').all()) {
+      for (const r of db.prepare('SELECT r.id,r.message_id,r.body,r.by_user,r.created_at,m.email FROM portal_message_replies r JOIN portal_messages m ON m.id=r.message_id ORDER BY r.id').all()) {
         if (db.prepare('SELECT 1 FROM conversation_messages WHERE legacy_ref=?').get('portal_reply:' + r.id)) continue;
-        addMessage(db, { kind: 'customer', customerEmail: r.email, role: 'office', senderRef: r.by_user || 'office', body: r.body, legacyRef: 'portal_reply:' + r.id });
+        addMessage(db, { kind: 'customer', customerEmail: r.email, role: 'office', senderRef: r.by_user || 'office', body: r.body, replyTo: 'portal:' + r.message_id, legacyRef: 'portal_reply:' + r.id });
         copied.customer++;
       }
     }
@@ -112,3 +114,69 @@ function mirror(db, opts) {
   catch (err) { console.error('shared message not recorded:', err.message); return null; }
 }
 module.exports.mirror = mirror;
+
+// ---- Reads for the crew screens. They return the same shape the screens already use. ----
+
+// The last `limit` messages of one crew member's thread, oldest first, as { id, direction, body, visit_id, created_at }.
+// direction is 'crew' for messages from the crew member and 'office' for messages from the office.
+function crewThread(db, employeeId, limit = 100) {
+  return db.prepare(`SELECT m.id, m.sender_role, m.body, m.visit_id, m.created_at
+      FROM conversation_messages m JOIN conversations c ON c.id = m.conversation_id
+      WHERE c.kind='crew' AND c.employee_id=? ORDER BY m.id DESC LIMIT ?`).all(Number(employeeId), limit)
+    .reverse().map(r => ({ id: r.id, direction: r.sender_role === 'crew' ? 'crew' : 'office', body: r.body, visit_id: r.visit_id, created_at: r.created_at }));
+}
+
+// The crew member has read the office's messages.
+function markReadByCrew(db, employeeId) {
+  db.prepare(`UPDATE conversation_messages SET seen_by_other=1 WHERE sender_role='office' AND seen_by_other=0
+    AND conversation_id IN (SELECT id FROM conversations WHERE kind='crew' AND employee_id=?)`).run(Number(employeeId));
+}
+
+// The office has read the crew member's messages.
+function markReadByOffice(db, employeeId) {
+  db.prepare(`UPDATE conversation_messages SET seen_by_office=1 WHERE sender_role='crew' AND seen_by_office=0
+    AND conversation_id IN (SELECT id FROM conversations WHERE kind='crew' AND employee_id=?)`).run(Number(employeeId));
+}
+
+// One row per crew member who has a thread: name, role, last message, last time, and unread from the crew.
+function crewThreads(db) {
+  return db.prepare(`SELECT e.id, e.name, e.role,
+      (SELECT m.body FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.kind='crew' AND c.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_body,
+      (SELECT m.created_at FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.kind='crew' AND c.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_at,
+      (SELECT COUNT(*) FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.kind='crew' AND c.employee_id=e.id AND m.sender_role='crew' AND m.seen_by_office=0) AS unread
+    FROM employees e WHERE e.id IN (SELECT employee_id FROM conversations WHERE kind='crew') ORDER BY last_at DESC`).all();
+}
+
+module.exports.crewThread = crewThread;
+module.exports.markReadByCrew = markReadByCrew;
+module.exports.markReadByOffice = markReadByOffice;
+module.exports.crewThreads = crewThreads;
+
+// Customer messages in the shape the customer portal and the office Client messages screen already use:
+// { id (the original portal message id), email, subject, body, created_at, replies: [{ body, by_user, created_at }] }.
+// email: a customer's address, or null for every customer (newest first, at most `limit`).
+function customerGroups(db, { email = null, limit = 100 } = {}) {
+  const params = [];
+  let where = "c.kind='customer'";
+  if (email) { where += ' AND c.customer_email=?'; params.push(String(email).trim().toLowerCase()); }
+  const rows = db.prepare(`SELECT m.id, m.sender_role, m.sender_ref, m.body, m.subject, m.reply_to, m.created_at, m.legacy_ref, c.customer_email
+      FROM conversation_messages m JOIN conversations c ON c.id = m.conversation_id
+      WHERE ${where} ORDER BY m.id`).all(...params);
+  const groups = [];
+  let open = null;
+  for (const r of rows) {
+    if (r.sender_role === 'customer') {
+      const legacy = /^portal:(\d+)$/.exec(r.legacy_ref || '');
+      open = { id: legacy ? Number(legacy[1]) : r.id, email: r.customer_email, subject: r.subject || '', body: r.body, created_at: r.created_at, replies: [] };
+      groups.push(open);
+    } else if (r.sender_role === 'office') {
+      // A reply belongs to the message it answers; without a link it follows the latest customer message.
+      const parent = String(r.reply_to || '').match(/^portal:([0-9]+)$/);
+      const target = parent ? groups.find(g => g.id === Number(parent[1])) : open;
+      if (target) target.replies.push({ body: r.body, by_user: r.sender_ref || 'office', created_at: r.created_at });
+    }
+  }
+  return groups.reverse().slice(0, limit);
+}
+
+module.exports.customerGroups = customerGroups;
