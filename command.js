@@ -28,6 +28,8 @@ module.exports = function mountCommand(app, ctx) {
     const sent = sentIn(from, nowIso), sentPrev = sentIn(prevFrom, from);
     const won = wonIn(from, nowIso), wonPrev = wonIn(prevFrom, from);
     const collectedMonth = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, monthStart).v;
+    // Command Center invoice tile: money received in the last 30 days (fixed window, like the mockup's "Collected (30 days)")
+    const collected30 = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, iso(new Date(now - 30 * 864e5)).slice(0, 10)).v;
     // Revenue tile: money collected in the selected period, compared with the period before it
     const collectedPeriod = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, from.slice(0, 10)).v;
     const collectedPrev = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=? AND received_at<?`, prevFrom.slice(0, 10), from.slice(0, 10)).v;
@@ -45,11 +47,13 @@ module.exports = function mountCommand(app, ctx) {
     const awaitingApproval = require('./approvals').pendingCount();
     const failedEmails = one(`SELECT COUNT(*) n FROM automation_log WHERE status='failed' AND kind NOT LIKE 'ai_%' AND created_at>=?`, iso(new Date(now - 7 * 864e5))).n;
 
+    // Sales pipeline, four stages (same data as before, shown as Leads, Qualified, Proposal, Won):
+    // Leads = open bid requests, Qualified = estimates in progress (Draft/Ready), Proposal = sent or viewed, Won = approved in the period.
     const pipeline = [
-      { stage: 'Open bid requests', ...one(`SELECT COUNT(*) n, 0 v FROM leads WHERE kind='bid' AND status NOT IN ('Won','Lost','Archived')`), valued: false },
-      { stage: 'Estimates in progress', ...one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates WHERE status IN ('Draft','Ready')`), valued: true },
-      { stage: 'Proposals with customers', ...one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates WHERE archived_at IS NULL AND status IN ('Sent','Viewed')`), valued: true },
-      { stage: `Won (last ${days} days)`, n: won.n, v: won.v, valued: true }
+      { stage: 'Leads', ...one(`SELECT COUNT(*) n, 0 v FROM leads WHERE kind='bid' AND status NOT IN ('Won','Lost','Archived')`), valued: true },
+      { stage: 'Qualified', ...one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates WHERE status IN ('Draft','Ready')`), valued: true },
+      { stage: 'Proposal', ...one(`SELECT COUNT(*) n, COALESCE(SUM(proposal_total),0) v FROM estimates WHERE archived_at IS NULL AND status IN ('Sent','Viewed')`), valued: true },
+      { stage: 'Won', n: won.n, v: won.v, valued: true }
     ];
 
     const scopes = one(`SELECT COUNT(*) total, SUM(CASE WHEN pricing_method='hourly' THEN (production_rate IS NULL OR production_rate<=0) ELSE unit_price IS NULL END) missing FROM scope_items WHERE active=1`);
@@ -65,7 +69,7 @@ module.exports = function mountCommand(app, ctx) {
         won: { value: won.n, amount: won.v, change: pct(won.n, wonPrev.n) },
         collected_month: { value: collectedMonth },
         collected_period: { value: Math.round(collectedPeriod * 100) / 100, change: pct(collectedPeriod, collectedPrev) },
-        invoice_tiles: { open: invOpen, overdue: invOver, collected_month: collectedMonth },
+        invoice_tiles: { open: invOpen, overdue: invOver, collected_month: collectedMonth, collected_30: Math.round(collected30 * 100) / 100 },
         active_projects: { value: activeProjects },
         attention: { value: overdueInvoices + lateProjects + staleLeads + failedEmails + openComplaints + overdueItems + awaitingApproval,
           parts: { awaiting_approval: awaitingApproval, open_complaints: openComplaints, overdue_tasks: overdueItems, overdue_invoices: overdueInvoices, late_projects: lateProjects, leads_waiting_2_days: staleLeads, failed_emails_7_days: failedEmails }, follow_ups_today: followUpsToday }

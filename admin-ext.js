@@ -21,6 +21,8 @@ module.exports = function mountAdminExt(app, ctx) {
       newLeads: db.prepare(`SELECT id,kind,contact_name,company,project_name,created_at FROM leads WHERE status='New' ORDER BY created_at DESC LIMIT 8`).all(),
       awaitingResponse: db.prepare(`SELECT id,customer_name,company,project_name,proposal_total,status,updated_at FROM estimates WHERE status IN ('Sent','Viewed') ORDER BY updated_at DESC LIMIT 8`).all(),
       draftProposals: db.prepare(`SELECT COUNT(*) n FROM estimates WHERE status IN ('Draft','Ready')`).get().n,
+      // Command Center project card: active projects (same rule as the Active Projects tile), soonest due first
+      activeProjects: db.prepare(`SELECT id,name,customer_name,company,site_address,due_date,status,progress FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived') ORDER BY CASE WHEN due_date IS NULL OR due_date='' THEN 1 ELSE 0 END, due_date, id LIMIT 4`).all(),
       dueProjects: db.prepare(`SELECT id,name,customer_name,company,due_date,status,progress FROM projects WHERE status NOT IN ('Completed','On Hold') AND due_date<>'' AND due_date IS NOT NULL AND due_date<=? ORDER BY due_date LIMIT 8`).all(in14),
       overdueInvoices: db.prepare(`SELECT id,invoice_number,customer_name,company,amount,paid_amount,due_date FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND due_date<>'' AND due_date IS NOT NULL AND due_date<? AND paid_amount<amount ORDER BY due_date LIMIT 8`).all(today()),
       renewals: db.prepare(`SELECT id,title,customer_name,company,end_date,status FROM contracts WHERE status IN ('Active','Renewal Due') AND end_date<>'' AND end_date IS NOT NULL AND end_date<=? ORDER BY end_date LIMIT 8`).all(new Date(Date.now() + 45 * 864e5).toISOString().slice(0, 10)),

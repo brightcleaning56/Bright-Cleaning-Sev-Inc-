@@ -557,6 +557,8 @@
   .kpi b { font-size: 24px; font-weight: 800; margin: 2px 0 3px; }
   .kpi small { font-size: 12.5px; }
   .kpi.alert { border-color: #f3c2c2; }
+  /* Six tiles on a laptop-width screen: keep the collected amount on one line */
+  @media (max-width: 1600px) { .kpi { padding: 14px 12px; gap: 10px; } .kpi .ic { width: 40px; height: 40px; } .kpi b { font-size: 21px; } }
 
   /* Revenue trend and pipeline */
   #ccTrend svg { max-height: 300px; }
@@ -596,6 +598,22 @@
   .invtiles b { font-size: 17px; }
   .invsub { font-size: 13px; margin: 4px 0; color: var(--navy); }
   .ccrow4 .attn li { align-items: center; }
+  /* Bottom cards: avatar or project rows with a right-hand column for amounts, times and pills */
+  .ccl li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid #eef2f6; font-size: 14px; }
+  .ccl li:first-child { border-top: 0; }
+  .ccl li b { display: block; color: var(--navy); font-size: 14px; }
+  .ccl small { display: block; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ccl .cl-who { flex: 1; min-width: 0; }
+  .ccl .cl-who b, .ccl .cl-prow b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ccl .cl-side { flex: none; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+  .ccl .cl-side b { font-weight: 800; }
+  .ccl .cl-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; background: #e8f0fb; color: #1f6fd1; }
+  .ccl .cl-prow { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+  .ccl .cl-prow b { min-width: 0; }
+  .ccl .cl-pills { flex: none; display: inline-flex; gap: 4px; }
+  .ccl .cl-pbar { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; font-weight: 700; color: #1d6b47; }
+  .ccl .cl-pbar .cl-bar { flex: 1; height: 7px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+  .ccl .cl-pbar .cl-bar i { display: block; height: 100%; background: #1f9d55; border-radius: 4px; }
 
   @media (max-width: 1280px) { .ccrow4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
   @media (max-width: 1100px) { .ccrow2 { grid-template-columns: minmax(0, 1fr) !important; } .commrow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -707,10 +725,10 @@
       <div class="ccrow3" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px"><div class="card" id="ccAlerts" aria-label="Alerts and attention"></div><div class="card" id="ccSched" aria-label="Today’s schedule"></div><div class="card"><div class="cardhead"><h2>Quick Actions</h2></div><div class="qa" id="ccQuick" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px"></div></div></div>
       <div class="card" id="ccComms" aria-label="Communications" style="margin-top:14px"></div>
       <div class="ccrow4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:14px">
-        <div class="card"><div class="cardhead"><h2>Recent Leads</h2><button class="linklike" data-view-link="leads">View all →</button></div><ul class="attn" id="ovNew"></ul></div>
-        <div class="card"><div class="cardhead"><h2>Proposals Waiting on Customer</h2><button class="linklike" data-view-link="proposals">View all →</button></div><ul class="attn" id="ovAwait"></ul></div>
-        <div class="card"><div class="cardhead"><h2>Projects</h2><button class="linklike" data-view-link="projects">View all →</button></div><ul class="attn" id="ovDue"></ul></div>
-        <div class="card"><div class="cardhead"><h2>Invoices</h2><button class="linklike" data-view-link="invoices">View all →</button></div><div id="ovInvTiles" class="invtiles"></div><h3 class="invsub">Overdue</h3><ul class="attn" id="ovOverdue"></ul></div>
+        <div class="card"><div class="cardhead"><h2>Recent Leads</h2><button class="linklike" data-view-link="leads">View all →</button></div><ul class="attn ccl" id="ovNew"></ul></div>
+        <div class="card"><div class="cardhead"><h2>Proposals Waiting on Customer</h2><button class="linklike" data-view-link="proposals">View all →</button></div><ul class="attn ccl" id="ovAwait"></ul></div>
+        <div class="card"><div class="cardhead"><h2>Projects</h2><button class="linklike" data-view-link="projects">View all →</button></div><ul class="attn ccl" id="ovDue"></ul></div>
+        <div class="card"><div class="cardhead"><h2>Invoices</h2><button class="linklike" data-view-link="invoices">View all →</button></div><div id="ovInvTiles" class="invtiles"></div></div>
       </div>
       <div class="cc3" style="margin-top:14px"><div class="card"><div class="cardhead"><h2>Recent activity</h2><button class="linklike" data-view-link="activity">View all</button></div><div class="activity" id="ccAct"></div></div></div>
       <div id="ccLive" class="cclive" aria-live="polite"></div>

@@ -34,6 +34,10 @@
     if (s < 86400 * 30) return Math.round(s / 86400) + ' d ago';
     return fmtDate(v);
   };
+  // Compact helpers for the Command Center cards: initials for avatars, "20h ago", and 12-hour clock times.
+  const initialsOf = s => (String(s || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0] || '').join('') || '?').toUpperCase();
+  const agoShort = v => ago(v).replace(' min ago', 'm ago').replace(' h ago', 'h ago').replace(' d ago', 'd ago');
+  const clockTime = t => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); if (!m || /am|pm/i.test(t)) return t || 'Any time'; const h = Number(m[1]) % 12 || 12; return h + ':' + m[2] + ' ' + (Number(m[1]) < 12 ? 'AM' : 'PM'); };
   const formObj = form => Object.fromEntries(new FormData(form).entries());
 
   // Copy text without ever throwing: clipboard API when available, otherwise select the field so the user can press Ctrl+C.
@@ -663,10 +667,12 @@
     if (sched) {
       try {
         const r = await api('/api/admin/work-queue/schedule');
+        // Today's schedule: time chip then the item. Follow-ups stay listed (count, overdue count and the first two) without crowding the card.
+        const fu = r.follow_ups || [], overdueFu = fu.filter(f => f.overdue).length;
         sched.innerHTML = '<div class="cardhead"><h2>Today’s Schedule</h2><button class="linklike" data-view-link="schedule">View calendar →</button></div>'
-          + (r.appointments.length ? r.appointments.map(v => '<div class="srow"><span class="tpill">' + esc(v.start_time || 'Any time') + '</span><span style="flex:1;min-width:0">' + esc(v.title) + '</span><small class="muted">' + esc(v.status) + '</small></div>').join('') : '<p class="muted">No appointments today.</p>')
-          + '<p style="margin:10px 0 2px"><b>Follow-ups due</b> ' + r.follow_ups.length + '</p>'
-          + (r.follow_ups.slice(0, 5).map(f => '<div class="muted" style="margin:2px 0">' + (f.overdue ? '<span class="badge red">Overdue</span> ' : '') + esc(f.who) + ' · ' + esc(f.what) + '</div>').join(''));
+          + (r.appointments.length ? r.appointments.map(v => '<div class="srow"><span class="tpill">' + esc(clockTime(v.start_time)) + '</span><span style="flex:1;min-width:0">' + esc(v.title) + '</span><small class="muted">' + esc(v.status) + '</small></div>').join('') : '<p class="muted">No appointments today.</p>')
+          + '<p style="margin:10px 0 2px;font-size:13px"><b>Follow-ups due</b> ' + fu.length + (overdueFu ? ' · <span class="badge red">' + overdueFu + ' overdue</span>' : '') + '</p>'
+          + fu.slice(0, 2).map(f => '<div class="muted" style="margin:2px 0;font-size:13px">' + esc(f.who) + ' · ' + esc(f.what) + '</div>').join('');
       } catch (err) { sched.innerHTML = '<p class="muted">Schedule could not load: ' + esc(err.message) + '</p>'; }
     }
   }
@@ -693,15 +699,17 @@
     api('/api/admin/command-center/trend?months=6').then(renderCcTrend).catch(() => { /* chart is optional */ });
     if ($('#ccNewBtn')) $('#ccNewBtn').onclick = () => openDrawer({ title: 'New', sub: 'Start something new', body: '<div class="qa" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">' + [['New lead', 'newLead'], ['Log call', 'logCall'], ['New estimate', 'openEstimator'], ['Add customer', 'addCustomer'], ['Create task', 'createTask'], ['Upload drawings', 'uploadDocs']].map(([l, k2]) => '<button type="button" class="btn ghost" data-newk="' + k2 + '">' + esc(l) + '</button>').join('') + '</div>', footer: '<button class="btn ghost" data-close>Close</button>' });
     $$('[data-newk]').forEach(b => b.onclick = () => { closeDrawer(); ({ newLead: () => newLead(), logCall: () => logCall(), openEstimator: () => openEstimator(), addCustomer: () => { go('customers'); setTimeout(() => $('#custAdd').click(), 300); }, createTask: () => { wq.dept = 'tasks'; go('workqueue'); }, uploadDocs: () => uploadDocs() })[b.dataset.newk](); });
+    // Change line under each figure: arrow and colour, compared with the same period before (no arrow when there is no prior data).
+    const kpiChg = c => c === null || c === undefined ? '<small class="flat">no prior data</small>' : `<small class="${c > 0 ? 'up' : c < 0 ? 'down' : 'flat'}">${c > 0 ? '↑ +' + c : c < 0 ? '↓ ' + c : '— 0'}%</small> <small class="flat">vs prior ${cc.days} days</small>`;
     const tiles = [
       { label: 'New Leads', sub: per, value: k.new_leads.value, change: k.new_leads.change, icon: 'leads', c: '#1f6fd1', to: 'leads', drill: 'new_leads' },
       { label: 'Proposals Sent', sub: per, value: k.proposals_sent.value, change: k.proposals_sent.change, icon: 'doc', c: '#7c4dd6', to: 'proposals' },
       { label: 'Won / Closed', sub: k.won.amount ? money(k.won.amount) : per, value: k.won.value, change: k.won.change, icon: 'check', c: '#1f9d55', to: 'proposals' },
       { label: 'Revenue (Collected)', sub: per, value: money(k.collected_period.value), change: k.collected_period.change, icon: 'dollar', c: '#178a4c', to: 'invoices', drill: 'collected' },
-      { label: 'Active Projects', value: k.active_projects.value, icon: 'cal', c: '#d68a1f', to: 'projects' },
-      { label: 'Needs attention', value: k.attention.value, icon: 'alert', c: '#d64545', to: 'workqueue', alert: k.attention.value > 0 },
+      { label: 'Active Projects', value: k.active_projects.value, sub: 'no prior data', icon: 'cal', c: '#d68a1f', to: 'projects' },
+      { label: 'Needs attention', value: k.attention.value, sub: 'no prior data', icon: 'alert', c: '#d64545', to: 'workqueue', alert: k.attention.value > 0 },
     ];
-    $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}" style="background:linear-gradient(180deg,${t.c}1f,#fff 80%)"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? chg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
+    $('#ccKpis').innerHTML = tiles.map((t, i) => `<button class="kpi${t.alert ? ' alert' : ''}" data-i="${i}" style="background:linear-gradient(180deg,${t.c}1f,#fff 80%)"${t.title ? ` title="${esc(t.title)}"` : ''}><span class="ic" style="background:${t.c}">${svg(t.icon)}</span><span style="min-width:0"><span>${esc(t.label)}</span><b>${esc(t.value)}</b>${'change' in t ? kpiChg(t.change) : `<small class="flat">${esc(t.sub || (t.alert ? 'see details' : ''))}</small>`}</span></button>`).join('');
     $$('#ccKpis .kpi').forEach(b => b.onclick = () => { const t = tiles[b.dataset.i]; if (t.label === 'Needs attention') return openAttention(); if (t.drill === 'new_leads') return openLeadList('all', ''); if (t.drill) return openDrill(t.drill); go(t.to); });
     loadLive();
     if (!window.matchMedia || !matchMedia('(prefers-reduced-motion: reduce)').matches) $$('#ccKpis .kpi b').forEach(el => {
@@ -744,12 +752,16 @@
     const list = (el, rows, render, empty) => {
       $(el).innerHTML = rows.length ? rows.map(render).join('') : `<li class="empty" style="cursor:default">${esc(empty)}</li>`;
     };
-    list('#ovNew', d.newLeads, l => `<li data-lead="${l.id}"><span style="flex:none;width:30px;height:30px;border-radius:50%;background:#e8f0fb;color:#1f6fd1;display:inline-flex;align-items:center;justify-content:center;font-weight:600;font-size:12px">${esc((l.contact_name || '?').trim().split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase())}</span><span style="min-width:0"><b>${esc(l.contact_name || 'Unnamed')}</b><small>${esc(KIND_LABEL[l.kind] || l.kind)}${l.company ? ' · ' + esc(l.company) : ''}${l.project_name ? ' · ' + esc(l.project_name) : ''}</small></span><span class="r"><span class="badge">${esc(l.status || 'New')}</span><small>${esc(ago(l.created_at))}</small></span></li>`, 'No new leads. You’re caught up.');
-    list('#ovAwait', d.awaitingResponse, e => `<li data-est="${e.id}"><span><b>${esc(e.customer_name)}</b><small>${esc(e.project_name || e.company || '')}</small></span><span class="r">${money(e.proposal_total)}<small>${esc(e.status)} ${esc(ago(e.updated_at))}</small></span></li>`, d.draftProposals ? `Nothing sent is waiting. ${d.draftProposals} draft proposal(s) not sent yet.` : 'Nothing waiting on a customer.');
-    list('#ovDue', d.dueProjects, p => `<li data-rec="projects:${p.id}"><span><b>${esc(p.name || 'Project')}</b><small>${esc(p.company || p.customer_name || '')} · ${esc(p.status)} · ${Number(p.progress || 0)}%</small><div style="height:6px;background:#e5e7eb;border-radius:4px;margin-top:4px"><i style="display:block;height:100%;width:${Math.min(100, Math.max(0, Number(p.progress || 0)))}%;background:#1f9d55;border-radius:4px"></i></div></span><span class="r">${p.due_date < todayISO() ? '<span class="badge red">Past due</span>' : ''}<small>Due ${fmtDate(p.due_date)}</small></span></li>`, 'No projects due in the next two weeks.');
+    // Recent leads: initials, company (or name), time since it came in, status pill. Shows five, opens the lead.
+    list('#ovNew', d.newLeads.slice(0, 5), l => { const name = l.company || l.contact_name || 'Unnamed'; const sub = l.company ? (l.contact_name || '') : (KIND_LABEL[l.kind] || l.kind);
+      return `<li data-lead="${l.id}"><span class="cl-av">${esc(initialsOf(name))}</span><span class="cl-who"><b>${esc(name)}</b><small>${esc(sub)}</small></span><span class="cl-side"><span class="badge blue">${esc(l.status || 'New')}</span><small>${esc(agoShort(l.created_at))}</small></span></li>`; }, 'No new leads. You’re caught up.');
+    // Proposals waiting on the customer: name and company, amount, "Sent 20h ago" or "Viewed 12d ago".
+    list('#ovAwait', d.awaitingResponse.slice(0, 4), e => `<li data-est="${e.id}"><span class="cl-who"><b>${esc(e.customer_name || 'Customer')}</b><small>${esc(e.company || e.project_name || '')}</small></span><span class="cl-side"><b>${money(e.proposal_total)}</b><small>${esc(e.status)} ${esc(agoShort(e.updated_at))}</small></span></li>`, d.draftProposals ? `Nothing sent is waiting. ${d.draftProposals} draft proposal(s) not sent yet.` : 'Nothing waiting on a customer.');
+    // Projects: name with status pill, customer and site line, progress bar with percentage. Opens the project.
+    list('#ovDue', d.activeProjects || [], p => { const pct = Math.min(100, Math.max(0, Number(p.progress || 0))); const line = [p.company || p.customer_name, p.site_address].filter(Boolean).join(' · ');
+      return `<li data-rec="projects:${p.id}"><span class="cl-who"><span class="cl-prow"><b>${esc(p.name || 'Project')}</b><span class="cl-pills">${badge(p.status)}${p.due_date && p.due_date < todayISO() ? ' <span class="badge red">Past due</span>' : ''}</span></span><small>${esc(line)}</small><span class="cl-pbar"><span class="cl-bar"><i style="width:${pct}%"></i></span><span>${pct}%</span></span></span></li>`; }, 'No active projects.');
     const it = cc.kpis.invoice_tiles;
-    if (it && $('#ovInvTiles')) $('#ovInvTiles').innerHTML = [['Overdue', money(it.overdue.v), it.overdue.n, '#fdecec', '#b42318'], ['Open', money(it.open.v), it.open.n, '#e8f0fb', '#1f6fd1'], ['Collected this month', money(it.collected_month), null, '#e7f6ee', '#178a4c']].map(([l, v, n, bg, fg]) => `<div style="background:${bg};color:${fg}"><b>${esc(v)}</b><small>${esc(l)}${n == null ? '' : ' (' + n + ')'}</small></div>`).join('');
-    list('#ovOverdue', d.overdueInvoices, i => `<li data-rec="invoices:${i.id}"><span><b>${esc(i.invoice_number)}</b><small>${esc(i.company || i.customer_name || '')}</small></span><span class="r">${money(i.amount - i.paid_amount)}<small>Due ${fmtDate(i.due_date)}</small></span></li>`, 'No overdue invoices.');
+    if (it && $('#ovInvTiles')) $('#ovInvTiles').innerHTML = [['Overdue', money(it.overdue.v), it.overdue.n, '#fdecec', '#b42318'], ['Open', money(it.open.v), it.open.n, '#e8f0fb', '#1f6fd1'], ['Collected (30 days)', money(it.collected_30), null, '#e7f6ee', '#178a4c']].map(([l, v, n, bg, fg]) => `<div style="background:${bg};color:${fg}"><b>${esc(v)}</b><small>${esc(l)}${n == null ? '' : ' (' + n + ')'}</small></div>`).join('');
     $('#ovRenewCard').hidden = !d.renewals.length;
     list('#ovRenew', d.renewals, c => `<li data-rec="contracts:${c.id}"><span><b>${esc(c.title || 'Contract')}</b><small>${esc(c.company || c.customer_name || '')}</small></span><span class="r"><small>Ends ${fmtDate(c.end_date)}</small></span></li>`, '');
     bindOpeners($('#v-overview'));
@@ -1446,7 +1458,7 @@
           <div class="card"><h2>${ic('scopes')} Quick actions</h2><div class="qa6"><button class="b" data-a="note">${ic('note')} New note</button><button class="b" data-a="call">${ic('calls')} Log call</button><button class="b" data-a="email">${ic('emails')} Send email</button><button class="g" data-a="estimate">${ic('proposals')} Create estimate</button><button class="p" data-a="proposal">${ic('send')} Create proposal</button><button class="r" data-a="issue">${ic('issues')} Create issue</button></div></div></div>
         <div><div class="card"><h2>${ic('emails')} Communication summary</h2><div class="comm3">${kt('calls', 'green', 'Calls', d.calls.length)}${kt('emails', 'blue', 'Emails', d.emails.length)}${kt('note', 'amber', 'Notes', d.notes.length)}</div></div>
           <div class="card"><h2>${ic('issues')} Open issues / complaints (${openIss.length}) <button class="linklike more" data-gotab="issues">View all</button></h2>${openIss.length ? '<ul class="mini">' + openIss.slice(0, 3).map(i => `<li><b>${esc(i.title)}</b> ${badge(i.priority)} ${badge(i.status)}<br><small class="muted">Assigned to ${esc(i.assigned_to || 'nobody yet')}${i.due_date ? ' · due ' + fmtDate(i.due_date) : ''}</small></li>`).join('') + '</ul>' : '<p class="empty">No open issues.</p>'}</div>
-          <div class="card"><h2>${ic('projects')} Current projects (${d.projects.length}) <button class="linklike more" data-gotab="projects">View all</button></h2>${d.projects.length ? '<ul class="prop">' + d.projects.slice(0, 3).map(p => `<li><span class="chip blue">${ic('projects')}</span><span style="min-width:0;flex:1">${recLink('projects', p.id, p.name || 'Project #' + p.id)}<small class="muted" style="display:block">${esc(p.site_address || '')}${p.due_date ? ' · target ' + fmtDate(p.due_date) : ''}</small><span class="bar" style="width:${Math.max(3, Number(p.progress) || 0)}%;display:block;margin-top:6px"></span></span>${badge(p.status)}</li>`).join('') + '</ul>' : '<p class="empty">No projects.</p>'}</div></div></div>`;
+          <div class="card"><h2>${ic('projects')} Current projects (${d.projects.length}) <button class="linklike more" data-gotab="projects">View all</button></h2>${d.projects.length ? '<ul class="prop">' + d.projects.slice(0, 3).map(p => `<li><span class="chip blue">${ic('projects')}</span><span style="min-width:0;flex:1">${recLink('projects', p.id, p.name || 'Project #' + p.id)}<small class="muted" style="display:block">${esc(p.site_address || '')}${p.due_date ? ' · target ' + fmtDate(p.due_date) : ''}</small><span class="cl-bar" style="width:${Math.max(3, Number(p.progress) || 0)}%;display:block;margin-top:6px"></span></span>${badge(p.status)}</li>`).join('') + '</ul>' : '<p class="empty">No projects.</p>'}</div></div></div>`;
       $$('#cpBody [data-gotab]').forEach(b => b.onclick = () => { cp.tab = b.dataset.gotab; renderCustomerPage(); });
       $$('#cpBody [data-a]').forEach(b => b.onclick = () => custAction(b.dataset.a));
       bindOpeners(B);
@@ -2208,7 +2220,7 @@
       search: r => [r.name, r.customer_name, r.company, r.site_address, r.manager, r.notes],
       row: r => {
         const late = r.due_date && r.due_date < todayISO() && !['Completed', 'On Hold'].includes(r.status);
-        return `<td><b>${esc(r.name || 'Project #' + r.id)}</b><small>${esc(r.site_address || '')}</small></td><td>${custBtn(r, r.company || r.customer_name || '—')}</td><td>${esc(r.manager || '—')}</td><td>${fmtDate(r.start_date)}<small>Due ${fmtDate(r.due_date)}${late ? ' · <span class="badge red">Past due</span>' : ''}</small></td><td>${Number(r.progress || 0)}%<div class="bar"><i style="width:${Math.min(100, Number(r.progress || 0))}%"></i></div></td><td>${badge(r.status)}</td>`;
+        return `<td><b>${esc(r.name || 'Project #' + r.id)}</b><small>${esc(r.site_address || '')}</small></td><td>${custBtn(r, r.company || r.customer_name || '—')}</td><td>${esc(r.manager || '—')}</td><td>${fmtDate(r.start_date)}<small>Due ${fmtDate(r.due_date)}${late ? ' · <span class="badge red">Past due</span>' : ''}</small></td><td>${Number(r.progress || 0)}%<div class="cl-bar"><i style="width:${Math.min(100, Number(r.progress || 0))}%"></i></div></td><td>${badge(r.status)}</td>`;
       },
       cols: 6
     },
@@ -4492,7 +4504,7 @@
     const rv = r.receivables, o = r.ops, au = r.automation;
     kpiTiles('#repKpis2', [{ label: 'Outstanding', value: money(rv.outstanding) }, { label: 'Overdue', value: money(rv.overdue), sub: `${rv.overdue_n || 0} invoice(s)`, alert: rv.overdue > 0 }, { label: 'Inspection average', value: o.inspections.avg == null ? '—' : o.inspections.avg + '%', sub: `${o.inspections.n || 0} inspections` }, { label: 'Calls', value: o.calls.n || 0, sub: `${o.calls.missed || 0} missed · ${o.calls.to_leads || 0} became leads` }]);
     const top = Math.max(1, ...r.flow.map(f => f.n));
-    $('#repFlowRows').innerHTML = r.flow.map(f => `<tr><td>${esc(f.k)}</td><td class="num">${f.n}</td><td>${f.n ? `<div class="bar" style="width:${Math.max(4, Math.round(f.n / top * 100))}%"></div>` : ''}</td></tr>`).join('');
+    $('#repFlowRows').innerHTML = r.flow.map(f => `<tr><td>${esc(f.k)}</td><td class="num">${f.n}</td><td>${f.n ? `<div class="cl-bar" style="width:${Math.max(4, Math.round(f.n / top * 100))}%"></div>` : ''}</td></tr>`).join('');
     const dl = rows => '<dl class="stat">' + rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('') + '</dl>';
     $('#repOps').innerHTML = dl([['Active projects', o.projects_active], ['Completed projects', o.projects_completed], ['Visits done (period)', o.visits_done], ['Visits coming up', o.visits_upcoming], ['Inspections failed', o.inspections.failed || 0], ['Complaints (period)', `${o.complaints.n || 0} · ${o.complaints.resolved || 0} resolved`], ['Average days to resolve', o.complaints.days == null ? '—' : o.complaints.days], ['Open tasks', `${o.tasks_open} · ${o.tasks_overdue} overdue`]]);
     $('#repRecv').innerHTML = dl([['Billed (all time)', money(rv.billed)], ['Collected (all time)', money(rv.paid)], ['Outstanding', money(rv.outstanding)], ['Overdue', money(rv.overdue)]]);
