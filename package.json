@@ -26,5 +26,9 @@
   },
   "engines": {
     "node": ">=20 <25"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.3",
+    "smtp-server": "^3.21.6"
   }
 }
