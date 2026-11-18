@@ -173,7 +173,7 @@ function customerGroups(db, { email = null, limit = 100 } = {}) {
       // A reply belongs to the message it answers; without a link it follows the latest customer message.
       const parent = String(r.reply_to || '').match(/^portal:([0-9]+)$/);
       const target = parent ? groups.find(g => g.id === Number(parent[1])) : open;
-      if (target) target.replies.push({ body: r.body, by_user: r.sender_ref || 'office', created_at: r.created_at });
+      if (target) target.replies.push({ id: r.id, body: r.body, by_user: r.sender_ref || 'office', created_at: r.created_at });
     }
   }
   return groups.reverse().slice(0, limit);

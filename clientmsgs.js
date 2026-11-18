@@ -45,8 +45,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   }
 
   function events() {
-    const portal = db.prepare('SELECT id, email, subject, body, created_at FROM portal_messages ORDER BY id').all();
-    const replies = db.prepare('SELECT id, message_id, body, by_user, created_at FROM portal_message_replies ORDER BY id').all();
+    // Customer messages and replies come from the shared conversation record, oldest first, in the shape this feed uses.
+    const groups = require('./conversations').customerGroups(db, { limit: 100000 }).slice().reverse();
+    const portal = groups.map(m => ({ id: m.id, email: m.email, subject: m.subject, body: m.body, created_at: m.created_at }));
+    const replies = groups.flatMap(m => m.replies.map(r => ({ id: r.id, message_id: m.id, body: r.body, by_user: r.by_user, created_at: r.created_at })));
     const sms = db.prepare('SELECT * FROM sms_messages ORDER BY id').all();
     return { portal, replies, sms };
   }
