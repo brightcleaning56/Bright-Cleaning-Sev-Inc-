@@ -1,3 +1,4 @@
+const { COMPANY_NAME } = require('./company');
 // Proposal follow-ups and customer texts.
 // - Every proposal that is sent gets a default follow-up two business days later (email), so nobody has to remember it.
 // - Follow-ups are visible on the proposal, can be changed, cancelled or sent now, and are sent automatically when due.
@@ -59,7 +60,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   // ---- Follow-up sending ----
   const addDays = (ymd, n) => { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
   function defaultMessage(e) {
-    return `Hello ${e.customer_name || ''},\n\nThis is Bright Clean following up to make sure our proposal${e.project_name ? ' for ' + e.project_name : ''} reached you. ` +
+    return `Hello ${e.customer_name || ''},\n\nThis is ${COMPANY_NAME} following up to make sure our proposal${e.project_name ? ' for ' + e.project_name : ''} reached you. ` +
       'Have you had a chance to look it over? If anything is unclear, or you would like to talk through the scope or price, reply to this message or call us at (515) 303-3024. We are glad to help you decide.\n\nBright Cleaning Sev Inc.';
   }
   function scheduleAuto(estId) {
@@ -91,7 +92,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
       if (f.channel === 'email') {
         if (!isEmail(e.email)) throw new Error('No email address on the proposal');
         if (ES.isSuppressed(db, e.email)) throw new Error('This address has opted out or could not be delivered to');
-        await getMailer().sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: e.email, subject: 'Following up: ' + (e.project_name || 'your Bright Clean proposal'), text: f.message + '\n\nReview the proposal: ' + proposalUrl(e) + '\n', automated: true });
+        await getMailer().sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: e.email, subject: 'Following up: ' + (e.project_name || 'your Bright Cleaning Sev Inc. proposal'), text: f.message + '\n\nReview the proposal: ' + proposalUrl(e) + '\n', automated: true });
       } else {
         await sendSms(phoneOf(e), f.message.slice(0, 480) + ' ' + proposalUrl(e));
       }

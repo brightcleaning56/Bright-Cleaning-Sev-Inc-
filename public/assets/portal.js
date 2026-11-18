@@ -4,7 +4,7 @@
 (function () {
   var KEY = 'bc_portal_session';
   var META = {
-    overview: ['Welcome Back', "Here's what's happening with your Bright Clean account today."],
+    overview: ['Welcome Back', "Here's what's happening with your Bright Cleaning Sev Inc. account today."],
     properties: ['My Properties', 'The locations and buildings on your account.'],
     services: ['Services & Schedule', 'Your recurring services and upcoming cleaning visits.'],
     proposals: ['Proposals', 'Review, approve, or request changes to your cleaning proposals.'],
@@ -14,7 +14,7 @@
     quality: ['Quality & Inspections', 'Quality results, inspections and corrective actions for your properties.'],
     documents: ['Documents', 'Approved proposals, contracts, project files and other important documents for your account.'],
     request: ['Request a Service', 'Tell us what you need. We review every request and follow up with you.'],
-    messages: ['Messages & Support', 'Contact Bright Clean, track your requests, and get help with your services.'],
+    messages: ['Messages & Support', 'Contact Bright Cleaning Sev Inc., track your requests, and get help with your services.'],
     settings: ['Account Settings', 'Manage your profile, contact information, notifications, and security.']
   };
   var data = null, email = '', page = 'overview', session = null, requestPreset = '';
@@ -25,7 +25,7 @@
   function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(function () { t.classList.remove('show'); }, 2800); }
   function empty(title, text) { return '<div class="empty-state"><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p></div>'; }
   function table(head, rows) {
-    if (!rows.length) return empty('Nothing here yet', 'When Bright Clean prepares records for your account, they will appear here.');
+    if (!rows.length) return empty('Nothing here yet', 'When Bright Cleaning Sev Inc. prepares records for your account, they will appear here.');
     return '<div class="panel tbl-wrap"><table class="t"><thead><tr>' + head.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
       rows.map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
   }
@@ -115,16 +115,16 @@
         (ups.length ? '<div class="tbl-wrap"><table class="t"><thead><tr><th>Document</th><th>File</th><th>Uploaded</th><th></th></tr></thead><tbody>' +
           ups.map(function (u) { return '<tr><td>' + esc(u.title) + '</td><td>' + esc(u.file_name) + '</td><td>' + esc(String(u.at || '').slice(0, 10)) + '</td><td><button class="btn ghost" type="button" data-dl="' + esc(u.file) + '" data-fname="' + esc(u.file_name) + '">Download</button></td></tr>'; }).join('') +
           '</tbody></table></div>' : empty('No uploads yet', 'Documents you upload appear here.')) + '</div>' +
-        '<div class="panel" style="margin-top:16px"><h2>Documents from Bright Clean</h2>' + table(['Document', 'Type', 'Status', ''], docs) + '</div>';
+        '<div class="panel" style="margin-top:16px"><h2>Documents from Bright Cleaning Sev Inc.</h2>' + table(['Document', 'Type', 'Status', ''], docs) + '</div>';
     } else if (page === 'messages') {
       html = '<div class="panel"><h2>Contact Support</h2><form id="msgForm"><div class="field"><label>Subject</label><input name="subject" placeholder="For example: schedule change"></div><div class="field" style="margin-top:12px"><label>Message *</label><textarea name="body" rows="4" required></textarea></div><p style="margin-top:14px"><button class="primary-button" type="submit">Send message</button></p></form><p class="msg" id="msgMsg" role="status"></p><p class="muted">Urgent? Call <a href="tel:+15153033024">+1 (515) 303-3024</a>.</p></div>' +
-        '<div class="panel" style="margin-top:16px"><h2>Conversations</h2>' + (d.messages.length ? '<ul style="list-style:none;padding:0;margin:0">' + d.messages.map(function (m) { return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + '</small><br><b>' + esc(m.subject) + '</b><br>' + esc(m.body) + (m.replies || []).map(function (r) { return '<div style="margin:8px 0 0 14px;padding:8px;background:#f2f7fc;border-radius:8px"><small>Bright Clean · ' + esc(String(r.at).slice(0, 10)) + '</small><br>' + esc(r.body) + '</div>'; }).join('') + '</li>'; }).join('') + '</ul>' : empty('No messages yet', 'Messages you send and replies from the Bright Clean team will appear here.')) + '</div>';
+        '<div class="panel" style="margin-top:16px"><h2>Conversations</h2>' + (d.messages.length ? '<ul style="list-style:none;padding:0;margin:0">' + d.messages.map(function (m) { return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + '</small><br><b>' + esc(m.subject) + '</b><br>' + esc(m.body) + (m.replies || []).map(function (r) { return '<div style="margin:8px 0 0 14px;padding:8px;background:#f2f7fc;border-radius:8px"><small>Bright Cleaning Sev Inc. · ' + esc(String(r.at).slice(0, 10)) + '</small><br>' + esc(r.body) + '</div>'; }).join('') + '</li>'; }).join('') + '</ul>' : empty('No messages yet', 'Messages you send and replies from the Bright Cleaning Sev Inc. team will appear here.')) + '</div>';
       var mailAll = (d.emailsFromUs || []).map(function (m) { return { m: m, mine: false }; }).concat((d.emailsFromCustomer || []).map(function (m) { return { m: m, mine: true }; }));
       mailAll.sort(function (a, b) { return String(b.m.at).localeCompare(String(a.m.at)); });
-      html += '<div class="panel" style="margin-top:16px"><h2>Emails with Bright Clean</h2>' +
+      html += '<div class="panel" style="margin-top:16px"><h2>Emails with Bright Cleaning Sev Inc.</h2>' +
         (mailAll.length
-          ? '<ul style="list-style:none;padding:0;margin:0">' + mailAll.map(function (x) { var m = x.m; return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + (x.mine ? ' · Your email' : ' · Sent by Bright Clean') + '</small>' + (!x.mine && m.status === 'failed' ? ' <small>(not delivered)</small>' : '') + '<br><b>' + esc(m.subject) + '</b><details><summary class="muted">Show message</summary><pre style="white-space:pre-wrap;font:inherit">' + esc(m.body) + '</pre></details></li>'; }).join('') + '</ul>'
-          : '<p class="muted">Emails between you and Bright Clean will appear here.</p>') + '</div>';
+          ? '<ul style="list-style:none;padding:0;margin:0">' + mailAll.map(function (x) { var m = x.m; return '<li style="padding:10px 0;border-bottom:1px solid #e5ecf4"><small>' + esc(String(m.at).slice(0, 10)) + (x.mine ? ' · Your email' : ' · Sent by Bright Cleaning Sev Inc.') + '</small>' + (!x.mine && m.status === 'failed' ? ' <small>(not delivered)</small>' : '') + '<br><b>' + esc(m.subject) + '</b><details><summary class="muted">Show message</summary><pre style="white-space:pre-wrap;font:inherit">' + esc(m.body) + '</pre></details></li>'; }).join('') + '</ul>'
+          : '<p class="muted">Emails between you and Bright Cleaning Sev Inc. will appear here.</p>') + '</div>';
     } else if (page === 'request') {
       requestPreset = requestPreset || '';
       html = '<div class="panel"><form id="rsForm">' +
@@ -148,7 +148,7 @@
         '<div class="field" style="margin-top:12px"><label>Sign-in email</label><input value="' + esc(email) + '" disabled></div>' +
         '<p class="muted" style="margin-top:8px">To change your sign-in email, message the team. We verify the new address before we change it.</p>' +
         '<p style="margin-top:14px"><button class="primary-button" type="submit">Save changes</button></p></form><p class="msg" id="profMsg" role="status"></p></div>' +
-        '<div class="panel"><h2>Notifications</h2><p class="muted">Turn off automatic reminders. Other emails from Bright Clean, such as invoices you are sent, still come through.</p><form id="notifyForm">' +
+        '<div class="panel"><h2>Notifications</h2><p class="muted">Turn off automatic reminders. Other emails from Bright Cleaning Sev Inc., such as invoices you are sent, still come through.</p><form id="notifyForm">' +
         box('proposals', 'Proposal follow-up reminders') + box('invoices', 'Invoice payment reminders') + box('messages', 'Replies to your messages') +
         '<p style="margin-top:14px"><button class="primary-button" type="submit">Save notifications</button></p></form><p class="msg" id="notifyMsg" role="status"></p></div></div>' +
         '<div class="panel" style="margin-top:16px"><h2>Password</h2><p class="muted">' + (pf.has_password ? 'Change your password. Other devices will be signed out.' : 'Set a password so you can sign in without an email link.') + '</p><form id="pwSetForm">' +
@@ -265,7 +265,7 @@
     if (!all.some(function (p) { return p.id === propSel; })) propSel = list.length ? list[0].id : null;
     var sel = all.filter(function (p) { return p.id === propSel; })[0];
     var stat = function (label, n, cls, icon) { return '<article class="stat-card ' + cls + '"><div class="stat-top">' + label + ' <span class="stat-icon">' + icon + '</span></div><div class="stat-value">' + n + '</div></article>'; };
-    var html = '<div class="prop-actions"><button class="primary-button" type="button" data-request="proposal">＋ Request a Proposal</button><button class="btn ghost" type="button" data-go="messages">Message Bright Clean</button></div>';
+    var html = '<div class="prop-actions"><button class="primary-button" type="button" data-request="proposal">＋ Request a Proposal</button><button class="btn ghost" type="button" data-go="messages">Message Bright Cleaning Sev Inc.</button></div>';
     html += '<div class="grid stats prop-stats">' + stat('Total Proposals', all.length, 'st-blue', '▤') + stat('Awaiting Review', count('awaiting'), 'st-amber', '◷') +
       stat('Approved', count('approved'), 'st-green', '✓') + stat('Declined', count('declined'), 'st-red', '✕') + stat('Expired', count('expired'), 'st-purple', '▦') + '</div>';
     html += '<div class="prop-layout"><div class="panel prop-list"><div class="prop-tabs">' +
@@ -275,14 +275,14 @@
         list.map(function (p) {
           return '<tr class="' + (p.id === propSel ? 'row-on' : '') + '"><td><a href="#" data-pview="' + p.id + '">' + esc(p.number) + '</a></td><td>' + esc(p.title) + '</td><td>' + esc(p.site || '—') + '</td><td>' + money(p.total) + '</td><td>' + propBadge(p) + '</td><td><button class="btn ghost" type="button" data-pview="' + p.id + '">View</button></td></tr>';
         }).join('') + '</tbody></table></div>' : empty('No proposals match', 'Try another search, or choose All Proposals.')) + '</div>' +
-      (sel ? proposalDetailHtml(sel) : '<aside class="panel prop-detail">' + empty('No proposal selected', 'Proposals from Bright Clean will appear here.') + '</aside>') + '</div>';
+      (sel ? proposalDetailHtml(sel) : '<aside class="panel prop-detail">' + empty('No proposal selected', 'Proposals from Bright Cleaning Sev Inc. will appear here.') + '</aside>') + '</div>';
     return html;
   }
   function proposalDetailHtml(p) {
     var decidedOn = p.decided_at ? ' on ' + esc(p.decided_at) : '';
     var acts = p.actionable
       ? '<div class="prop-acts"><button class="primary-button" type="button" data-pact="approve">✓ Approve Proposal</button><button class="btn danger" type="button" data-pact="decline">✕ Decline</button><button class="btn ghost" type="button" data-pact="changes">✎ Request Changes</button></div>'
-      : '<p class="prop-note">' + (p.status === 'Approved' ? 'You approved this proposal' + decidedOn + '.' : p.status === 'Declined' ? 'You declined this proposal' + decidedOn + '.' : p.status === 'Expired' ? 'This proposal has expired. Message Bright Clean for an updated one.' : 'This proposal is not open for a decision.') + '</p>';
+      : '<p class="prop-note">' + (p.status === 'Approved' ? 'You approved this proposal' + decidedOn + '.' : p.status === 'Declined' ? 'You declined this proposal' + decidedOn + '.' : p.status === 'Expired' ? 'This proposal has expired. Message Bright Cleaning Sev Inc. for an updated one.' : 'This proposal is not open for a decision.') + '</p>';
     var tabs = [['overview', 'Overview'], ['scope', 'Scope of Work'], ['pricing', 'Pricing'], ['terms', 'Terms'], ['documents', 'Documents']];
     var body = '';
     if (propDetail === 'overview') {

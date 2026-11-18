@@ -182,7 +182,7 @@ module.exports = function mountContracts(app, ctx) {
   const pub = k => ({ number: k.number, title: k.title, kind: k.kind, company: k.company, customer_name: k.customer_name, scope: k.scope, terms: k.terms || DEFAULT_TERMS, payment_terms: k.payment_terms, billing: k.billing,
     start_date: k.start_date, end_date: k.end_date, value: k.value, auto_renew: !!k.auto_renew, notice_days: k.notice_days, signature_status: k.signature_status, signer_name: k.signer_name, signed_at: k.signed_at, countersigned_at: k.countersigned_at, decline_reason: k.decline_reason });
   app.get('/api/contract/:token', (req, res) => {
-    const k = byToken(req.params.token); if (!k) return res.status(404).json({ error: 'This contract link is not valid or was replaced. Ask Bright Clean for the current link.' });
+    const k = byToken(req.params.token); if (!k) return res.status(404).json({ error: 'This contract link is not valid or was replaced. Ask Bright Cleaning Sev Inc. for the current link.' });
     if (k.status === 'Superseded') return res.status(410).json({ error: 'This contract was replaced by a newer version.' });
     if (k.signature_status === 'Sent') { db.prepare("UPDATE contracts SET signature_status='Viewed', viewed_at=? WHERE id=?").run(now(), k.id); db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run('customer', 'viewed', 'contract', k.id, k.number, now()); k.signature_status = 'Viewed'; }
     res.json({ contract: pub(k) });
@@ -194,7 +194,7 @@ module.exports = function mountContracts(app, ctx) {
   app.post('/api/contract/:token/sign', async (req, res) => {
     const k = byToken(req.params.token); if (!k) return res.status(404).json({ error: 'This contract link is not valid.' });
     if (k.status === 'Superseded') return res.status(410).json({ error: 'This contract was replaced by a newer version. Use the current link.' });
-    if (!['Sent', 'Viewed'].includes(k.signature_status)) return res.status(409).json({ error: k.signature_status === 'Declined' ? 'This contract was declined. Contact Bright Clean for an updated version.' : 'This contract can no longer be signed from this link.' });
+    if (!['Sent', 'Viewed'].includes(k.signature_status)) return res.status(409).json({ error: k.signature_status === 'Declined' ? 'This contract was declined. Contact Bright Cleaning Sev Inc. for an updated version.' : 'This contract can no longer be signed from this link.' });
     const b = req.body || {}, name = clean(b.name, 120);
     if (name.length < 3 || !/\s/.test(name)) return res.status(400).json({ error: 'Type your full name (first and last) to sign.' });
     if (b.agree !== true) return res.status(400).json({ error: 'Confirm that you are authorized to sign for your company.' });

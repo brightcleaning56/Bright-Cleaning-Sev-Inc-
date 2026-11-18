@@ -1,3 +1,4 @@
+const { COMPANY_NAME } = require('./company');
 // Phone-provider capture (Twilio). Off until TWILIO_AUTH_TOKEN is set. Every webhook is verified with Twilio's
 // X-Twilio-Signature (HMAC-SHA1 of the full URL + sorted POST params) so nobody can inject fake calls.
 // Inbound/missed calls are logged automatically (matched to a customer by phone); recordings and transcripts
@@ -86,7 +87,7 @@ module.exports = function mountCalls(app, ctx) {
   // Inbound call handling (the number's "A call comes in" webhook): ring the office phone (TWILIO_FORWARD_TO) for 20 s,
   // recording answered calls; if nobody answers (or no forward number is set) take a transcribed voicemail.
   const esc = x => String(x).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
-  const greeting = () => esc(process.env.TWILIO_GREETING || 'Thanks for calling Bright Cleaning. We are with a customer right now. Please leave your name, number and how we can help, and we will call you back shortly.');
+  const greeting = () => esc(process.env.TWILIO_GREETING || 'Thanks for calling Bright Cleaning Sev Inc. We are with a customer right now. Please leave your name, number and how we can help, and we will call you back shortly.');
   // Recording notice (readiness 5.10): callers hear it before they are connected or leave a message. Wording is set by TWILIO_RECORDING_NOTICE.
   const recordingNotice = () => esc(process.env.TWILIO_RECORDING_NOTICE || 'Calls and messages may be recorded for quality and training.');
   // Said to the customer before a call the team places is connected (approved wording; set by TWILIO_CALL_NOTICE).
@@ -340,7 +341,7 @@ module.exports = function mountCalls(app, ctx) {
   const gather = (say, extra = '') => `<Gather input="speech" action="${base()}/api/webhooks/twilio/ai-turn" method="POST" speechTimeout="auto" speechModel="phone_call" language="en-US" actionOnEmptyResult="true"${extra}><Say voice="${VOICE()}">${esc(say)}</Say></Gather>`;
   function aiStart(b, reason) {
     const sid = clean(b.CallSid, 64), caller = e164(b.From) || clean(b.From, 40), cu = matchCustomer(caller);
-    const hello = `Thanks for calling Bright Cleaning. This is Bright Clean's virtual assistant, and this call may be recorded and transcribed. ${cu ? 'It looks like you are calling from a number we have on file. ' : ''}How can I help you today?`;
+    const hello = `Thanks for calling Bright Cleaning Sev Inc. This is the virtual assistant for Bright Cleaning Sev Inc., and this call may be recorded and transcribed. ${cu ? 'It looks like you are calling from a number we have on file. ' : ''}How can I help you today?`;
     db.prepare('INSERT OR IGNORE INTO ai_call_sessions(call_sid, caller, customer_id, reason, started_at, greeting) VALUES(?,?,?,?,?,?)').run(sid, caller, cu ? cu.id : null, reason, now(), hello);
     return `<?xml version="1.0" encoding="UTF-8"?><Response>${gather(hello)}<Redirect method="POST">${base()}/api/webhooks/twilio/ai-turn</Redirect></Response>`;
   }
@@ -356,9 +357,9 @@ module.exports = function mountCalls(app, ctx) {
       input_schema: { type: 'object', properties: { reason: { type: 'string' }, preferred_time: { type: 'string' } }, required: ['reason'] } },
     { name: 'transfer_to_human', description: 'Connect the caller to a person now. Use when the caller asks for a person, is upset, or has an emergency.', input_schema: { type: 'object', properties: { reason: { type: 'string' } } } },
     { name: 'end_call', description: 'Say goodbye and end the call once the caller has nothing else.', input_schema: { type: 'object', properties: {} } }];
-  const SYSTEM = (sess, cu) => `You are the virtual phone receptionist for Bright Cleaning Sev Inc. ("Bright Clean"), a cleaning company serving residential, commercial/enterprise (janitorial, multifamily common areas, offices), post-construction final cleaning (rough, final, touch-up/punch-list, interior and exterior windows) and specialty services (floor care, power washing, parking lots, valet trash).
+  const SYSTEM = (sess, cu) => `You are the virtual phone receptionist for Bright Cleaning Sev Inc., a cleaning company serving residential, commercial/enterprise (janitorial, multifamily common areas, offices), post-construction final cleaning (rough, final, touch-up/punch-list, interior and exterior windows) and specialty services (floor care, power washing, parking lots, valet trash).
 You are speaking on a live phone call: keep every reply to one or two short, natural sentences and ask one question at a time. No lists, no markdown.
-Goals: understand what the caller needs, collect the details the team needs, save them with save_caller_details, and tell the caller someone from Bright Clean will follow up.
+Goals: understand what the caller needs, collect the details the team needs, save them with save_caller_details, and tell the caller someone from Bright Cleaning Sev Inc. will follow up.
 - Residential/commercial: ask the address or city, type of property, approximate size, how often or when, and a good callback number and email.
 - Construction: ask the project name and location, approximate square footage, construction stage, when final cleaning is needed, any bid due date, whether drawings are available, and site access.
 - Complaints from existing customers: get what happened and where, log it with log_complaint, apologize, and say a manager will follow up.
@@ -422,7 +423,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     const msgs = JSON.parse(sess.messages || '[]'), heard = String(b.SpeechResult || '').trim().slice(0, 1000);
     if (!heard) {
       const s = (sess.silences || 0) + 1; db.prepare('UPDATE ai_call_sessions SET silences=? WHERE call_sid=?').run(s, sid);
-      if (s >= 2) { runTool(sess, 'request_callback', { reason: 'Caller was silent / line dropped during AI call' }); return res.type('text/xml').send(sayHangup("I'm having trouble hearing you, so someone from Bright Clean will call you back shortly. Goodbye.")); }
+      if (s >= 2) { runTool(sess, 'request_callback', { reason: 'Caller was silent / line dropped during AI call' }); return res.type('text/xml').send(sayHangup("I'm having trouble hearing you, so someone from Bright Cleaning Sev Inc. will call you back shortly. Goodbye.")); }
       return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${gather("Sorry, I didn't catch that. How can I help you?")}<Redirect method="POST">${base()}/api/webhooks/twilio/ai-turn</Redirect></Response>`);
     }
     if ((sess.turns || 0) >= Number(process.env.AI_RECEPTIONIST_MAX_TURNS || 16)) { runTool(sess, 'request_callback', { reason: 'Long call — continue with a person' }); return res.type('text/xml').send(sayHangup('Thank you. I have everything noted, and someone from Bright Clean will call you back shortly. Goodbye.')); }
@@ -452,7 +453,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     }
     db.prepare('UPDATE ai_call_sessions SET messages=?, turns=turns+1 WHERE call_sid=?').run(JSON.stringify(msgs).slice(0, 200000), sid);
     if (action === 'transfer') return res.type('text/xml').send(transferXml(sess));
-    if (action === 'end') return res.type('text/xml').send(sayHangup(say || 'Thank you for calling Bright Clean. Goodbye.'));
+    if (action === 'end') return res.type('text/xml').send(sayHangup(say || 'Thank you for calling Bright Cleaning Sev Inc. Goodbye.'));
     res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${gather(say || 'How else can I help?')}<Redirect method="POST">${base()}/api/webhooks/twilio/ai-turn</Redirect></Response>`);
   }));
   // When the call ends: attach the AI conversation, links and follow-up to the call record (once).
@@ -490,7 +491,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
         msgs.push({ role: 'assistant', content }); say = content.filter(c => c.type === 'text').map(c => c.text).join(' ').trim();
         const uses = content.filter(c => c.type === 'tool_use'); if (!uses.length) break;
         msgs.push({ role: 'user', content: uses.map(u => { actions.push({ action: u.name, details: u.input }); return { type: 'tool_result', tool_use_id: u.id, content: u.name === 'end_call' ? 'Ending call.' : u.name === 'transfer_to_human' ? 'Transferring now.' : 'Done (test — not saved).' }; }) });
-        if (uses.some(u => ['end_call', 'transfer_to_human'].includes(u.name))) { if (!say) say = uses.some(u => u.name === 'transfer_to_human') ? 'One moment while I connect you.' : 'Thank you for calling Bright Clean. Goodbye.'; break; }
+        if (uses.some(u => ['end_call', 'transfer_to_human'].includes(u.name))) { if (!say) say = uses.some(u => u.name === 'transfer_to_human') ? 'One moment while I connect you.' : 'Thank you for calling Bright Cleaning Sev Inc. Goodbye.'; break; }
       }
       res.json({ reply: say || '(no reply)', actions });
     } catch (e) { res.status(502).json({ error: 'The AI did not answer: ' + e.message + '. On a real call this would fall back to ringing your phones.' }); }
@@ -575,7 +576,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
   // What the caller hears when the call is answered (signed like every Twilio webhook).
   app.post('/api/webhooks/twilio/outbound', hook((req, res) => {
     const lead = Number(req.query.lead) || 0;
-    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${req.query.test ? '<Say voice="Polly.Joanna">This is a test call from Bright Clean. This is an automated assistant. This call may be recorded. You can hang up now. Goodbye.</Say>' : ''}${req.query.test ? '' : `<Gather numDigits="1" timeout="8" action="${base()}/api/webhooks/twilio/outbound-press?lead=${lead}" method="POST"><Say voice="Polly.Joanna">Hello. This is an automated assistant calling for Bright Clean. This call may be recorded. You asked us to call you back. Press 1 to be connected to our team now, or hang up and we will follow up.</Say></Gather><Say voice="Polly.Joanna">Thank you. Our team will follow up with you. Goodbye.</Say>`}</Response>`);
+    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${req.query.test ? '<Say voice="Polly.Joanna">This is a test call from Bright Cleaning Sev Inc. This is an automated assistant. This call may be recorded. You can hang up now. Goodbye.</Say>' : ''}${req.query.test ? '' : `<Gather numDigits="1" timeout="8" action="${base()}/api/webhooks/twilio/outbound-press?lead=${lead}" method="POST"><Say voice="Polly.Joanna">Hello. This is an automated assistant calling for Bright Cleaning Sev Inc. This call may be recorded. You asked us to call you back. Press 1 to be connected to our team now, or hang up and we will follow up.</Say></Gather><Say voice="Polly.Joanna">Thank you. Our team will follow up with you. Goodbye.</Say>`}</Response>`);
   }));
   // Caller pressed a key: 1 connects to the team's phones; anything else ends the call politely.
   app.post('/api/webhooks/twilio/outbound-press', hook((req, res) => {

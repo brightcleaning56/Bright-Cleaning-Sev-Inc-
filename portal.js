@@ -1,3 +1,4 @@
+const { COMPANY_NAME } = require('./company');
 // Client Portal: customers sign in with a one-time link sent to their email (no passwords), then see their own
 // proposals, contracts, invoices and project status. Read-only. Signing and payment use the existing secure links.
 // Nothing reveals whether an email is on file: the sign-in request always answers the same way.
@@ -57,7 +58,7 @@ module.exports = function mountPortal(app, ctx) {
   app.post('/api/portal/request', async (req, res) => {
     if (tooMany(req.ip || 'x')) return res.status(429).json({ error: 'Too many requests. Please wait a few minutes and try again.' });
     const email = norm((req.body || {}).email);
-    const done = () => res.json({ ok: true, message: 'If this email is on file with Bright Clean, a sign-in link is on its way. The link expires in 30 minutes.' });
+    const done = () => res.json({ ok: true, message: 'If this email is on file with Bright Cleaning Sev Inc., a sign-in link is on its way. The link expires in 30 minutes.' });
     if (!isEmail(email)) return done();
     const recent = db.prepare("SELECT created_at FROM portal_logins WHERE email=? ORDER BY id DESC LIMIT 1").get(email);
     if (recent && Date.now() - Date.parse(recent.created_at) < 60000) return done(); // one link a minute
@@ -72,7 +73,7 @@ module.exports = function mountPortal(app, ctx) {
     done(); // answer the same way whether or not the email is on file; the send happens after the reply
     const m = getMailer && getMailer();
     if (m) {
-      try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: email, subject: 'Your Bright Clean client portal sign-in link', text: `Use this link to open your Bright Clean client portal. It expires in 30 minutes and works once.\n\n${base()}/portal.html#${token}\n\nIf you did not ask for this, you can ignore this email.\n\nBright Cleaning Sev Inc.` }); }
+      try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: email, subject: 'Your Bright Cleaning Sev Inc. client portal sign-in link', text: `Use this link to open your ${COMPANY_NAME} client portal. It expires in 30 minutes and works once.\n\n${base()}/portal.html#${token}\n\nIf you did not ask for this, you can ignore this email.\n\nBright Cleaning Sev Inc.` }); }
       catch (e) { console.error('portal link not sent', e.message); try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','sign-in link not delivered','portal',0,?,?)").run((email + ' — ' + e.message).slice(0, 300), now()); } catch { /* */ } }
     }
   });
@@ -175,7 +176,7 @@ module.exports = function mountPortal(app, ctx) {
     const mailer2 = getMailer && getMailer();
     let emailed = false;
     if (mailer2 && wantsEmail(m.email, 'messages')) {
-      try { await mailer2.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: m.email, subject: 'Re: ' + m.subject, text: body + '\n\nYou can see this conversation in your Bright Clean client portal.\n\nBright Cleaning Sev Inc. · +1 (515) 303-3024' }); emailed = true; }
+      try { await mailer2.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: m.email, subject: 'Re: ' + m.subject, text: body + '\n\nYou can see this conversation in your Bright Cleaning Sev Inc. client portal.\n\nBright Cleaning Sev Inc. · +1 (515) 303-3024' }); emailed = true; }
       catch (e) { console.error('portal reply not sent', e.message); }
     }
     res.status(201).json({ ok: true, id, emailed });
@@ -199,7 +200,7 @@ module.exports = function mountPortal(app, ctx) {
       try { await m.sendMail({ from, to: process.env.NOTIFY_EMAIL || 'info@brightclean.net', subject: 'Client portal message: ' + subject, text: 'From: ' + sess.email + '\n\n' + body + '\n\nReply to this email to answer the customer.', replyTo: sess.email }); } catch (e) { console.error('portal message notice not sent', e.message); }
       try { await m.sendMail({ from, to: sess.email, subject: 'We received your message', text: 'Thank you. We received your message and will reply soon.\n\nBright Cleaning Sev Inc. · +1 (515) 303-3024' }); } catch (e) { console.error('portal message ack not sent', e.message); }
     }
-    res.status(201).json({ ok: true, id, message: 'Thank you. Your message was sent to the Bright Clean team.' });
+    res.status(201).json({ ok: true, id, message: 'Thank you. Your message was sent to the Bright Cleaning Sev Inc. team.' });
   });
   // Account: name, company, phone and which updates the customer wants. Email changes are handled by the team.
   const NOTIFY = ['schedule', 'proposals', 'invoices', 'projects', 'messages'];
@@ -237,9 +238,9 @@ module.exports = function mountPortal(app, ctx) {
     const b = req.body || {};
     const decision = String(b.decision || '');
     if (!['approve', 'decline'].includes(decision)) return res.status(400).json({ error: 'Choose approve or decline.' });
-    if (['Draft', 'Ready', 'Superseded', 'Withdrawn'].includes(e.status)) return res.status(409).json({ error: 'This proposal is not open for a decision. Message Bright Clean for help.' });
+    if (['Draft', 'Ready', 'Superseded', 'Withdrawn'].includes(e.status)) return res.status(409).json({ error: 'This proposal is not open for a decision. Message Bright Cleaning Sev Inc. for help.' });
     if (['Approved', 'Declined'].includes(e.status)) return res.status(409).json({ error: 'This proposal was already ' + e.status.toLowerCase() + '.' });
-    if (e.expires_on && e.expires_on < todayStr()) return res.status(410).json({ error: 'This proposal has expired. Message Bright Clean for an updated proposal.' });
+    if (e.expires_on && e.expires_on < todayStr()) return res.status(410).json({ error: 'This proposal has expired. Message Bright Cleaning Sev Inc. for an updated proposal.' });
     const clip = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
     const dt = now();
     if (decision === 'approve') {
@@ -264,7 +265,7 @@ module.exports = function mountPortal(app, ctx) {
     if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
     const e = ownProposal(sess, req.params.id);
     if (!e) return res.status(404).json({ error: 'Proposal not found.' });
-    if (['Approved', 'Declined', 'Withdrawn', 'Superseded'].includes(e.status)) return res.status(409).json({ error: 'This proposal is already closed. Message Bright Clean for changes.' });
+    if (['Approved', 'Declined', 'Withdrawn', 'Superseded'].includes(e.status)) return res.status(409).json({ error: 'This proposal is already closed. Message Bright Cleaning Sev Inc. for changes.' });
     const body = String((req.body || {}).body || '').trim().slice(0, 4000);
     if (body.length < 5) return res.status(400).json({ error: 'Describe the changes you need.' });
     const number = numberOf(e);
@@ -273,13 +274,13 @@ module.exports = function mountPortal(app, ctx) {
     const id = db.prepare('INSERT INTO portal_messages(email,subject,body,created_at) VALUES(?,?,?,?)').run(sess.email, subject.slice(0, 200), body, at).lastInsertRowid;
     const m = getMailer && getMailer();
     if (m) { try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: process.env.NOTIFY_EMAIL || 'info@brightclean.net', subject: 'Change request on ' + number, text: 'From: ' + sess.email + '\n\n' + body + '\n\nReply to this email to answer the customer.', replyTo: sess.email }); } catch (err) { console.error('change request notice not sent', err.message); } }
-    res.status(201).json({ ok: true, id, message: 'Thank you. Your change request was sent to the Bright Clean team. We will send an updated proposal.' });
+    res.status(201).json({ ok: true, id, message: 'Thank you. Your change request was sent to the Bright Cleaning Sev Inc. team. We will send an updated proposal.' });
   });
   // Customer uploads a document (PDF, Word, Excel, image or zip), optionally for one of their proposals.
   app.post('/api/portal/documents', (req, res) => {
     const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
     if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
-    if (!upload) return res.status(503).json({ error: 'Uploads are not available right now. Please email the file to the Bright Clean team.' });
+    if (!upload) return res.status(503).json({ error: 'Uploads are not available right now. Please email the file to the Bright Cleaning Sev Inc. team.' });
     const [mwUp, verifyUp] = upload.single('file');
     mwUp(req, res, err => verifyUp(req, res, () => portalDocHandler(req, res, err, sess)));
   });
@@ -301,7 +302,7 @@ module.exports = function mountPortal(app, ctx) {
       const id = db.prepare("INSERT INTO documents(estimate_id,title,kind,file_name,file_url,size,uploaded_by,created_at,status,version) VALUES(?,?,?,?,?,?,?,?,'Current',1)")
         .run(eid, title, 'Customer upload', f.originalname, '/api/portal/files/' + path.basename(f.filename), f.size, sess.email, at).lastInsertRowid;
       try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, 'uploaded a document in client portal', 'document', id, f.originalname, at); } catch { /* */ }
-      res.status(201).json({ ok: true, id, message: 'Thank you. Your document was uploaded to the Bright Clean team.' });
+      res.status(201).json({ ok: true, id, message: 'Thank you. Your document was uploaded to the Bright Cleaning Sev Inc. team.' });
     }
   }
   // Download one of the customer's own uploads (checked against the signed-in customer).
@@ -355,7 +356,7 @@ module.exports = function mountPortal(app, ctx) {
       if (!bcryptP.compareSync(cur, row.password_hash)) return res.status(401).json({ error: 'Your current password is not right.' });
     }
     const cid = customerFor(sess.email);
-    if (cid == null) return res.status(403).json({ error: 'Your account is not linked to a single Bright Clean customer record yet. Message Bright Clean for help.' });
+    if (cid == null) return res.status(403).json({ error: 'Your account is not linked to a single Bright Cleaning Sev Inc. customer record yet. Message Bright Cleaning Sev Inc. for help.' });
     const hash = bcryptP.hashSync(pw, 12), t = now(), validAfter = new Date().toISOString();
     db.prepare(`INSERT INTO portal_profiles(email,password_hash,password_set_at,valid_after,updated_at) VALUES(?,?,?,?,?)
       ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash, password_set_at=excluded.password_set_at, valid_after=excluded.valid_after, updated_at=excluded.updated_at`)
@@ -383,7 +384,7 @@ module.exports = function mountPortal(app, ctx) {
     if (m) {
       const from = process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net';
       try { await m.sendMail({ from, to: process.env.NOTIFY_EMAIL || 'info@brightclean.net', subject: 'New service request from the client portal', text: 'From: ' + sess.email + '\nService: ' + service + '\nAddress: ' + address + '\n\n' + details }); } catch (e) { console.error('portal request notice not sent', e.message); }
-      try { await m.sendMail({ from, to: sess.email, subject: 'We received your Bright Clean request', text: 'Thank you for reaching out to Bright Cleaning Sev Inc. We received your request for ' + service + '. Our team will review the details and follow up with you.\n\nYou can also call +1 (515) 303-3024.\n\nBright Cleaning Sev Inc.' }); } catch (e) { console.error('portal request ack not sent', e.message); }
+      try { await m.sendMail({ from, to: sess.email, subject: 'We received your Bright Cleaning Sev Inc. request', text: 'Thank you for reaching out to Bright Cleaning Sev Inc. We received your request for ' + service + '. Our team will review the details and follow up with you.\n\nYou can also call +1 (515) 303-3024.\n\nBright Cleaning Sev Inc.' }); } catch (e) { console.error('portal request ack not sent', e.message); }
     }
     res.status(201).json({ ok: true, id, message: 'Thank you. We received your request and will follow up with you soon.' });
   });

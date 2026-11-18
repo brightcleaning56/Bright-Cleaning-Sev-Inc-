@@ -1,3 +1,4 @@
+const { COMPANY_NAME } = require('./company');
 // Lead classification: what kind of work the lead is (segment), what they are asking for (intent),
 // whose address it is (a person, a company inbox, or a job inbox), and what the system may do about it.
 // Rule-based on purpose: it works without the AI service, and every answer can be explained from the words in the lead.
@@ -11,7 +12,7 @@ const SEGMENT_LABEL = {
   residential: 'Residential', construction: 'Construction (new build, general contractor)', commercial: 'Commercial', unknown: 'Not clear yet'
 };
 const INTENT_LABEL = { bidder_list: 'Asks to be added to a bidder / vendor list', bid_request: 'Asks for a bid, quote or walkthrough', inquiry: 'General inquiry or introduction', job_application: 'Job application (not a sales lead)' };
-const COMPANY = { name: 'Bright Clean', phone: '+1 (515) 303-3024', email: 'info@brightclean.net', city: 'Des Moines, Iowa' };
+const COMPANY = { name: 'Bright Cleaning Sev Inc.', phone: '+1 (515) 303-3024', email: 'info@brightclean.net', city: 'Des Moines, Iowa' };
 
 const SEGMENT_RULES = [
   ['post_construction', /post[\s-]?construction|construction clean|final clean|rough[\s-]?in clean|rough clean|punch[\s-]?list|touch[\s-]?up clean|make[\s-]?ready|turnover clean|builder clean/i],
@@ -80,22 +81,22 @@ function draftFor(l, seg, intent, stage = 'intro') {
   const co = l.company || 'your company';
   const hi = firstName(l) ? `Hello ${firstName(l)},` : 'Hello,';
   const intro = `This is ${COMPANY.name}. ${CO_PROFILE}`;
-  const sign = `\n\nBright Clean Team\n${COMPANY.name} Sev Inc.\n${COMPANY.phone}\n${COMPANY.email}`;
+  const sign = `\n\nBright Cleaning Sev Inc. Team\n${COMPANY.name}\n${COMPANY.phone}\n${COMPANY.email}`;
   if (seg === 'post_construction' && intent === 'bidder_list') {
     return {
-      subject: `Bright Clean: bidder list and current projects for ${co}`,
+      subject: `${COMPANY_NAME}: bidder list and current projects for ${co}`,
       body: `${hi}\n\n${intro} We do post-construction cleaning for general contractors: rough-in, final clean, touch-up and punch list, and make-ready for multifamily and senior living.\n\nWe would like to be added to ${co}'s bidder list for post-construction cleaning. Could you tell us:\n1. How do you add a cleaning subcontractor to your bid list, and is there a registration form or prequalification packet?\n2. Do you have current or upcoming projects that need cleaning, and when are they due?\n3. Who should we contact for bid invitations?\n\nThank you for your time.${sign}`
     };
   }
   if (stage === 'follow_up' || intent === 'bidder_list') {
     return {
-      subject: `Bright Clean: bidder list for ${co}`,
+      subject: `${COMPANY_NAME}: bidder list for ${co}`,
       body: `${hi}\n\nWe reached out recently about cleaning services. ${CO_PROFILE}\n\nWe would like to be added to your bidder list for upcoming projects, and for any construction cleaning you need on single-family homes, commercial buildings or multifamily properties.\n\nCould you tell us:\n1. How do you add a cleaning vendor to your list, and is there a registration form or prequalification packet?\n2. Which upcoming projects will need cleaning, and when are they due?\n3. Who should we contact about bid invitations?\n\nThank you for your time.${sign}`
     };
   }
   if (seg === 'post_construction') {
     return {
-      subject: `Bright Clean: post-construction cleaning for ${co}`,
+      subject: `${COMPANY_NAME}: post-construction cleaning for ${co}`,
       body: `${hi}\n\n${intro} We do post-construction cleaning for general contractors and developers. ${HOW_WE_WORK} ${PRICING_LINE}\n\nDo you have projects that need rough, final, touch-up or make-ready cleaning? Please send the project name, address, phases needed and the target dates, and we will schedule a walkthrough and send a proposal. We can also send our insurance and licensing on request.${sign}`
     };
   }
@@ -104,7 +105,7 @@ function draftFor(l, seg, intent, stage = 'intro') {
     ? 'Thanks for the request. To put together a price we need: the project name and address, the scope (for example the number of units or square footage), the cleaning frequency or phases, and the bid due date. We can also set up a walkthrough.'
     : 'We would like to learn about your project and what you need cleaned. Would a short call or a walkthrough work for you?';
   return {
-    subject: `Bright Clean: cleaning services for ${co}`,
+    subject: `${COMPANY_NAME}: cleaning services for ${co}`,
     body: `${hi}\n\n${intro} For you, that means ${area}. ${HOW_WE_WORK} ${PRICING_LINE}\n\n${ask}${sign}`
   };
 }

@@ -55,7 +55,7 @@ const SERVICES = {
       { name: 'floor_types', label: 'Floor types', type: 'multi', options: ['Carpet', 'VCT', 'LVT / vinyl plank', 'Tile', 'Sealed concrete', 'Wood'] },
       { name: 'frequency', label: 'Frequency', type: 'select', required: true, options: COMMON_FREQ },
       { name: 'shift', label: 'Preferred time', type: 'select', options: ['After hours', 'Daytime', 'Overnight', 'Flexible'] },
-      { name: 'supplies', label: 'Restroom paper and soap', type: 'select', options: ['Bright Clean supplies them', 'We supply them', 'Discuss'] },
+      { name: 'supplies', label: 'Restroom paper and soap', type: 'select', options: ['Bright Cleaning Sev Inc. supplies them', 'We supply them', 'Discuss'] },
       { name: 'day_porter', label: 'Day porter needed?', type: 'yesno' },
       { name: 'occupancy', label: 'Approximate number of occupants / staff on site', type: 'number' },
       { name: 'access_notes', label: 'Access and security (keys, alarm codes handled in person, badge rules)', type: 'text' },
@@ -216,7 +216,7 @@ module.exports = function mountIntake(app, ctx) {
     const ops = getOps();
     if (ops) ops.upsertCustomer({ name: b.contact_name, company: b.company, email: b.email, phone: b.phone, address: b.address }, 'quote request');
     notify(`New quote request: ${def.title}`, `${clean(b.contact_name)} (${clean(b.company)})\n${clean(b.email)} · ${clean(b.phone)}\n${clean(b.address)}\n\n${details}\n\nBefore pricing:\n${fl.map(x => '- ' + x.text).join('\n') || '- Nothing flagged'}`, process.env.NOTIFY_EMAIL);
-    notify('We received your Bright Clean quote request', `Thank you. We received your ${def.title.toLowerCase()} request and will follow up within one business day.`, clean(b.email, 254), true);
+    notify('We received your Bright Cleaning Sev Inc. quote request', `Thank you. We received your ${def.title.toLowerCase()} request and will follow up within one business day.`, clean(b.email, 254), true);
     res.status(201).json({ message: 'Thank you. Your request has been received.', id: info.lastInsertRowid });
   });
 };

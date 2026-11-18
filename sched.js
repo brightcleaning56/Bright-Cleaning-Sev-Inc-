@@ -1,3 +1,4 @@
+const { COMPANY_NAME } = require('./company');
 // Scheduling & Dispatch: employees, skills, time off, crew assignment with conflict and overtime checks,
 // dispatch confirmation and notifications, holidays/skips for recurring work, time tracking with labor cost,
 // and a private mobile crew page (per-employee secure link) for check-in/out, photos, checklist and incidents.
@@ -623,7 +624,7 @@ module.exports = function mountSched(app, ctx) {
   // Plain update to the client with their tracking link. Quietly skipped when no client email is on file.
   const clientNote = async (v, subject, line) => {
     const c = clientOf(v); if (!c || !c.email) return false;
-    return notify(c.email, subject, `${line}\n\nFollow ${v.title} here: ${trackUrl(v)}\n\nBright Clean`);
+    return notify(c.email, subject, `${line}\n\nFollow ${v.title} here: ${trackUrl(v)}\n\n${COMPANY_NAME}`);
   };
   const trackView = v => {
     const c = clientOf(v), status = trackStatus(v);
@@ -654,7 +655,7 @@ module.exports = function mountSched(app, ctx) {
     const v = getVisit(req.params.id); if (!v) return res.status(404).json({ error: 'Job not found.' });
     const c = clientOf(v), link = trackUrl(v);
     if (!c || !c.email) return res.status(409).json({ error: 'No client email on file for this job. Copy the link and send it yourself.', link });
-    const sent = await notify(c.email, `Track ${v.title} ${v.date}`, `Here is the progress page for ${v.title} on ${v.date}. It shows when the crew is on the way, when they arrive, and the photos when the job is done.\n\n${link}\n\nBright Clean`);
+    const sent = await notify(c.email, `Track ${v.title} ${v.date}`, `Here is the progress page for ${v.title} on ${v.date}. It shows when the crew is on the way, when they arrive, and the photos when the job is done.\n\n${link}\n\n${COMPANY_NAME}`);
     res.json({ sent: !!sent, link });
   });
   // Time on site: from arrival to finish (or now), minus the breaks taken. Breaks are per crew member.

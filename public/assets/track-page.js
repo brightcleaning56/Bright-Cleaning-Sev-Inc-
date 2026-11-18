@@ -25,7 +25,7 @@
       (j.crew_count ? '<div class="muted" style="margin-top:6px">Crew on the job: ' + j.crew_count + '</div>' : '') +
       '</div>' +
       '<div class="card"><b>Progress</b><ol class="steps">' + steps + '</ol></div>' + photos +
-      '<p class="muted" style="text-align:center;margin-top:16px">This page updates as the job moves along. Questions? Call or email Bright Clean.</p>';
+      '<p class="muted" style="text-align:center;margin-top:16px">This page updates as the job moves along. Questions? Call or email Bright Cleaning Sev Inc.</p>';
   }
   function load() {
     fetch('/api/track/' + encodeURIComponent(token), { cache: 'no-store' })

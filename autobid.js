@@ -1,3 +1,4 @@
+const { COMPANY_NAME } = require('./company');
 // Auto-bid: turns a quote request (or an AI drawing takeoff) into a priced DRAFT estimate using the price book.
 // Drafts are never sent automatically: approval rules and the owner still decide what goes to the customer.
 module.exports = function mountAutobid(app, ctx) {
@@ -89,7 +90,7 @@ module.exports = function mountAutobid(app, ctx) {
     const key = 'bidq:' + l.id, prev = db.prepare('SELECT value FROM ai_settings WHERE key=?').get(key);
     if (prev && prev.value === sig) return false; // already asked these exact questions
     const first = (l.contact_name || '').trim().split(/\s+/)[0] || 'there';
-    const text = `Hello ${first},\n\n${['manual', 'import', 'outbound'].includes(l.origin) ? 'This is Bright Clean, a cleaning company in Des Moines serving single-family homes, multifamily properties and commercial buildings. We would like to learn about your projects and what you need cleaned' + (l.company ? ' at ' + l.company : '') + '.' : 'Thank you for your request for ' + (l.project_name || l.service || 'cleaning services') + (l.address ? ' at ' + l.address : '') + '.'} To prepare an accurate price, we need a few details:\n\n${questions.map(q => '- ' + q).join('\n')}\n\nReply to this email with the answers, or with any drawings or photos that show the areas. We will prepare the price once we have them.\n\nThank you,\nBright Cleaning Sev Inc.`;
+    const text = `Hello ${first},\n\n${['manual', 'import', 'outbound'].includes(l.origin) ? 'This is Bright Cleaning Sev Inc., a cleaning company in Des Moines serving single-family homes, multifamily properties and commercial buildings. We would like to learn about your projects and what you need cleaned' + (l.company ? ' at ' + l.company : '') + '.' : 'Thank you for your request for ' + (l.project_name || l.service || 'cleaning services') + (l.address ? ' at ' + l.address : '') + '.'} To prepare an accurate price, we need a few details:\n\n${questions.map(q => '- ' + q).join('\n')}\n\nReply to this email with the answers, or with any drawings or photos that show the areas. We will prepare the price once we have them.\n\nThank you,\nBright Cleaning Sev Inc.`;
     const t = now();
     Promise.resolve(m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject: `A few questions before we price your project`, text, automated: true }))
       .then(r => {

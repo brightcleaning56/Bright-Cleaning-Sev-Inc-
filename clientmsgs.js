@@ -15,10 +15,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
 
   // Approved templates. The owner maintains this list; staff insert a template and can edit it before sending.
   const TEMPLATES = [
-    { id: 'thanks', name: 'Thank you for reaching out', body: 'Hi {first}, thank you for reaching out to Bright Clean. We have your details and will follow up shortly. — Bright Cleaning Sev Inc.' },
-    { id: 'received', name: 'Proposal received?', body: 'Hi {first}, this is Bright Clean checking that our proposal reached you. Do you have any questions I can answer? — Bright Cleaning Sev Inc.' },
+    { id: 'thanks', name: 'Thank you for reaching out', body: 'Hi {first}, thank you for reaching out to Bright Cleaning Sev Inc. We have your details and will follow up shortly. — Bright Cleaning Sev Inc.' },
+    { id: 'received', name: 'Proposal received?', body: 'Hi {first}, this is Bright Cleaning Sev Inc. checking that our proposal reached you. Do you have any questions I can answer? — Bright Cleaning Sev Inc.' },
     { id: 'visit', name: 'Visit confirmation', body: 'Hi {first}, confirming our visit. Reply here if the time needs to change. — Bright Cleaning Sev Inc.' },
-    { id: 'invoice', name: 'Invoice reminder', body: 'Hi {first}, a friendly reminder that an invoice from Bright Clean is open. Let us know if you have any questions. — Bright Cleaning Sev Inc.' }
+    { id: 'invoice', name: 'Invoice reminder', body: 'Hi {first}, a friendly reminder that an invoice from Bright Cleaning Sev Inc. is open. Let us know if you have any questions. — Bright Cleaning Sev Inc.' }
   ];
 
   function directory() {

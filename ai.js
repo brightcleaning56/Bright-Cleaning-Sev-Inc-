@@ -1,3 +1,4 @@
+const { COMPANY_NAME } = require('./company');
 // Bright Clean AI layer (Anthropic Messages API). Dormant until ANTHROPIC_API_KEY is set in Render.
 // Rules: the AI drafts and extracts; it never sends email, prices work or commits to anything by itself.
 // Every AI run is recorded in automation_log so the owner can see what it did.
@@ -19,7 +20,7 @@ module.exports = function mountAI(app, ctx) {
     try { db.prepare('INSERT INTO automation_log(kind,ref_id,stage,sent_to,status,detail,created_at) VALUES(?,?,?,?,?,?,?)').run(kind, ref, 'ai', null, status, String(detail || '').slice(0, 500), now()); } catch { /* table shape differs: ignore */ }
   };
 
-  const COMPANY = `You work for Bright Cleaning Sev Inc. (Bright Clean), a cleaning company serving single-family homes, multifamily properties and commercial buildings. Services include construction final cleaning (rough, final, touch-up/punch, FF&E turnover), interior and exterior window cleaning, commercial janitorial, multifamily common areas, unit turnovers, power washing, parking lot upkeep and valet trash. Phone +1 (515) 303-3024, info@brightclean.net, brightclean.net.
+  const COMPANY = `You work for Bright Cleaning Sev Inc., a cleaning company serving single-family homes, multifamily properties and commercial buildings. Services include construction final cleaning (rough, final, touch-up/punch, FF&E turnover), interior and exterior window cleaning, commercial janitorial, multifamily common areas, unit turnovers, power washing, parking lot upkeep and valet trash. Phone +1 (515) 303-3024, info@brightclean.net, brightclean.net.
 Never invent prices, rates, availability, insurance, licenses, certifications or contract promises. Never state a price. If something is unknown, say it will be confirmed.`;
 
   async function call(messages, system, maxTokens = 1500) {
@@ -40,13 +41,13 @@ Never invent prices, rates, availability, insurance, licenses, certifications or
   }
 
   // What a lead's source means in plain words, so the reply matches how the lead actually reached us.
-  const REACH_OUT = 'BRIGHT CLEAN ADDED THIS CONTACT to reach out to them. They did NOT contact us. Do NOT say they reached out, called, filled in a form, or ask us to thank them for anything. Introduce Bright Clean in one or two sentences: commercial janitorial, construction final, rough and touch-up cleaning, multifamily common areas and unit turnovers, window cleaning, power washing and floor care. Say we would like to learn about their projects and what they need cleaned, ask the questions needed to price, and offer a call or site walkthrough.';
+  const REACH_OUT = 'BRIGHT CLEAN ADDED THIS CONTACT to reach out to them. They did NOT contact us. Do NOT say they reached out, called, filled in a form, or ask us to thank them for anything. Introduce Bright Cleaning Sev Inc. in one or two sentences: commercial janitorial, construction final, rough and touch-up cleaning, multifamily common areas and unit turnovers, window cleaning, power washing and floor care. Say we would like to learn about their projects and what they need cleaned, ask the questions needed to price, and offer a call or site walkthrough.';
   function leadSource(l) {
     const d = String(l.details || '');
     let form = null; try { form = l.intake ? JSON.parse(l.intake) : null; } catch { form = null; }
     const origin = l.origin || (form ? 'website' : 'manual');
-    if (origin === 'inbound_call' || /^Source: Phone call/.test(d)) return { label: 'Phone call to Bright Clean', how: 'They called Bright Clean and the call was logged. Thank them for calling and answer what they asked about.' };
-    if (origin === 'portal' || /^Source: client portal/.test(d)) return { label: 'Client portal request', how: 'They sent this request from their Bright Clean client portal. Thank them and confirm we have the request.' };
+    if (origin === 'inbound_call' || /^Source: Phone call/.test(d)) return { label: 'Phone call to Bright Cleaning Sev Inc.', how: 'They called Bright Cleaning Sev Inc. and the call was logged. Thank them for calling and answer what they asked about.' };
+    if (origin === 'portal' || /^Source: client portal/.test(d)) return { label: 'Client portal request', how: 'They sent this request from their Bright Cleaning Sev Inc. client portal. Thank them and confirm we have the request.' };
     if (origin === 'api') return { label: 'Partner or integration: ' + (String(l.intake || '').replace(/^API:\s*/, '') || 'partner website'), how: 'A partner website or tool sent this contact to us. Thank them for their interest and say we received their request through that source.' };
     if (origin === 'website' && form) return { label: 'Website quote request' + (form.service ? ' (' + form.service + ')' : ''), how: 'They filled in the quote request form on our website. Thank them and confirm the details we still need before we can price the work.' };
     if (origin === 'website') return { label: 'Website contact form message', how: 'They wrote to us through the contact form on our website. Reply to their message directly: answer what they asked and thank them for writing. Do not say they filled in a quote request unless the details say so.' };
@@ -71,7 +72,7 @@ ${facts.join('\n')}
 Return ONLY JSON with keys:
 "summary" (2 sentences), "category" (one of construction, multifamily, janitorial, windows, power_washing, parking, unit_turnover, other),
 "priority" (High/Normal/Low with bid deadlines or large projects High), "missing" (array of short items still needed before pricing, e.g. drawings, square footage, site visit),
-"next_step" (one sentence for the Bright Clean team), "reply_subject", "reply_body" (a short, friendly email from Bright Clean that follows the lead source above, asks only for the missing items, and promises follow-up. No prices.)` }], COMPANY, 1200);
+"next_step" (one sentence for the Bright Clean team), "reply_subject", "reply_body" (a short, friendly email from Bright Cleaning Sev Inc. that follows the lead source above, asks only for the missing items, and promises follow-up. No prices.)` }], COMPANY, 1200);
     const ai = parseJSON(text);
     const out = { summary: clean(ai.summary, 600), category: clean(ai.category, 40), priority: clean(ai.priority, 10), missing: (Array.isArray(ai.missing) ? ai.missing : []).slice(0, 10).map(x => clean(x, 160)),
       next_step: clean(ai.next_step, 300), reply_subject: clean(ai.reply_subject, 160), reply_body: clean(ai.reply_body, 4000), model: model(), at: now() };
@@ -297,7 +298,7 @@ Only report what you can read on a sheet, and always give the sheet. Never guess
     if (!mailer) return res.status(503).json({ error: 'Email is not set up yet, so the reply could not be sent.' });
     // The reply names the person who sent it (name and role), so the customer and the team know who wrote it.
     const sender = (() => { const em = String((req.user && req.user.email) || '').toLowerCase(); const row = db.prepare('SELECT name, role FROM admin_users WHERE lower(email)=?').get(em); const owner = em && process.env.ADMIN_EMAIL && em === String(process.env.ADMIN_EMAIL).toLowerCase(); const name = owner ? (process.env.ADMIN_NAME || 'Eric Moore') : ((row && row.name) || em); const role = owner ? 'Owner' : ({ owner: 'Owner', manager: 'Manager', supervisor: 'Supervisor', inspector: 'Inspector', sales: 'Sales', staff: 'Office staff' }[(row && row.role) || 'staff'] || 'Staff'); return `${name}, ${role}`; })();
-    const signed = `${body}\n\nSent by ${sender}, Bright Clean`;
+    const signed = `${body}\n\nSent by ${sender}, ${COMPANY_NAME}`;
     try { await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject, text: signed }); if (app.locals.setLeadWaiting) app.locals.setLeadWaiting(l.id); }
     catch (e) {
       // Postmark refuses addresses that bounced or unsubscribed earlier (code 406). Say so plainly; nothing was sent.
