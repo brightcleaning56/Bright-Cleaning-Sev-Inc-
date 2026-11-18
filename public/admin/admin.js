@@ -7,6 +7,9 @@
   const $$ = (s, root = document) => [...root.querySelectorAll(s)];
   const TOKEN_KEY = 'bc_admin_token';
   let token = localStorage.getItem(TOKEN_KEY);
+  // True after a sign-out (or a 401) until the next sign-in. While it is set, no API calls are sent, so
+  // timers and retries cannot keep hitting the server with a dead session.
+  let signedOut = false;
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   // A link taken from data is used only if it is a web address; anything else (javascript:, data:) becomes a harmless "#".
@@ -189,6 +192,7 @@
   }
 
   async function api(url, opts = {}) {
+    if (signedOut && !url.startsWith('/api/admin/login')) throw new Error('Signed out');
     opts.headers = { ...(opts.headers || {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) };
     if (opts.json !== undefined) {
       opts.headers['Content-Type'] = 'application/json';
@@ -240,7 +244,7 @@
   const state = { leads: [], estimates: [], contracts: [], projects: [], invoices: [], customers: [], leadKind: 'all', view: 'overview' };
 
   // ---------- Auth ----------
-  function signOut(message) { try { if (es) { es.close(); es = null; } } catch { /* */ }
+  function signOut(message) { signedOut = true; try { if (es) { es.close(); es = null; } } catch { /* */ }
     // Revoke this device's token on the server too, so a copy of it stops working. Best effort: the browser forgets it either way.
     if (token) { try { fetch('/api/admin/logout', { method: 'POST', keepalive: true, headers: { Authorization: 'Bearer ' + token } }).catch(() => { /* */ }); } catch { /* */ } }
     // A signed-out browser must stop receiving calls: release the phone device.
@@ -276,7 +280,7 @@
         x = await api('/api/admin/login', { method: 'POST', json: formObj(e.target) });
         if (x.mfa_required) { mfaToken = x.mfa_token; showMfaStep(true); st.textContent = 'Enter the 6-digit code from your authenticator app.'; return; }
       }
-      token = x.token;
+      token = x.token; signedOut = false;
       localStorage.setItem(TOKEN_KEY, token);
       e.target.reset();
       showMfaStep(false);
@@ -530,7 +534,7 @@
   const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
   const chg = c => c === null || c === undefined ? '<small class="flat">no prior data</small>' : `<small class="${c > 0 ? 'up' : c < 0 ? 'down' : 'flat'}">${c > 0 ? '▲' : c < 0 ? '▼' : ''} ${Math.abs(c)}% vs prior</small>`;
   $('#ccDays').addEventListener('change', () => { savePref('command_center', { ...(prefs.command_center || {}), days: $('#ccDays').value }); loadOverview(); });
-  setInterval(() => { if (state.view === 'overview' && document.visibilityState === 'visible' && !document.querySelector('#drawerRoot .drawer')) loadOverview().catch(() => {}); }, 30000);
+  setInterval(() => { if (!signedOut && token && state.view === 'overview' && document.visibilityState === 'visible' && !document.querySelector('#drawerRoot .drawer')) loadOverview().catch(() => {}); }, 30000);
   // ---- Personal preferences (per user) ----
   let prefs = {};
   async function loadPrefs() { try { prefs = await api('/api/admin/prefs'); } catch { prefs = {}; } }
@@ -539,7 +543,7 @@
   let es = null, esTimer = null, esBackoff = 2000, liveOn = false, pending = new Set();
   function setLiveBadge(on) { liveOn = on; const b = document.querySelector('#todayLine .live'); if (b) { b.textContent = on ? 'Live' : 'Offline — retrying'; b.style.opacity = on ? '1' : '.6'; b.title = on ? 'Updates appear within seconds' : 'Live updates paused; data still refreshes every minute'; } }
   async function connectLive() {
-    if (!token || es) return;
+    if (!token || signedOut || es) return;
     try { const { ticket } = await api('/api/admin/events/ticket', { method: 'POST', json: {} }); es = new EventSource('/api/admin/events?ticket=' + ticket); }
     catch { return setTimeout(connectLive, esBackoff = Math.min(esBackoff * 2, 60000)); }
     es.addEventListener('hello', () => { esBackoff = 2000; setLiveBadge(true); });
@@ -3071,7 +3075,7 @@
     // Phone pill: shows the real phone-capture state from the calls intel status; hidden if that cannot be read.
     get('/api/admin/calls-intel').then(x => { const p = $('#tbPhone'); if (!p || !x) return; p.hidden = false; p.classList.toggle('off', !x.connected); p.querySelector('span').textContent = x.connected ? 'Phone: Online' : 'Phone: Not connected'; });
   }
-  setInterval(() => { if (document.visibilityState === 'visible' && token) loadTopbar(); }, 60000);
+  setInterval(() => { if (!signedOut && document.visibilityState === 'visible' && token) loadTopbar(); }, 60000);
 
   // ---------- Shared form drawer ----------
   // defs: [{name, label, type: text|textarea|select|date|time|number|checkbox|customer|project|user|file, options, wide, hint, value}]
