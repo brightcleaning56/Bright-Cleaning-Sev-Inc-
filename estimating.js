@@ -145,4 +145,25 @@ function migrate(db) {
   for (const [c, t] of EXTRA_COLUMNS) if (!cols.includes(c)) db.exec(`ALTER TABLE estimates ADD COLUMN ${c} ${t}`);
 }
 
-module.exports = { estimateMath, saveExtras, migrate, lineItemsOf, num, overtimeManHours };
+// Labor rate for a new estimate when none is entered: the saved productive labor cost (cost per billable hour).
+// Falls back to the planning value (30) if the labor settings cannot be read.
+function laborDefaultRate(db) {
+  try {
+    const r = db.prepare("SELECT value FROM settings WHERE key='labor_assumptions'").get();
+    const v = r ? JSON.parse(r.value) : {};
+    const n = Number(v.productive_labor_hour_cost ?? 30);
+    return Number.isFinite(n) && n >= 0 ? n : 30;
+  } catch { return 30; }
+}
+
+// A proposal that would go out at $0, or with labor hours but no labor rate, cannot be sent.
+function sendBlock(e) {
+  if (!e) return null;
+  const usesItems = !!e.use_line_items && e.use_line_items !== '0' && e.use_line_items !== 'false' && Number(e.line_items_total) > 0;
+  if (usesItems) return null;
+  if (!(Number(e.proposal_total) > 0)) return 'This proposal totals $0. Enter a labor rate and labor hours (or line-item prices) before sending.';
+  if (Number(e.labor_hours) > 0 && !(Number(e.labor_rate) > 0)) return 'Enter a labor rate before sending. Without it, the labor on this proposal is priced at $0.';
+  return null;
+}
+
+module.exports = { estimateMath, saveExtras, migrate, lineItemsOf, num, overtimeManHours, laborDefaultRate, sendBlock };

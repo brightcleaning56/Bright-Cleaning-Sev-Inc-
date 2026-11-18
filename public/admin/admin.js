@@ -1934,6 +1934,7 @@
     pickerCustomers = null;
     ef.elements.id.value = '';
     Object.entries(DEFAULTS).forEach(([k, v]) => { ef.elements[k].value = v; });
+    if (!est) api('/api/admin/labor-assumptions').then(j => { if (ef.elements.id.value === '' && j && j.labor) ef.elements.labor_rate.value = j.labor.productive_labor_hour_cost; }).catch(() => {});
     const d = localISO(new Date(Date.now() + 30 * 864e5));
     ef.elements.expires_on.value = d;
     ef.elements.use_line_items.checked = false;

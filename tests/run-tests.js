@@ -392,6 +392,19 @@ async function startServer(env, dataDir) {
     assert(a.proposal_total === 250 && a.minimum_applied && b.proposal_total === 1050 && b.used_line_items, JSON.stringify([a, b]));
     return 'min charge $250 applied over $25; line items $1,000 + 5% tax = $1,050';
   });
+
+  await check('Estimating', 'Labor rate defaults to the saved productive labor cost (30 when nothing is saved); a $0 or no-labor proposal cannot be sent', async () => {
+    const fakeDb = (value) => ({ prepare: () => ({ get: () => (value === undefined ? undefined : { value }) }) });
+    const est = require('../estimating');
+    const d1 = est.laborDefaultRate(fakeDb(undefined)), d2 = est.laborDefaultRate(fakeDb(JSON.stringify({ productive_labor_hour_cost: 34 })));
+    assert(d1 === 30 && d2 === 34, `defaults ${d1}, saved ${d2}`);
+    const zero = est.sendBlock({ proposal_total: 0, labor_hours: 0, labor_rate: 0, use_line_items: 0 });
+    const noLabor = est.sendBlock({ proposal_total: 900, labor_hours: 10, labor_rate: 0, use_line_items: 0 });
+    const ok = est.sendBlock({ proposal_total: 900, labor_hours: 10, labor_rate: 30, use_line_items: 0 });
+    const items = est.sendBlock({ proposal_total: 1000, labor_hours: 10, labor_rate: 0, use_line_items: 1, line_items_total: 1000 });
+    assert(zero && noLabor && ok === null && items === null, JSON.stringify({ zero, noLabor, ok, items }));
+    return 'default $30 (saved $34); $0 and no-labor blocked; priced and line-item proposals allowed';
+  });
   await check('Estimating', 'Overtime is per person per week: 3 people at 8 hours per visit have none; 10-hour weekly visits have none', async () => {
     const a = estimateMath({ labor_hours: 24, visits: 5, crew_size: 3, labor_rate: 20 });
     const b = estimateMath({ labor_hours: 10, visits: 6, labor_rate: 20, weekly_hours: 10 });
