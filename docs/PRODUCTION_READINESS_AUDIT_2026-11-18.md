@@ -48,7 +48,7 @@ Tests use fake or local stand-ins. They do not prove behavior against real provi
 | 12 | Expenses and profitability | Insufficient evidence | Not audited. |
 | 13 | Customer portal | Partially verified | Message isolation tested; other data not tested. |
 | 14 | Security and permissions | Partially verified | Route-level role policy table (`roles.js`) present; bcrypt and MFA helper in use; suites pass. No penetration test. |
-| 15 | Infrastructure and recovery | Incomplete | Repo recovered and verified from origin. Backup restore unproven (see above). Deploy-on-push confirmed by build change. |
+| 15 | Infrastructure and recovery | Incomplete | Repo recovered and verified from origin. Backup restore unproven (see above). Deploy-on-push confirmed by build change. During the 7ad8069 deploy, the live site returned intermittent 502 errors for several minutes (about 2 of 3 samples) before settling on build 61fde0e508f6. Zero-downtime deploys are not verified. |
 
 ## Must fix before any real customer
 
