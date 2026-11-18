@@ -89,6 +89,8 @@ module.exports = function mountContracts(app, ctx) {
     if (k.status === 'Superseded' || k.status === 'Closed') return res.status(409).json({ error: `This contract is ${k.status.toLowerCase()}.` });
     const miss = [!k.email && 'customer email', !(k.value > 0) && 'contract value', !k.scope && 'scope of work', !k.start_date && 'start date'].filter(Boolean);
     if (miss.length) return res.status(400).json({ error: 'Before sending, add: ' + miss.join(', ') + '.' });
+    // A copy is a working draft. Its title still says "(copy)", so it must be renamed before it can go to a customer.
+    if (/\(copy\)/i.test(String(k.title || ''))) return res.status(409).json({ error: 'This contract is a copy ("(copy)" is in its title). Rename it, then send it for signature.' });
     const token = crypto.randomBytes(24).toString('hex');
     db.prepare("UPDATE contracts SET public_token=?, terms=COALESCE(NULLIF(terms,''),?), signature_status='Sent', status=CASE WHEN status='Draft' THEN 'Review' ELSE status END, sent_at=?, decline_reason=NULL, updated_at=? WHERE id=?").run(token, DEFAULT_TERMS, now(), now(), k.id);
     const link = `${base()}/contract/${token}`;

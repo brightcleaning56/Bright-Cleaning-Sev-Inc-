@@ -403,7 +403,9 @@ async function startServer(env, dataDir) {
     const ok = est.sendBlock({ proposal_total: 900, labor_hours: 10, labor_rate: 30, use_line_items: 0 });
     const items = est.sendBlock({ proposal_total: 1000, labor_hours: 10, labor_rate: 0, use_line_items: 1, line_items_total: 1000 });
     assert(zero && noLabor && ok === null && items === null, JSON.stringify({ zero, noLabor, ok, items }));
-    return 'default $30 (saved $34); $0 and no-labor blocked; priced and line-item proposals allowed';
+    const copyBlocked = est.sendBlock({ project_name: 'Office (copy)', proposal_total: 900, labor_hours: 10, labor_rate: 30, use_line_items: 0 });
+    assert(copyBlocked && /copy/.test(copyBlocked), 'a copy with a "(copy)" name must not be sendable');
+    return 'default $30 (saved $34); $0 and no-labor blocked; priced and line-item proposals allowed; "(copy)" proposals blocked';
   });
   await check('Estimating', 'Overtime is per person per week: 3 people at 8 hours per visit have none; 10-hour weekly visits have none', async () => {
     const a = estimateMath({ labor_hours: 24, visits: 5, crew_size: 3, labor_rate: 20 });
@@ -533,6 +535,9 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'status change 409, edit 409, delete 409';
   });
   await check('Proposals', 'Customer decline is recorded and creates no contract; then locked', async () => {
+    // A duplicate is named "(copy)" and cannot be sent until renamed (the copy guard), so rename it first.
+    const rn = await req('PUT', '/api/admin/estimates/' + E2, { token: T, json: { customer_name: 'Dana Builder', company: 'Prairie Construction', email: 'dana@prairie.test', project_name: 'Ankeny Medical Office (decline test)', scope: 'Final clean', area_sqft: 24000, production_rate: 2000, labor_rate: 30, crew_size: 3, shift_hours: 8, mobilization_cost: 150, overhead_pct: 10, margin_pct: 30, line_items: [] } });
+    assert(rn.status === 200, 'rename before send: ' + rn.status);
     await req('POST', `/api/admin/estimates/${E2}/send`, { token: T });
     const r = await req('POST', `/api/proposal/${tok2}/respond`, { json: { decision: 'decline' } });
     const again = await req('POST', `/api/proposal/${tok2}/respond`, { json: { decision: 'approve', signer_name: 'Dana Signer', signer_title: 'Owner', agree: true } });

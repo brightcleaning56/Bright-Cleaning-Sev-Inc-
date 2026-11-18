@@ -159,6 +159,7 @@ function laborDefaultRate(db) {
 // A proposal that would go out at $0, or with labor hours but no labor rate, cannot be sent.
 function sendBlock(e) {
   if (!e) return null;
+  if (/\(copy\)/i.test(String(e.project_name || ''))) return 'This proposal is a copy ("(copy)" is in its project name). Rename it before sending.';
   const usesItems = !!e.use_line_items && e.use_line_items !== '0' && e.use_line_items !== 'false' && Number(e.line_items_total) > 0;
   if (usesItems) return null;
   if (!(Number(e.proposal_total) > 0)) return 'This proposal totals $0. Enter a labor rate and labor hours (or line-item prices) before sending.';
