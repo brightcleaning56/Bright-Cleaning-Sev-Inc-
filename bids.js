@@ -120,7 +120,7 @@ module.exports = function mountBids(app, ctx) {
     const e = get(req.params.id); if (!e) return res.status(404).json({ error: 'Not found.' });
     if (!['Sent', 'Viewed', 'Declined', 'Expired', 'Approved'].includes(e.status)) return res.status(400).json({ error: 'Only a sent, declined or expired proposal needs a revision. Edit the draft directly.' });
     if (e.superseded_by) return res.status(409).json({ error: `Already revised: see version ${get(e.superseded_by)?.version}.` });
-    if (e.status === 'Approved' && db.prepare('SELECT 1 FROM contracts WHERE estimate_id=?').get(e.id)) return res.status(409).json({ error: 'This proposal already has a contract. Change the contract with an amendment instead.' });
+    if (e.status === 'Approved') return res.status(409).json({ error: 'The customer has accepted this proposal, so it cannot be replaced by a revision. Change its contract with an amendment, or send a new proposal for new work.' });
     const skip = new Set(['id', 'public_token', 'status', 'sent_at', 'viewed_at', 'last_viewed_at', 'view_count', 'decided_at', 'decision_ip', 'decision_agent', 'created_at', 'updated_at', 'version', 'root_id', 'parent_id', 'superseded_by', 'withdrawn_at', 'withdrawn_reason', 'signer_name', 'signer_title', 'signed_at', 'decline_reason', 'approved_by', 'approved_at', 'approval_fingerprint', 'approval_note']);
     skip.add('expires_on');
     const keep = db.prepare('PRAGMA table_info(estimates)').all().map(c => c.name).filter(c => !skip.has(c));

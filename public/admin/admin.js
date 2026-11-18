@@ -2542,7 +2542,7 @@
     openDrawer({
       title: id ? (rec.title || rec.name || rec.invoice_number || `${cfg.label} #${id}`) : `New ${cfg.label}`,
       sub: id ? `${cfg.label[0].toUpperCase() + cfg.label.slice(1)} #${id} · created ${fmtDate(rec.created_at)}` : '',
-      body: `<form id="recForm" class="grid" novalidate>${cfg.fields.map(f => fieldHTML(f, f[0] === 'line_items' ? linesText(rec.line_items) : rec[f[0]])).join('')}</form><p class="msg" id="recMsg" role="status"></p>`,
+      body: `<form id="recForm" class="grid" novalidate>${cfg.fields.map(f => fieldHTML(f[0] === 'status' && cfg.label === 'invoice' && rec.status !== 'Sent' ? [f[0], f[1], f[2], { ...f[3], list: f[3].list.filter(s => s !== 'Sent') }] : f, f[0] === 'line_items' ? linesText(rec.line_items) : rec[f[0]])).join('')}</form><p class="msg" id="recMsg" role="status"></p>`,
       footer: `<button class="btn" id="recSave">${id ? 'Save changes' : 'Create ' + cfg.label}</button>
         ${t === 'invoices' && id ? custBtn(rec, 'Customer profile', 'btn ghost') : ''}
         ${t === 'invoices' && id && bal && rec.status !== 'Void' ? '<button class="btn ghost" id="recPay">Record payment</button>' : ''}
