@@ -69,7 +69,9 @@ function startSmtp() {
 const killWait = child => new Promise(r => { if (!child || child.exitCode !== null || child.signalCode) return r(); child.once('exit', () => r()); child.kill(); setTimeout(r, 3000); });
 async function startServer(env, dataDir) {
   globalThis.__dataDir = dataDir;
-  const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: { ...process.env, ...env, PORT: String(PORT), DATA_DIR: dataDir, UPLOAD_DIR: path.join(work, 'uploads') }, stdio: ['ignore', 'pipe', 'pipe'] });
+  // Public file uploads are closed by default (P0-4 containment); these tests exercise the attachment code, so open them here.
+  // tests/upload-restrict-test.js covers the closed default.
+  const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: { ...process.env, ...env, PUBLIC_UPLOADS: '1', PORT: String(PORT), DATA_DIR: dataDir, UPLOAD_DIR: path.join(work, 'uploads') }, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = ''; child.stdout.on('data', d => log += d); child.stderr.on('data', d => log += d);
   for (let i = 0; i < 50; i++) { try { const r = await fetch(B + '/health'); if (r.ok) return { child, log: () => log }; } catch { } await sleep(150); }
   throw new Error('Server did not start: ' + log);

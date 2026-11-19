@@ -90,4 +90,13 @@ function guard(multerInstance) {
   const wrap = m => (...a) => [multerInstance[m](...a), verifyUploads];
   return { array: wrap('array'), single: wrap('single'), fields: wrap('fields'), any: wrap('any'), none: (...a) => multerInstance.none(...a) };
 }
-module.exports = { check, verifyUploads, guard };
+// Containment (P0-4): public forms and the customer portal may not accept files until malware scanning is confirmed live.
+// Staff and crew uploads are unaffected. Set PUBLIC_UPLOADS=1 to reopen these paths.
+const publicUploadsOpen = () => process.env.PUBLIC_UPLOADS === '1';
+function refuseUnlessOpen(req, res, next) {
+  const files = [].concat(req.file || [], Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat());
+  if (publicUploadsOpen() || !files.length) return next();
+  for (const f of files) { try { fs.unlinkSync(f.path); } catch { /* already gone */ } }
+  return res.status(403).json({ error: 'Online file attachments are not accepted right now. Please send the form without files and email your documents to the Bright Clean team.' });
+}
+module.exports = { check, verifyUploads, guard, publicUploadsOpen, refuseUnlessOpen };

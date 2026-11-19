@@ -285,6 +285,7 @@ module.exports = function mountPortal(app, ctx) {
   app.post('/api/portal/documents', (req, res) => {
     const sess = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
     if (!sess) return res.status(401).json({ error: 'Please sign in again.' });
+    if (!require('./filecheck').publicUploadsOpen()) return res.status(403).json({ error: 'File uploads from the customer portal are paused right now. Please email the file to the Bright Clean team.' });
     if (!upload) return res.status(503).json({ error: 'Uploads are not available right now. Please email the file to the Bright Cleaning Sev Inc. team.' });
     const [mwUp, verifyUp] = upload.single('file');
     mwUp(req, res, err => verifyUp(req, res, () => portalDocHandler(req, res, err, sess)));

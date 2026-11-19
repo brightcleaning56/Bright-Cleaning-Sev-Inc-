@@ -181,7 +181,7 @@ module.exports = function mountIntake(app, ctx) {
     res.json({ services: Object.fromEntries(Object.entries(SERVICES).map(([k, v]) => [k, { title: v.title, blurb: v.blurb, fields: v.fields }])) });
   });
 
-  app.post('/api/quotes', upload.array('documents', 8), (req, res) => {
+  app.post('/api/quotes', upload.array('documents', 8), require('./filecheck').refuseUnlessOpen, (req, res) => {
     const b = req.body || {};
     const discard = () => { for (const f of (req.files || [])) { try { fs.unlinkSync(f.path); } catch { /* ignore */ } } };
     if (String(b.website_url || '').trim()) { discard(); return res.status(400).json({ error: 'Unable to process request.' }); }
