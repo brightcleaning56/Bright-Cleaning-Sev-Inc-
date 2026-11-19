@@ -32,4 +32,4 @@ Live site: brightclean.net, health build `e7b836047493` (reported by /api/health
 - Price book: 38 of 86 cleaning scopes unpriced (owner decision).
 - Cleanup of 2026-11-19 test records and temporary script `cleanup-messaging-test.js` on production: pending owner approval.
 - Consent wording: the optional text checkbox is in the forms, but the server does not yet store text consent separately.
-- Privacy notice states "we do not sell or share your mobile number or text consent for their marketing." Owner must confirm this is true before the next Twilio submission.
+- Privacy notice states "we do not sell or share your mobile number or text consent for their marketing." Owner confirmed on 2026-11-19 that this is true.
