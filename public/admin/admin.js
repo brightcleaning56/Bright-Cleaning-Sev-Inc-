@@ -538,6 +538,33 @@
   const chg = c => c === null || c === undefined ? '<small class="flat">no prior data</small>' : `<small class="${c > 0 ? 'up' : c < 0 ? 'down' : 'flat'}">${c > 0 ? '▲' : c < 0 ? '▼' : ''} ${Math.abs(c)}% vs prior</small>`;
   $('#ccDays').addEventListener('change', () => { savePref('command_center', { ...(prefs.command_center || {}), days: $('#ccDays').value }); loadOverview(); });
   setInterval(() => { if (!signedOut && token && state.view === 'overview' && document.visibilityState === 'visible' && !document.querySelector('#drawerRoot .drawer')) loadOverview().catch(() => {}); }, 30000);
+  // ---- Crew message alert: a card pops up when a crew member writes; the first check only sets the baseline ----
+  let crewUnreadSeen = null;
+  async function checkCrewMessages() {
+    if (!token || signedOut || document.visibilityState !== 'visible') return;
+    const r = await api('/api/admin/crew-messages');
+    const threads = r.threads || [];
+    const unread = threads.reduce((n, t) => n + (t.unread || 0), 0);
+    if (crewUnreadSeen === null) { crewUnreadSeen = unread; return; }
+    if (unread > crewUnreadSeen) {
+      const hot = threads.filter(t => t.unread).sort((a, b) => String(b.last_at).localeCompare(String(a.last_at)))[0];
+      if (hot) showCrewAlert(hot, unread - crewUnreadSeen);
+    }
+    crewUnreadSeen = unread;
+  }
+  function showCrewAlert(t, n) {
+    document.querySelectorAll('.crew-alert').forEach(x => x.remove());
+    const box = document.createElement('div');
+    box.className = 'crew-alert'; box.setAttribute('role', 'alert');
+    box.innerHTML = '<div><b></b><small></small></div><button class="btn small" type="button">Open</button><button class="btn ghost small" type="button" aria-label="Dismiss">✕</button>';
+    box.querySelector('b').textContent = (n > 1 ? n + ' new messages from ' : 'New message from ') + t.name;
+    box.querySelector('small').textContent = t.last_body || '';
+    const btns = box.querySelectorAll('button');
+    btns[0].onclick = () => { box.remove(); openCrewMessages(t.id).catch(err => toast(err.message, true)); };
+    btns[1].onclick = () => box.remove();
+    document.body.appendChild(box);
+  }
+  setInterval(() => { checkCrewMessages().catch(() => {}); }, 15000);
   // ---- Personal preferences (per user) ----
   let prefs = {};
   async function loadPrefs() { try { prefs = await api('/api/admin/prefs'); } catch { prefs = {}; } }
