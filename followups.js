@@ -37,6 +37,12 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     return '';
   }
 
+  // Proof of text opt-in for a phone number (see sms_consents in intake.js). Unticked, revoked, or unreadable means no.
+  const hasSmsConsent = phone => {
+    const want = normPhone(phone); if (!want) return false;
+    try { return db.prepare('SELECT phone FROM sms_consents WHERE revoked_at IS NULL').all().some(r => normPhone(r.phone) === want); } catch { return false; }
+  };
+
   // ---- Texts (Twilio). Needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_SMS_FROM (a Twilio number that can send texts). ----
   const smsConfig = () => ({ sid: process.env.TWILIO_ACCOUNT_SID || '', token: process.env.TWILIO_AUTH_TOKEN || '', from: process.env.TWILIO_SMS_FROM || '', base: (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '') });
   const smsReady = () => { const c = smsConfig(); return !!(c.sid && c.token && c.from); };
@@ -66,7 +72,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   function scheduleAuto(estId) {
     const e = estOf(estId); if (!e || DECIDED.includes(e.status)) return;
     if (db.prepare("SELECT id FROM proposal_followups WHERE estimate_id=? AND auto=1 AND status='Scheduled'").get(e.id)) return;
-    const channel = isEmail(e.email) ? 'email' : (phoneOf(e) && smsAutoOn() ? 'sms' : null);
+    const channel = isEmail(e.email) ? 'email' : (phoneOf(e) && smsAutoOn() && hasSmsConsent(phoneOf(e)) ? 'sms' : null);
     if (!channel) return;
     db.prepare("INSERT INTO proposal_followups(estimate_id,due_date,channel,message,status,auto,created_by,created_at) VALUES(?,?,?,?,'Scheduled',1,'system',?)")
       .run(e.id, addDays(bizdate.today(), 2), channel, defaultMessage(e), new Date().toISOString());
@@ -88,6 +94,8 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     if (DECIDED.includes(e.status)) return done('Cancelled', 'Proposal was ' + e.status.toLowerCase() + ' before this follow-up was due');
     // A text the system would send on its own needs the owner's switch on. Staff pressing Send is a person's decision.
     if (f.channel === 'sms' && f.auto === 1 && by === 'system' && !smsAutoOn()) return done('Cancelled', 'Automatic texts are off (owner setting sms_auto_followups)');
+    // An automatic text needs proof the customer opted in to texts. Without it, the text is not sent.
+    if (f.channel === 'sms' && f.auto === 1 && by === 'system' && !hasSmsConsent(phoneOf(e))) return done('Cancelled', 'No text consent on file for this phone number');
     try {
       if (f.channel === 'email') {
         if (!isEmail(e.email)) throw new Error('No email address on the proposal');

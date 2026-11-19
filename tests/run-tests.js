@@ -4995,8 +4995,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
       udb.exec(`CREATE TABLE estimates(id INTEGER PRIMARY KEY AUTOINCREMENT, lead_id INTEGER, customer_name TEXT, company TEXT, email TEXT, project_name TEXT, status TEXT, public_token TEXT, view_count INTEGER DEFAULT 0, viewed_at TEXT, last_viewed_at TEXT, sent_at TEXT);
         CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, company TEXT, email TEXT, phone TEXT);
         CREATE TABLE leads(id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, contact_name TEXT, company TEXT, email TEXT, details TEXT, created_at TEXT);
-        CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);`);
+        CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
+        CREATE TABLE sms_consents(id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, email TEXT, contact_name TEXT, source TEXT, lead_id INTEGER, wording_version TEXT, wording TEXT, consented_at TEXT, revoked_at TEXT);`);
       udb.prepare("INSERT INTO leads(id, phone, created_at) VALUES(1, '5155550188', ?)").run(new Date().toISOString());
+      // Proof of opt-in for this number, so the automatic text is allowed (without it, no text is scheduled).
+      udb.prepare("INSERT INTO sms_consents(phone, source, wording_version, wording, consented_at) VALUES('5155550188','quote_form','quote-form-v1','test wording',?)").run(new Date().toISOString());
       udb.prepare("INSERT INTO estimates(id, lead_id, customer_name, company, email, project_name, status, public_token) VALUES(1, 1, 'Text Only', 'Text Only Co', '', 'Text Project', 'Proposal Sent', 'unit-tok-1')").run();
       const routes = {}, uses = [], app = { locals: {}, use: f => uses.push(f), get: (p, ...f) => { routes['GET ' + p] = f[f.length - 1]; }, post: (p, ...f) => { routes['POST ' + p] = f[f.length - 1]; }, put: (p, ...f) => { routes['PUT ' + p] = f[f.length - 1]; } };
       require('../followups')(app, { db: udb, auth: (q, s, n) => n(), logAction: () => {}, clean: (v, n) => String(v == null ? '' : v).slice(0, n || 1000), getMailer: () => null });
