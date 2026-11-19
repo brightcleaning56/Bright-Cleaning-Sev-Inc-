@@ -254,6 +254,18 @@ async function startServer(env, dataDir) {
     assert(bad.status === 401 && ok.status === 200 && ok.data.token, `${bad.status} ${ok.status}`); T = await signIn(OWNER, OWNER_PW);
     return '401 then 200 with 8-hour token';
   });
+  await check('Security', 'Admin session cookie: set HttpOnly and SameSite on sign-in; reads work with the cookie; changes without the X-BC-CSRF header are refused', async () => {
+    const out = []; require(path.join(ROOT, 'admin-session')).setCookie({ headers: {} }, { append: (k, v) => out.push(v) }, 'x');
+    const sc = out.join(';');
+    const cookie = 'bc_admin=' + encodeURIComponent(T);
+    const read = await fetch(B + '/api/admin/me', { headers: { Cookie: cookie } });
+    const writeNoCsrf = await fetch(B + '/api/admin/mfa/cancel', { method: 'POST', headers: { Cookie: cookie } });
+    const writeCsrf = await fetch(B + '/api/admin/mfa/cancel', { method: 'POST', headers: { Cookie: cookie, 'X-BC-CSRF': '1' } });
+    const chk = { httpOnly: /HttpOnly/i.test(sc), sameSite: /SameSite=Lax/i.test(sc), read: read.status === 200, csrfRefused: writeNoCsrf.status === 401, csrfAllowed: writeCsrf.status === 200 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ sc: sc.slice(0, 120), r: read.status, n: writeNoCsrf.status, c: writeCsrf.status }));
+    return 'HttpOnly + SameSite cookie; reads ok; unsafe write without X-BC-CSRF refused (401)';
+  });
   // Approval rules get their own tests at the end; relax them so older flow tests (sending $0-margin drafts) run unchanged.
   await req('PUT', '/api/admin/approval-rules', { token: T, json: { min_margin_pct: 0, max_total: 0, flag_pre_pricing: false, approve_all: false } });
   const adminGets = ['/api/admin/leads', '/api/admin/leads/1', '/api/admin/estimates', '/api/admin/contracts', '/api/admin/projects', '/api/admin/invoices', '/api/admin/customers', '/api/admin/dashboard', '/api/admin/audit-log', '/api/admin/users', '/api/admin/settings', '/api/admin/backups', '/api/admin/templates', '/api/admin/scopes', '/api/admin/command-center', '/api/admin/issues', '/api/admin/calls', '/api/admin/visits', '/api/admin/inspections', '/api/admin/reports', '/api/admin/documents', '/api/admin/search?q=ab', '/api/admin/takeoffs', '/api/admin/emails', '/api/admin/financial-summary', '/api/admin/me', '/api/files/x.pdf'];
@@ -314,7 +326,8 @@ async function startServer(env, dataDir) {
     const en = await req('POST', '/api/admin/mfa/enable', { token: l1.data.token, json: { code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000)) } });
     const l2 = await req('POST', '/api/admin/login', { json: { email, password: pw } });
     const wrong = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: '000000' } });
-    const right = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000)) } });
+    // The enabling code is spent (F-14.3a), so sign-in uses the next 30-second code.
+    const right = await req('POST', '/api/admin/login/mfa', { json: { mfa_token: l2.data.mfa_token, code: totp.codeAt(setup.data.secret, Math.floor(Date.now() / 30000) + 1) } });
     const me = await req('GET', '/api/admin/me', { token: right.data.token });
     const cancelOn = await req('POST', '/api/admin/mfa/cancel', { token: l1.data.token });
     assert(cancelOn.status === 200 && (await req('GET', '/api/admin/mfa', { token: l1.data.token })).data.enabled === true, 'cancel does not turn off a set-up that is on');
@@ -3866,7 +3879,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return `${c0.number}: linked to visit #${vid} + crew; ${final.history.length} history entries; ${det.autopilot.length} autopilot steps; anonymous complaint → Information needed`;
   });
 
-  await check('Security', 'Script CSP: no inline scripts or inline event handlers anywhere in the site/admin; script policy is sent report-only by default (enforced only via CSP_ENFORCE_SCRIPTS=1); violation reports are collected and shown to owner/manager only', async () => {
+  await check('Security', 'Script CSP: no inline scripts or inline event handlers anywhere in the site/admin; script policy is enforced by default (set CSP_ENFORCE_SCRIPTS=0 only as a temporary rollback); violation reports are collected and shown to owner/manager only', async () => {
     const fs = require('fs'), path = require('path'), pub = path.join(__dirname, '..', 'public'); const bad = [];
     const walk = d => { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.(html|js)$/.test(f)) { const t = fs.readFileSync(p, 'utf8'); if (/\.html$/.test(f) && /<script(?![^>]*\bsrc=)(?![^>]*type="application\/ld\+json")[^>]*>/i.test(t)) bad.push(p + ': inline <script>'); if (/\son(click|error|load|submit|change|input|mouseover|keydown)=["']/i.test(t)) bad.push(p + ': inline handler'); } } };
     walk(pub);
@@ -3874,7 +3887,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const rep = await fetch(B + '/api/csp-report', { method: 'POST', headers: { 'Content-Type': 'application/csp-report' }, body: JSON.stringify({ 'csp-report': { 'document-uri': 'https://brightclean.net/proposal/abcdefghijklmnopqrstuvwxyz', 'effective-directive': 'script-src-elem', 'blocked-uri': 'https://evil.example/x.js' } }) });
     const sh = await req('GET', '/api/admin/system-health', { token: T }), shStaff = await req('GET', '/api/admin/system-health', { token: globalThis.__st });
     const stored = sh.data.csp.reports.find(r => r.blocked === 'https://evil.example/x.js');
-    const chk = { noInline: !bad.length, reportOnly: /script-src 'self' https:\/\/cdn\.jsdelivr\.net/.test(ro) && /report-uri \/api\/csp-report/.test(ro), enforcedSafe: /object-src 'none'/.test(en) && !/script-src/.test(en), report: rep.status === 204, stored: !!stored && /:token/.test(stored.page), staff: shStaff.status === 403 };
+    const chk = { noInline: !bad.length, enforced: /script-src 'self' https:\/\/cdn\.jsdelivr\.net/.test(en) && /object-src 'none'/.test(en) && /report-uri \/api\/csp-report/.test(en), noReportOnlyDup: !ro, report: rep.status === 204, stored: !!stored && /:token/.test(stored.page), staff: shStaff.status === 403 };
     const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ bad: bad.slice(0, 5), ro, en, rep: rep.status, stored }));
     return `0 inline scripts/handlers; report-only: ${ro}; violation stored (token redacted); staff 403`;
@@ -4700,6 +4713,62 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const chk = { bothKinds: kinds.includes('sent') && kinds.includes('reply'), replyFirst: j.messages && j.messages[0].kind === 'reply', newestFirst, emptyAddresses: Array.isArray(none.messages) && none.messages.length === 0, signedOutRefused: signedOut.status === 401, notConnectedNote: j.inbox_connected === false };
     assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, kinds }));
     return 'conversation shows sent mail and replies together, newest first; the Outlook note is accurate';
+  });
+
+  await check('Portal', 'Cross-customer isolation: one customer never sees or changes another customer’s proposals, contracts, invoices, projects or uploads', async () => {
+    const crypto = require('crypto');
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const now = new Date().toISOString();
+    const mk = tag => {
+      const addr = `iso.${tag}@example.com`;
+      const cid = Number(pdb.prepare('INSERT INTO customers(match_key,name,email,created_at,updated_at) VALUES(?,?,?,?,?)').run('email:' + addr, 'Iso ' + tag, addr, now, now).lastInsertRowid);
+      return { addr, cid };
+    };
+    const A = mk('alpha'), B = mk('bravo');
+    const estA = Number(pdb.prepare('INSERT INTO estimates(email,customer_name,scope,project_name,status,proposal_total,public_token,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(A.addr, 'Iso alpha', 'Office cleaning', 'ISO Alpha Office', 'Sent', 100, 'iso-tok-alpha', now, now).lastInsertRowid);
+    const estB = Number(pdb.prepare('INSERT INTO estimates(email,customer_name,scope,project_name,status,proposal_total,public_token,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(B.addr, 'Iso bravo', 'Warehouse cleaning', 'ISO Bravo Warehouse', 'Sent', 900, 'iso-tok-bravo', now, now).lastInsertRowid);
+    const conB = Number(pdb.prepare("INSERT INTO contracts(estimate_id,customer_id,email,customer_name,title,value,status,signature_status,public_token,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(estB, B.cid, B.addr, 'Iso bravo', 'ISO Bravo contract', 900, 'Review', 'Sent', 'iso-con-bravo', now).lastInsertRowid);
+    pdb.prepare("INSERT INTO invoices(customer_name,invoice_number,amount,paid_amount,status,created_at,customer_id,email) VALUES(?,?,?,?,?,?,?,?)").run('Iso bravo', 'ISO-INV-BRAVO', 450, 0, 'Sent', now, B.cid, B.addr);
+    pdb.prepare("INSERT INTO projects(contract_id,customer_name,name,site_address,status,progress,created_at,customer_id) VALUES(?,?,?,?,?,?,?,?)").run(conB, 'Iso bravo', 'ISO Bravo job', '9 Bravo Rd', 'In Progress', 10, now, B.cid);
+    pdb.prepare("INSERT INTO documents(estimate_id,title,kind,file_name,file_url,size,uploaded_by,created_at,status,version) VALUES(?,?,?,?,?,?,?,?,'Current',1)").run(estB, 'ISO Bravo plan', 'Customer upload', 'bravo.pdf', '/api/portal/files/iso-bravo.pdf', 12, B.addr, now);
+    pdb.close();
+    const sessionFor = (addr, cid) => {
+      const payload = Buffer.from(JSON.stringify({ email: addr, cid, iat: Date.now(), exp: Date.now() + 3600000 })).toString('base64url');
+      return payload + '.' + crypto.createHmac('sha256', globalThis.__jwtSecret + ':client-portal').update(payload).digest('base64url');
+    };
+    const sA = sessionFor(A.addr, A.cid), sB = sessionFor(B.addr, B.cid);
+    const bearer = t => ({ token: t });
+    const meA = await req('GET', '/api/portal/me', bearer(sA));
+    const meB = await req('GET', '/api/portal/me', bearer(sB));
+    const textA = JSON.stringify(meA.data), textB = JSON.stringify(meB.data);
+    const chk = {
+      aSignedIn: meA.status === 200,
+      aSeesOwnProposal: textA.includes('ISO Alpha Office'),
+      aNoBravoProposal: !textA.includes('ISO Bravo Warehouse') && !textA.includes('iso-tok-bravo'),
+      aNoBravoContract: !textA.includes('ISO Bravo contract') && !textA.includes('iso-con-bravo'),
+      aNoBravoInvoice: !textA.includes('ISO-INV-BRAVO'),
+      aNoBravoProject: !textA.includes('ISO Bravo job') && !textA.includes('9 Bravo Rd'),
+      aNoBravoUpload: !textA.includes('ISO Bravo plan') && !textA.includes('iso-bravo.pdf'),
+      bSeesOwnInvoice: textB.includes('ISO-INV-BRAVO'),
+      bSeesOwnUpload: textB.includes('ISO Bravo plan'),
+    };
+    // A tries to act on B's records by id: each must be refused and leave B's records untouched.
+    const respB = await req('POST', `/api/portal/proposals/${estB}/respond`, { token: sA, json: { decision: 'approve', agree: true, signer_name: 'Mallory Test' } });
+    const chgB = await req('POST', `/api/portal/proposals/${estB}/changes`, { token: sA, json: { body: 'Please change the price for everyone.' } });
+    const dlB = await req('GET', '/api/portal/files/iso-bravo.pdf', { token: sA });
+    const v = pdb2 => pdb2.prepare('SELECT status, signer_name FROM estimates WHERE id=?').get(estB);
+    const pv = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true });
+    const bAfter = v(pv), invAfter = pv.prepare("SELECT status FROM invoices WHERE invoice_number='ISO-INV-BRAVO'").get();
+    const msgsB = pv.prepare("SELECT COUNT(*) n FROM portal_messages WHERE body LIKE '%Please change the price%'").get().n;
+    pv.close();
+    Object.assign(chk, {
+      aCannotApproveB: respB.status === 404 && bAfter.status === 'Sent' && !bAfter.signer_name,
+      aCannotRequestChangesB: chgB.status === 404 && msgsB === 0,
+      aCannotDownloadBFile: dlB.status === 404,
+      invoiceUntouched: invAfter.status === 'Sent',
+    });
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, statuses: [respB.status, chgB.status, dlB.status] }));
+    return 'alpha sees only alpha records; bravo’s proposal, contract, invoice, project and upload are hidden; alpha’s attempts on bravo’s proposal and file are refused';
   });
 
   await check('Portal', 'Portal Messages: a customer sees the emails we sent them and their replies (not other customers’ mail); signed-out refused', async () => {
