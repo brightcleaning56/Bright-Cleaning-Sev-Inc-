@@ -336,7 +336,12 @@
 
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 12px 18px; border-radius: 8px; font-size: 14px; z-index: 60; box-shadow: var(--shadow); max-width: 90vw; }
   .toast.err { background: var(--red); }
-  .crew-alert { position: fixed; top: 16px; right: 16px; z-index: 70; background: #fff; color: var(--navy); border: 2px solid #1f6fd1; border-radius: 10px; box-shadow: var(--shadow); padding: 12px 14px; display: flex; gap: 10px; align-items: center; max-width: min(92vw, 380px); }
+  /* A see-through message card: clicks pass through it to the page, except on its own buttons. */
+  .crew-alert { position: fixed; top: 12px; right: 12px; z-index: 70; background: rgba(255, 255, 255, 0.8); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: var(--navy); border: 1px solid rgba(31, 111, 209, 0.55); border-radius: 12px; box-shadow: 0 4px 16px rgba(15, 30, 60, 0.18); padding: 8px 10px; display: flex; gap: 8px; align-items: center; max-width: min(92vw, 320px); pointer-events: none; transition: opacity 1.2s ease; animation: crewAlertIn 0.35s ease-out; }
+  .crew-alert.faded { opacity: 0.45; }
+  .crew-alert button { pointer-events: auto; }
+  @keyframes crewAlertIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .crew-alert { animation: none; transition: none; } }
   .crew-alert > div { min-width: 0; flex: 1; }
   .crew-alert b, .crew-alert small { display: block; overflow-wrap: anywhere; }
 

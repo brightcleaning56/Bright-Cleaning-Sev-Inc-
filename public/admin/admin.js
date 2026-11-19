@@ -568,6 +568,7 @@
     btns[0].onclick = () => { box.remove(); openCrewMessages(t.id).catch(err => toast(err.message, true)); };
     btns[1].onclick = () => box.remove();
     document.body.appendChild(box);
+    setTimeout(() => { if (box.isConnected) box.classList.add('faded'); }, 15000); // dims after 15 seconds; stays until dismissed or opened
   }
   setInterval(() => { checkCrewMessages().catch(() => {}); }, 15000);
   // ---- Personal preferences (per user) ----
