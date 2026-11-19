@@ -46,5 +46,16 @@ ok('a second sweep does not duplicate the task', again === 0 && db.prepare('SELE
 const later = conv.crewEscalationSweep(db, NOW + 90 * 60000);
 ok('recent message escalates later, once it is past the limit', later === 1 && db.prepare('SELECT COUNT(*) n FROM customer_issues').get().n === 2, { later });
 
+// A later message in the same unanswered run does not restart the hour or make a second task.
+const firstId = db.prepare("SELECT MIN(m.id) id FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.employee_id=1 AND c.kind='crew'").get().id;
+addCrew(1, 'Still waiting, second message', at(115));
+const run = Object.fromEntries(conv.crewThreads(db, NOW + 10 * 60000).map(t => [t.id, t]));
+ok('the hour counts from the first unanswered message', run[1].waiting_id === firstId && run[1].waiting_over_hour === true, run[1]);
+const afterSecond = conv.crewEscalationSweep(db, NOW + 10 * 60000);
+ok('a second message in the same run creates no second task', afterSecond === 0, { afterSecond });
+// The office replies: the run ends and nothing is waiting.
+addOffice(1, 'On it', at(130));
+ok('after an office reply nothing is waiting', conv.crewThreads(db, NOW + 200 * 60000).find(t => t.id === 1).waiting_over_hour === false);
+
 console.log(`\n${failed ? failed + ' failed' : 'all passed'}`);
 process.exit(failed ? 1 : 0);

@@ -554,7 +554,7 @@
     crewUnreadSeen = unread;
     // Still no office reply after an hour: alert again, once for each crew message.
     for (const t of threads) {
-      if (t.waiting_over_hour && !crewHourAlerted.has(t.last_id)) { crewHourAlerted.add(t.last_id); showCrewAlert(t, 0, true); }
+      if (t.waiting_over_hour && !crewHourAlerted.has(t.waiting_id)) { crewHourAlerted.add(t.waiting_id); showCrewAlert(t, 0, true); }
     }
   }
   function showCrewAlert(t, n, overHour) {
