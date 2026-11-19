@@ -28,12 +28,60 @@ function check(filePath, originalName) {
   }
   return null;
 }
+// Virus scan through ClamAV's clamd (INSTREAM protocol). Enabled when CLAMAV_HOST is set (CLAMAV_PORT defaults to 3310).
+// UPLOAD_SCAN_REQUIRED=1 makes the scanner mandatory: uploads are refused while it is not configured or not reachable.
+const net = require('net');
+const scannerConfigured = () => !!process.env.CLAMAV_HOST;
+function clamScan(filePath) {
+  const host = process.env.CLAMAV_HOST, port = Number(process.env.CLAMAV_PORT) || 3310;
+  return new Promise((resolve, reject) => {
+    const sock = net.connect({ host, port });
+    const chunks = []; let done = false;
+    const finish = (err, val) => { if (done) return; done = true; sock.destroy(); err ? reject(err) : resolve(val); };
+    sock.setTimeout(60000, () => finish(new Error('scanner timed out')));
+    sock.on('error', e => finish(e));
+    sock.on('data', d => chunks.push(d));
+    sock.on('end', () => {
+      const reply = Buffer.concat(chunks).toString('utf8').replace(/\0/g, '').trim();
+      if (/ OK$/.test(reply)) return finish(null, { infected: false });
+      const m = reply.match(/^stream: (.+) FOUND$/);
+      if (m) return finish(null, { infected: true, signature: m[1] });
+      finish(new Error('unexpected scanner reply: ' + reply.slice(0, 120)));
+    });
+    sock.on('connect', () => {
+      sock.write('zINSTREAM\0');
+      const data = fs.readFileSync(filePath);
+      for (let i = 0; i < data.length; i += 65536) {
+        const part = data.subarray(i, Math.min(i + 65536, data.length));
+        const len = Buffer.alloc(4); len.writeUInt32BE(part.length, 0);
+        sock.write(len); sock.write(part);
+      }
+      const end = Buffer.alloc(4); end.writeUInt32BE(0, 0); sock.write(end);
+    });
+  });
+}
 // Express middleware: verify every uploaded file; on any failure delete ALL files from this request and refuse it.
-function verifyUploads(req, res, next) {
+async function verifyUploads(req, res, next) {
   const files = [].concat(req.file || [], Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat());
+  const refuse = (status, msg) => { for (const g of files) { try { fs.unlinkSync(g.path); } catch { /* */ } } return res.status(status).json({ error: msg }); };
   for (const f of files) {
     const err = check(f.path, f.originalname);
-    if (err) { for (const g of files) { try { fs.unlinkSync(g.path); } catch { /* */ } } return res.status(400).json({ error: err }); }
+    if (err) return refuse(400, err);
+  }
+  const required = process.env.UPLOAD_SCAN_REQUIRED === '1';
+  if (!scannerConfigured()) {
+    if (required && files.length) return refuse(503, 'Uploads are unavailable: virus scanning is required but not configured.');
+    return next();
+  }
+  for (const f of files) {
+    let r;
+    try { r = await clamScan(f.path); }
+    catch (e) {
+      if (required) return refuse(503, 'Uploads cannot be checked right now. Try again in a few minutes.');
+      console.warn('Virus scan unavailable, upload accepted without it:', e.message);
+      continue;
+    }
+    if (r.infected) return refuse(400, `${path.basename(f.originalname || 'file')} was blocked by the virus scanner (${r.signature}).`);
   }
   next();
 }
