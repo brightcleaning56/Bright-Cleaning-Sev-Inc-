@@ -14,6 +14,14 @@
     var r = document.querySelector('input[name="deep"]:checked');
     return r ? r.value : 'no';
   }
+  function summary() {
+    var parts = [];
+    inputs.forEach(function (el) {
+      if (el.type === 'checkbox' && el.checked) parts.push(el.getAttribute('data-label'));
+      if (el.type !== 'checkbox' && Number(el.value) > 0) parts.push(el.getAttribute('aria-label').replace('Number of ','') + ': ' + el.value);
+    });
+    return (parts.join(', ') || 'no rooms selected') + '. ' + (freq() === 1 ? 'Monthly' : freq() === 2 ? 'Biweekly' : 'Weekly') + ' (' + monthlyEl.textContent + '). Deep clean: ' + deep() + '.';
+  }
   function update() {
     var perVisit = 0, count = 0;
     inputs.forEach(function (el) {
@@ -35,6 +43,7 @@
       perVisitEl.textContent = money(visit) + ' per visit' + (perVisit < MIN_PER_VISIT ? ' (minimum applied)' : '') + ', ' + freq() + ' visit' + (freq() === 1 ? '' : 's') + ' a month';
     }
     deepNote.hidden = deep() === 'no';
+    sendPlan.href = '/request-a-quote.html?plan=' + encodeURIComponent(summary());
   }
   inputs.forEach(function (el) { el.addEventListener('input', update); el.addEventListener('change', update); });
   document.querySelectorAll('input[name="freq"], input[name="deep"]').forEach(function (el) { el.addEventListener('change', update); });
