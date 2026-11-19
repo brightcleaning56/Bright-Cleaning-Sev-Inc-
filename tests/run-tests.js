@@ -254,6 +254,18 @@ async function startServer(env, dataDir) {
     assert(bad.status === 401 && ok.status === 200 && ok.data.token, `${bad.status} ${ok.status}`); T = await signIn(OWNER, OWNER_PW);
     return '401 then 200 with 8-hour token';
   });
+  await check('Security', 'Admin session cookie: set HttpOnly and SameSite on sign-in; reads work with the cookie; changes without the X-BC-CSRF header are refused', async () => {
+    const out = []; require(path.join(ROOT, 'admin-session')).setCookie({ headers: {} }, { append: (k, v) => out.push(v) }, 'x');
+    const sc = out.join(';');
+    const cookie = 'bc_admin=' + encodeURIComponent(T);
+    const read = await fetch(B + '/api/admin/me', { headers: { Cookie: cookie } });
+    const writeNoCsrf = await fetch(B + '/api/admin/mfa/cancel', { method: 'POST', headers: { Cookie: cookie } });
+    const writeCsrf = await fetch(B + '/api/admin/mfa/cancel', { method: 'POST', headers: { Cookie: cookie, 'X-BC-CSRF': '1' } });
+    const chk = { httpOnly: /HttpOnly/i.test(sc), sameSite: /SameSite=Lax/i.test(sc), read: read.status === 200, csrfRefused: writeNoCsrf.status === 401, csrfAllowed: writeCsrf.status === 200 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ sc: sc.slice(0, 120), r: read.status, n: writeNoCsrf.status, c: writeCsrf.status }));
+    return 'HttpOnly + SameSite cookie; reads ok; unsafe write without X-BC-CSRF refused (401)';
+  });
   // Approval rules get their own tests at the end; relax them so older flow tests (sending $0-margin drafts) run unchanged.
   await req('PUT', '/api/admin/approval-rules', { token: T, json: { min_margin_pct: 0, max_total: 0, flag_pre_pricing: false, approve_all: false } });
   const adminGets = ['/api/admin/leads', '/api/admin/leads/1', '/api/admin/estimates', '/api/admin/contracts', '/api/admin/projects', '/api/admin/invoices', '/api/admin/customers', '/api/admin/dashboard', '/api/admin/audit-log', '/api/admin/users', '/api/admin/settings', '/api/admin/backups', '/api/admin/templates', '/api/admin/scopes', '/api/admin/command-center', '/api/admin/issues', '/api/admin/calls', '/api/admin/visits', '/api/admin/inspections', '/api/admin/reports', '/api/admin/documents', '/api/admin/search?q=ab', '/api/admin/takeoffs', '/api/admin/emails', '/api/admin/financial-summary', '/api/admin/me', '/api/files/x.pdf'];

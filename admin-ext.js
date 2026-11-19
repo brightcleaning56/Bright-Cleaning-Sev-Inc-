@@ -283,7 +283,7 @@ module.exports = function mountAdminExt(app, ctx) {
     else db.prepare('INSERT INTO admin_users(email,name,password_hash,created_at) VALUES(?,?,?,?)').run(email, 'Owner', hash, new Date().toISOString());
     logAction(req, 'changed password', 'account', row ? row.id : 0);
     ctx.bumpTv(email); // every other session ends now; this device gets a fresh token
-    res.json({ ok: true, token: ctx.signToken(email, req.user && req.user.mfa === true), message: 'Password changed. Other devices have been signed out.' });
+    { const t = ctx.signToken(email, req.user && req.user.mfa === true); require('./admin-session').setCookie(req, res, t); res.json({ ok: true, token: t, message: 'Password changed. Other devices have been signed out.' }); }
   });
   // ---- Accounting and payroll exports (CSV). Columns use QuickBooks-style names; money records stay with managers and office staff.
   const csvCell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
@@ -342,12 +342,13 @@ module.exports = function mountAdminExt(app, ctx) {
       db.prepare('DELETE FROM revoked_tokens WHERE exp<?').run(Math.floor(Date.now() / 1000));
     }
     logAction(req, 'signed out this device', 'account', 0);
+    require('./admin-session').clearCookie(req, res);
     res.json({ ok: true });
   });
   app.post('/api/admin/account/sign-out-everywhere', auth, (req, res) => {
     const email = req.user && req.user.email; ctx.bumpTv(email);
     logAction(req, 'signed out other sessions', 'account', 0);
-    res.json({ ok: true, token: ctx.signToken(email, req.user && req.user.mfa === true), message: 'All other devices are signed out.' });
+    { const t = ctx.signToken(email, req.user && req.user.mfa === true); require('./admin-session').setCookie(req, res, t); res.json({ ok: true, token: t, message: 'All other devices are signed out.' }); }
   });
 
   // Roles: owner (approves, manages roles and rules), manager (approves proposals), staff (prepares, requests approval).
