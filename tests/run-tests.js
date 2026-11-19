@@ -1100,6 +1100,16 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(a.status === 400 && b.status === 400 && hp.status === 400 && f1.status === 201 && f2.status === 200 && f2.data.duplicate && f2.data.id === f1.data.id && after === before + 1, JSON.stringify([a.status, b.status, hp.status, f1.status, f2.data, before, after]));
     return 'bad email 400, no consent 400, honeypot 400; same request twice -> 1 lead (second returns the first id)';
   });
+  await check('Quote forms', 'Text consent is stored as proof only when the box is ticked, with the exact wording and the lead', async () => {
+    const yes = await quote({ ...contact, email: 'sms.yes@t.test', phone: '515-555-0301', sms_consent: 'yes', service_key: 'parking', lot_size: '120 spaces', services: ['Litter pickup'], frequency: 'Weekly' });
+    const no = await quote({ ...contact, email: 'sms.no@t.test', phone: '515-555-0302', service_key: 'parking', lot_size: '120 spaces', services: ['Litter pickup'], frequency: 'Weekly' });
+    const db = new (require('../node_modules/better-sqlite3'))(require('path').join(globalThis.__dataDir || '', 'brightclean.db'), { readonly: true, fileMustExist: false });
+    const rowYes = db.prepare("SELECT * FROM sms_consents WHERE email='sms.yes@t.test'").get();
+    const rowNo = db.prepare("SELECT * FROM sms_consents WHERE email='sms.no@t.test'").get();
+    try { db.close(); } catch { /* */ }
+    assert(yes.status === 201 && rowYes && rowYes.lead_id === yes.data.id && rowYes.phone === '515-555-0301' && rowYes.source === 'quote_form' && rowYes.wording_version === 'quote-form-v1' && /Reply HELP for help or STOP/.test(rowYes.wording) && rowYes.revoked_at === null && !rowNo && no.status === 201, JSON.stringify({ rowYes, rowNo }));
+    return `consent row #${rowYes.id} for lead #${rowYes.lead_id}, wording ${rowYes.wording_version}; no row when the box was not ticked`;
+  });
   await check('Quote forms', 'Pre-pricing rules per service (windows, power washing, unit turnover, parking)', async () => {
     const get = async id => JSON.parse((await req('GET', '/api/admin/leads/' + id, { token: T })).data.lead.intake).flags.map(f => f.code);
     const w = await quote({ ...contact, email: 'w@t.test', service_key: 'windows', stories: '4+ stories', sides: 'Both', access: 'Not sure' });

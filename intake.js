@@ -175,6 +175,13 @@ module.exports = function mountIntake(app, ctx) {
   const { db, upload, clean, isEmail, notify, logLead, getOps, path, fs } = ctx;
   const cols = db.prepare('PRAGMA table_info(leads)').all().map(c => c.name);
   for (const [c, t] of [['intake', 'TEXT'], ['service_key', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE leads ADD COLUMN ${c} ${t}`);
+  // Text-message consent proof: one row per opt-in, with the exact wording the customer saw.
+  db.exec(`CREATE TABLE IF NOT EXISTS sms_consents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, email TEXT, contact_name TEXT,
+    source TEXT NOT NULL, lead_id INTEGER, wording_version TEXT NOT NULL, wording TEXT NOT NULL,
+    consented_at TEXT NOT NULL, revoked_at TEXT)`);
+  const SMS_WORDING_VERSION = 'quote-form-v1';
+  const SMS_WORDING = 'Optional: send me text messages (SMS) about this request at the number I provided. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out. Agreeing to texts is not required to get a quote.';
 
   app.get('/api/quote-schema', (req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -212,6 +219,10 @@ module.exports = function mountIntake(app, ctx) {
       clean(a.property_name || b.project_name || '', 200), def.title, def.title, clean(b.address, 500),
       a.square_footage ? String(a.square_footage) : (a.area_sqft ? String(a.area_sqft) : ''), a.bid_due_date || '', a.start_date || '', a.frequency || '',
       details, JSON.stringify(files), now, JSON.stringify({ service, category: def.category, answers: a, flags: fl, version: 1 }), service);
+    if (b.sms_consent === 'yes' || b.sms_consent === 'on') {
+      db.prepare(`INSERT INTO sms_consents(phone,email,contact_name,source,lead_id,wording_version,wording,consented_at)
+        VALUES(?,?,?,?,?,?,?,?)`).run(clean(b.phone, 60), clean(b.email, 254), clean(b.contact_name, 150), 'quote_form', info.lastInsertRowid, SMS_WORDING_VERSION, SMS_WORDING, now);
+    }
     logLead('quote request (' + def.title + ')', info.lastInsertRowid, clean(b.contact_name));
     const ops = getOps();
     if (ops) ops.upsertCustomer({ name: b.contact_name, company: b.company, email: b.email, phone: b.phone, address: b.address }, 'quote request');
