@@ -1,0 +1,54 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Build your own cleaning plan: choose the rooms and tasks you want cleaned and see an estimated monthly price."><link rel="canonical" href="https://brightclean.net/build-your-plan.html"><title>Build Your Plan | Bright Cleaning Sev Inc.</title><link rel="stylesheet" href="/assets/site.css"><meta property="og:type" content="website"><meta property="og:site_name" content="Bright Cleaning Sev Inc."><meta property="og:title" content="Build Your Plan | Bright Cleaning Sev Inc."><meta property="og:description" content="Choose the rooms and tasks you want cleaned and see an estimated monthly price."><meta property="og:url" content="https://brightclean.net/build-your-plan.html"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="Build Your Plan | Bright Cleaning Sev Inc."><meta name="twitter:description" content="Choose the rooms and tasks you want cleaned and see an estimated monthly price.">
+<style>
+.plan-wrap{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:820px){.plan-wrap{grid-template-columns:1fr}}
+.plan-card{background:#fff;border:1px solid #e3e9f0;border-radius:12px;padding:22px}
+.plan-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #eef2f6}
+.plan-row:last-child{border-bottom:0}
+.plan-row label{display:flex;align-items:center;gap:10px;font-weight:600;min-width:0}
+.plan-row small{display:block;font-weight:400;color:#5b6b7d}
+.plan-qty{width:70px;padding:8px;border:1px solid #cbd5e1;border-radius:8px}
+.plan-price{font-weight:700;white-space:nowrap}
+.plan-total{font-size:32px;font-weight:800;margin:8px 0}
+.plan-note{font-size:14px;color:#5b6b7d}
+.plan-freq label{display:block;margin:6px 0}
+</style>
+</head><body>
+<div class="top"><div class="container"><span>COMMERCIAL CLEANING • CONSTRUCTION FINAL CLEANING • PROPERTY SERVICES</span><span>Des Moines, Iowa &nbsp; | &nbsp; <a href="tel:+15153033024">+1 (515) 303-3024</a> &nbsp; | &nbsp; <a href="mailto:info@brightclean.net">info@brightclean.net</a></span></div></div>
+<header class="header"><div class="container nav"><a class="logo" href="/"><span class="logo-mark">B</span><span>BRIGHT CLEANING SEV INC<small>COMMERCIAL & CONSTRUCTION SERVICES</small></span></a><nav class="navlinks"><a href="/">Home</a><a href="/services.html">Services</a><a href="/plans.html">Plans</a><a href="/industries.html">Industries</a><a href="/projects.html">Projects</a><a href="/about.html">About</a><a href="/partners.html">Partners</a><a href="/contact.html">Contact</a></nav><a class="btn" href="/portal.html" style="margin-right:10px">Client Portal</a><a class="btn" href="/request-a-quote.html">Request a Bid →</a><button class="hamb" aria-label="Open navigation">☰</button></div><nav class="mobile container"><a href="/">Home</a><a href="/services.html">Services</a><a href="/plans.html">Plans</a><a href="/build-your-plan.html">Build Your Plan</a><a href="/industries.html">Industries</a><a href="/projects.html">Projects</a><a href="/quality-safety.html">Quality & Safety</a><a href="/capabilities.html">Capabilities</a><a href="/about.html">About</a><a href="/partners.html">Partners</a><a href="/service-process.html">Our Process</a><a href="/contact.html">Contact</a><a href="/portal.html">Client Portal</a><a href="/request-a-quote.html">Request a Bid</a></nav></header>
+<main>
+<section class="pagehero"><div class="container"><div class="eyebrow">Build your plan</div><h1>Choose what you want cleaned, every month.</h1><p>Pick the rooms and tasks you need and how often. You'll see an estimated monthly price right away.</p></div></section>
+<section class="section"><div class="container"><div class="plan-wrap">
+<div class="plan-card">
+<h2>1. Choose your rooms and tasks</h2>
+<div class="plan-row"><label><input type="checkbox" data-task="kitchen" data-price="27"> Kitchen <small>Counters, sink, appliance exteriors, cabinets</small></label><span class="plan-price">$27</span></div>
+<div class="plan-row"><label><input type="checkbox" data-task="floors" data-price="24"> Floors <small>Vacuum and mop hard floors</small></label><span class="plan-price">$24</span></div>
+<div class="plan-row"><label><input type="checkbox" data-task="living" data-price="15"> Living room <small>Surfaces, vacuum and tidy</small></label><span class="plan-price">$15</span></div>
+<div class="plan-row"><label><input type="checkbox" data-task="dusting" data-price="12"> Dusting <small>Surfaces and fixtures</small></label><span class="plan-price">$12</span></div>
+<div class="plan-row"><label>Bathrooms <small>$18 each</small></label><input class="plan-qty" type="number" min="0" max="6" value="0" data-task="bathroom" data-price="18" aria-label="Number of bathrooms"></div>
+<div class="plan-row"><label>Bedrooms <small>$15 each</small></label><input class="plan-qty" type="number" min="0" max="8" value="0" data-task="bedroom" data-price="15" aria-label="Number of bedrooms"></div>
+<h2 style="margin-top:22px">2. How often?</h2>
+<div class="plan-freq">
+<label><input type="radio" name="freq" value="1" checked> Monthly (1 visit a month)</label>
+<label><input type="radio" name="freq" value="2"> Biweekly (2 visits a month)</label>
+<label><input type="radio" name="freq" value="4"> Weekly (4 visits a month)</label>
+</div>
+<h2 style="margin-top:22px">3. Does the home need a deep clean first?</h2>
+<div class="plan-freq">
+<label><input type="radio" name="deep" value="no" checked> No, regular cleaning is enough</label>
+<label><input type="radio" name="deep" value="yes"> Yes, it needs a deep clean</label>
+<label><input type="radio" name="deep" value="unsure"> Not sure</label>
+</div>
+<p class="plan-note" id="deepNote" hidden>Deep cleaning is not included in the monthly price. We quote it separately after a walk-through, then your regular plan starts.</p>
+</div>
+<aside class="plan-card">
+<h2>Your estimate</h2>
+<div class="plan-total" id="monthly">$0</div>
+<p class="plan-note" id="perVisit">Choose at least one room or task.</p>
+<p class="plan-note">The price is an estimate: $60 minimum per visit. Final pricing is confirmed after a walk-through and may change if the home needs more time.</p>
+<p style="margin-top:14px"><a class="btn" href="/request-a-quote.html" id="sendPlan">Send this plan for approval</a></p>
+</aside>
+</div></div></section>
+</main>
+<footer class="footer"><div class="container"><div class="footgrid"><div><a class="logo" style="color:white" href="/"><span class="logo-mark">B</span><span>BRIGHT CLEANING SEV INC<small style="color:#8cc9f3">COMMERCIAL SERVICES</small></span></a><p>Commercial cleaning, construction final cleaning, and property maintenance services with a focus on clear scopes, coordinated delivery, and professional results.</p></div><div><h4>Company</h4><a href="/about.html">About Us</a><a href="/partners.html">Partners</a><a href="/projects.html">Projects & Experience</a><a href="/careers.html">Careers</a><a href="/vendor.html">Vendor Information</a><a href="/capabilities.html">Capabilities</a><a href="/service-process.html">Our Process</a><a href="/resources.html">Resources</a><a href="/faq.html">FAQ</a><a href="/service-areas.html">Service Areas</a></div><div><h4>Services</h4><a href="/services.html">All Services</a><a href="/quality-safety.html">Quality & Safety</a><a href="/services/post-construction-final-cleaning.html">Construction Final Cleaning</a><a href="/services/commercial-janitorial.html">Commercial Janitorial</a><a href="/services/interior-exterior-window-cleaning.html">Window Cleaning</a><a href="/services/power-washing.html">Power Washing</a></div><div><h4>Start a Project</h4><a href="/request-a-quote.html">Request a Commercial Bid</a><a href="/contact.html">Contact the Team</a><a href="/portal.html">Client Portal sign-in</a><a href="tel:+15153033024">+1 (515) 303-3024</a><a href="mailto:info@brightclean.net">info@brightclean.net</a><p>Des Moines, Iowa<br>Additional service locations confirmed per project.</p></div></div><div class="copyright"><a href="/privacy.html" style="display:inline;color:#b6c6d3">Privacy</a> · <a href="/terms.html" style="display:inline;color:#b6c6d3">Terms</a> · <a href="/accessibility.html" style="display:inline;color:#b6c6d3">Accessibility</a><br>© 2026 Bright Cleaning Sev Inc. All rights reserved.</div></div></footer><script src="/assets/site.js"></script><script src="/assets/build-plan.js"></script>
+</body></html>
