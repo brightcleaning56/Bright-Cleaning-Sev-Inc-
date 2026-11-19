@@ -15,7 +15,7 @@ A **controlled pilot** with two or three general contractors and their subcontra
 | Check | Result | Where |
 |---|---|---|
 | Unit and integration tests | 278 pass, 0 fail, 11 skipped (the PostgreSQL tests need `TEST_DATABASE_URL`) | `node --test test/*.test.js` |
-| Browser checks across every screen | 23 of 23 pass on the latest commit | `qa/run.sh`, `docs/RELEASE-VERIFICATION.md` |
+| Browser checks across every screen | 25 of 25 pass on the latest commit (adds an every-menu sweep across all demo accounts and the GC dead-controls check) | `qa/run.sh`, `docs/RELEASE-VERIFICATION.md` |
 | End-to-end journey: Super Admin → owner → subcontractor → award → countersign → audit log | Passes every step | `qa/full_system_flow.py` |
 | Golden path through the HTTP routes (sign-up to countersigned contract) | Passes | `test/golden-path.test.js` |
 | Phone width: every main screen fits 390px | Passes | `qa/mobile_sweep.py` |

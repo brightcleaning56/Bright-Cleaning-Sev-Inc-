@@ -12,6 +12,8 @@ reset_main() { kill "${MAIN_PID:-}" 2>/dev/null; wait "${MAIN_PID:-}" 2>/dev/nul
 check() { local name="$1" want="$2"; shift 2; out=$("$@" 2>&1); if echo "$out" | grep -q -- "$want"; then echo "PASS  $name"; else echo "FAIL  $name"; echo "$out" | tail -15; FAIL=1; fi; }
 start world-main.mjs 4401; MAIN_PID=${PIDS[-1]}; start world-estimate.mjs 4402; start world-rich.mjs 4403
 check "menu routing (every menu item opens its own page)" "PROBLEMS: \[\]" python3 qa/menu_routing.py 4401
+QA_PORT=4401 check "every menu item for every demo account opens its page without errors" "PROBLEMS: \[\]" python3 qa/every_screen.py
+check "dead controls (GC accounts: single workspace page)" "dead controls: 0" python3 qa/dead_controls.py 4401 gc@ridge.test,gc@ryan.test
 check "every screen loads without errors"                 "buyer view loaded: True" python3 qa/screens.py
 check "dead controls (main accounts)"                       "dead controls: 0" python3 qa/dead_controls.py 4401 sub@em.test,eric@bc.test,pm@acme.test
 check "dead controls (rich project incl. profile tabs)"    "dead controls: 0" python3 qa/dead_controls.py 4403 sub@em.test

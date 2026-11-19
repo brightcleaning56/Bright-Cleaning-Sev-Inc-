@@ -797,7 +797,8 @@ async function leadTab(t, body) {
       <span>Licenses</span><span>${[...pq.stateLicenses.map(l => esc(l.state + ' ' + l.number + ' (' + (l.active ? 'active' : l.status) + ')')), ...pq.licenses.map(l => esc(l.issuer + ' ' + l.number))].join(', ') || 'none on file'}</span>
       <span>Track record</span><span>${pq.history.bidsSubmitted} bid(s) submitted · ${pq.history.awards} award(s) on BUILDINTEL</span></div>
       ${pq.flags.length ? `<p class="x-fe3c2b3b" >${esc(pq.flags.join(' · '))}. <a href="#" id="goins">Add insurance & licenses</a></p>` : '<p class="green x-c94d43e2" >No gaps.</p>'}</div>` : '';
-    const np = await api('GET', '/api/me/notifications').catch(() => null);
+    // Only owners may change email settings; other staff are not asked, so the server does not refuse a request for it.
+    const np = me.user?.role === 'owner' ? await api('GET', '/api/me/notifications').catch(() => null) : null;
     const notifHtml = np ? `<h3>Invitation emails</h3><p class="x-57f9e31d" >Invitations always appear in your list at once. This only controls the emails. Choose a daily digest to get at most one invitation email a day.</p>
       <form class="x-15db064d" id="nf" >
         <label>How to send invitation emails <select name="mode"><option value="immediate" ${np.mode === 'immediate' ? 'selected' : ''}>As they arrive</option><option value="daily_digest" ${np.mode === 'daily_digest' ? 'selected' : ''}>One digest a day</option></select></label>
