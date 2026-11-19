@@ -139,18 +139,49 @@ function markReadByOffice(db, employeeId) {
 }
 
 // One row per crew member who has a thread: name, role, last message, last time, and unread from the crew.
-function crewThreads(db) {
+// A crew message with no office reply after this many minutes is escalated (a task, and a repeat alert in the office).
+const CREW_ESCALATE_MIN = Number(process.env.CREW_MESSAGE_ESCALATE_MINUTES) || 60;
+
+function crewThreads(db, nowMs = Date.now()) {
   return db.prepare(`SELECT e.id, e.name, e.role,
       (SELECT m.body FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.kind='crew' AND c.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_body,
       (SELECT m.created_at FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.kind='crew' AND c.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_at,
+      (SELECT m.sender_role FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.kind='crew' AND c.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_role,
+      (SELECT m.id FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.kind='crew' AND c.employee_id=e.id ORDER BY m.id DESC LIMIT 1) AS last_id,
       (SELECT COUNT(*) FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.kind='crew' AND c.employee_id=e.id AND m.sender_role='crew' AND m.seen_by_office=0) AS unread
-    FROM employees e WHERE e.id IN (SELECT employee_id FROM conversations WHERE kind='crew') ORDER BY last_at DESC`).all();
+    FROM employees e WHERE e.id IN (SELECT employee_id FROM conversations WHERE kind='crew') ORDER BY last_at DESC`).all().map(r => ({
+    ...r,
+    // Only a crew message that nobody in the office has answered counts as waiting; opening the thread does not answer it.
+    needs_reply: r.last_role === 'crew',
+    waiting_over_hour: r.last_role === 'crew' && Date.parse(r.last_at) < nowMs - CREW_ESCALATE_MIN * 60000
+  }));
+}
+
+// Creates one urgent task per crew message that has gone unanswered past the limit. Each message is escalated once.
+function crewEscalationSweep(db, nowMs = Date.now()) {
+  db.exec('CREATE TABLE IF NOT EXISTS crew_escalations(message_id INTEGER PRIMARY KEY, task_id INTEGER, created_at TEXT NOT NULL)');
+  const cutoff = new Date(nowMs - CREW_ESCALATE_MIN * 60000).toISOString();
+  const rows = db.prepare(`SELECT m.id, m.body, m.created_at, e.name FROM conversation_messages m
+      JOIN conversations c ON c.id = m.conversation_id JOIN employees e ON e.id = c.employee_id
+    WHERE c.kind='crew' AND m.sender_role='crew' AND m.created_at < ?
+      AND m.id = (SELECT MAX(m2.id) FROM conversation_messages m2 WHERE m2.conversation_id = c.id)
+      AND m.id NOT IN (SELECT message_id FROM crew_escalations)`).all(cutoff);
+  const today = require('./bizdate').today();
+  for (const r of rows) {
+    const at = new Date(nowMs).toISOString();
+    const task = db.prepare(`INSERT INTO customer_issues(customer_id, type, category, title, description, priority, status, assigned_to, due_date, created_by, created_at, updated_at)
+      VALUES (NULL, 'Task', 'Crew message', ?, ?, 'Urgent', 'Open', NULL, ?, 'system', ?, ?)`)
+      .run(`Reply to crew: ${r.name} (no reply after ${CREW_ESCALATE_MIN} minutes)`, String(r.body || '').slice(0, 500), today, at, at);
+    db.prepare('INSERT INTO crew_escalations(message_id, task_id, created_at) VALUES(?,?,?)').run(r.id, task.lastInsertRowid, at);
+  }
+  return rows.length;
 }
 
 module.exports.crewThread = crewThread;
 module.exports.markReadByCrew = markReadByCrew;
 module.exports.markReadByOffice = markReadByOffice;
 module.exports.crewThreads = crewThreads;
+module.exports.crewEscalationSweep = crewEscalationSweep;
 
 // Customer messages in the shape the customer portal and the office Client messages screen already use:
 // { id (the original portal message id), email, subject, body, created_at, replies: [{ body, by_user, created_at }] }.

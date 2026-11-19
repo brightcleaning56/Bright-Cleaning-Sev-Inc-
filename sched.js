@@ -737,5 +737,6 @@ module.exports = function mountSched(app, ctx) {
   };
   app.locals.lateSweep = lateSweep;
   if (!process.env.DISABLE_SCHEDULER) { const lt = setInterval(() => lateSweep().catch(err => console.error('late sweep:', err.message)), 5 * 60 * 1000); lt.unref(); }
+  if (!process.env.DISABLE_SCHEDULER) { const ce = setInterval(() => { try { require('./conversations').crewEscalationSweep(db); } catch (err) { console.error('crew escalation:', err.message); } }, 5 * 60 * 1000); ce.unref(); }
   app.locals.schedCheck = (empId, visitId) => check(getEmp(empId), getVisit(visitId));
 };

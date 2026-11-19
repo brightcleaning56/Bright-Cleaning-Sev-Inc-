@@ -540,24 +540,29 @@
   setInterval(() => { if (!signedOut && token && state.view === 'overview' && document.visibilityState === 'visible' && !document.querySelector('#drawerRoot .drawer')) loadOverview().catch(() => {}); }, 30000);
   // ---- Crew message alert: a card pops up when a crew member writes; the first check only sets the baseline ----
   let crewUnreadSeen = null;
+  const crewHourAlerted = new Set(); // last-message ids already re-alerted after an hour with no reply
   async function checkCrewMessages() {
     if (!token || signedOut || document.visibilityState !== 'visible') return;
     const r = await api('/api/admin/crew-messages');
     const threads = r.threads || [];
     const unread = threads.reduce((n, t) => n + (t.unread || 0), 0);
-    if (crewUnreadSeen === null) { crewUnreadSeen = unread; return; }
-    if (unread > crewUnreadSeen) {
+    if (crewUnreadSeen === null) { crewUnreadSeen = unread; }
+    else if (unread > crewUnreadSeen) {
       const hot = threads.filter(t => t.unread).sort((a, b) => String(b.last_at).localeCompare(String(a.last_at)))[0];
       if (hot) showCrewAlert(hot, unread - crewUnreadSeen);
     }
     crewUnreadSeen = unread;
+    // Still no office reply after an hour: alert again, once for each crew message.
+    for (const t of threads) {
+      if (t.waiting_over_hour && !crewHourAlerted.has(t.last_id)) { crewHourAlerted.add(t.last_id); showCrewAlert(t, 0, true); }
+    }
   }
-  function showCrewAlert(t, n) {
+  function showCrewAlert(t, n, overHour) {
     document.querySelectorAll('.crew-alert').forEach(x => x.remove());
     const box = document.createElement('div');
     box.className = 'crew-alert'; box.setAttribute('role', 'alert');
     box.innerHTML = '<div><b></b><small></small></div><button class="btn small" type="button">Open</button><button class="btn ghost small" type="button" aria-label="Dismiss">✕</button>';
-    box.querySelector('b').textContent = (n > 1 ? n + ' new messages from ' : 'New message from ') + t.name;
+    box.querySelector('b').textContent = overHour ? 'No reply for over an hour: ' + t.name : (n > 1 ? n + ' new messages from ' : 'New message from ') + t.name;
     box.querySelector('small').textContent = t.last_body || '';
     const btns = box.querySelectorAll('button');
     btns[0].onclick = () => { box.remove(); openCrewMessages(t.id).catch(err => toast(err.message, true)); };
