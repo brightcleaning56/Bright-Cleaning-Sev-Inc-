@@ -3867,7 +3867,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return `${c0.number}: linked to visit #${vid} + crew; ${final.history.length} history entries; ${det.autopilot.length} autopilot steps; anonymous complaint → Information needed`;
   });
 
-  await check('Security', 'Script CSP: no inline scripts or inline event handlers anywhere in the site/admin; script policy is sent report-only by default (enforced only via CSP_ENFORCE_SCRIPTS=1); violation reports are collected and shown to owner/manager only', async () => {
+  await check('Security', 'Script CSP: no inline scripts or inline event handlers anywhere in the site/admin; script policy is enforced by default (set CSP_ENFORCE_SCRIPTS=0 only as a temporary rollback); violation reports are collected and shown to owner/manager only', async () => {
     const fs = require('fs'), path = require('path'), pub = path.join(__dirname, '..', 'public'); const bad = [];
     const walk = d => { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.(html|js)$/.test(f)) { const t = fs.readFileSync(p, 'utf8'); if (/\.html$/.test(f) && /<script(?![^>]*\bsrc=)(?![^>]*type="application\/ld\+json")[^>]*>/i.test(t)) bad.push(p + ': inline <script>'); if (/\son(click|error|load|submit|change|input|mouseover|keydown)=["']/i.test(t)) bad.push(p + ': inline handler'); } } };
     walk(pub);
@@ -3875,7 +3875,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const rep = await fetch(B + '/api/csp-report', { method: 'POST', headers: { 'Content-Type': 'application/csp-report' }, body: JSON.stringify({ 'csp-report': { 'document-uri': 'https://brightclean.net/proposal/abcdefghijklmnopqrstuvwxyz', 'effective-directive': 'script-src-elem', 'blocked-uri': 'https://evil.example/x.js' } }) });
     const sh = await req('GET', '/api/admin/system-health', { token: T }), shStaff = await req('GET', '/api/admin/system-health', { token: globalThis.__st });
     const stored = sh.data.csp.reports.find(r => r.blocked === 'https://evil.example/x.js');
-    const chk = { noInline: !bad.length, reportOnly: /script-src 'self' https:\/\/cdn\.jsdelivr\.net/.test(ro) && /report-uri \/api\/csp-report/.test(ro), enforcedSafe: /object-src 'none'/.test(en) && !/script-src/.test(en), report: rep.status === 204, stored: !!stored && /:token/.test(stored.page), staff: shStaff.status === 403 };
+    const chk = { noInline: !bad.length, enforced: /script-src 'self' https:\/\/cdn\.jsdelivr\.net/.test(en) && /object-src 'none'/.test(en) && /report-uri \/api\/csp-report/.test(en), noReportOnlyDup: !ro, report: rep.status === 204, stored: !!stored && /:token/.test(stored.page), staff: shStaff.status === 403 };
     const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ bad: bad.slice(0, 5), ro, en, rep: rep.status, stored }));
     return `0 inline scripts/handlers; report-only: ${ro}; violation stored (token redacted); staff 403`;

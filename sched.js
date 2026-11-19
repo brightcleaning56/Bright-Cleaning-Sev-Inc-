@@ -387,7 +387,12 @@ module.exports = function mountSched(app, ctx) {
   };
   // Failed PIN tries are counted per employee (or per normalized login when no employee matches), so
   // writing the phone number another way does not reset the count. Five failures lock for 15 minutes.
-  const loginFails = new Map(), LOCK_TRIES = 5, LOCK_MS = 15 * 60000;
+  // Kept in the database, so a restart or a second process cannot reset a lock.
+  db.exec('CREATE TABLE IF NOT EXISTS crew_login_fails(key TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0, until_ms INTEGER NOT NULL DEFAULT 0)');
+  const failGet = key => db.prepare('SELECT n, until_ms AS until FROM crew_login_fails WHERE key=?').get(key) || { n: 0, until: 0 };
+  const failSet = (key, n, until) => db.prepare('INSERT INTO crew_login_fails(key,n,until_ms) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET n=excluded.n, until_ms=excluded.until_ms').run(key, n, until);
+  const failClear = key => db.prepare('DELETE FROM crew_login_fails WHERE key=?').run(key);
+  const LOCK_TRIES = 5, LOCK_MS = 15 * 60000;
   const CREW_SESSION = (Number(process.env.CREW_SESSION_DAYS) || 7) + 'd';
   app.post('/api/crew/login', (req, res) => {
     const raw = clean((req.body || {}).login, 120).toLowerCase(), pin = String((req.body || {}).pin || '').trim();
@@ -395,14 +400,14 @@ module.exports = function mountSched(app, ctx) {
     if (raw.includes('@')) e = db.prepare('SELECT * FROM employees WHERE lower(email)=? AND active=1').get(raw);
     else { const d = raw.replace(/\D/g, '').slice(-10); if (d.length === 10) e = db.prepare("SELECT * FROM employees WHERE active=1 AND substr(replace(replace(replace(replace(replace(replace(phone,' ',''),'-',''),'(',''),')',''),'.',''),'+',''),-10)=? ORDER BY id LIMIT 1").get(d) || null; }
     const key = e ? 'emp:' + e.id : 'login:' + (raw.includes('@') ? raw : raw.replace(/\D/g, '').slice(-10));
-    const f = loginFails.get(key) || { n: 0, until: 0 };
+    const f = failGet(key);
     if (f.until > Date.now()) return res.status(429).json({ error: 'Too many tries. Wait 15 minutes, then try again.' });
     if (!e || !e.pin_hash || !pin || !bcrypt.compareSync(pin, e.pin_hash)) {
       const n = f.n + 1;
-      loginFails.set(key, { n, until: n >= LOCK_TRIES ? Date.now() + LOCK_MS : 0 });
+      failSet(key, n, n >= LOCK_TRIES ? Date.now() + LOCK_MS : 0);
       return res.status(401).json({ error: 'That phone or email and PIN do not match. Ask your supervisor if you need a PIN.' });
     }
-    loginFails.delete(key);
+    failClear(key);
     db.prepare('UPDATE employees SET last_login_at=? WHERE id=?').run(now(), e.id);
     res.json({ token: jwt.sign({ kind: 'crew', emp: e.id, v: e.crew_session_v || 0 }, crewSecret(), { expiresIn: CREW_SESSION }), employee: { name: e.name } });
   });
