@@ -38,6 +38,7 @@ const first = conv.crewEscalationSweep(db, NOW);
 ok('sweep escalates exactly the one overdue message', first === 1, { first });
 const tasks = db.prepare('SELECT * FROM customer_issues').all();
 ok('one urgent unassigned task created', tasks.length === 1 && tasks[0].priority === 'Urgent' && tasks[0].assigned_to === null && tasks[0].category === 'Crew message', tasks);
+ok('task type is the app key "task" (the issue screens look it up)', tasks[0] && tasks[0].type === 'task', tasks[0]);
 ok('task names the crew member', tasks[0] && /Eric Moore test/.test(tasks[0].title), tasks[0]);
 
 const again = conv.crewEscalationSweep(db, NOW + 5 * 60000);

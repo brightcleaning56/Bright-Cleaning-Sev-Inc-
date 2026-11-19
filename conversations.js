@@ -174,7 +174,7 @@ function crewEscalationSweep(db, nowMs = Date.now()) {
     const msg = db.prepare('SELECT body FROM conversation_messages WHERE id=?').get(t.waiting_id);
     const at = new Date(nowMs).toISOString();
     const task = db.prepare(`INSERT INTO customer_issues(customer_id, type, category, title, description, priority, status, assigned_to, due_date, created_by, created_at, updated_at)
-      VALUES (NULL, 'Task', 'Crew message', ?, ?, 'Urgent', 'Open', NULL, ?, 'system', ?, ?)`)
+      VALUES (NULL, 'task', 'Crew message', ?, ?, 'Urgent', 'Open', NULL, ?, 'system', ?, ?)`)
       .run(`Reply to crew: ${t.name} (no reply after ${CREW_ESCALATE_MIN} minutes)`, String(msg && msg.body || '').slice(0, 500), today, at, at);
     db.prepare('INSERT INTO crew_escalations(message_id, task_id, created_at) VALUES(?,?,?)').run(t.waiting_id, task.lastInsertRowid, at);
   }
