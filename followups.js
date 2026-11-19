@@ -43,6 +43,49 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     try { return db.prepare('SELECT phone FROM sms_consents WHERE revoked_at IS NULL').all().some(r => normPhone(r.phone) === want); } catch { return false; }
   };
 
+  // Opt-out state. A number is opted out when its most recent consent record has been revoked (a STOP reply).
+  // A new ticked opt-in on the quote form creates a newer record, which clears it.
+  function smsOptedOut(phone) {
+    const want = normPhone(phone); if (!want) return false;
+    try {
+      const rows = db.prepare('SELECT phone, revoked_at FROM sms_consents ORDER BY id DESC').all().filter(r => normPhone(r.phone) === want);
+      return rows.length > 0 && !!rows[0].revoked_at;
+    } catch { return false; }
+  }
+  function revokeSmsConsent(phone) {
+    const want = normPhone(phone); if (!want) return 0;
+    const when = new Date().toISOString(); let n = 0;
+    try {
+      for (const r of db.prepare('SELECT id, phone FROM sms_consents WHERE revoked_at IS NULL').all()) {
+        if (normPhone(r.phone) === want) { db.prepare('UPDATE sms_consents SET revoked_at=? WHERE id=?').run(when, r.id); n++; }
+      }
+    } catch (err) { console.error('sms opt-out failed', err.message); }
+    return n;
+  }
+  // Twilio signature check, same method as the call webhooks.
+  function twilioSigOk(req) {
+    const crypto = require('crypto');
+    const token = process.env.TWILIO_AUTH_TOKEN || '';
+    const sig = String(req.headers['x-twilio-signature'] || ''); if (!sig || !token) return false;
+    const url = (process.env.PUBLIC_BASE_URL || 'https://brightclean.net').replace(/\/$/, '') + req.originalUrl, b = req.body || {};
+    const data = url + Object.keys(b).sort().map(k => k + b[k]).join('');
+    const exp = crypto.createHmac('sha1', token).update(Buffer.from(data, 'utf8')).digest('base64');
+    return exp.length === sig.length && crypto.timingSafeEqual(Buffer.from(exp), Buffer.from(sig));
+  }
+  const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
+  // Inbound texts from Twilio. STOP-type words revoke text consent for that number. Anything else is ignored here.
+  app.post('/api/webhooks/twilio/sms', (req, res) => {
+    res.type('text/xml');
+    if (!twilioSigOk(req)) return res.status(403).send('<?xml version="1.0" encoding="UTF-8"?><Response/>');
+    const from = normPhone((req.body || {}).From);
+    const word = String((req.body || {}).Body || '').trim().toUpperCase();
+    if (from && STOP_WORDS.includes(word)) {
+      const n = revokeSmsConsent(from);
+      console.log('sms opt-out: revoked ' + n + ' consent record(s)');
+    }
+    res.send('<?xml version="1.0" encoding="UTF-8"?><Response/>');
+  });
+
   // ---- Texts (Twilio). Needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_SMS_FROM (a Twilio number that can send texts). ----
   const smsConfig = () => ({ sid: process.env.TWILIO_ACCOUNT_SID || '', token: process.env.TWILIO_AUTH_TOKEN || '', from: process.env.TWILIO_SMS_FROM || '', base: (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '') });
   const smsReady = () => { const c = smsConfig(); return !!(c.sid && c.token && c.from); };
@@ -53,6 +96,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     if (!smsReady()) throw new Error('Texting is not set up yet. The owner needs to add TWILIO_ACCOUNT_SID and TWILIO_SMS_FROM in Render.');
     const dest = normPhone(to);
     if (!dest) throw new Error('No valid phone number on file for this customer.');
+    if (smsOptedOut(dest)) throw new Error('This number replied STOP and is opted out of texts.');
     const r = await fetch(`${c.base}/2010-04-01/Accounts/${encodeURIComponent(c.sid)}/Messages.json`, {
       method: 'POST',
       headers: { Authorization: 'Basic ' + Buffer.from(c.sid + ':' + c.token).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },

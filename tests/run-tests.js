@@ -1110,6 +1110,44 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(yes.status === 201 && rowYes && rowYes.lead_id === yes.data.id && rowYes.phone === '515-555-0301' && rowYes.source === 'quote_form' && rowYes.wording_version === 'quote-form-v1' && /Reply HELP for help or STOP/.test(rowYes.wording) && rowYes.revoked_at === null && !rowNo && no.status === 201, JSON.stringify({ rowYes, rowNo }));
     return `consent row #${rowYes.id} for lead #${rowYes.lead_id}, wording ${rowYes.wording_version}; no row when the box was not ticked`;
   });
+  await check('Quote forms', 'STOP reply revokes text consent; the number is then blocked from automatic and manual texts; a new opt-in clears it; bad signatures are refused', async () => {
+    const crypto = require('crypto');
+    const savedTok = process.env.TWILIO_AUTH_TOKEN, savedBase = process.env.PUBLIC_BASE_URL;
+    const savedSid = process.env.TWILIO_ACCOUNT_SID, savedFrom = process.env.TWILIO_SMS_FROM;
+    process.env.TWILIO_AUTH_TOKEN = 'test-token-stop'; process.env.PUBLIC_BASE_URL = 'https://brightclean.test';
+    process.env.TWILIO_ACCOUNT_SID = 'ACtestonly'; process.env.TWILIO_SMS_FROM = '+15153033024'; // dummy values; the send is refused before any call to Twilio
+    const udb = new (require('../node_modules/better-sqlite3'))(':memory:');
+    try {
+      udb.exec(`CREATE TABLE sms_consents(id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, email TEXT, contact_name TEXT, source TEXT, lead_id INTEGER, wording_version TEXT, wording TEXT, consented_at TEXT, revoked_at TEXT);
+        CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);`);
+      udb.prepare("INSERT INTO sms_consents(phone, source, wording_version, wording, consented_at) VALUES('5155550777','quote_form','quote-form-v1','w',?)").run(new Date().toISOString());
+      const routes = {}, app = { locals: {}, use: () => {}, get: (p, ...f) => { routes['GET ' + p] = f[f.length - 1]; }, post: (p, ...f) => { routes['POST ' + p] = f[f.length - 1]; }, put: () => {} };
+      require('../followups')(app, { db: udb, auth: (q, s, n) => n(), logAction: () => {}, clean: (v, n) => String(v == null ? '' : v).slice(0, n || 1000), getMailer: () => null });
+      const sign = (body) => { const url = 'https://brightclean.test/api/webhooks/twilio/sms'; const data = url + Object.keys(body).sort().map(k => k + body[k]).join(''); return crypto.createHmac('sha1', 'test-token-stop').update(Buffer.from(data, 'utf8')).digest('base64'); };
+      const call = (body, sig) => { const out = { code: 0 }; const res = { type() { return this; }, status(c) { out.code = c; return this; }, send(x) { out.body = x; return this; } }; routes['POST /api/webhooks/twilio/sms']({ originalUrl: '/api/webhooks/twilio/sms', headers: { 'x-twilio-signature': sig }, body }, res); return out; };
+      const stop = { From: '+15155550777', Body: 'stop', To: '+15153033024' };
+      const badSig = call(stop, 'not-a-real-signature');
+      const optedBefore = udb.prepare("SELECT COUNT(*) n FROM sms_consents WHERE revoked_at IS NULL").get().n;
+      const ok = call(stop, sign(stop));
+      const revoked = udb.prepare("SELECT COUNT(*) n FROM sms_consents WHERE revoked_at IS NOT NULL").get().n;
+      // Manual send to a stopped number is refused before reaching Twilio.
+      const sendRefused = await (async () => { try { await app.locals.sendSms('+15155550777', 'hi'); return false; } catch (err) { return /opted out/.test(err.message); } })();
+      // A new opt-in later clears the block.
+      udb.prepare("INSERT INTO sms_consents(phone, source, wording_version, wording, consented_at) VALUES('5155550777','quote_form','quote-form-v1','w',?)").run(new Date().toISOString());
+      const latest = udb.prepare("SELECT revoked_at FROM sms_consents ORDER BY id DESC LIMIT 1").get();
+      const cleared = !!latest && latest.revoked_at === null;
+      const chk = { badSigRefused: badSig.code === 403, noRevokeOnBadSig: optedBefore === 1, revokedOnStop: ok.code === 0 && revoked === 1, sendRefused, clearedByNewOptIn: cleared };
+      const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+      assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ badSig, ok, revoked, optedBefore }));
+    } finally {
+      udb.close();
+      if (savedTok === undefined) delete process.env.TWILIO_AUTH_TOKEN; else process.env.TWILIO_AUTH_TOKEN = savedTok;
+      if (savedBase === undefined) delete process.env.PUBLIC_BASE_URL; else process.env.PUBLIC_BASE_URL = savedBase;
+      if (savedSid === undefined) delete process.env.TWILIO_ACCOUNT_SID; else process.env.TWILIO_ACCOUNT_SID = savedSid;
+      if (savedFrom === undefined) delete process.env.TWILIO_SMS_FROM; else process.env.TWILIO_SMS_FROM = savedFrom;
+    }
+    return 'STOP revokes consent; bad signature refused; manual text to a stopped number blocked; a new opt-in clears the block';
+  });
   await check('Quote forms', 'Pre-pricing rules per service (windows, power washing, unit turnover, parking)', async () => {
     const get = async id => JSON.parse((await req('GET', '/api/admin/leads/' + id, { token: T })).data.lead.intake).flags.map(f => f.code);
     const w = await quote({ ...contact, email: 'w@t.test', service_key: 'windows', stories: '4+ stories', sides: 'Both', access: 'Not sure' });
