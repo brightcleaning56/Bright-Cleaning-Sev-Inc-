@@ -48,7 +48,7 @@ Scope: the 20 release gates in the master production readiness directive, checke
 - P1: Customer and crew messages are not yet on one shared record in production (work exists on the staging branch and local commits; production push awaits owner approval).
 - P1: Stripe, Twilio, Postmark, Microsoft 365 and Backblaze live paths are not tested with real providers. Microsoft 365 is not connected. Anthropic AI triage is off (credit balance).
 - P1: No staging run of the five-test messaging plan.
-- P1: TOTP replay and challenge reuse (F-14.3a/b) are not fixed.
+- P1: TOTP replay and challenge reuse (F-14.3a/b): FIXED. Verified 2026-11-19 on commit 30d8f14: tests/mfa-replay-test.js 6/6 passed; live fix in build 62a8b6b1aefe and later. (Earlier status said not fixed; superseded.)
 
 ## What the owner must do (not done by this audit)
 
