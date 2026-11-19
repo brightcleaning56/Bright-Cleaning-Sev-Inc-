@@ -49,7 +49,7 @@ function mountMfa(app, ctx) {
     db.prepare('UPDATE mfa_factors SET enabled=1, enabled_at=?, last_step=? WHERE email=?').run(new Date().toISOString(), step, email);
     audit(email, 'two-step sign-in turned on', '');
     // A fresh token that has passed the code check, so the session can use the whole app now.
-    res.json({ ok: true, token: signToken(email, true) });
+    { const t = signToken(email, true); require('./admin-session').setCookie(req, res, t); res.json({ ok: true, token: t }); }
   });
   app.post('/api/admin/mfa/disable', auth, (req, res) => {
     const email = who(req), f = factor(email);
@@ -89,7 +89,7 @@ function mountMfa(app, ctx) {
     }
     if (row) db.prepare('UPDATE admin_users SET last_login_at=? WHERE id=?').run(now, row.id);
     audit(email, 'signed in', 'with two-step code');
-    res.json({ token: signToken(email, true), email });
+    { const t = signToken(email, true); require('./admin-session').setCookie(req, res, t); res.json({ token: t, email }); }
   });
 }
 

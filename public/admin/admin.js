@@ -6,7 +6,11 @@
   const $ = (s, root = document) => root.querySelector(s);
   const $$ = (s, root = document) => [...root.querySelectorAll(s)];
   const TOKEN_KEY = 'bc_admin_token';
-  let token = localStorage.getItem(TOKEN_KEY);
+  let token = null;
+  // The session is an HttpOnly cookie that the server sets; this page never holds the token. Remove any token an older version stored.
+  try { localStorage.removeItem(TOKEN_KEY); } catch { /* private browsing */ }
+  // Asks the server whether this browser is signed in (the cookie cannot be read by the page).
+  const probeSession = () => fetch('/api/admin/me', { credentials: 'same-origin', headers: { 'X-BC-CSRF': '1' } }).then(r => { if (r.ok) token = 'session'; return r.ok; }).catch(() => false);
   // True after a sign-out (or a 401) until the next sign-in. While it is set, no API calls are sent, so
   // timers and retries cannot keep hitting the server with a dead session.
   let signedOut = false;
@@ -193,7 +197,7 @@
 
   async function api(url, opts = {}) {
     if (signedOut && !url.startsWith('/api/admin/login')) throw new Error('Signed out');
-    opts.headers = { ...(opts.headers || {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) };
+    opts.headers = { ...(opts.headers || {}), 'X-BC-CSRF': '1' };
     if (opts.json !== undefined) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(opts.json);
@@ -246,7 +250,7 @@
   // ---------- Auth ----------
   function signOut(message) { signedOut = true; try { if (es) { es.close(); es = null; } } catch { /* */ }
     // Revoke this device's token on the server too, so a copy of it stops working. Best effort: the browser forgets it either way.
-    if (token) { try { fetch('/api/admin/logout', { method: 'POST', keepalive: true, headers: { Authorization: 'Bearer ' + token } }).catch(() => { /* */ }); } catch { /* */ } }
+    if (token) { try { fetch('/api/admin/logout', { method: 'POST', keepalive: true, headers: { 'X-BC-CSRF': '1' } }).catch(() => { /* */ }); } catch { /* */ } }
     // A signed-out browser must stop receiving calls: release the phone device.
     try { if (device) { device.destroy(); device = null; } } catch { /* */ }
     token = null;
@@ -280,8 +284,7 @@
         x = await api('/api/admin/login', { method: 'POST', json: formObj(e.target) });
         if (x.mfa_required) { mfaToken = x.mfa_token; showMfaStep(true); st.textContent = 'Enter the 6-digit code from your authenticator app.'; return; }
       }
-      token = x.token; signedOut = false;
-      localStorage.setItem(TOKEN_KEY, token);
+      token = 'session'; signedOut = false;
       e.target.reset();
       showMfaStep(false);
       st.textContent = '';
@@ -335,7 +338,7 @@
       try {
         const x = await api('/api/admin/mfa/enable', { method: 'POST', json: { code: $('#mfaConfirm').value } });
         // The server issues a session that has passed the code check; keep it and reload into the full app.
-        token = x.token; localStorage.setItem(TOKEN_KEY, token);
+        token = 'session';
         mfaMsg('Two-step sign-in is on. Reloading…'); toast('Two-step sign-in is on');
         setTimeout(() => location.reload(), 700);
       } catch (err) { mfaMsg(err.message, true); }
@@ -974,7 +977,7 @@
     $('#cmFile').onchange = async ev => {
       const f = ev.target.files && ev.target.files[0]; if (!f || !custId) return toast(custId ? 'Pick a file.' : 'Link this conversation to a customer first.', true);
       const fd = new FormData(); fd.append('files', f); fd.append('kind', 'Other'); fd.append('customer_id', String(custId)); fd.append('title', f.name.replace(/\.[^.]+$/, ''));
-      try { const r = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd }); const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Upload failed'); toast('File saved to the customer documents'); }
+      try { const r = await fetch('/api/admin/documents', { method: 'POST', headers: { 'X-BC-CSRF': '1' }, body: fd }); const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Upload failed'); toast('File saved to the customer documents'); }
       catch (err) { toast(err.message, true); }
     };
     $('#cmSend').onclick = async () => {
@@ -1176,7 +1179,7 @@
       box.addEventListener('click', async e => {
         const b = e.target.closest('[data-att]'); if (!b) return;
         try {
-          const r = await fetch(`/api/admin/inbox/${inboxId}/attachments/${encodeURIComponent(b.dataset.att)}`, { headers: { Authorization: 'Bearer ' + token } });
+          const r = await fetch(`/api/admin/inbox/${inboxId}/attachments/${encodeURIComponent(b.dataset.att)}`, { headers: { 'X-BC-CSRF': '1' } });
           if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Download failed'); }
           const url = URL.createObjectURL(await r.blob());
           const link = document.createElement('a'); link.href = url; link.download = b.dataset.attName || 'attachment'; document.body.appendChild(link); link.click(); link.remove();
@@ -1357,7 +1360,7 @@
 
   async function downloadFile(f) {
     try {
-      const r = await fetch(f.url, { headers: { Authorization: 'Bearer ' + token } });
+      const r = await fetch(f.url, { headers: { 'X-BC-CSRF': '1' } });
       if (!r.ok) throw new Error('File not available');
       const blob = await r.blob();
       const a = document.createElement('a');
@@ -1814,7 +1817,7 @@
       $$('#estFiles [data-fdl]').forEach(a => a.onclick = ev => { ev.preventDefault(); const x = f.find(y => y.id === Number(a.dataset.fdl)); downloadFile({ name: x.file_name, url: x.file_url }); });
       $('#estFileIn').onchange = async ev => { const files = [...ev.target.files]; if (!files.length) return; const fd = new FormData(); files.forEach(x => fd.append('files', x)); fd.append('kind', 'Proposal'); fd.append('estimate_id', e.id); if (e.customer_id) fd.append('customer_id', e.customer_id);
         if (files.length === 1) fd.append('title', files[0].name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' '));
-        try { const r = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd }); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed'); toast(`${files.length} file(s) attached`); loadEstFiles(); } catch (err) { toast(err.message, true); } };
+        try { const r = await fetch('/api/admin/documents', { method: 'POST', headers: { 'X-BC-CSRF': '1' }, body: fd }); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed'); toast(`${files.length} file(s) attached`); loadEstFiles(); } catch (err) { toast(err.message, true); } };
     };
     loadEstFiles();
     loadEstIns(e.id);
@@ -2380,7 +2383,7 @@
   async function loadContractPdf(id) {
     const fr = $('#cwFrame'); if (!fr) return;
     try {
-      const r = await fetch(`/api/admin/contracts2/${id}/pdf`, { headers: { Authorization: 'Bearer ' + token } });
+      const r = await fetch(`/api/admin/contracts2/${id}/pdf`, { headers: { 'X-BC-CSRF': '1' } });
       if (!r.ok) throw new Error('The contract PDF is not available.');
       if (cwPdf) URL.revokeObjectURL(cwPdf);
       cwPdf = URL.createObjectURL(await r.blob());
@@ -2731,7 +2734,7 @@
     if (v.next !== v.confirm) { m.className = 'msg err'; m.textContent = 'The new passwords don’t match.'; return; }
     if (v.next.length < 14) { m.className = 'msg err'; m.textContent = 'Use at least 14 characters.'; return; }
     m.className = 'msg'; m.textContent = 'Saving…';
-    try { const r = await api('/api/admin/account/password', { method: 'POST', json: { current: v.current, next: v.next } }); if (r.token) { token = r.token; localStorage.setItem(TOKEN_KEY, token); } e.target.reset(); m.className = 'msg ok'; m.textContent = r.message; }
+    try { const r = await api('/api/admin/account/password', { method: 'POST', json: { current: v.current, next: v.next } }); if (r.token) { token = 'session'; } e.target.reset(); m.className = 'msg ok'; m.textContent = r.message; }
     catch (err) { m.className = 'msg err'; m.textContent = err.message; }
   });
 
@@ -2777,7 +2780,7 @@
     const so = $('#secSignOutAll');
     if (so) so.onclick = async () => {
       if (!confirm('Sign out every other device and browser using your account? This device stays signed in.')) return;
-      try { const r = await api('/api/admin/account/sign-out-everywhere', { method: 'POST', json: {} }); if (r.token) { token = r.token; localStorage.setItem(TOKEN_KEY, token); } toast(r.message || 'Other devices were signed out.'); }
+      try { const r = await api('/api/admin/account/sign-out-everywhere', { method: 'POST', json: {} }); if (r.token) { token = 'session'; } toast(r.message || 'Other devices were signed out.'); }
       catch (e) { toast(e.message, true); }
     };
     watchForm($('#apprCard'), $('#apMsg')); watchForm($('#callbackForm'), $('#cbMsg'));
@@ -2851,7 +2854,7 @@
     const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost'; b.id = 'soEverywhere'; b.textContent = 'Sign out all other devices'; b.style.marginLeft = '8px';
     pm.parentNode.insertBefore(b, pm);
     b.onclick = async () => { if (!confirm('Sign out every other device and browser using your account? This device stays signed in.')) return;
-      try { const r = await api('/api/admin/account/sign-out-everywhere', { method: 'POST', json: {} }); if (r.token) { token = r.token; localStorage.setItem(TOKEN_KEY, token); } pm.className = 'msg ok'; pm.textContent = r.message; } catch (e) { pm.className = 'msg err'; pm.textContent = e.message; } };
+      try { const r = await api('/api/admin/account/sign-out-everywhere', { method: 'POST', json: {} }); if (r.token) { token = 'session'; } pm.className = 'msg ok'; pm.textContent = r.message; } catch (e) { pm.className = 'msg err'; pm.textContent = e.message; } };
   }
   const PHONE_ICON = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>';
   const nameInitials = s => String(s || '?').split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
@@ -3265,7 +3268,7 @@
     box.querySelectorAll('[data-cctab]').forEach(b => b.onclick = () => { callState.panelTab = b.dataset.cctab; renderCallPanel(c); });
     if ($('#ccPlay')) $('#ccPlay').onclick = async () => {
       try {
-        const r = await fetch('/api/admin/calls/' + c.id + '/recording', { headers: { Authorization: 'Bearer ' + token } });
+        const r = await fetch('/api/admin/calls/' + c.id + '/recording', { headers: { 'X-BC-CSRF': '1' } });
         if (!r.ok) throw new Error('The recording is not available.');
         const url = URL.createObjectURL(await r.blob());
         const holder = $('#ccTabBody'); if (holder) holder.insertAdjacentHTML('afterbegin', '<audio controls src="' + url + '" style="width:100%;margin-bottom:8px"></audio>');
@@ -3366,7 +3369,7 @@
     if ($('#recPlay')) $('#recPlay').onclick = async ev => {
       const btn = ev.target; btn.disabled = true; btn.textContent = 'Loading…';
       try {
-        const r = await fetch(`/api/admin/calls/${c.id}/recording`, { headers: { Authorization: 'Bearer ' + token } });
+        const r = await fetch(`/api/admin/calls/${c.id}/recording`, { headers: { 'X-BC-CSRF': '1' } });
         if (!r.ok) { let m = 'Could not load the recording.'; try { m = (await r.json()).error || m; } catch { /* */ } throw new Error(m); }
         const url = URL.createObjectURL(await r.blob());
         $('#recBox').innerHTML = `<audio controls autoplay src="${url}" style="width:100%;max-width:340px;display:block"></audio><a href="${url}" download="call-${c.id}.mp3" class="muted" style="font-size:12px">Download MP3</a>`;
@@ -3531,7 +3534,7 @@
           <div class="wide"><label>Checklist (one item per line)</label><textarea name="checklist" rows="3">${esc(list.map(x => x.text || x.title || '').join('\n'))}</textarea></div></form>`,
       footer: `<button class="btn ghost" data-close>Close</button><button class="btn ghost" id="jEdit">Edit details</button><button class="btn ghost" id="jMove">Move</button><button class="btn ghost danger" id="jSkip">Skip</button><button class="btn ghost" id="jSave">Save</button><button class="btn" id="jDispatch">${v.dispatched_at ? 'Re-send to crew' : 'Confirm dispatch'}</button>` });
     // Photo files need the sign-in token, so load each one as a blob and open it in a new tab on click
-    const loadJobPhotos = async () => { for (const img of $$('#drawerRoot img[data-photo-src]')) { try { const r = await fetch(img.dataset.photoSrc, { headers: { Authorization: 'Bearer ' + token } }); if (!r.ok) throw new Error('photo'); img.src = URL.createObjectURL(await r.blob()); } catch { img.alt = 'Photo could not load'; } } };
+    const loadJobPhotos = async () => { for (const img of $$('#drawerRoot img[data-photo-src]')) { try { const r = await fetch(img.dataset.photoSrc, { headers: { 'X-BC-CSRF': '1' } }); if (!r.ok) throw new Error('photo'); img.src = URL.createObjectURL(await r.blob()); } catch { img.alt = 'Photo could not load'; } } };
     loadJobPhotos();
     $$('#drawerRoot [data-open-photo]').forEach(b => b.onclick = () => { const img = b.querySelector('img'); if (img && img.src.startsWith('blob:')) window.open(img.src, '_blank'); });
     if ($('#jCopyTrack')) $('#jCopyTrack').onclick = async () => { try { await navigator.clipboard.writeText(trackLink); toast('Link copied'); } catch { prompt('Client tracking link:', trackLink); } };
@@ -3757,7 +3760,7 @@
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     act('#qInspect', () => inspectEditor(r));
     act('#qPdf', () => downloadFile({ name: r.number + '.pdf', url: `/api/admin/qc/inspections/${r.id}/pdf` }));
-    act('#qPhotos', () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true; inp.onchange = async () => { const fd = new FormData(); fd.append('inspection_id', r.id); fd.append('kind', 'Photos'); if (r.project_id) fd.append('project_id', r.project_id); if (r.customer_id) fd.append('customer_id', r.customer_id); [...inp.files].forEach(f => fd.append('files', f)); const x = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd }); if (x.ok) { toast('Photos added'); showInspection(r.id); } else toast((await x.json().catch(() => ({}))).error || 'Upload failed', true); }; inp.click(); });
+    act('#qPhotos', () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true; inp.onchange = async () => { const fd = new FormData(); fd.append('inspection_id', r.id); fd.append('kind', 'Photos'); if (r.project_id) fd.append('project_id', r.project_id); if (r.customer_id) fd.append('customer_id', r.customer_id); [...inp.files].forEach(f => fd.append('files', f)); const x = await fetch('/api/admin/documents', { method: 'POST', headers: { 'X-BC-CSRF': '1' }, body: fd }); if (x.ok) { toast('Photos added'); showInspection(r.id); } else toast((await x.json().catch(() => ({}))).error || 'Upload failed', true); }; inp.click(); });
     act('#qAi', async () => { $('#qAi').disabled = true; $('#qAi').textContent = 'Reading…'; try { await api(`/api/admin/ai/qc/${r.id}/summary`, { method: 'POST' }); showInspection(r.id); } catch (e) { toast(e.message, true); $('#qAi').disabled = false; $('#qAi').textContent = 'AI summary'; } });
     act('#qWo', () => openForm({ title: 'Create corrective work orders', sub: `${r.items.filter(x => x.result === 'Fail').length} failed item(s) become tasks in Issues & Tasks.`, defs: [{ name: 'assigned_to', label: 'Assign to (email)' }, { name: 'due_date', label: 'Due date', type: 'date' }, { name: 'required_action', label: 'Required action', wide: true, placeholder: 'Re-clean and take before/after photos' }], submit: b => api(`/api/admin/qc/inspections/${r.id}/corrective`, { method: 'POST', json: b }), after: x => { toast(`${x.created} work order(s) created`); loadQuality(); } }));
     act('#qRe', async () => { try { const x = await api(`/api/admin/qc/inspections/${r.id}/reinspect`, { method: 'POST' }); toast(x.open_corrective ? `Reinspection started (${x.open_corrective} corrective task(s) still open)` : 'Reinspection started'); await loadQuality(); inspectEditor(x.inspection); } catch (e) { toast(e.message, true); } });
@@ -3843,9 +3846,9 @@
       ${r.history.length ? `<div class="card"><h2 style="font-size:16px">Revision history</h2>${r.history.map(h => `<p style="margin:4px 0"><button class="linklike" data-dopen="${h.id}">${esc(h.revision || 'v' + h.version)}</button> <small class="muted">${fmtDate(h.created_at)} · ${esc(h.uploaded_by || '')}</small></p>`).join('')}</div>` : ''}`;
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     act('#dDl', () => downloadFile({ name: d.file_name || d.title, url: d.file_url }));
-    act('#dPrev', async () => { try { const x = await fetch(d.file_url, { headers: { Authorization: 'Bearer ' + token } }); if (!x.ok) throw new Error('Could not open the file.'); const u = URL.createObjectURL(await x.blob()); window.open(u, '_blank'); } catch (e) { toast(e.message, true); } });
+    act('#dPrev', async () => { try { const x = await fetch(d.file_url, { headers: { 'X-BC-CSRF': '1' } }); if (!x.ok) throw new Error('Could not open the file.'); const u = URL.createObjectURL(await x.blob()); window.open(u, '_blank'); } catch (e) { toast(e.message, true); } });
     act('#dRev', () => openForm({ title: 'Upload new revision', sub: 'The current file becomes Superseded and stays in the history. Takeoffs from it are flagged for a recheck.', defs: [{ name: 'file', label: 'Revised file', type: 'file' }, { name: 'revision', label: 'Revision label', placeholder: 'e.g. Rev 2, Addendum 1, IFC' }, { name: 'notes', label: 'What changed', wide: true }],
-      submit: async b => { const fd = new FormData(); const f = b.file && (b.file[0] || b.file); if (f) fd.append('file', f); fd.append('revision', b.revision || ''); fd.append('notes', b.notes || ''); const x = await fetch(`/api/admin/docs/${d.id}/revision`, { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd }); const j = await x.json().catch(() => ({})); if (!x.ok) throw new Error(j.error || 'Upload failed'); return j; },
+      submit: async b => { const fd = new FormData(); const f = b.file && (b.file[0] || b.file); if (f) fd.append('file', f); fd.append('revision', b.revision || ''); fd.append('notes', b.notes || ''); const x = await fetch(`/api/admin/docs/${d.id}/revision`, { method: 'POST', headers: { 'X-BC-CSRF': '1' }, body: fd }); const j = await x.json().catch(() => ({})); if (!x.ok) throw new Error(j.error || 'Upload failed'); return j; },
       after: x => { toast(x.takeoffs_flagged ? `New revision uploaded; ${x.takeoffs_flagged} takeoff(s) flagged for recheck` : 'New revision uploaded'); docState.sel = x.id; loadDocuments(); } }));
     act('#dAi', async () => { const b = $('#dAi'); b.disabled = true; b.textContent = 'Reading the drawings… (up to a few minutes)'; try { const x = await api(`/api/admin/ai/documents/${d.id}/blueprint`, { method: 'POST' }); toast(`Read ${x.blueprint.sheets.length} sheets, ${x.blueprint.rooms.length} rooms, ${x.blueprint.questions.length} questions`); loadDocuments(); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Read blueprint with AI'; } });
     act('#dTk', async () => { try { const x = await api(`/api/admin/docs/${d.id}/takeoff`, { method: 'POST' }); toast(`Takeoff #${x.takeoff_id} drafted for your review`); go('takeoffs'); } catch (e) { toast(e.message, true); } });
@@ -4108,7 +4111,7 @@
     $('#wqAtt').addEventListener('click', async e => {
       const b = e.target.closest('[data-att]'); if (!b) return;
       try {
-        const r = await fetch(`/api/admin/inbox/${id}/attachments/${encodeURIComponent(b.dataset.att)}`, { headers: { Authorization: 'Bearer ' + token } });
+        const r = await fetch(`/api/admin/inbox/${id}/attachments/${encodeURIComponent(b.dataset.att)}`, { headers: { 'X-BC-CSRF': '1' } });
         if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Download failed'); }
         const url = URL.createObjectURL(await r.blob());
         const link = document.createElement('a'); link.href = url; link.download = b.dataset.attName || 'attachment'; document.body.appendChild(link); link.click(); link.remove();
@@ -4674,7 +4677,7 @@
       const inp = $('#i_files'); if (!inp || !inp.files.length) return;
       const fd = new FormData(); fd.append('issue_id', id); fd.append('kind', 'Photos'); if (it.customer_id) fd.append('customer_id', it.customer_id);
       [...inp.files].forEach(f => fd.append('files', f));
-      const r = await fetch('/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
+      const r = await fetch('/api/admin/documents', { method: 'POST', headers: { 'X-BC-CSRF': '1' }, body: fd });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
     }
     // A second click while a save is in flight does nothing, so a double click cannot create the issue twice.
@@ -5116,5 +5119,5 @@
   const enhanceAll = root => (root || document).querySelectorAll('table.t').forEach(enhanceTable);
   new MutationObserver(muts => { const seen = new Set(); for (const m of muts) { const host = m.target && m.target.closest ? m.target.closest('table.t') : null; if (host) seen.add(host); for (const n of m.addedNodes) if (n.nodeType === 1) { if (n.matches && n.matches('table.t')) seen.add(n); else if (n.querySelectorAll) n.querySelectorAll('table.t').forEach(t => seen.add(t)); } } seen.forEach(t => { if (!t.dataset.enh) enhanceTable(t); }); }).observe(document.body, { childList: true, subtree: true });
   enhanceAll();
-  if (token) { loadPrefs().then(() => { const cc = prefs.command_center || {}, cf = prefs.calls_filters || {}; if (cc.days && $('#ccDays') && [...$('#ccDays').options].some(o => o.value === String(cc.days))) $('#ccDays').value = String(cc.days); if ($('#callFollow')) $('#callFollow').checked = !!cf.follow; if ($('#callVm')) $('#callVm').checked = !!cf.vm; }).finally(() => { start(); setTimeout(connectLive, 800); }); } else signOut();
+  probeSession().then(ok => { if (ok) { loadPrefs().then(() => { const cc = prefs.command_center || {}, cf = prefs.calls_filters || {}; if (cc.days && $('#ccDays') && [...$('#ccDays').options].some(o => o.value === String(cc.days))) $('#ccDays').value = String(cc.days); if ($('#callFollow')) $('#callFollow').checked = !!cf.follow; if ($('#callVm')) $('#callVm').checked = !!cf.vm; }).finally(() => { start(); setTimeout(connectLive, 800); }); } else signOut(); });
 })();
