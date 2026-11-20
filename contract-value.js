@@ -37,6 +37,12 @@ function contractValueReport(rows) {
   };
 }
 
+// The one figure the screens show: contracted value and how many contracts make it up.
+function summary(rows) {
+  const r = contractValueReport(rows);
+  return { value: r.contracted_value, count: r.parts.originals.count + r.parts.renewals.count };
+}
+
 function mount(app, ctx) {
   const { db, auth } = ctx;
   app.get('/api/admin/contract-value', auth, (req, res) => {
@@ -47,4 +53,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { contractValueReport, isSigned, kindOf, isSuperseded, mount };
+module.exports = { contractValueReport, summary, isSigned, kindOf, isSuperseded, mount };

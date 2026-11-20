@@ -61,7 +61,7 @@ module.exports = function mountCRM(app, ctx) {
       estimates: { value: sum(est.filter(e => ['Draft', 'Ready'].includes(e.status)), e => e.proposal_total), count: est.filter(e => ['Draft', 'Ready'].includes(e.status)).length },
       proposals_out: { value: sum(est.filter(e => ['Sent', 'Viewed'].includes(e.status)), e => e.proposal_total), count: est.filter(e => ['Sent', 'Viewed'].includes(e.status)).length },
       approved: { value: sum(est.filter(e => e.status === 'Approved'), e => e.proposal_total), count: est.filter(e => e.status === 'Approved').length },
-      contracts_signed: { value: sum(signed, k => k.value), count: signed.length },
+      contracts_signed: { value: require('./contract-value').summary(signed).value, count: require('./contract-value').summary(signed).count },
       contracts_unsigned: { value: sum(contracts.filter(k => !signed.includes(k)), k => k.value), count: contracts.length - signed.length },
       invoiced: { value: sum(liveInv, i => i.amount), count: liveInv.length },
       collected: { value: sum(liveInv, i => i.paid_amount), count: payments.length },

@@ -59,7 +59,7 @@ module.exports = function mountBids(app, ctx) {
     const waiting = live.filter(e => ['Sent', 'Viewed'].includes(e.status));
     const approved = live.filter(e => e.status === 'Approved'), declined = live.filter(e => e.status === 'Declined');
     const expiring = waiting.filter(e => e.expires_on && e.expires_on >= today() && e.expires_on <= in7);
-    const signed = db.prepare("SELECT COALESCE(SUM(value),0) v, COUNT(*) n FROM contracts WHERE signature_status IN ('Signed','Executed','Fully signed')").get();
+    const signedSummary = require('./contract-value').summary(db.prepare('SELECT * FROM contracts').all()); const signed = { v: signedSummary.value, n: signedSummary.count };
     const costed = approved.filter(e => Number(e.total_cost) > 0);
     const decided = approved.length + declined.length;
     res.json({

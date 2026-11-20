@@ -1,7 +1,7 @@
 // Checks the contract value report: amendments and renewals are not double counted; superseded versions are excluded.
 // Run: node tests/contract-value-test.js
 const assert = require('assert');
-const { contractValueReport } = require('../contract-value');
+const { contractValueReport, summary } = require('../contract-value');
 
 const rows = [
   { id: 1, kind: 'Contract', value: 50000, status: 'Superseded', signature_status: 'Executed', superseded_by: 5 },
@@ -28,4 +28,8 @@ const empty = contractValueReport([]);
 assert.strictEqual(empty.contracted_value, 0);
 assert.strictEqual(empty.overstatement_on_dashboard, 0);
 console.log('ok - no contracts gives zero');
+const sm = summary(rows);
+assert.strictEqual(sm.value, 88000, 'screens show the same contracted value');
+assert.strictEqual(sm.count, 2, 'two contracts make it up (original and renewal)');
+console.log('ok - the shared summary used by the screens matches the report');
 console.log('\nAll contract-value checks passed.');

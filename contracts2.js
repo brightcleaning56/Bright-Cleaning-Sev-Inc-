@@ -52,7 +52,7 @@ module.exports = function mountContracts(app, ctx) {
     const rows = db.prepare(`SELECT k.*, p.name project_name FROM contracts k LEFT JOIN projects p ON p.id=k.project_id ORDER BY k.id DESC`).all().map(k => ({ ...k, number: number(k), public_token: undefined }));
     const live = rows.filter(k => !['Closed', 'Superseded'].includes(k.status) && !k.archived_at), sum = a => Math.round(a.reduce((s, k) => s + (Number(k.value) || 0), 0) * 100) / 100;
     const in60 = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
-    res.json({ contracts: rows, kpis: { executed: live.filter(executed).length, executed_value: sum(live.filter(executed)), awaiting_customer: live.filter(k => ['Sent', 'Viewed'].includes(k.signature_status)).length,
+    res.json({ contracts: rows, kpis: { executed: live.filter(executed).length, executed_value: require('./contract-value').summary(live.filter(executed)).value, awaiting_customer: live.filter(k => ['Sent', 'Viewed'].includes(k.signature_status)).length,
       awaiting_countersign: live.filter(k => k.signature_status === 'Customer signed').length, declined: live.filter(k => k.signature_status === 'Declined').length, drafts: live.filter(k => !k.signature_status || k.signature_status === 'Not sent').length,
       renewals_60: live.filter(k => executed(k) && k.end_date && k.end_date >= today() && k.end_date <= in60).length, expired: live.filter(k => executed(k) && k.end_date && k.end_date < today()).length } });
   });
