@@ -77,7 +77,9 @@ module.exports = function mountIssues(app, ctx) {
 
   const SELECT = `SELECT i.*, c.name customer_name, c.company customer_company, c.email customer_email, k.name contact_name, k.phone contact_phone, p.name property_name, p.address property_address, j.name project_name
     FROM customer_issues i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN customer_contacts k ON k.id=i.contact_id LEFT JOIN customer_properties p ON p.id=i.property_id LEFT JOIN projects j ON j.id=i.project_id`;
-  const decorate = r => r && ({ ...r, number: number(r), overdue: isOpen(r.status) && !!r.due_date && r.due_date < today(), due_today: isOpen(r.status) && r.due_date === today() });
+  // Rows written before the type keys were fixed can hold a label such as "Task". Map those to the key so every lookup works.
+  const normType = t => hasType(t) ? t : (Object.keys(TYPES).find(k => TYPES[k].toLowerCase() === String(t || '').trim().toLowerCase()) || 'task');
+  const decorate = r => r && ({ ...r, type: normType(r.type), number: number(r), overdue: isOpen(r.status) && !!r.due_date && r.due_date < today(), due_today: isOpen(r.status) && r.due_date === today() });
   const getOne = id => decorate(db.prepare(`${SELECT} WHERE i.id=?`).get(id));
   const options = () => ({ types: TYPES, categories: categories(), priorities: PRIORITIES, statuses: STATUSES, sources: SOURCES, comms: COMMS, recurrence: RECUR, users: users() });
 
@@ -273,7 +275,7 @@ module.exports = function mountIssues(app, ctx) {
   app.delete('/api/admin/issues/:id', auth, (req, res) => {
     const cur = db.prepare('SELECT * FROM customer_issues WHERE id=?').get(Number(req.params.id));
     if (!cur) return res.status(404).json({ error: 'Item not found.' });
-    if (cur.type !== 'note') return res.status(400).json({ error: 'Complaints, tasks, requests and incidents are closed, not deleted, so their history is kept.' });
+    if (normType(cur.type) !== 'note') return res.status(400).json({ error: 'Complaints, tasks, requests and incidents are closed, not deleted, so their history is kept.' });
     if (cur.created_by !== who(req) && roleOf(who(req)) !== 'owner') return res.status(403).json({ error: 'Only the author or an owner can delete a note.' });
     db.prepare('DELETE FROM customer_issues WHERE id=?').run(cur.id);
     db.prepare('DELETE FROM issue_comments WHERE issue_id=?').run(cur.id);

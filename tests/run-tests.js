@@ -1204,6 +1204,16 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(badDate.status === 400 && badDay.status === 400 && goodDate.status === 200 && goodDate.data.issue.due_date === '2026-12-01', JSON.stringify([badDate.status, badDay.status, goodDate.status]));
     return 'inherited type names return 400; impossible due dates (2026-13-45, 2026-02-30) return 400; a real date is saved';
   });
+  await check('Issues', 'A row saved with an old label as its type (e.g. "Task") can still be changed and read back as its key', async () => {
+    const n = (await req('POST', '/api/admin/issues', { token: T, json: { type: 'note', title: 'Legacy type row' } })).data.issue;
+    const Database = require('better-sqlite3'); const dbh = new Database(path.join(globalThis.__dataDir, 'brightclean.db'));
+    dbh.prepare("UPDATE customer_issues SET type='Note' WHERE id=?").run(n.id); dbh.close();
+    const p = await req('PATCH', '/api/admin/issues/' + n.id, { token: T, json: { title: 'Legacy type row (edited)' } });
+    const g = await req('GET', '/api/admin/issues/' + n.id, { token: T });
+    const d = await req('DELETE', '/api/admin/issues/' + n.id, { token: T });
+    assert(p.status === 200 && g.data.issue.type === 'note' && d.status === 200, JSON.stringify([p.status, g.data.issue && g.data.issue.type, d.status]));
+    return 'old label "Note" saved; edit returns 200; read back as note; note deleted';
+  });
   await check('Issues', 'Reopen clears the resolved date; notes default to closed and can be deleted; complaints cannot', async () => {
     const r = await req('PATCH', '/api/admin/issues/' + complaintId, { token: T, json: { status: 'Open' } });
     const n = await req('POST', '/api/admin/issues', { token: T, json: { type: 'note', title: 'Prefers calls after 3pm', customer_id: cust0.id } });
