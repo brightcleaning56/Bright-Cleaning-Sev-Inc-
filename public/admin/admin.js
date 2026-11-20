@@ -2376,6 +2376,10 @@
         <p class="muted">Enter a project number to see each task's budget, its actual cost, and what is not on a task yet.</p>
         <div class="filt"><input id="accTaskProject" type="number" min="1" placeholder="Project number"><button class="btn small" id="accTaskGo" type="button">Show tasks</button></div>
         <div id="accTaskOut"></div></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Earn advance billing</h2>
+        <p class="muted">For an invoice billed ahead (paid ahead), move the part of the deposit that is now earned into revenue, as the work is done. Work billed after it is done goes to revenue on issue and does not need this.</p>
+        <div class="filt"><input id="accEarnId" type="number" min="1" placeholder="Invoice number"><input id="accEarnAmt" type="number" min="0" step="0.01" placeholder="Amount earned ($)"><input id="accEarnDate" type="date" aria-label="Date the work was done"><input id="accEarnNote" placeholder="Note" style="flex:1"><button class="btn small" id="accEarnGo" type="button">Earn</button></div>
+        <div id="accEarnOut" class="muted"></div></div>
       <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Adjustments</h2>
         <p class="muted">The ledger posts on its own. Use an adjustment for a correction. One line per account: <code>account | debit | credit</code>. Debits must equal credits. Dates in a closed period are refused.</p>
         <div class="filt"><input id="accAdjDate" type="date" aria-label="Adjustment date"><input id="accAdjMemo" placeholder="Memo (why)" style="flex:1"></div>
@@ -2473,6 +2477,16 @@
       try { await api(`/api/admin/ledger/entries/${encodeURIComponent(id)}/reverse`, { method: 'POST', json: { reason } }); toast('Entry reversed'); loadAccounting(); }
       catch (err) { toast(err.message, true); }
     };
+    $('#accEarnGo').onclick = async () => {
+      const id = $('#accEarnId').value, amount = $('#accEarnAmt').value, date = $('#accEarnDate').value;
+      if (!id || !amount || !date) return toast('Enter the invoice number, amount and date.', true);
+      try {
+        const d = await api(`/api/admin/invoices/${encodeURIComponent(id)}/deposit`);
+        if (!confirm(`Earn ${money(amount)} from the deposit on invoice ${id}? ${money(d.remaining)} is held as a deposit now.`)) return;
+        await api(`/api/admin/invoices/${encodeURIComponent(id)}/earn`, { method: 'POST', json: { amount, date, note: $('#accEarnNote').value } });
+        toast('Deposit earned'); loadAccounting();
+      } catch (err) { $('#accEarnOut').innerHTML = '<span class="msg err">' + esc(err.message) + '</span>'; }
+    };
     $('#accSync').onclick = async () => {
       if (!confirm('Run the ledger sync now? It posts anything not yet on the ledger. Posted entries cannot be edited, only reversed.')) return;
       try { const r = await api('/api/admin/ledger/sync', { method: 'POST' }); toast(`Posted: ${r.invoices_posted} invoice(s), ${r.payments_posted} payment(s), ${r.bills_posted} bill(s), ${r.project_costs_posted} job cost(s), ${r.payroll_posted} payroll line(s)`); loadAccounting(); }
@@ -2486,8 +2500,8 @@
       const inv = (tie.unposted || []).find(i => String(i.id) === btn.dataset.acctax);
       if (!inv) return;
       openForm({ title: 'Sales tax on ' + (inv.invoice_number || 'invoice'), sub: 'Tax on this invoice posts to sales tax payable. Revenue stays the invoice amount.',
-        defs: [{ name: 'tax_amount', label: 'Sales tax ($)', type: 'number' }], values: { tax_amount: inv.tax_amount || 0 },
-        submit: b => api('/api/admin/invoices/' + inv.id + '/tax', { method: 'POST', json: { tax_amount: b.tax_amount } }), after: () => { toast('Sales tax saved'); loadAccounting(); } });
+        defs: [{ name: 'tax_amount', label: 'Sales tax ($)', type: 'number' }, { name: 'billing_kind', label: 'Billing', type: 'select', options: [['arrears', 'Work done (revenue on issue)'], ['advance', 'Paid ahead (deposit until earned)']] }], values: { tax_amount: inv.tax_amount || 0, billing_kind: inv.billing_kind || 'arrears' },
+        submit: b => api('/api/admin/invoices/' + inv.id + '/tax', { method: 'POST', json: { tax_amount: b.tax_amount, billing_kind: b.billing_kind } }), after: () => { toast('Sales tax saved'); loadAccounting(); } });
     });
     body.querySelectorAll('[data-accappr]').forEach(btn => btn.onclick = async () => {
       try { await api('/api/admin/expenses/' + btn.dataset.accappr + '/approve', { method: 'POST', json: {} }); toast('Bill approved'); loadAccounting(); }

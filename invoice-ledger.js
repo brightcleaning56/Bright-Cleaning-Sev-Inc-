@@ -8,6 +8,7 @@
 // Where it is not set, the invoice amount is posted as revenue, as before.
 
 const L = require('./ledger');
+const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 const ISSUED_SKIP = ['Draft'];
 const dateOf = s => String(s || new Date().toISOString()).slice(0, 10);
@@ -16,6 +17,8 @@ const dateOf = s => String(s || new Date().toISOString()).slice(0, 10);
 function ensureTaxColumn(db) {
   const cols = db.prepare('PRAGMA table_info(invoices)').all().map(c => c.name);
   if (!cols.includes('tax_amount')) db.exec('ALTER TABLE invoices ADD COLUMN tax_amount REAL DEFAULT 0');
+  // Revenue timing (decision): 'arrears' (default) = work already done, revenue on issue; 'advance' = paid ahead, held as a customer deposit until earned.
+  if (!cols.includes('billing_kind')) db.exec("ALTER TABLE invoices ADD COLUMN billing_kind TEXT DEFAULT 'arrears'");
 }
 const taxOf = inv => Math.round((Number(inv.tax_amount) || 0) * 100) / 100;
 
@@ -39,7 +42,7 @@ function postInvoice(db, inv) {
   if (!(amount > 0)) return { action: 'none' };
   const id = L.postEntry(db, {
     date: dateOf(inv.issue_date || inv.created_at), memo: 'Invoice ' + (inv.invoice_number || inv.id) + ' issued', source: 'invoice', sourceRef: ref, by: 'invoice-sync',
-    lines: [{ account: '1100', debit: amount + taxOf(inv) }, { account: '4000', credit: amount }].concat(taxOf(inv) > 0 ? [{ account: '2100', credit: taxOf(inv) }] : [])
+    lines: [{ account: '1100', debit: amount + taxOf(inv) }, { account: inv.billing_kind === 'advance' ? '2200' : '4000', credit: amount }].concat(taxOf(inv) > 0 ? [{ account: '2100', credit: taxOf(inv) }] : [])
   });
   return { action: 'posted', entry: id };
 }
@@ -79,7 +82,7 @@ function syncAll(db) {
 // Invoices still owed (issued, not void) against the ledger's receivable. The difference should be zero after a sync.
 function tieOut(db) {
   L.seedChart(db); ensureTaxColumn(db);
-  const invoices = db.prepare("SELECT id, invoice_number, amount, tax_amount, status FROM invoices WHERE status NOT IN ('Draft','Void')").all();
+  const invoices = db.prepare("SELECT id, invoice_number, amount, tax_amount, billing_kind, status FROM invoices WHERE status NOT IN ('Draft','Void')").all();
   const paidStmt = db.prepare('SELECT COALESCE(SUM(amount),0) v FROM payments WHERE invoice_id=?');
   let owed = 0;
   const R = require('./receivables');
@@ -88,10 +91,33 @@ function tieOut(db) {
   const unpostedInvoices = invoices.filter(inv => !postedEntry(db, 'invoice', 'invoice:' + inv.id) && (Number(inv.amount) || 0) > 0).length;
   const unpostedPayments = db.prepare('SELECT id FROM payments').all().filter(p => !postedEntry(db, 'payment', 'payment:' + p.id)).length;
   const difference = Math.round((owed - ar) * 100) / 100;
-  const unposted = invoices.filter(inv => !postedEntry(db, 'invoice', 'invoice:' + inv.id) && (Number(inv.amount) || 0) > 0).map(inv => ({ id: inv.id, invoice_number: inv.invoice_number, amount: Number(inv.amount) || 0, tax_amount: taxOf(inv) }));
+  const unposted = invoices.filter(inv => !postedEntry(db, 'invoice', 'invoice:' + inv.id) && (Number(inv.amount) || 0) > 0).map(inv => ({ id: inv.id, invoice_number: inv.invoice_number, amount: Number(inv.amount) || 0, tax_amount: taxOf(inv), billing_kind: inv.billing_kind || 'arrears' }));
   return { unposted, invoices_owed: Math.round(owed * 100) / 100, ledger_receivable: ar, difference, unposted_invoices: unpostedInvoices, unposted_payments: unpostedPayments,
     tied_out: Math.abs(difference) < 0.005 && unpostedInvoices === 0 && unpostedPayments === 0,
     gap: 'Sales tax is posted only on invoices where tax is set. Any other invoice posts its whole amount as revenue.' };
+}
+
+// Advance billing. The deposit is the posted amount less what has been earned. Earning posts Dr 2200 deposits / Cr 4000 revenue.
+function depositOf(db, invoiceId) {
+  const inv = db.prepare('SELECT id, amount, billing_kind FROM invoices WHERE id=?').get(Number(invoiceId));
+  if (!inv) throw new Error('Invoice not found.');
+  const posted = postedEntry(db, 'invoice', 'invoice:' + inv.id);
+  const deposited = posted && inv.billing_kind === 'advance' ? Number(inv.amount) || 0 : 0;
+  const earned = Number(db.prepare("SELECT COALESCE(SUM(l.debit_cents),0) v FROM ledger_lines l JOIN ledger_entries e ON e.id=l.entry_id WHERE e.source='earned' AND e.source_ref LIKE ? AND l.account_code='2200'").get('earned:' + inv.id + ':%').v) / 100;
+  return { invoice_id: inv.id, billing_kind: inv.billing_kind || 'arrears', posted: !!posted, deposited: r2(deposited), earned: r2(earned), remaining: r2(deposited - earned) };
+}
+function earnDeposit(db, { invoiceId, amount, date, note, by }) {
+  const d = depositOf(db, invoiceId);
+  const amt = r2(amount);
+  if (d.billing_kind !== 'advance') throw new Error('Only an advance invoice has a deposit to earn.');
+  if (!d.posted) throw new Error('The invoice is not on the ledger yet, so there is no deposit to earn.');
+  if (!(amt > 0)) throw new Error('Enter the amount earned, above zero.');
+  if (amt > d.remaining + 0.005) throw new Error(`Only ${d.remaining.toFixed(2)} of the deposit is left to earn.`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw new Error('Enter the date the work was done (YYYY-MM-DD).');
+  const id = L.postEntry(db, { date, memo: 'Earned from deposit on invoice ' + d.invoice_id + (note ? ': ' + String(note).slice(0, 120) : ''), source: 'earned', sourceRef: 'earned:' + d.invoice_id + ':' + Date.now() + ':' + Math.random().toString(36).slice(2, 8), by: by || 'receivables',
+    lines: [{ account: '2200', debit: amt }, { account: '4000', credit: amt }] });
+  require('./audit').record(db, { actor: by, action: 'earned deposit', entity: 'invoice', entityId: d.invoice_id, detail: amt.toFixed(2) + ' earned ' + date });
+  return id;
 }
 
 // The whole ledger sync: invoices, payments, bills, job costs, unassigned payroll and burden. Safe to run again.
@@ -123,14 +149,23 @@ function mount(app, ctx) {
     ensureTaxColumn(db);
     const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(Number(req.params.id));
     if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
-    const tax = Number((req.body || {}).tax_amount);
+    const body = req.body || {};
+    const tax = body.tax_amount === undefined ? taxOf(inv) : Number(body.tax_amount);
     if (!Number.isFinite(tax) || tax < 0 || tax > 1e7) return res.status(400).json({ error: 'Sales tax must be zero or more.' });
-    if (postedEntry(db, 'invoice', 'invoice:' + inv.id)) return res.status(409).json({ error: 'This invoice is already on the ledger. Void it and issue a corrected invoice to change its tax.' });
-    db.prepare('UPDATE invoices SET tax_amount=? WHERE id=?').run(Math.round(tax * 100) / 100, inv.id);
+    const kind = body.billing_kind === undefined ? (inv.billing_kind || 'arrears') : String(body.billing_kind);
+    if (!['arrears', 'advance'].includes(kind)) return res.status(400).json({ error: 'Billing must be arrears (work done) or advance (paid ahead).' });
+    if (postedEntry(db, 'invoice', 'invoice:' + inv.id)) return res.status(409).json({ error: 'This invoice is already on the ledger. Void it and issue a corrected invoice to change its tax or billing.' });
+    db.prepare('UPDATE invoices SET tax_amount=?, billing_kind=? WHERE id=?').run(Math.round(tax * 100) / 100, kind, inv.id);
     require('./audit').record(db, { actor: req.user && req.user.email, action: 'set sales tax', entity: 'invoice', entityId: inv.id, detail: 'sales tax ' + (Math.round(tax * 100) / 100).toFixed(2) + ' (was ' + Number(inv.tax_amount || 0).toFixed(2) + ')' });
     res.json({ ok: true, tax_amount: Math.round(tax * 100) / 100 });
+  });
+  // Advance billing: how much of an invoice is still held as a deposit, and earning part of it as work is done.
+  app.get('/api/admin/invoices/:id/deposit', auth, (req, res) => { try { res.json(depositOf(db, req.params.id)); } catch (e) { res.status(400).json({ error: e.message }); } });
+  app.post('/api/admin/invoices/:id/earn', auth, (req, res) => {
+    try { res.status(201).json({ ok: true, entry: earnDeposit(db, { invoiceId: req.params.id, amount: (req.body || {}).amount, date: (req.body || {}).date, note: (req.body || {}).note, by: req.user && req.user.email }) }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
   });
   app.get('/api/admin/receivables/tie-out', auth, (req, res) => res.json(tieOut(db)));
 }
 
-module.exports = { postInvoice, postPayment, syncAll, runSync, tieOut, mount };
+module.exports = { postInvoice, postPayment, syncAll, runSync, tieOut, depositOf, earnDeposit, mount };
