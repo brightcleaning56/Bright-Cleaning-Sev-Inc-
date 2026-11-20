@@ -399,10 +399,15 @@
   }
 
   // ---------- Proposal options: several choices, each with its own units and prices ----------
+  // The price the options give (before tax), for the estimator's total box. Null when the estimate has no options.
+  let estOptionsSubtotal = null, estOptionsFor = null;
   async function loadEstOptions(id, target) {
     const box = target || $('#estOpts'); if (!box) return;
     let d;
     try { d = await api('/api/admin/estimates/' + id + '/options'); } catch (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; return; }
+    estOptionsFor = id;
+    if (d.options && d.options.length) { const chosen = d.options.find(o => o.id === d.selected_option_id); estOptionsSubtotal = (chosen || d.options.slice().sort((a, b) => a.total - b.total)[0]).total; } else estOptionsSubtotal = null;
+    if (ef.elements.id.value === String(id)) calcEstimate();
     const SCOPE_CHOICES = ['Whole project', 'Per building'];
     const blankLine = () => ({ id: null, description: '', unit: '', quantity: 0, unit_price: 0 });
     let opts = d.options.map(o => ({ ...o, lines: o.lines.map(l => ({ ...l })) }));
@@ -467,7 +472,7 @@
           const r = await api('/api/admin/estimates/' + id + '/options', { method: 'PUT', json: { options: payload, reason: $('#optReason').value } });
           toast('Options saved');
           if (r.resend_needed) toast('The client already has the link. Send the proposal again so they see the new prices.');
-          openEstimate(id);
+          if (ef.contains(box)) loadEstOptions(id, box); else openEstimate(id);
         } catch (err) { toast(err.message, true); }
       };
     };
@@ -2118,7 +2123,7 @@
     }
     if (!est && !(lead && lead.intake)) $('#slCat').dataset.want = '';
     syncScopeCat(); renderScopeLines();
-    { const ob = $('#estOptsForm'); if (ob) { ob.innerHTML = ''; if (est) loadEstOptions(est.id, ob); } }
+    { const ob = $('#estOptsForm'); if (ob) { ob.innerHTML = ''; estOptionsSubtotal = null; if (est) loadEstOptions(est.id, ob); } }
     $('#estTitle').textContent = est ? `Edit estimate — ${est.project_name || est.customer_name}` : 'New estimate';
     $('#estSave').textContent = est ? 'Save changes' : 'Save estimate';
     $('#estMsg').textContent = '';
@@ -2259,6 +2264,11 @@
     $('#cCost').textContent = money(m.cost);
     $('#cProfit').textContent = money(m.price - m.cost);
     $('#cTotal').textContent = money(m.total);
+    if (estOptionsSubtotal != null && ef.elements.id.value === String(estOptionsFor)) {
+      // With price options, the total is the option price, as the server saves it.
+      $('#cTotal').textContent = money(Math.round(estOptionsSubtotal * (1 + n('tax_pct') / 100) * 100) / 100);
+      $('#cTotal').title = 'Set by the price options below';
+    }
     $('#cDays').textContent = m.crewDays.toFixed(1);
     const warn = [];
     if (scopeLines.some(l => l.pricing_method === 'hourly') && !n('labor_rate')) warn.push('Some library lines are priced hourly. Enter the labor cost per hour to price them.');
