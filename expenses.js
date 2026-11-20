@@ -144,6 +144,23 @@ function syncBurden(db) {
   return n;
 }
 
+// Payroll payments (audit G2). Until the ADP link exists, the owner records what was paid out.
+//  - Net pay paid to employees: Dr 2300 accrued payroll / Cr 1000 cash.
+//  - Payroll taxes remitted: Dr 2400 payroll taxes payable / Cr 1000 cash.
+// Each payment is an entry of its own; it cannot be edited (reverse it instead).
+function recordPayrollPayment(db, { kind, amount, date, memo, by }) {
+  ensureSchema(db); L.seedChart(db);
+  const amt = r2(amount);
+  if (!(amt > 0)) throw new Error('A payroll payment needs an amount above zero.');
+  if (!isDate(date)) throw new Error('A payroll payment needs a real date (YYYY-MM-DD).');
+  if (!String(memo || '').trim()) throw new Error('Describe the payroll payment (for example the pay period).');
+  const k = kind === 'taxes' ? 'taxes' : kind === 'net' ? 'net' : null;
+  if (!k) throw new Error('Choose net pay or payroll taxes.');
+  const debit = k === 'taxes' ? '2400' : '2300';
+  return L.postEntry(db, { date, memo: (k === 'taxes' ? 'Payroll taxes remitted: ' : 'Net pay paid: ') + String(memo).trim().slice(0, 200), source: 'payroll-payment', sourceRef: 'payroll-payment:' + Date.now() + ':' + Math.random().toString(36).slice(2, 8), by: by || 'payroll',
+    lines: [{ account: debit, debit: amt }, { account: '1000', credit: amt }] });
+}
+
 // Recorded costs that changed or disappeared after they posted. Shown for review, never silently re-posted.
 function costDrift(db) {
   const drift = [];
@@ -171,6 +188,10 @@ function mount(app, ctx) {
     catch (e) { res.status(400).json({ error: e.message }); }
   });
   app.get('/api/admin/ledger/cost-drift', auth, (req, res) => res.json({ drift: costDrift(db) }));
+  app.post('/api/admin/ledger/payroll-payment', auth, (req, res) => {
+    try { const b = req.body || {}; const id = recordPayrollPayment(db, { kind: b.kind, amount: b.amount, date: b.date, memo: b.memo, by: req.user && req.user.email }); res.status(201).json({ ok: true, entry: id }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
 }
 
-module.exports = { ensureSchema, createBill, payBill, syncRecorded, costDrift, mount };
+module.exports = { ensureSchema, createBill, payBill, syncRecorded, costDrift, recordPayrollPayment, mount };

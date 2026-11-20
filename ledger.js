@@ -16,6 +16,7 @@ const STARTER_CHART = [
   ['2100', 'Sales tax payable', 'liability'],
   ['2200', 'Customer deposits (not yet earned)', 'liability'],
   ['2300', 'Accrued payroll', 'liability'],
+  ['2400', 'Payroll taxes payable', 'liability'],
   ['3000', "Owner's equity", 'equity'],
   ['4000', 'Cleaning service revenue', 'revenue'],
   ['4900', 'Discounts and customer credits', 'revenue'],

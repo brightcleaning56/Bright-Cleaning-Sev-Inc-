@@ -86,6 +86,7 @@ const ROLE_RULES=[
   {m:/^POST$/,p:/^\/api\/admin\/invoices\/\d+\/tax$/,roles:['owner','manager'],why:'Only an owner or manager can set sales tax on an invoice.'},
   {m:/^GET$/,p:/^\/api\/admin\/accounting\/trace$/,roles:['owner','manager'],why:'Document traces are limited to owners and managers.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/invoices\/\d+\/(balance|refund|credit-note)$/,roles:['owner','manager'],why:'Refunds, credit notes and balances are limited to owners and managers.'},
+  {m:/^POST$/,p:/^\/api\/admin\/ledger\/payroll-payment$/,roles:['owner'],why:'Only an owner can record payroll payments.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/api-keys(\/\d+\/revoke)?$/,roles:['owner'],why:'Only an owner can create or revoke API keys.'},
   {m:/^(GET|PUT)$/,p:/^\/api\/admin\/labor-assumptions$/,roles:['owner','manager','staff'],why:'Labor assumptions are limited to owners, managers and office staff.'},
   {m:/^(GET|PUT)$/,p:/^\/api\/admin\/outbound-callbacks$/,roles:['owner'],why:'Only the owner can change automatic callbacks.'},

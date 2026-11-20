@@ -61,4 +61,14 @@ const after = L.trialBalance(db).accounts.find(a => a.code === '6100').balance;
 assert.strictEqual(Math.round((after - before) * 100) / 100, 15, 'posted at the snapshot rate, not the new 40 rate');
 console.log('ok - a later pay-rate change does not change an approved entry');
 
+// Payroll payments: net pay clears accrued payroll; payroll taxes clear their own payable; both need a description.
+E.recordPayrollPayment(db, { kind: 'net', amount: 1000, date: '2026-11-26', memo: 'Pay period 11/16 to 11/29', by: 'owner@test' });
+E.recordPayrollPayment(db, { kind: 'taxes', amount: 150, date: '2026-11-26', memo: 'Q4 941 deposit', by: 'owner@test' });
+const tp = L.trialBalance(db);
+assert.strictEqual(tp.accounts.find(a => a.code === '1000').balance, -1650, 'cash: 500 bill paid earlier, 1,000 net pay and 150 taxes');
+assert.strictEqual(tp.balanced, true);
+assert.throws(() => E.recordPayrollPayment(db, { kind: 'net', amount: 0, date: '2026-11-26', memo: 'x' }), /above zero/);
+assert.throws(() => E.recordPayrollPayment(db, { kind: 'bonus', amount: 5, date: '2026-11-26', memo: 'x' }), /net pay or payroll taxes/);
+console.log('ok - payroll payments clear accrued payroll and payroll taxes, and bad input is refused');
+
 console.log('\nAll expense checks passed.');
