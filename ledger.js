@@ -152,6 +152,20 @@ function mount(app, ctx) {
     if (asOf && !isDate(asOf)) return res.status(400).json({ error: 'as_of must be a date (YYYY-MM-DD).' });
     res.json(trialBalance(db, { asOf }));
   });
+  // Owner and manager adjustments: a manual journal entry (balanced, dated, with a memo) and a reversal of an entry.
+  app.post('/api/admin/ledger/adjustments', auth, (req, res) => {
+    try {
+      const b = req.body || {};
+      const by = req.user && req.user.email;
+      const id = postEntry(db, { date: b.date, memo: b.memo, source: 'adjustment', sourceRef: 'adjustment:' + Date.now() + ':' + Math.random().toString(36).slice(2, 8), by, lines: b.lines || [] });
+      require('./audit').record(db, { actor: by, action: 'manual journal entry', entity: 'ledger_entry', entityId: id, detail: String(b.memo || '').slice(0, 200) });
+      res.status(201).json({ ok: true, entry: id });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  app.post('/api/admin/ledger/entries/:id/reverse', auth, (req, res) => {
+    try { const r = reverseEntry(db, Number(req.params.id), { reason: (req.body || {}).reason, by: req.user && req.user.email }); res.status(201).json({ ok: true, entry: r }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
   app.get('/api/admin/ledger/entries', auth, (req, res) => {
     ensureSchema(db);
     const entries = db.prepare('SELECT * FROM ledger_entries ORDER BY id DESC LIMIT 200').all();

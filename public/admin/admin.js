@@ -2376,6 +2376,14 @@
         <p class="muted">Enter a project number to see each task's budget, its actual cost, and what is not on a task yet.</p>
         <div class="filt"><input id="accTaskProject" type="number" min="1" placeholder="Project number"><button class="btn small" id="accTaskGo" type="button">Show tasks</button></div>
         <div id="accTaskOut"></div></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Adjustments</h2>
+        <p class="muted">The ledger posts on its own. Use an adjustment for a correction. One line per account: <code>account | debit | credit</code>. Debits must equal credits. Dates in a closed period are refused.</p>
+        <div class="filt"><input id="accAdjDate" type="date" aria-label="Adjustment date"><input id="accAdjMemo" placeholder="Memo (why)" style="flex:1"></div>
+        <textarea id="accAdjLines" rows="4" style="width:100%" placeholder="1000 | 500 | 0&#10;4000 | 0 | 500"></textarea>
+        <div class="filt"><button class="btn small" id="accAdjPost" type="button">Post adjustment</button></div>
+        <p class="muted">Reverse an entry (the reversal is a new entry; the original stays):</p>
+        <div class="filt"><input id="accRevId" type="number" min="1" placeholder="Entry number"><input id="accRevReason" placeholder="Reason" style="flex:1"><button class="btn small ghost" id="accRevGo" type="button">Reverse</button></div>
+      </div>
       <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Trace a document</h2>
         <p class="muted">Start from an estimate, contract, project, invoice or subscription number to see the whole chain, the money at each step, and where it sits on the ledger.</p>
         <div class="filt"><select id="accTKind"><option value="estimate">Estimate</option><option value="contract">Contract</option><option value="project">Project</option><option value="invoice">Invoice</option><option value="subscription">Subscription</option></select><input id="accTId" type="number" min="1" placeholder="Number"><button class="btn small" id="accTGo" type="button">Trace</button></div>
@@ -2444,8 +2452,29 @@
       catch (err) { $('#accTaskOut').innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; }
     };
     api('/api/admin/bank/summary').then(renderBankSummary).catch(() => {});
+    const parseAdjLines = text => String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+      const [account, debit, credit] = l.split(/[|,]/).map(x => (x || '').trim());
+      return { account, debit: Number(debit) || 0, credit: Number(credit) || 0 };
+    });
+    $('#accAdjPost').onclick = async () => {
+      const lines = parseAdjLines($('#accAdjLines').value);
+      if (lines.length < 2) return toast('An adjustment needs at least two lines.', true);
+      if (!confirm('Post this adjustment to the ledger? It cannot be edited afterwards, only reversed.')) return;
+      try {
+        await api('/api/admin/ledger/adjustments', { method: 'POST', json: { date: $('#accAdjDate').value, memo: $('#accAdjMemo').value, lines } });
+        toast('Adjustment posted'); loadAccounting();
+      } catch (err) { toast(err.message, true); }
+    };
+    $('#accRevGo').onclick = async () => {
+      const id = $('#accRevId').value, reason = $('#accRevReason').value;
+      if (!id) return toast('Enter the entry number.', true);
+      if (!reason.trim()) return toast('Give the reason for the reversal.', true);
+      if (!confirm(`Reverse entry ${id}? A reversing entry is posted; the original stays on the books.`)) return;
+      try { await api(`/api/admin/ledger/entries/${encodeURIComponent(id)}/reverse`, { method: 'POST', json: { reason } }); toast('Entry reversed'); loadAccounting(); }
+      catch (err) { toast(err.message, true); }
+    };
     $('#accSync').onclick = async () => {
-      if (!confirm('Post invoices, bills, job costs and unassigned payroll to the ledger? Posted entries cannot be edited, only reversed.')) return;
+      if (!confirm('Run the ledger sync now? It posts anything not yet on the ledger. Posted entries cannot be edited, only reversed.')) return;
       try { const r = await api('/api/admin/ledger/sync', { method: 'POST' }); toast(`Posted: ${r.invoices_posted} invoice(s), ${r.payments_posted} payment(s), ${r.bills_posted} bill(s), ${r.project_costs_posted} job cost(s), ${r.payroll_posted} payroll line(s)`); loadAccounting(); }
       catch (err) { toast(err.message, true); }
     };

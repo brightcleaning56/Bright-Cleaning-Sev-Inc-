@@ -48,6 +48,10 @@ function postPayment(db, pay) {
   L.seedChart(db);
   const ref = 'payment:' + pay.id;
   if (postedEntry(db, 'payment', ref)) return { action: 'none' };
+  // Held, not posted: the invoice is missing, a draft, or void. It posts on a later run once the invoice is issued.
+  const inv = db.prepare('SELECT status FROM invoices WHERE id=?').get(pay.invoice_id);
+  if (!inv) return { action: 'held', reason: 'No invoice with number ' + pay.invoice_id + ' exists, so the payment is held.' };
+  if (['Draft', 'Void'].includes(inv.status)) return { action: 'held', reason: 'Invoice ' + pay.invoice_id + ' is ' + inv.status + ', so the payment is held until it is issued.' };
   const amount = Math.round((Number(pay.amount) || 0) * 100) / 100;
   if (!(amount > 0)) return { action: 'none' };
   const id = L.postEntry(db, {
@@ -60,13 +64,13 @@ function postPayment(db, pay) {
 // Posts everything that is not yet posted. Safe to run again.
 function syncAll(db) {
   L.seedChart(db);
-  const out = { invoices_posted: 0, invoices_reversed: 0, payments_posted: 0, errors: [] };
+  const out = { invoices_posted: 0, invoices_reversed: 0, payments_posted: 0, payments_held: [], errors: [] };
   for (const inv of db.prepare('SELECT * FROM invoices ORDER BY id').all()) {
     try { const r = postInvoice(db, inv); if (r.action === 'posted') out.invoices_posted++; if (r.action === 'reversed') out.invoices_reversed++; }
     catch (e) { out.errors.push('invoice ' + inv.id + ': ' + e.message); }
   }
   for (const pay of db.prepare('SELECT * FROM payments ORDER BY id').all()) {
-    try { if (postPayment(db, pay).action === 'posted') out.payments_posted++; }
+    try { const r = postPayment(db, pay); if (r.action === 'posted') out.payments_posted++; if (r.action === 'held') out.payments_held.push({ payment_id: pay.id, invoice_id: pay.invoice_id, amount: pay.amount, reason: r.reason }); }
     catch (e) { out.errors.push('payment ' + pay.id + ': ' + e.message); }
   }
   return out;
@@ -90,16 +94,31 @@ function tieOut(db) {
     gap: 'Sales tax is posted only on invoices where tax is set. Any other invoice posts its whole amount as revenue.' };
 }
 
+// The whole ledger sync: invoices, payments, bills, job costs, unassigned payroll and burden. Safe to run again.
+function runSync(db, by) {
+  const out = syncAll(db);
+  const ex = require('./expenses').syncRecorded(db);
+  const result = { invoices_posted: out.invoices_posted, invoices_reversed: out.invoices_reversed, payments_posted: out.payments_posted, payments_held: out.payments_held,
+    bills_posted: ex.bills_posted, project_costs_posted: ex.project_costs_posted, payroll_posted: ex.payroll_posted, burden_posted: ex.burden_posted || 0, errors: [...out.errors, ...ex.errors] };
+  require('./audit').record(db, { actor: by, action: by === 'automatic' ? 'automatic ledger sync' : 'ran ledger sync', entity: 'ledger',
+    detail: `invoices ${result.invoices_posted}, payments ${result.payments_posted}, held ${result.payments_held.length}, bills ${result.bills_posted}, job costs ${result.project_costs_posted}, payroll ${result.payroll_posted}, burden ${result.burden_posted}` });
+  return result;
+}
+
 function mount(app, ctx) {
   const { db, auth } = ctx;
   app.post('/api/admin/ledger/sync', auth, (req, res) => {
-    try {
-      const out = syncAll(db), ex = require('./expenses').syncRecorded(db);
-      require('./audit').record(db, { actor: req.user && req.user.email, action: 'ran ledger sync', entity: 'ledger', detail: `invoices ${out.invoices_posted}, payments ${out.payments_posted}, bills ${ex.bills_posted}, job costs ${ex.project_costs_posted}, payroll ${ex.payroll_posted}, burden ${ex.burden_posted || 0}` });
-      res.json({ ok: true, invoices_posted: out.invoices_posted, invoices_reversed: out.invoices_reversed, payments_posted: out.payments_posted, bills_posted: ex.bills_posted, project_costs_posted: ex.project_costs_posted, payroll_posted: ex.payroll_posted, errors: [...out.errors, ...ex.errors], tie_out: tieOut(db), cost_drift: require('./expenses').costDrift(db) });
-    }
+    try { res.json({ ok: true, ...runSync(db, req.user && req.user.email) }); }
     catch (e) { res.status(500).json({ error: 'The ledger sync failed: ' + e.message }); }
   });
+  // Automatic posting (decision: the ledger posts on its own). Every 15 minutes by default; LEDGER_AUTO_SYNC_MS=0 turns it off.
+  const every = Number(process.env.LEDGER_AUTO_SYNC_MS);
+  const interval = every === 0 ? 0 : (every > 0 ? every : 15 * 60 * 1000);
+  let busy = false;
+  if (interval) {
+    const tick = () => { if (busy) return; busy = true; try { runSync(db, 'automatic'); } catch (e) { console.error('automatic ledger sync failed:', e.message); } finally { busy = false; } };
+    const t = setInterval(tick, interval); t.unref();
+  }
   app.post('/api/admin/invoices/:id/tax', auth, (req, res) => {
     ensureTaxColumn(db);
     const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(Number(req.params.id));
@@ -114,4 +133,4 @@ function mount(app, ctx) {
   app.get('/api/admin/receivables/tie-out', auth, (req, res) => res.json(tieOut(db)));
 }
 
-module.exports = { postInvoice, postPayment, syncAll, tieOut, mount };
+module.exports = { postInvoice, postPayment, syncAll, runSync, tieOut, mount };
