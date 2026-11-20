@@ -462,6 +462,13 @@ async function startServer(env, dataDir) {
     assert(r.status === 201 && e.proposal_total === m.proposal_total && e.crew_days === 0.5 && e.mobilization_cost === 150 && e.template_key === 'post-construction-final', JSON.stringify(e).slice(0, 300));
     return `#${E1} total $${e.proposal_total} = calculated; 12 labor h / (3 x 8) = 0.5 crew days`;
   });
+  await check('Accounting', 'Own ledger (Phase 1): the admin trial balance route answers, lists the starter chart, and balances', async () => {
+    const tb = await req('GET', '/api/admin/ledger/trial-balance', { token: T });
+    const ac = await req('GET', '/api/admin/ledger/accounts', { token: T });
+    const anon = await req('GET', '/api/admin/ledger/trial-balance');
+    assert(tb.status === 200 && tb.data.balanced === true && ac.status === 200 && ac.data.accounts.length >= 13 && anon.status !== 200, JSON.stringify([tb.status, tb.data && tb.data.balanced, ac.status, anon.status]));
+  });
+
   await check('Proposals', 'Options survive the estimator form: saving an estimate that has options from the Edit form keeps the option price and both options', async () => {
     const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Edit Keep Client', company: 'Jensen Test', email: 'editkeep@test.test', project_name: 'Edit keep test', scope: 'Final clean', labor_hours: 1, labor_rate: 10 } });
     const id = r.data.estimate.id;
