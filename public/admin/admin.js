@@ -356,6 +356,7 @@
   async function start() {
     try {
       const me = await api('/api/admin/me'); state.me = me;
+      { const ab = $('[data-view="accounting"]'); if (ab) ab.hidden = !['owner', 'manager'].includes(me.role); }
       loadMfa();
       if (me.mfa_setup_required) routeToMfaSetup();
       state.people = {}; try { for (const x of ((await api('/api/admin/people')).people || [])) state.people[String(x.email).toLowerCase()] = x; } catch { /* names fall back to email */ }

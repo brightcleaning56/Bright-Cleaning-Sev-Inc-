@@ -83,6 +83,7 @@ const ROLE_RULES=[
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/expenses(\/\d+\/pay)?$/,roles:['owner','manager'],why:'Bills and payments are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/periods\/close$/,roles:['owner'],why:'Only an owner can close the books for a period.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/reconciliations$/,roles:['owner','manager'],why:'Bank reconciliations are limited to owners and managers.'},
+  {m:/^POST$/,p:/^\/api\/admin\/invoices\/\d+\/tax$/,roles:['owner','manager'],why:'Only an owner or manager can set sales tax on an invoice.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/api-keys(\/\d+\/revoke)?$/,roles:['owner'],why:'Only an owner can create or revoke API keys.'},
   {m:/^(GET|PUT)$/,p:/^\/api\/admin\/labor-assumptions$/,roles:['owner','manager','staff'],why:'Labor assumptions are limited to owners, managers and office staff.'},
   {m:/^(GET|PUT)$/,p:/^\/api\/admin\/outbound-callbacks$/,roles:['owner'],why:'Only the owner can change automatic callbacks.'},

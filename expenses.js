@@ -101,7 +101,41 @@ function syncRecorded(db) {
       } catch (e) { out.errors.push('time ' + t.id + ': ' + e.message); }
     }
   }
+  out.burden_posted = syncBurden(db);
   return out;
+}
+
+// Labor burden (payroll taxes, insurance, benefits) is optional. The rate is the setting ledger_burden_pct (a percentage), zero by default.
+// When set, burden posts once for each posted labor line: job labor (Dr 5000) and unassigned payroll (Dr 6100), both credit accrued payroll.
+function burdenPct(db) {
+  try { const r = db.prepare("SELECT value FROM settings WHERE key='ledger_burden_pct'").get(); const v = Number(r && r.value); return v > 0 && v <= 100 ? v : 0; }
+  catch { return 0; }
+}
+function syncBurden(db) {
+  const pct = burdenPct(db);
+  if (!pct) return 0;
+  let n = 0;
+  const post = (ref, base, date, memo, account) => {
+    const amt = r2(base * pct / 100);
+    if (!(amt > 0) || postedEntry(db, 'burden', ref)) return;
+    L.postEntry(db, { date, memo, source: 'burden', sourceRef: ref, by: 'expense-sync', lines: [{ account, debit: amt }, { account: '2300', credit: amt }] });
+    n++;
+  };
+  if (hasTable(db, 'project_costs')) {
+    for (const c of db.prepare('SELECT * FROM project_costs ORDER BY id').all()) {
+      if (!/labou?r|crew|wage|payroll/i.test(String(c.category || ''))) continue;
+      if (!postedEntry(db, 'project-cost', 'project-cost:' + c.id)) continue;
+      post('burden:project-cost:' + c.id, Number(c.amount) || 0, String(c.cost_date || c.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10), 'Labor burden on job cost ' + c.id, '5000');
+    }
+  }
+  if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
+    for (const t of db.prepare('SELECT t.*, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all()) {
+      if (!postedEntry(db, 'payroll', 'time:' + t.id)) continue;
+      const base = (Number(t.minutes) || 0) / 60 * (Number(t.hourly_rate) || 0);
+      post('burden:time:' + t.id, base, String(t.clock_in).slice(0, 10), 'Labor burden on unassigned time ' + t.id, '6100');
+    }
+  }
+  return n;
 }
 
 // Recorded costs that changed or disappeared after they posted. Shown for review, never silently re-posted.

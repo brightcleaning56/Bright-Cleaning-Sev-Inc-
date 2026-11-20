@@ -38,12 +38,12 @@ function trialBalanceCsv(db, { asOf = null } = {}) {
   return csv(out);
 }
 
-// Sales tax: the payable account. Invoices carry no tax column yet, so this reports what is posted (currently nothing) and says so.
+// Sales tax: the payable account (2100), as posted. Tax is posted only where an invoice has tax set.
 function salesTaxSummary(db, { asOf = null } = {}) {
   const acct = L.trialBalance(db, { asOf }).accounts.find(a => a.code === '2100');
   return {
     as_of: asOf, sales_tax_payable: r2(acct ? acct.balance : 0),
-    note: 'Sales tax is not posted yet: invoices have no tax column. Until it is, the invoice amount is revenue and no tax is owed on the books.'
+    note: 'Sales tax is posted only on invoices where tax is set. Invoices without tax set post their whole amount as revenue.'
   };
 }
 

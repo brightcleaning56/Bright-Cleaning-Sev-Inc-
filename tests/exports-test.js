@@ -38,7 +38,7 @@ console.log('ok - trial balance export balances');
 // Sales tax: nothing posted yet, and the summary says so.
 const st = X.salesTaxSummary(db);
 assert.strictEqual(st.sales_tax_payable, 0);
-assert.ok(/not posted yet/.test(st.note));
+assert.ok(/posted only on invoices where tax is set/.test(st.note));
 console.log('ok - sales tax summary reports the gap honestly');
 
 console.log('\nAll export checks passed.');
