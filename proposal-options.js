@@ -15,7 +15,11 @@ function optionsFor(db, estimateId) {
   const lines = db.prepare('SELECT * FROM estimate_option_lines WHERE option_id=? ORDER BY position, id');
   return opts.map(o => {
     const ls = lines.all(o.id).map(l => ({ id: l.id, description: l.description, unit: l.unit || '', quantity: l.quantity, unit_price: l.unit_price, amount: round2(l.quantity * l.unit_price) }));
-    return { id: o.id, label: o.label, duration_weeks: o.duration_weeks, scope_kind: o.scope_kind, building: o.building || '', lines: ls, total: round2(ls.reduce((s, l) => s + l.amount, 0)) };
+    const total = round2(ls.reduce((s, l) => s + l.amount, 0));
+    // Internal cost of delivering this option (staff only). The margin is checked on the option's own subtotal.
+    const cost = o.cost == null ? null : num(o.cost);
+    const margin_pct = cost > 0 && total > 0 ? Math.round((total - cost) / total * 1000) / 10 : null;
+    return { id: o.id, label: o.label, duration_weeks: o.duration_weeks, scope_kind: o.scope_kind, building: o.building || '', lines: ls, total, cost, margin_pct };
   });
 }
 
@@ -26,7 +30,7 @@ function totalWithTax(e, subtotal) { return round2(subtotal * (1 + num(e.tax_pct
 function signature(db, estimateId) {
   const o = optionsFor(db, estimateId);
   if (!o.length) return '';
-  return JSON.stringify(o.map(x => [x.id, x.label, x.duration_weeks, x.scope_kind, x.building, x.lines.map(l => [l.description, l.unit, l.quantity, l.unit_price])]));
+  return JSON.stringify(o.map(x => [x.id, x.label, x.duration_weeks, x.scope_kind, x.building, x.cost, x.lines.map(l => [l.description, l.unit, l.quantity, l.unit_price])]));
 }
 
 module.exports = (app, { db, auth, logAction, clean }) => {
@@ -41,6 +45,7 @@ module.exports = (app, { db, auth, logAction, clean }) => {
     id INTEGER PRIMARY KEY AUTOINCREMENT, estimate_id INTEGER NOT NULL, option_id INTEGER, description TEXT,
     field TEXT NOT NULL, old_value TEXT, new_value TEXT, reason TEXT, actor TEXT, changed_at TEXT NOT NULL);`);
   try { db.exec('ALTER TABLE estimates ADD COLUMN selected_option_id INTEGER'); } catch (e) { /* column already exists */ }
+  try { db.exec('ALTER TABLE estimate_options ADD COLUMN cost REAL'); } catch (e) { /* column already exists */ }
 
   const who = req => (req.user && req.user.email) || 'staff';
   const now = () => new Date().toISOString();
@@ -91,7 +96,8 @@ module.exports = (app, { db, auth, logAction, clean }) => {
       if (ls.length > 60) return res.status(400).json({ error: `"${label}" has more than 60 lines.` });
       const lines = ls.map(l => ({ id: l.id ? Number(l.id) : null, description: clean(l.description, 200), unit: clean(l.unit, 30), quantity: num(l.quantity), unit_price: num(l.unit_price) }));
       if (lines.some(l => !l.description)) return res.status(400).json({ error: `Every line in "${label}" needs a description.` });
-      clean_.push({ id: o.id ? Number(o.id) : null, label, scope, weeks, building: clean(o.building, 120), lines });
+      const cost = o.cost === '' || o.cost == null ? null : num(o.cost);
+      clean_.push({ id: o.id ? Number(o.id) : null, label, scope, weeks, building: clean(o.building, 120), cost, lines });
     }
     const at = now(), actor = who(req);
     try {
@@ -101,13 +107,13 @@ module.exports = (app, { db, auth, logAction, clean }) => {
         clean_.forEach((o, oi) => {
           let row = o.id ? oldOpts.find(x => x.id === o.id) : null;
           if (row) {
-            const pairs = [['label', row.label, o.label], ['duration_weeks', row.duration_weeks, o.weeks], ['scope_kind', row.scope_kind, o.scope], ['building', row.building || '', o.building]];
+            const pairs = [['label', row.label, o.label], ['duration_weeks', row.duration_weeks, o.weeks], ['scope_kind', row.scope_kind, o.scope], ['building', row.building || '', o.building], ['cost', row.cost, o.cost]];
             for (const [f, a, b] of pairs) if (String(a ?? '') !== String(b ?? '')) record(id, row.id, row.label, f, a, b, reason, actor, at);
-            db.prepare('UPDATE estimate_options SET label=?,duration_weeks=?,scope_kind=?,building=?,position=?,updated_at=? WHERE id=?')
-              .run(o.label, o.weeks, o.scope, o.building || null, oi, at, row.id);
+            db.prepare('UPDATE estimate_options SET label=?,duration_weeks=?,scope_kind=?,building=?,cost=?,position=?,updated_at=? WHERE id=?')
+              .run(o.label, o.weeks, o.scope, o.building || null, o.cost, oi, at, row.id);
           } else {
-            const info = db.prepare('INSERT INTO estimate_options(estimate_id,position,label,duration_weeks,scope_kind,building,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
-              .run(id, oi, o.label, o.weeks, o.scope, o.building || null, at, at);
+            const info = db.prepare('INSERT INTO estimate_options(estimate_id,position,label,duration_weeks,scope_kind,building,cost,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)')
+              .run(id, oi, o.label, o.weeks, o.scope, o.building || null, o.cost, at, at);
             row = { id: info.lastInsertRowid, label: o.label };
             record(id, row.id, o.label, 'option added', null, o.label, reason, actor, at);
           }

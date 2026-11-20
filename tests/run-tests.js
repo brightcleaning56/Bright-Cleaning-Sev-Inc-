@@ -503,6 +503,29 @@ async function startServer(env, dataDir) {
     assert(pdf.status === 200 && pdfBuf.subarray(0, 4).toString() === '%PDF' && pdfBuf.length > 1500, JSON.stringify([pdf.status, pdfBuf.length]));
     return `1-week $${want1} (after walkthrough $${put2.data.options[0].total}); 2-week $${want2}; client chose 2-week and the approved total is $${after.proposal_total}; price change kept with its reason; the proposal PDF is produced`;
   });
+  await check('Proposals', 'Option margins: each option needs its own cost, and an option below the minimum margin blocks sending', async () => {
+    const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Margin Client', company: 'Margin Test', email: 'margin@test.test', project_name: 'Margin test', scope: 'Final clean', labor_hours: 1, labor_rate: 10, tax_pct: 0 } });
+    const id = r.data.estimate.id;
+    // Set the rules this check needs (a 30% minimum margin, no total limit), then put back what was there.
+    const prevRules = (await req('GET', '/api/admin/approval-rules', { token: T })).data.rules;
+    await req('PUT', '/api/admin/approval-rules', { token: T, json: { min_margin_pct: 30, max_total: 0, flag_pre_pricing: false, approve_all: false } });
+    const units = (rate) => [{ description: 'Units', unit: 'unit', quantity: 264, unit_price: rate }, { description: 'Windows', unit: 'window', quantity: 1200, unit_price: 10 }];
+    const put = await req('PUT', `/api/admin/estimates/${id}/options`, { token: T, json: { reason: 'Margin test', options: [
+      { label: '1-week', duration_weeks: 1, scope_kind: 'Whole project', lines: units(160) },
+      { label: '3-week', duration_weeks: 3, scope_kind: 'Whole project', lines: units(130) }] } });
+    const [a, b] = put.data.options;
+    const send1 = await req('POST', `/api/admin/estimates/${id}/send`, { token: T, json: {} });
+    const setCost = (ca, cb) => req('PUT', `/api/admin/estimates/${id}/options`, { token: T, json: { reason: 'Cost entered', options: [
+      { id: a.id, label: a.label, duration_weeks: 1, scope_kind: 'Whole project', cost: ca, lines: a.lines.map(l => ({ id: l.id, description: l.description, unit: l.unit, quantity: l.quantity, unit_price: l.unit_price })) },
+      { id: b.id, label: b.label, duration_weeks: 3, scope_kind: 'Whole project', cost: cb, lines: b.lines.map(l => ({ id: l.id, description: l.description, unit: l.unit, quantity: l.quantity, unit_price: l.unit_price })) }] } });
+    await setCost(30000, 40000); // 1-week margin 44.7% passes; 3-week margin 13.6% is below 30%
+    const send2 = await req('POST', `/api/admin/estimates/${id}/send`, { token: T, json: {} });
+    await req('PUT', '/api/admin/approval-rules', { token: T, json: { min_margin_pct: prevRules.min_margin_pct, max_total: prevRules.max_total, flag_pre_pricing: prevRules.flag_pre_pricing, approve_all: prevRules.approve_all } });
+    // Both sends are refused before any email goes out, so nothing is sent or scheduled by this check.
+    assert(send1.status === 409 && /No cost entered for "1-week"/.test(send1.data.error) && send2.status === 409 && /"3-week" margin 13\.6% is below your 30% minimum/.test(send2.data.error),
+      JSON.stringify([send1.status, send1.data.error, send2.status, send2.data.error]));
+    return 'no cost blocks sending for that option; the 3-week option at 13.6% margin blocks against the 30% minimum; the 1-week option at 44.7% is not named';
+  });
   await check('Proposals', 'Estimate rejects an invalid customer email', async () => {
     const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'x', scope: 'y', email: 'bad@email' } });
     assert(r.status === 400, r.status); return '400 ' + r.data.error;

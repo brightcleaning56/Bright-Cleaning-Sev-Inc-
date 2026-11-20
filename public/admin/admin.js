@@ -414,6 +414,7 @@
         o.duration_weeks = card.querySelector('[data-f="duration_weeks"]').value;
         o.scope_kind = card.querySelector('[data-f="scope_kind"]').value;
         o.building = card.querySelector('[data-f="building"]').value;
+        o.cost = card.querySelector('[data-f="cost"]').value;
         card.querySelectorAll('[data-line]').forEach(row => {
           const l = o.lines[Number(row.dataset.line)]; if (!l) return;
           l.description = row.querySelector('[data-l="description"]').value;
@@ -424,6 +425,7 @@
       });
     };
     const lineAmount = l => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
+    const marginText = o => { const sub = o.lines.reduce((s, l) => s + lineAmount(l), 0), c = Number(o.cost); return sub > 0 && c > 0 ? ' · margin ' + ((sub - c) / sub * 100).toFixed(1) + '%' : ' · no cost entered, so the margin is not checked'; };
     const draw = () => {
       const locked = d.locked;
       const dis = locked ? ' disabled' : '';
@@ -437,6 +439,7 @@
           '<div class="f"><label>Weeks to finish</label><input type="number" min="1" max="52" data-f="duration_weeks" value="' + esc(o.duration_weeks ?? '') + '"' + dis + '></div>' +
           '<div class="f"><label>Scope</label><select data-f="scope_kind"' + dis + '>' + SCOPE_CHOICES.map(s => '<option' + (s === o.scope_kind ? ' selected' : '') + '>' + esc(s) + '</option>').join('') + '</select></div>' +
           '<div class="f"><label>Building (for a per-building option)</label><input data-f="building" value="' + esc(o.building || '') + '"' + dis + '></div>' +
+          '<div class="f"><label>Internal cost of this option (for the margin check; the client does not see it)</label><input type="number" min="0" step="0.01" data-f="cost" value="' + esc(o.cost ?? '') + '"' + dis + '></div>' +
           '<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Item</th><th>Unit</th><th>Units</th><th>Price per unit</th><th>Amount</th><th></th></tr></thead><tbody>' +
           o.lines.map((l, li) => '<tr data-line="' + li + '"><td><input data-l="description" value="' + esc(l.description || '') + '"' + dis + '></td>' +
             '<td><input data-l="unit" value="' + esc(l.unit || '') + '" style="width:90px"' + dis + '></td>' +
@@ -445,7 +448,7 @@
             '<td class="num">' + money(lineAmount(l)) + '</td>' +
             '<td>' + (locked ? '' : '<button class="btn ghost small danger" data-rmline="' + li + '">Remove</button>') + '</td></tr>').join('') +
           '</tbody></table></div>' +
-          '<p><b>Option total: ' + money(o.lines.reduce((s, l) => s + lineAmount(l), 0)) + '</b> before tax</p>' +
+          '<p><b>Option total: ' + money(o.lines.reduce((s, l) => s + lineAmount(l), 0)) + '</b> before tax' + marginText(o) + '</p>' +
           (locked ? '' : '<button class="btn ghost small" data-addline="' + oi + '">Add item</button> <button class="btn ghost small danger" data-rmopt="' + oi + '">Remove option</button>') +
           '</div>').join('') +
         (locked ? '' : '<p><button class="btn ghost small" id="optAdd">Add option</button></p>' +
@@ -458,7 +461,7 @@
       box.querySelectorAll('[data-rmopt]').forEach(b => b.onclick = () => { if (!confirm('Remove this option and its items?')) return; capture(); opts.splice(Number(b.dataset.rmopt), 1); draw(); });
       $('#optSave').onclick = async () => {
         capture();
-        const payload = opts.map(o => ({ id: o.id || null, label: String(o.label || '').trim(), duration_weeks: o.duration_weeks === '' ? null : Number(o.duration_weeks), scope_kind: o.scope_kind, building: o.building || '',
+        const payload = opts.map(o => ({ id: o.id || null, label: String(o.label || '').trim(), duration_weeks: o.duration_weeks === '' ? null : Number(o.duration_weeks), scope_kind: o.scope_kind, building: o.building || '', cost: o.cost === '' || o.cost == null ? null : Number(o.cost),
           lines: o.lines.map(l => ({ id: l.id || null, description: String(l.description || '').trim(), unit: l.unit || '', quantity: Number(l.quantity) || 0, unit_price: Number(l.unit_price) || 0 })) }));
         try {
           const r = await api('/api/admin/estimates/' + id + '/options', { method: 'PUT', json: { options: payload, reason: $('#optReason').value } });
