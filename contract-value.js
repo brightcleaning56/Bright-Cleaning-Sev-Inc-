@@ -3,8 +3,8 @@
 // so those sums can count the same work twice. This module reports each figure with its parts, and changes no dashboard.
 //
 // Counting rule used for the report (the owner still has to confirm it):
-//   - Contracted value = signed original contracts (kind Contract) plus signed renewals, excluding superseded versions and archived rows.
-//   - Amendments are listed separately and are not added, because their value may already be inside the contract they change.
+//   - Contracted value = signed original contracts (kind Contract) plus signed renewals plus signed amendments, excluding superseded versions and archived rows.
+//   - An amendment's value is the amount it changes the contract by. It is NOT already inside the original (owner decision), so it is added once signed.
 //   - Dashboard figure = what the screens add today (every signed row, no exclusions). The gap is shown so the owner can see it.
 
 const SIGNED = ['Signed', 'Executed', 'Fully signed'];
@@ -22,18 +22,18 @@ function contractValueReport(rows) {
   const amendments = live.filter(c => kindOf(c) === 'Amendment');
   const sum = list => money(list.reduce((s, c) => s + (Number(c.value) || 0), 0));
   const dashboard = sum(signed);
-  const contracted = sum(originals) + sum(renewals);
+  const contracted = sum(originals) + sum(renewals) + sum(amendments);
   return {
     contracted_value: money(contracted),
     parts: {
       originals: { count: originals.length, value: sum(originals) },
       renewals: { count: renewals.length, value: sum(renewals) },
-      amendments_listed_not_added: { count: amendments.length, value: sum(amendments) }
+      amendments: { count: amendments.length, value: sum(amendments) }
     },
     superseded_excluded: { count: signed.filter(isSuperseded).length, value: sum(signed.filter(isSuperseded)) },
     dashboard_sum_today: dashboard,
     overstatement_on_dashboard: money(dashboard - contracted),
-    rule: 'Signed originals + signed renewals, no superseded or archived rows. Amendments are listed, not added. Owner to confirm.'
+    rule: 'Signed originals + signed renewals + signed amendments, no superseded or archived rows. An amendment adds its value once signed.'
   };
 }
 

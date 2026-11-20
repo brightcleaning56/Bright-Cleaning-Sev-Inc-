@@ -31,7 +31,7 @@ module.exports = function mountReports2(app, ctx) {
     if (project_id) costRows = costRows.filter(c => c.project_id === project_id);
     const byCat = {}; for (const c of costRows) byCat[c.category] = r2((byCat[c.category] || 0) + c.amount);
     // Approved time that is not tied to a project (so it was not posted as a project cost) still costs money.
-    let unposted = 0; if (has('time_entries')) unposted = r2(db.prepare(`SELECT COALESCE(SUM(t.minutes/60.0*COALESCE(t.labor_rate, e.hourly_rate)),0) v FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).get(...require('./bizdate').window(from, to)).v);
+    let unposted = 0; if (has('time_entries')) unposted = r2(db.prepare(`SELECT COALESCE(SUM(COALESCE(t.labor_cost, t.minutes/60.0*COALESCE(t.labor_rate, e.hourly_rate))),0) v FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).get(...require('./bizdate').window(from, to)).v);
     if (unposted && !project_id) byCat['Labor (not tied to a project)'] = unposted;
     const costs = r2(Object.values(byCat).reduce((s, v) => s + v, 0));
     // Project profitability: everything recorded against each project, all time (projects span periods).

@@ -18,6 +18,7 @@ module.exports = function mountSched(app, ctx) {
       minutes INTEGER, source TEXT DEFAULT 'crew', note TEXT, approved_by TEXT, approved_at TEXT, cost_id INTEGER, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS te_emp ON time_entries(employee_id);`);
   try { db.exec('ALTER TABLE time_entries ADD COLUMN labor_rate REAL'); } catch { /* exists */ }
+  require('./labor').ensureColumns(db);
   const vcols = db.prepare('PRAGMA table_info(visits)').all().map(c => c.name);
   for (const [c, t] of [['dispatched_at', 'TEXT'], ['dispatched_by', 'TEXT'], ['arrived_at', 'TEXT'], ['departed_at', 'TEXT'], ['completed_at', 'TEXT'], ['priority', "TEXT DEFAULT 'Normal'"],
     ['crew_needed', 'INTEGER'], ['instructions', 'TEXT'], ['equipment', 'TEXT'], ['checklist', "TEXT DEFAULT '[]'"], ['skip_reason', 'TEXT'], ['moved_from', 'TEXT'],
@@ -321,7 +322,7 @@ module.exports = function mountSched(app, ctx) {
     // A clock-in belongs to the business day it happens on (Central time), not the UTC day: an evening shift must not move to tomorrow.
     const [winStart, winEnd] = require('./bizdate').window(from, to);
     const rows = db.prepare(`SELECT t.*, e.name, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate, v.title visit_title, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN visits v ON v.id=t.visit_id LEFT JOIN projects p ON p.id=t.project_id
-      WHERE t.clock_in >= ? AND t.clock_in < ? ORDER BY t.clock_in DESC`).all(winStart, winEnd).map(t => ({ ...t, cost: t.minutes ? Math.round(t.minutes / 60 * (t.hourly_rate || 0) * 100) / 100 : 0 }));
+      WHERE t.clock_in >= ? AND t.clock_in < ? ORDER BY t.clock_in DESC`).all(winStart, winEnd).map(t => ({ ...t, cost: Math.round(require('./labor').storedCost(t) * 100) / 100 }));
     res.json({ entries: rows, totals: { minutes: rows.reduce((s, t) => s + (t.minutes || 0), 0), cost: Math.round(rows.reduce((s, t) => s + t.cost, 0) * 100) / 100, open: rows.filter(t => !t.clock_out).length, unapproved: rows.filter(t => t.clock_out && !t.approved_by).length } });
   });
   app.post('/api/admin/time', auth, (req, res) => {
@@ -341,11 +342,11 @@ module.exports = function mountSched(app, ctx) {
     if (!t) return res.status(404).json({ error: 'Entry not found.' });
     if (!t.clock_out) return res.status(409).json({ error: 'The employee is still clocked in.' });
     if (t.approved_by) return res.status(409).json({ error: 'Already approved.' });
-    let costId = null; const cost = Math.round(t.minutes / 60 * (t.hourly_rate || 0) * 100) / 100;
+    let costId = null; const lc = require('./labor').costOf(db, { id: t.id, employee_id: t.employee_id, clock_in: t.clock_in, minutes: t.minutes, rate: t.hourly_rate }); const cost = lc.cost;
     // The cost is dated on the business day of the shift (company time zone), not the UTC day.
     if (t.project_id && cost > 0) { try { costId = db.prepare("INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at) VALUES(?,'Labor',?,?,?,?,?)").run(t.project_id, `Time: ${t.name} ${(t.minutes / 60).toFixed(2)} h`, cost, require('./bizdate').today(new Date(t.clock_in)), who(req), now()).lastInsertRowid; } catch { /* projects module absent */ } }
     try { db.exec('ALTER TABLE time_entries ADD COLUMN labor_rate REAL'); } catch { /* column already exists */ }
-    db.prepare('UPDATE time_entries SET approved_by=?, approved_at=?, cost_id=?, labor_rate=? WHERE id=?').run(who(req), now(), costId, Number(t.hourly_rate) || 0, t.id);
+    db.prepare('UPDATE time_entries SET approved_by=?, approved_at=?, cost_id=?, labor_rate=?, labor_cost=?, overtime_minutes=? WHERE id=?').run(who(req), now(), costId, Number(t.hourly_rate) || 0, cost, lc.overtime_minutes, t.id);
     logAction(req, 'approved time', 'employee', t.employee_id, `${t.name}: ${(t.minutes / 60).toFixed(2)} h${costId ? `, $${cost} labor posted to project` : ''}`);
     res.json({ ok: true, cost, posted: !!costId });
   });

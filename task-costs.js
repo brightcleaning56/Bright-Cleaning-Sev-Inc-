@@ -6,6 +6,7 @@
 // Labor project costs made from time entries are not counted again on the task side (the time entry is the source).
 
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const LB = require('./labor');
 const isLabor = c => /labou?r|crew|wage|payroll/i.test(String(c || ''));
 const hasCol = (db, t, c) => db.prepare(`PRAGMA table_info(${t})`).all().some(x => x.name === c);
 
@@ -15,6 +16,7 @@ function ensureSchema(db) {
   addCol('project_tasks', 'budget_cost', 'REAL');
   addCol('project_costs', 'task_id', 'INTEGER');
   addCol('time_entries', 'task_id', 'INTEGER');
+  LB.ensureColumns(db);
 }
 
 function setBudget(db, projectId, taskId, { hours, cost }, by) {
@@ -58,9 +60,9 @@ function taskReport(db, projectId) {
   if (!db.prepare('SELECT id FROM projects WHERE id=?').get(pid)) return null;
   const tasks = db.prepare('SELECT id, title, phase, status, budget_hours, budget_cost FROM project_tasks WHERE project_id=? ORDER BY sort, id').all(pid);
   // Labor comes only from approved time: minutes x the rate in force at approval.
-  const timeRows = db.prepare(`SELECT t.id, t.task_id, t.minutes, t.cost_id, COALESCE(t.labor_rate, e.hourly_rate) AS rate
+  const timeRows = db.prepare(`SELECT t.id, t.task_id, t.minutes, t.cost_id, t.labor_cost, COALESCE(t.labor_rate, e.hourly_rate) AS rate
     FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.project_id=? AND t.approved_by IS NOT NULL`).all(pid)
-    .map(t => ({ ...t, labor: (Number(t.minutes) || 0) / 60 * (Number(t.rate) || 0) }));
+    .map(t => ({ ...t, labor: LB.storedCost({ minutes: t.minutes, labor_cost: t.labor_cost, labor_rate: t.rate }) }));
   // A project cost made from a time entry is the same labor, so it is skipped here (the time entry is the source).
   const fromTime = new Set(timeRows.filter(t => t.cost_id).map(t => t.cost_id));
   const costRows = db.prepare('SELECT id, task_id, amount FROM project_costs WHERE project_id=?').all(pid).filter(c => !fromTime.has(c.id));

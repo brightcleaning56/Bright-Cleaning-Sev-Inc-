@@ -9,6 +9,7 @@
 
 const L = require('./ledger');
 const { accountFor } = require('./job-cost');
+const LB = require('./labor');
 
 function ensureSchema(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS expense_bills(
@@ -91,7 +92,7 @@ function payBill(db, id, { date, by } = {}) {
 
 // Posts recorded project costs, bills and approved unassigned time that are not yet on the ledger.
 function syncRecorded(db) {
-  ensureSchema(db); L.seedChart(db); ensureRateColumn(db);
+  ensureSchema(db); L.seedChart(db); ensureRateColumn(db); LB.ensureColumns(db);
   const out = { bills_posted: 0, project_costs_posted: 0, payroll_posted: 0, errors: [] };
   for (const b of db.prepare("SELECT id FROM expense_bills WHERE status<>'Void' ORDER BY id").all()) {
     try { if (postBill(db, b.id)) out.bills_posted++; } catch (e) { out.errors.push('bill ' + b.id + ': ' + e.message); }
@@ -116,7 +117,7 @@ function syncRecorded(db) {
     const rows = db.prepare('SELECT t.*, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all();
     for (const t of rows) {
       const ref = 'time:' + t.id;
-      const amount = r2((Number(t.minutes) || 0) / 60 * (Number(t.hourly_rate) || 0));
+      const amount = r2(LB.storedCost(t));
       if (postedEntry(db, 'payroll', ref) || !(amount > 0)) continue;
       try {
         L.postEntry(db, {
@@ -140,7 +141,7 @@ function burdenPct(db) {
 function syncBurden(db) {
   const pct = burdenPct(db);
   if (!pct) return 0;
-  ensureRateColumn(db);
+  ensureRateColumn(db); LB.ensureColumns(db);
   let n = 0;
   const post = (ref, base, date, memo, account) => {
     const amt = r2(base * pct / 100);
@@ -158,7 +159,7 @@ function syncBurden(db) {
   if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
     for (const t of db.prepare('SELECT t.*, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all()) {
       if (!postedEntry(db, 'payroll', 'time:' + t.id)) continue;
-      const base = (Number(t.minutes) || 0) / 60 * (Number(t.hourly_rate) || 0);
+      const base = LB.storedCost(t);
       post('burden:time:' + t.id, base, String(t.clock_in).slice(0, 10), 'Labor burden on unassigned time ' + t.id, '6100');
     }
   }

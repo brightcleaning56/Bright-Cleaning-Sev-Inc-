@@ -77,7 +77,7 @@ function traceDocument(db, kind, id) {
     const cv = contracts.find(k => (k.kind || 'Contract') === 'Contract');
     if (cv && Math.abs((Number(cv.value) || 0) - estimateTotal) > 0.005) notes.push(`The contract value (${r2(cv.value).toFixed(2)}) differs from the estimate's proposal total (${estimateTotal.toFixed(2)}).`);
   }
-  if (contracts.some(k => k.kind === 'Amendment')) notes.push('Amendments are in the chain. Their value is listed, and is not added to the contract value (the owner has not yet confirmed that rule).');
+  if (contracts.some(k => k.kind === 'Amendment')) notes.push('Amendments are in the chain. Each signed amendment adds its value to the contract value.');
   if (contracts.some(k => k.kind === 'Renewal')) notes.push('Renewals are in the chain and are counted in contracted value once they are signed.');
   if (invoices.length && contracts.length && invoiced > 0 && projectInvoices.length) {
     const cv = sumOf(contracts.filter(k => (k.kind || 'Contract') === 'Contract' && k.signature_status && ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status)), k => k.value);

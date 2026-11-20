@@ -19,6 +19,7 @@ function accountFor(category) {
   return { code: '6000', name: 'Operating expenses (unmapped category)' };
 }
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const LB = require('./labor');
 const hasCol = (db, t, c) => db.prepare(`PRAGMA table_info(${t})`).all().some(x => x.name === c);
 const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
 
@@ -36,9 +37,10 @@ function jobCostReport(db, projectId) {
   // Approved time that has not been posted to a cost yet (cost_id is empty).
   let unposted = 0, unpostedMinutes = 0;
   if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
-    const rows = db.prepare(`SELECT t.minutes, ${db.prepare('PRAGMA table_info(time_entries)').all().some(c => c.name === 'labor_rate') ? 'COALESCE(t.labor_rate, e.hourly_rate)' : 'e.hourly_rate'} AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id
+    LB.ensureColumns(db);
+    const rows = db.prepare(`SELECT t.minutes, t.labor_cost, ${db.prepare('PRAGMA table_info(time_entries)').all().some(c => c.name === 'labor_rate') ? 'COALESCE(t.labor_rate, e.hourly_rate)' : 'e.hourly_rate'} AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id
       WHERE t.project_id=? AND t.approved_by IS NOT NULL AND t.cost_id IS NULL`).all(p.id);
-    for (const t of rows) { unpostedMinutes += Number(t.minutes) || 0; unposted += ((Number(t.minutes) || 0) / 60) * (Number(t.hourly_rate) || 0); }
+    for (const t of rows) { unpostedMinutes += Number(t.minutes) || 0; unposted += LB.storedCost(t); }
   }
   if (unposted) {
     byAccount['5000'] = byAccount['5000'] || { code: '5000', name: 'Direct labor', amount: 0 };
