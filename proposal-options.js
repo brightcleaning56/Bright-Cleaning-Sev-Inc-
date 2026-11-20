@@ -33,7 +33,7 @@ function signature(db, estimateId) {
   return JSON.stringify(o.map(x => [x.id, x.label, x.duration_weeks, x.scope_kind, x.building, x.cost, x.lines.map(l => [l.description, l.unit, l.quantity, l.unit_price])]));
 }
 
-module.exports = (app, { db, auth, logAction, clean }) => {
+module.exports = (app, { db, auth, logAction, clean, isAdmin = () => false }) => {
   db.exec(`CREATE TABLE IF NOT EXISTS estimate_options(
     id INTEGER PRIMARY KEY AUTOINCREMENT, estimate_id INTEGER NOT NULL, position INTEGER NOT NULL DEFAULT 0,
     label TEXT NOT NULL, duration_weeks INTEGER, scope_kind TEXT NOT NULL DEFAULT 'Whole project', building TEXT,
@@ -159,7 +159,9 @@ module.exports = (app, { db, auth, logAction, clean }) => {
   app.get('/api/proposal/:token/options', (req, res) => {
     const e = db.prepare('SELECT id,status,tax_pct,selected_option_id FROM estimates WHERE public_token=?').get(clean(req.params.token, 100));
     if (!e) return res.status(404).json({ error: 'Proposal not found.' });
-    if (['Draft', 'Ready', 'Withdrawn', 'Superseded'].includes(e.status)) return res.json({ options: [], selected_option_id: null });
+    // Drafts and ready-to-send proposals are shown only to a signed-in admin (the preview). Withdrawn and superseded ones never.
+    if (['Withdrawn', 'Superseded'].includes(e.status)) return res.json({ options: [], selected_option_id: null });
+    if (['Draft', 'Ready'].includes(e.status) && !isAdmin(req)) return res.json({ options: [], selected_option_id: null });
     const opts = optionsFor(db, e.id).map(o => ({ id: o.id, label: o.label, duration_weeks: o.duration_weeks, scope_kind: o.scope_kind, building: o.building, subtotal: o.total, total: totalWithTax(e, o.total), lines: o.lines.map(l => ({ description: l.description, unit: l.unit, quantity: l.quantity, unit_price: l.unit_price, amount: l.amount })) }));
     res.json({ options: opts, selected_option_id: e.selected_option_id || null, tax_pct: Number(e.tax_pct) || 0, locked: LOCKED.includes(e.status) });
   });

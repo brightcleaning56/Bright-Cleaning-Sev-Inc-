@@ -474,6 +474,10 @@ async function startServer(env, dataDir) {
     // Public: hidden while the proposal is still a draft
     const pubDraft = await req('GET', `/api/proposal/${tok}/options`);
     assert(pubDraft.status === 200 && pubDraft.data.options.length === 0, JSON.stringify(pubDraft.data));
+    // The signed-in admin's preview shows the options on a draft
+    const pubDraftAdmin = await fetch(B + `/api/proposal/${tok}/options`, { headers: { Authorization: 'Bearer ' + T } });
+    const pubDraftAdminData = await pubDraftAdmin.json();
+    assert(pubDraftAdmin.status === 200 && pubDraftAdminData.options.length === 2, JSON.stringify(pubDraftAdminData).slice(0, 200));
     // Price change after the walkthrough is kept with its reason
     const opt = put.data.options;
     const lines2 = lines([175, 130]);
