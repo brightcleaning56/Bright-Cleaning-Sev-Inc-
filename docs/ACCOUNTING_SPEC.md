@@ -35,33 +35,35 @@ Bright Clean keeps its own double-entry ledger. The operations modules stay the 
 
 Tests: `tests/ledger-test.js`, `invoice-ledger-test.js`, `expenses-test.js`, `ledger-reports-test.js`, `periods-test.js`, `exports-test.js`, `tax-burden-test.js`, `job-cost-test.js`, `contract-value-test.js`, `trace-test.js`, `spam-screen-test.js`, and the HTTP checks in `tests/run-tests.js`.
 
-## 2. Gaps against the audit
+## 2. Gaps against the audit (status after the step-by-step pass)
 
-Priority: P0 blocks a production financial sign-off. P1 needed before reports are relied on. P2 later.
+Status key: BUILT = in code and tested. BUILT-OFF = in code, switched off until the owner decides. DECISION = needs the owner. DEFERRED = not built now, with the reason. ACCESS = needs a connection or details only the owner has.
 
-| # | Gap | Priority | Why it matters |
+| # | Gap | Status | What exists now / what is left |
 | --- | --- | --- | --- |
-| G1 | The ledger is not posted to automatically. The owner runs the sync. | P1 | Books are empty until the owner runs it. Decide when posting happens. |
-| G2 | Payroll cash payments are not recorded (no ADP or payroll-run link). | P0 | Wages accrue to accrued payroll and are never paid out. Payroll payable stays wrong. |
-| G3 | No refunds, credit notes or payment-to-invoice allocation records. Payments post to cash and receivable as one line. | P0 | Audit rule: refunds and credits must reach cash and receivables. |
-| G4 | No accounts payable aging; no receivables aging on the ledger (the existing A/R aging report is not on the ledger). | P1 | Accountants expect both. |
-| G5 | Amendments and renewals: contract value follows the reports rule (signed originals plus signed renewals). Amendments are listed, not added. | P0 | Owner must confirm the rule. Change order history and approved-amendment lineage are not modelled as a ledger event. |
-| G6 | Task-level costing: tasks have no budget fields, so task cost and task variance are not reported. | P1 | Audit requires task budgets and task actual cost. |
-| G7 | Overhead allocation is not built. | P1 | Audit requires allocated overhead in estimates and job cost. |
-| G8 | Labor burden and overtime: burden is an optional rate; overtime is not in cost. | P0 | Job costs can be understated while burden is off. Owner must set the rate. |
-| G9 | Sales tax: optional per invoice. Invoices without tax set post the full amount as revenue. | P0 | Audit rule 1. Owner must decide the default and check invoices. |
-| G10 | Revenue recognition policy is not chosen. Revenue posts when an invoice is issued. | P0 | Audit requires a written policy (completed milestones or another measure). |
-| G11 | Expense receipts and approvals: bills have no receipt upload or approval step. | P1 | Audit requires receipt, approval and supporting document for each expense. |
-| G12 | Vendors are not a table; bills carry a vendor name only. | P2 | Needed for AP aging. |
-| G13 | Single company only. No accounting entities table. | P2 | Needed only if Bright Clean adds companies on the same system. |
-| G14 | Bank statement import. Reconciliation is manual (enter the statement balance). | P1 | Audit requires matching statement lines. |
-| G15 | Audit events: financial changes are logged to the existing activity log, not a separate accounting audit table. | P2 | Audit requires who, when and why on each change; partly met. |
-| G16 | Reports on the existing Reports page (P&L by job, A/R aging) still read operational figures, not the ledger. | P1 | Two sets of numbers until they are switched. |
-| G17 | The ledger sync is a full run over all records each time. It is safe to repeat, but not incremental. | P2 | Fine at current volume; revisit if the sync gets slow. |
-| G18 | Database: the app runs on SQLite (one file). The ledger uses the same database. | P0 decision | Audit asks whether to keep SQLite or move to PostgreSQL. Not decided. Do not assume. |
-| G19 | Payroll cost on reports2 and time sheets still reads the current employee rate for display and unposted labor. | P1 | Rule 6. Ledger and job cost use the snapshot; the two display paths do not yet. |
-| G20 | Customer portal and employee portal do not show ledger balances or time/expense submissions through the ledger. | P2 | Audit integration table. |
-| G21 | No bank reconciliation for credit cards, loans or equity accounts. | P2 | Chart includes accounts that have no feed. |
+| G1 | Ledger posting is run by the owner, not automatic | DECISION | `POST /ledger/sync` (owner). Choose automatic or owner-run. |
+| G2 | Payroll payments | BUILT (interim) + ACCESS | Owner records net pay and payroll taxes (`POST /ledger/payroll-payment`). ADP link needs company code, file-number format, RUN or Workforce Now. |
+| G3 | Refunds, credit notes, payment allocation | BUILT | `receivables.js`: refund (cannot exceed paid), credit note (cannot exceed owed), tie-out includes both. Payments stay one per invoice (allocation is the invoice id). |
+| G4 | AR and AP aging on the ledger | BUILT | `aging.js`: receivables by days past due; payables by bill age, by vendor. |
+| G5 | Amendments and renewals; change orders | DECISION | Contract value follows the reports rule. Amendment value is listed, not added. Owner to confirm the rule. Change-order approval flow not built. |
+| G6 | Task budgets and task-level cost | BUILT | `task-costs.js`: budgets on tasks, time and costs assigned to tasks, report that adds back to project cost. Budget entry is by API; a screen is not built yet. |
+| G7 | Overhead allocation | BUILT | Job cost allocates overhead at the estimate's rate on actual cost, shown beside cost (not posted). |
+| G8 | Labor burden and overtime | BUILT-OFF (burden) / DECISION (overtime) | Burden rate setting `ledger_burden_pct` (zero). Overtime not in cost. Owner to set the rate and decide overtime. |
+| G9 | Sales tax on invoices | BUILT-OFF (default) / DECISION | Tax per invoice posts to tax payable; zero by default. Owner to decide default and whether invoice amounts include tax. |
+| G10 | Revenue recognition policy | DECISION | Revenue posts on invoice issue. Milestone or other policy not chosen. |
+| G11 | Expense receipts and approvals | BUILT-OFF | Receipt reference and approval on bills; settings `bill_receipt_required` and `bill_approval_required` (both off). Receipt file upload not built. |
+| G12 | Vendors | BUILT | Vendors table; bills link to vendors by name (found or created). |
+| G13 | Multiple accounting entities | DEFERRED | Bright Clean is one company. Add when a second company uses the system. |
+| G14 | Bank statement import and matching | BUILT | `bank.js`: import CSV, safe re-import, automatic and manual matching, outstanding items. Bank feed (live) not built. |
+| G15 | Accounting audit trail | BUILT | `audit.js`: sync, reversals, closes, reconciliations, tax changes, bill approvals, task budgets and assignments, statement imports. Postings carry who and when. |
+| G16 | Reports on the ledger | BUILT (comparison) / DECISION (switch) | `compare.js` shows each Reports figure beside the ledger with the reason for any difference. Switching the Reports page is the owner's choice of basis. |
+| G17 | Incremental sync | DEFERRED | The sync is safe to repeat and runs over all records. Revisit if slow. |
+| G18 | Database (SQLite or PostgreSQL) | DECISION | Stays on SQLite. Not changed. |
+| G19 | Pay rate used for labor cost | BUILT | Rate in force at approval is kept on each time entry; ledger, job cost, timesheet and reports use it. Entries approved before this change use the current rate. |
+| G20 | Customer and employee portals | BUILT (balance) / DEFERRED (rest) | Customer portal balance includes tax, refunds and credits. Employee portal time and expense submission through the ledger not built. |
+| G21 | Other account reconciliations (cards, loans, equity) | DEFERRED | Accounts exist in the chart; no feeds. |
+
+Open decisions, in order of impact: G5 (amendments), G9 (sales tax default), G10 (revenue timing), G8 (burden rate and overtime), G1 (sync timing), G18 (database). Access needed: G2 (ADP details).
 
 ## 3. Posting rules (as built)
 
@@ -137,17 +139,17 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 | 4 one-cent mismatch blocked | Not automated |
 | 5 change order updates contract | Not built (G5) |
 | 6 renewal no duplicate value | `contract-value-test.js` |
-| 7 project with tasks and budgets | Not built (G6) |
+| 7 project with tasks and budgets | `task-costs-test.js` |
 | 8 employees record time | Existing time tests |
 | 9 pay rate change keeps history | `expenses-test.js` (pay-rate snapshot) |
-| 10 material purchases to tasks | Not built (G6) |
-| 11 expense with receipt and approval | Not built (G11) |
-| 12 task cost to date | Not built (G6) |
+| 10 material purchases to tasks | `task-costs-test.js` (costs assigned to tasks; purchasing screen not built) |
+| 11 expense with receipt and approval | `expenses-test.js` (receipt reference and approval rules; upload not built) |
+| 12 task cost to date | `task-costs-test.js` |
 | 13 partial invoice, receivable | `invoice-ledger-test.js` |
 | 14 partial payment, balance | `invoice-ledger-test.js` |
 | 15 final payment closes invoice | `invoice-ledger-test.js` (invoice status is not set by the ledger) |
 | 16 replayed payment, no duplicate | `invoice-ledger-test.js` (source key) |
-| 17 refund, cash and receivable | Not built (G3) |
+| 17 refund, cash and receivable | `receivables-test.js` |
 | 18 sales tax not revenue | `tax-burden-test.js` (when tax is set) |
 | 19 operating expenses in P&L | `ledger-reports-test.js` (with bills) |
 | 20 every entry balances | `ledger-test.js`, every test that posts |
@@ -157,10 +159,10 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 | 24 dashboards match | Not automated |
 | 25 audit history | Activity log (G15) |
 
-## 9. Recommended order from here
+## 9. Remaining work
 
-1. Owner decides section 7 items 1 to 4 (amendments, tax, burden, revenue recognition).
-2. Build G3 (refunds and credit notes) and G14 (bank statement import), because the audit's P0 list depends on them.
-3. Build G6 and G7 (task budgets, overhead allocation).
-4. Switch the Reports page to the ledger (G16).
-5. Staging run of the 25 QA items with synthetic records, then the first live sync with the owner present.
+1. Owner decisions in section 2: amendments (G5), sales tax default (G9), revenue timing (G10), burden and overtime (G8), sync timing (G1), database (G18).
+2. ADP details for payroll (G2).
+3. Screens not yet built: task budget entry, purchasing and receipt upload, bank statement upload (the API exists; the Accounting page has no upload yet).
+4. Deferred by design: multiple entities (G13), incremental sync (G17), other account feeds (G21), employee portal time and expense submission (G20).
+5. Staging run of the 25 QA items with synthetic records (section 8), then the first live sync with the owner present.

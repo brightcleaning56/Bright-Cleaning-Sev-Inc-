@@ -2367,6 +2367,15 @@
         <button class="btn small" id="accClose" type="button">Close the books through a date</button></div>
       <div class="card" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bank reconciliation</h2><button class="btn small" id="accRecon" type="button">Reconcile cash</button></div>
         <div class="tablewrap"><table class="t"><thead><tr><th>As of</th><th class="num">Bank</th><th class="num">Ledger</th><th class="num">Difference</th><th>Note</th></tr></thead><tbody>${reconRows}</tbody></table></div></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Bank statement</h2>
+        <p class="muted">Paste the statement as CSV: date, description, amount (money in positive, money out negative). Lines already imported are skipped. Matching then links lines to ledger cash.</p>
+        <textarea id="accBankCsv" rows="5" style="width:100%" placeholder="2026-11-21,ACH from customer,25000"></textarea>
+        <div class="filt"><button class="btn small" id="accBankImport" type="button">Import and match</button></div>
+        <div id="accBankOut"></div></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Task budgets and task cost</h2>
+        <p class="muted">Enter a project number to see each task's budget, its actual cost, and what is not on a task yet.</p>
+        <div class="filt"><input id="accTaskProject" type="number" min="1" placeholder="Project number"><button class="btn small" id="accTaskGo" type="button">Show tasks</button></div>
+        <div id="accTaskOut"></div></div>
       <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Trace a document</h2>
         <p class="muted">Start from an estimate, contract, project, invoice or subscription number to see the whole chain, the money at each step, and where it sits on the ledger.</p>
         <div class="filt"><select id="accTKind"><option value="estimate">Estimate</option><option value="contract">Contract</option><option value="project">Project</option><option value="invoice">Invoice</option><option value="subscription">Subscription</option></select><input id="accTId" type="number" min="1" placeholder="Number"><button class="btn small" id="accTGo" type="button">Trace</button></div>
@@ -2399,6 +2408,42 @@
       try { renderTrace(await api(`/api/admin/accounting/trace?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`)); }
       catch (err) { $('#accTOut').innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; }
     };
+    const renderBankSummary = s => {
+      const n = v => money(v);
+      $('#accBankOut').innerHTML = `<p class="muted">Statement lines: ${s.statement_lines} · matched: ${s.matched} · unmatched statement total ${n(s.unmatched_statement_total)} · outstanding ledger total ${n(s.outstanding_ledger_total)}</p>` +
+        (s.unmatched_statement.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>${s.unmatched_statement.map(l => `<tr><td>${esc(l.line_date)}</td><td>${esc(l.description)}</td><td class="num">${n(l.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Every statement line is matched.</p>') +
+        (s.outstanding_ledger.length ? `<p class="muted">Outstanding on the ledger (no statement line yet):</p><ul>${s.outstanding_ledger.map(c => `<li>${esc(c.entry_date)} ${esc(c.memo)}: ${n(c.amount)}</li>`).join('')}</ul>` : '');
+    };
+    $('#accBankImport').onclick = async () => {
+      const csv = $('#accBankCsv').value;
+      if (!csv.trim()) return toast('Paste the statement first.', true);
+      try {
+        const r = await api('/api/admin/bank/import', { method: 'POST', json: { csv } });
+        await api('/api/admin/bank/auto-match', { method: 'POST', json: {} });
+        toast(`Imported ${r.added} line(s), ${r.skipped} already there`);
+        renderBankSummary(await api('/api/admin/bank/summary'));
+      } catch (err) { toast(err.message, true); }
+    };
+    const renderTasks = t => {
+      $('#accTaskOut').innerHTML = `<div class="tablewrap"><table class="t"><thead><tr><th>Task</th><th class="num">Budget hours</th><th class="num">Actual hours</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Remaining</th><th></th></tr></thead><tbody>${
+        t.tasks.map(x => `<tr><td>${esc(x.title)}</td><td class="num">${x.budget_hours == null ? '—' : esc(x.budget_hours)}</td><td class="num">${esc(x.actual_hours)}</td><td class="num">${x.budget_cost == null ? '—' : money(x.budget_cost)}</td><td class="num">${money(x.actual_cost)}</td><td class="num">${x.remaining_budget == null ? '—' : money(x.remaining_budget)}${x.over_budget ? ' <span class="pill st-Declined">Over</span>' : ''}</td><td><button class="btn small ghost" data-acctask="${x.task_id}" type="button">Set budget</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No tasks on this project.</td></tr>'
+      }</tbody></table></div><p class="muted">Not on a task: ${money(t.not_on_a_task)} of ${money(t.project_recorded_cost)} recorded. ${t.reconciles ? 'Adds back to the project cost.' : 'Does not add back: check the figures.'}</p>`;
+      $$('#accTaskOut [data-acctask]').forEach(btn => btn.onclick = () => {
+        const row = t.tasks.find(x => String(x.task_id) === btn.dataset.acctask);
+        openForm({ title: 'Task budget: ' + (row ? row.title : ''), sub: 'Leave a field empty to clear it.',
+          defs: [{ name: 'hours', label: 'Budget hours', type: 'number' }, { name: 'cost', label: 'Budget cost ($)', type: 'number' }],
+          values: { hours: row && row.budget_hours != null ? row.budget_hours : '', cost: row && row.budget_cost != null ? row.budget_cost : '' },
+          submit: b => api(`/api/admin/projects/${t.project_id}/tasks/${btn.dataset.acctask}/budget`, { method: 'POST', json: { hours: b.hours, cost: b.cost } }),
+          after: () => { toast('Budget saved'); $('#accTaskGo').click(); } });
+      });
+    };
+    $('#accTaskGo').onclick = async () => {
+      const id = $('#accTaskProject').value;
+      if (!id) return toast('Enter the project number.', true);
+      try { renderTasks(await api('/api/admin/projects/' + encodeURIComponent(id) + '/task-costs')); }
+      catch (err) { $('#accTaskOut').innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; }
+    };
+    api('/api/admin/bank/summary').then(renderBankSummary).catch(() => {});
     $('#accSync').onclick = async () => {
       if (!confirm('Post invoices, bills, job costs and unassigned payroll to the ledger? Posted entries cannot be edited, only reversed.')) return;
       try { const r = await api('/api/admin/ledger/sync', { method: 'POST' }); toast(`Posted: ${r.invoices_posted} invoice(s), ${r.payments_posted} payment(s), ${r.bills_posted} bill(s), ${r.project_costs_posted} job cost(s), ${r.payroll_posted} payroll line(s)`); loadAccounting(); }
