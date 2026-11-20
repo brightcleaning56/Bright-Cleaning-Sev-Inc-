@@ -22,18 +22,37 @@ module.exports = function mountReports2(app, ctx) {
   };
   const daysBetween = (a, b) => Math.floor((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 864e5);
 
+  // The ledger's figures for a period (the books of record). Revenue is invoices less credit notes; costs are job costs
+  // and approved labor posted to the ledger (5xxx); operating expenses are vendor bills and unassigned payroll (6xxx).
+  // Posts anything not yet on the ledger (idempotent), so a report never lags behind the records it is built from.
+  function catchUpLedger() {
+    try { require('./invoice-ledger').syncAll(db); require('./expenses').syncRecorded(db); }
+    catch (e) { console.error('ledger catch-up for reports failed:', e.message); }
+  }
+  function ledgerPeriod(from, to) {
+    catchUpLedger();
+    const net = where => Number(db.prepare(`SELECT COALESCE(SUM(l.debit_cents - l.credit_cents),0) v FROM ledger_lines l JOIN ledger_entries e ON e.id=l.entry_id WHERE ${where} AND e.entry_date BETWEEN ? AND ?`).get(from, to).v) / 100;
+    const byCat = {};
+    for (const a of db.prepare(`SELECT a.name, COALESCE(SUM(l.debit_cents - l.credit_cents),0) v FROM ledger_lines l JOIN ledger_entries e ON e.id=l.entry_id JOIN ledger_accounts a ON a.code=l.account_code WHERE l.account_code LIKE '5%' AND e.entry_date BETWEEN ? AND ? GROUP BY a.code, a.name ORDER BY a.code`).all(from, to)) {
+      const v = r2(Number(a.v) / 100); if (v) byCat[a.name] = v;
+    }
+    return { invoiced: r2(-net("l.account_code='4000'") - net("l.account_code='4900'")), discounts: r2(net("l.account_code='4900'")),
+      collected: r2(net("l.account_code='1000' AND e.source IN ('payment','refund')")), costs: r2(net("l.account_code LIKE '5%'")), operating: r2(net("l.account_code LIKE '6%'")), byCat };
+  }
   function finance({ from, to, project_id }) {
     // Invoices count in the month they were issued (or sent), not the month they were created.
     const bz = require('./bizdate');
     const inv = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void')`).all().filter(i => { const d = bz.invoiceDay(i); return d >= from && d <= to && (!project_id || i.project_id === project_id); });
-    const invoiced = r2(inv.reduce((s, i) => s + (i.amount || 0), 0)), collected = r2(inv.reduce((s, i) => s + Math.min(i.paid_amount || 0, i.amount || 0), 0));
+    let invoiced = r2(inv.reduce((s, i) => s + (i.amount || 0), 0)), collected = r2(inv.reduce((s, i) => s + Math.min(i.paid_amount || 0, i.amount || 0), 0));
     let costRows = has('project_costs') ? db.prepare(`SELECT c.*, p.name project_name FROM project_costs c LEFT JOIN projects p ON p.id=c.project_id WHERE c.cost_date BETWEEN ? AND ?`).all(from, to) : [];
     if (project_id) costRows = costRows.filter(c => c.project_id === project_id);
     const byCat = {}; for (const c of costRows) byCat[c.category] = r2((byCat[c.category] || 0) + c.amount);
     // Approved time that is not tied to a project (so it was not posted as a project cost) still costs money.
     let unposted = 0; if (has('time_entries')) unposted = r2(db.prepare(`SELECT COALESCE(SUM(COALESCE(t.labor_cost, t.minutes/60.0*COALESCE(t.labor_rate, e.hourly_rate))),0) v FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).get(...require('./bizdate').window(from, to)).v);
     if (unposted && !project_id) byCat['Labor (not tied to a project)'] = unposted;
-    const costs = r2(Object.values(byCat).reduce((s, v) => s + v, 0));
+    let costs = r2(Object.values(byCat).reduce((s, v) => s + v, 0));
+    const LG = (!project_id && has('ledger_lines')) ? ledgerPeriod(from, to) : null;
+    if (LG) { invoiced = LG.invoiced; collected = LG.collected; costs = LG.costs; for (const k of Object.keys(byCat)) delete byCat[k]; Object.assign(byCat, LG.byCat); }
     // Project profitability: everything recorded against each project, all time (projects span periods).
     const projects = has('project_costs') ? db.prepare(`SELECT p.id, p.name, p.status, p.company, p.customer_name, COALESCE(k.value,0) contract,
         (SELECT COALESCE(SUM(amount),0) FROM invoices WHERE project_id=p.id AND status NOT IN ('Draft','Void')) invoiced,
@@ -52,7 +71,8 @@ module.exports = function mountReports2(app, ctx) {
     const unlinked = costRows.filter(c => !c.project_id).length; if (unlinked) checks.push(`${unlinked} cost entr${unlinked === 1 ? 'y is' : 'ies are'} not linked to a project, so project profit may be overstated.`);
     if (has('time_entries')) { const pend = db.prepare("SELECT COUNT(*) n FROM time_entries WHERE approved_by IS NULL AND clock_out IS NOT NULL AND clock_in >= ? AND clock_in < ?").get(...require('./bizdate').window(from, to)).n; if (pend) checks.push(`${pend} time entr${pend === 1 ? 'y is' : 'ies are'} not approved yet, so that labor is not in the costs.`); }
     return { from, to, invoiced, collected, costs, cost_by_category: byCat, gross_profit: r2(invoiced - costs), margin: invoiced > 0 ? Math.round((invoiced - costs) / invoiced * 1000) / 10 : null,
-      basis: 'Revenue = invoices issued in the period (not drafts or void). Costs = actual costs recorded on projects in the period plus approved labor not tied to a project. Collected = amount paid on the invoices issued in the period.',
+      source: LG ? 'ledger' : 'records', operating_expenses: LG ? LG.operating : null, net_profit: LG ? r2(invoiced - costs - LG.operating) : null, credit_notes: LG ? LG.discounts : null,
+      basis: LG ? 'Figures are read from the ledger, the books of record, for this period. Revenue = invoices issued less credit notes. Costs = job costs and approved labor posted to the ledger. Operating expenses = vendor bills and unassigned payroll, which are not job costs. Collected = cash received from customers less refunds. Project profitability below uses invoices and project costs recorded to date.' : 'Revenue = invoices issued in the period (not drafts or void). Costs = actual costs recorded on projects in the period plus approved labor not tied to a project. Collected = amount paid on the invoices issued in the period.',
       invoices: inv.length, projects, project_id: project_id || null, checks };
   }
   function aging() {
@@ -85,7 +105,20 @@ module.exports = function mountReports2(app, ctx) {
 
   // Revenue and costs by month, using the same rules as finance(). The period totals are returned too, so the
   // screen can check that the months add up to them.
+  // Month-by-month figures from the ledger, using the same definitions as ledgerPeriod().
+  function monthlyLedger(from, to) {
+    const bump = {};
+    for (const r of db.prepare(`SELECT substr(e.entry_date,1,7) m, a.code, COALESCE(SUM(l.debit_cents),0) dr, COALESCE(SUM(l.credit_cents),0) cr FROM ledger_lines l JOIN ledger_entries e ON e.id=l.entry_id JOIN ledger_accounts a ON a.code=l.account_code WHERE e.entry_date BETWEEN ? AND ? AND (a.code IN ('4000','4900') OR a.code LIKE '5%') GROUP BY m, a.code`).all(from, to)) {
+      const m = bump[r.m] = bump[r.m] || { month: r.m, revenue: 0, costs: 0 };
+      if (r.code === '4000') m.revenue = r2(m.revenue + (r.cr - r.dr) / 100);
+      else if (r.code === '4900') m.revenue = r2(m.revenue - (r.dr - r.cr) / 100);
+      else m.costs = r2(m.costs + (r.dr - r.cr) / 100);
+    }
+    const all = Object.values(bump).sort((a, b) => a.month.localeCompare(b.month));
+    return { from, to, project_id: null, months: all.slice(-36), revenue: r2(all.reduce((s, m) => s + m.revenue, 0)), costs: r2(all.reduce((s, m) => s + m.costs, 0)), source: 'ledger' };
+  }
   function monthly({ from, to, project_id }) {
+    if (!project_id && has('ledger_lines')) return monthlyLedger(from, to);
     const bz = require('./bizdate');
     const months = {};
     const bump = (m, k, v) => { months[m] = months[m] || { month: m, revenue: 0, costs: 0 }; months[m][k] = r2(months[m][k] + v); };
@@ -108,7 +141,7 @@ module.exports = function mountReports2(app, ctx) {
     d.box(0, 742, 612, 50, '0.06 0.15 0.26'); d.y = 762; d.text('BRIGHT CLEANING SEV INC.  -  BUSINESS REPORT', { size: 13, bold: true, color: '1 1 1' }); d.y = 712;
     d.heading(`${rg.from} to ${rg.to}`, 14); d.para(`Prepared ${today()} by ${who(req) || ''}`);
     d.heading('Profit & loss', 12);
-    d.table([{ label: 'Item', w: 70 }, { label: 'Amount', w: 30, align: 'right' }], [['Invoiced (revenue)', money(f.invoiced)], ['Collected on those invoices', money(f.collected)], ...Object.entries(f.cost_by_category).map(([k, v]) => ['Cost: ' + k, money(v)]), ['Total recorded costs', money(f.costs)], ['Gross profit', money(f.gross_profit)], ['Gross margin', f.margin == null ? '-' : f.margin + '%']]);
+    d.table([{ label: 'Item', w: 70 }, { label: 'Amount', w: 30, align: 'right' }], [['Invoiced (revenue)', money(f.invoiced)], ['Collected on those invoices', money(f.collected)], ...Object.entries(f.cost_by_category).map(([k, v]) => ['Cost: ' + k, money(v)]), ['Total recorded costs', money(f.costs)], ['Gross profit', money(f.gross_profit)], ['Gross margin', f.margin == null ? '-' : f.margin + '%'], ...(f.operating_expenses != null ? [['Operating expenses (bills, unassigned payroll)', money(f.operating_expenses)], ['Net profit', money(f.net_profit)]] : [])]);
     d.para(f.basis, { size: 8 }); for (const c of f.checks) d.para('Note: ' + c, { size: 8 });
     d.heading('Accounts receivable aging', 12);
     d.table([{ label: 'Bucket', w: 60 }, { label: 'Balance', w: 40, align: 'right' }], [...Object.entries(a.buckets).map(([k, v]) => [k === 'Current' ? 'Current (not yet due)' : k + ' days past due', money(v)]), ['Total open', money(a.total)]]);
