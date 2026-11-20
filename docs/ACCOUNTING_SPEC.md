@@ -56,7 +56,7 @@ Status key: BUILT = in code and tested. BUILT-OFF = in code, off until the owner
 | G13 | Multiple accounting entities | DEFERRED | One company. Add when a second company uses the system. |
 | G14 | Bank statements | BUILT | Import CSV, safe re-import, automatic and manual matching, outstanding items. Live bank feed not built. |
 | G15 | Audit trail | BUILT | Append-only list of accounting actions with who, when and why. |
-| G16 | Reports on the ledger | BUILT (comparison) / DECIDED basis: ledger | `compare.js` shows the Reports figures beside the ledger, with the reason for each difference. The Reports page should read the ledger; that switch is the next step. |
+| G16 | Reports on the ledger | BUILT | `compare.js` shows the Reports figures beside the ledger, with the reason for each difference. The Reports P&L (all projects) now reads the ledger: revenue is invoices less credit notes, costs are 5xxx, operating expenses and net profit are shown, and the report posts anything pending first. Per-project profitability still uses the records. |
 | G17 | Incremental sync | DEFERRED | The sync is safe to repeat and runs over all records. Revisit if it gets slow. |
 | G18 | Database | DECIDED: stay on SQLite | See section 10. |
 | G19 | Pay rate used for labor cost | BUILT | Labor cost is worked out at approval (with overtime) and stored on the entry. |
@@ -182,5 +182,5 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 1. Confirm the sales-tax rate for each service with the accountant (G9).
 2. Burden rate, when the owner gives one (G8).
 3. ADP details, when ready (G2).
-4. Switch the Reports page to the ledger (G16).
+4. Switch the Reports page to the ledger (G16): done in ae0fb92.
 5. Staging run of the 25 QA items with synthetic records (section 8), then the first live sync with the owner present.
