@@ -52,6 +52,7 @@ module.exports = function (app, { db, auth, logAction, clean, isEmail, notify })
     if (email && !isEmail(email)) return res.status(400).json({ error: 'That email address is not valid.' });
     const label = 'API: ' + key.name + (source ? ' · ' + source : '');
     // Repeat intake: if this email already has an open lead, add the new message to that lead instead of creating another.
+    if (require('./spam-screen').refuseIfSpam(db, 'api lead', { name, company, email, phone, project_name: project, service, details })) return res.status(202).json({ ok: true, accepted: true });
     // Closed leads (Won, Lost, Archived) do not block a new inquiry.
     const open = email && db.prepare("SELECT id, details FROM leads WHERE lower(email)=lower(?) AND status NOT IN ('Won','Lost','Archived') ORDER BY id DESC LIMIT 1").get(email);
     if (open) {

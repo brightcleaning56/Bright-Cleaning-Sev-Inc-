@@ -5159,6 +5159,16 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'no automatic text scheduled while off; a due one is cancelled while off; with the switch on it is attempted';
   });
 
+  await check('Intake', 'Vendor pitches: an inbound message with a paid-program or sales pitch is not saved as a lead and gets the same acknowledgement; it is kept for owner review', async () => {
+    const pitch = "AI labs building robots are paying businesses each month for first-person video of their people at work. The rate is $10 per accepted hour. Open to a 15-minute call? If it is not a fit, we won't reach out again.";
+    const r = await req('POST', '/api/inquiries', { form: { name: 'Pitch Person', email: 'pitch.person@t.test', message: pitch, website_url: '' } });
+    await sleep(300);
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true });
+    const leads = pdb.prepare("SELECT COUNT(*) n FROM leads WHERE lower(email)='pitch.person@t.test'").get().n;
+    const kept = pdb.prepare("SELECT COUNT(*) n FROM blocked_intake WHERE lower(email)='pitch.person@t.test'").get().n;
+    pdb.close();
+    assert(r.status === 201 && leads === 0 && kept === 1, 'expected 201, no lead, one kept; got ' + JSON.stringify({ status: r.status, leads, kept }));
+  });
   await check('Intake', 'Public inquiries and careers are limited per IP: past the limit they get 429 with no lead and no acknowledgement', async () => {
     await killWait(server.child);
     server = await startServer({ ...env, INTAKE_RATE_LIMIT: '3' }, dataDir);

@@ -202,6 +202,7 @@ module.exports = function mountIntake(app, ctx) {
     const v = validate(service, b);
     if (v.errors) errs.push(...v.errors);
     if (errs.length) { discard(); return res.status(400).json({ error: errs.join(' '), errors: errs }); }
+    if (require('./spam-screen').refuseIfSpam(db, 'quote form', { name: b.contact_name, company: b.company, email: b.email, phone: b.phone, project_name: b.project_name, notes: b.notes, site_access: b.site_access, exclusions: b.exclusions, special_requirements: b.special_requirements, access_notes: b.access_notes })) { discard(); return res.status(201).json({ message: 'Thank you. Your request has been received.' }); }
 
     // Double-submit guard: same email and service within 10 minutes returns the first request.
     const since = new Date(Date.now() - 10 * 60e3).toISOString();

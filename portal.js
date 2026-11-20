@@ -195,6 +195,7 @@ module.exports = function mountPortal(app, ctx) {
     const subject = String((req.body || {}).subject || '').trim().slice(0, 200) || 'Message from the client portal';
     const body = String((req.body || {}).body || '').trim().slice(0, 4000);
     if (body.length < 5) return res.status(400).json({ error: 'Write your message first.' });
+    if (require('./spam-screen').refuseIfSpam(db, 'client portal message', { subject, body })) return res.status(400).json({ error: 'This message could not be sent. Please call (515) 303-3024 and we will help.' });
     const at = now();
     const id = db.prepare('INSERT INTO portal_messages(email,subject,body,created_at) VALUES(?,?,?,?)').run(sess.email, subject, body, at).lastInsertRowid;
     require('./conversations').mirror(db, { kind: 'customer', customerEmail: sess.email, subject, role: 'customer', senderRef: sess.email, body, legacyRef: 'portal:' + id });
@@ -382,6 +383,7 @@ module.exports = function mountPortal(app, ctx) {
     const company = clip(b.company, 200), phone = clip(b.phone, 60), name = clip(b.contact_name, 150);
     if (!service) return res.status(400).json({ error: 'Choose the service you need.' });
     if (details.length < 10) return res.status(400).json({ error: 'Describe what you need in a few words.' });
+    if (require('./spam-screen').refuseIfSpam(db, 'client portal request', { name, company, phone, address, service, details })) return res.status(400).json({ error: 'This request could not be sent. Please call (515) 303-3024 and we will help.' });
     const at = now();
     const id = db.prepare("INSERT INTO leads(kind,status,contact_name,company,email,phone,address,service,project_name,details,created_at,updated_at,origin) VALUES('bid','New',?,?,?,?,?,?,?,?,?,?,'portal')")
       .run(name || company || sess.email, company, sess.email, phone, address, service, service, 'Source: client portal\n' + details, at, at).lastInsertRowid;
