@@ -101,7 +101,7 @@ module.exports = function mountPortal(app, ctx) {
     const contracts = db.prepare(`SELECT id, title, value, status, signature_status, public_token FROM contracts WHERE ${ownRecord('customer_id', 'email')} AND status NOT IN ('Draft','Superseded') ORDER BY id DESC`).all(cid, e)
       .map(k => ({ id: k.id, title: k.title || 'Contract', value: k.value, status: k.status, signature: k.signature_status, link: k.public_token && k.signature_status !== 'Signed' ? `/contract/${k.public_token}` : null }));
     const invoices = db.prepare(`SELECT id, invoice_number, amount, paid_amount, due_date, status FROM invoices WHERE ${ownRecord('customer_id', 'email')} AND status NOT IN ('Draft','Void') ORDER BY id DESC`).all(cid, e)
-      .map(i => ({ id: i.id, number: i.invoice_number, amount: i.amount, paid: i.paid_amount || 0, balance: Math.max(0, (i.amount || 0) - (i.paid_amount || 0)), due: i.due_date, status: i.status }));
+      .map(i => ({ id: i.id, number: i.invoice_number, amount: i.amount, paid: i.paid_amount || 0, balance: Math.max(0, require('./receivables').invoiceBalance(db, i.id).owed), due: i.due_date, status: i.status }));
     const projects = db.prepare(`SELECT p.name, p.status, p.progress, p.site_address FROM projects p LEFT JOIN contracts k ON k.id=p.contract_id WHERE ${ownRecord('COALESCE(p.customer_id,k.customer_id)', 'k.email')} ORDER BY p.id DESC`).all(cid, e)
       .map(p => ({ name: p.name, status: p.status, progress: p.progress || 0, site: p.site_address || '' }));
     // Scheduled visits: confirmed or in progress (tentative visits are not shown until they are confirmed).
