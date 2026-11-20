@@ -154,7 +154,20 @@ module.exports = function mountBids(app, ctx) {
     const pdfItems = (() => { try { const v = typeof e.line_items === 'string' ? JSON.parse(e.line_items || '[]') : (e.line_items || []); return Array.isArray(v) ? v : []; } catch { return []; } })();
     const winInt = (Number(e.windows_interior_panes) || 0) * (Number(e.windows_interior_rate) || 0), winExt = (Number(e.windows_exterior_panes) || 0) * (Number(e.windows_exterior_rate) || 0);
     if (winInt + winExt > 0) pdfItems.push({ description: 'Window cleaning' + (Number(e.windows_interior_panes) ? ': ' + Number(e.windows_interior_panes) + ' interior panes' : '') + (Number(e.windows_exterior_panes) ? (Number(e.windows_interior_panes) ? ', ' : ': ') + Number(e.windows_exterior_panes) + ' exterior panes' : ''), amount: Math.round((winInt + winExt) * 100) / 100 });
-    if (pdfItems.length) {
+    // Proposal options: each option's lines with its own total. The chosen option is marked.
+    const optList = (() => { try { return require('./proposal-options').optionsFor(db, e.id); } catch { return []; } })();
+    const chosenOpt = optList.find(o => o.id === Number(e.selected_option_id));
+    if (optList.length) {
+      d.heading('Options', 11);
+      for (const o of optList) {
+        const wk = o.duration_weeks ? ` (${o.duration_weeks} week${o.duration_weeks > 1 ? 's' : ''})` : '';
+        const bld = o.scope_kind === 'Per building' && o.building ? ` - ${o.building}` : '';
+        d.heading(`${o.label}${wk}${bld}${chosenOpt && chosenOpt.id === o.id ? '  [chosen]' : ''}`, 10);
+        for (const l of o.lines) d.para(`${l.description} - ${Number(l.quantity).toLocaleString('en-US')}${l.unit ? ' ' + l.unit : ''} at ${money(l.unit_price)}   ${money(l.amount)}`, { size: 9 });
+        d.para(`Option total: ${money(o.total)}${Number(e.tax_pct) > 0 ? ' before tax' : ''}`, { size: 9 });
+      }
+    }
+    if (pdfItems.length && !optList.length) {
       d.heading('Itemized pricing', 11);
       for (const i of pdfItems) {
         const qty = i.quantity != null && i.quantity !== '' ? ' \u2014 ' + Number(i.quantity).toLocaleString('en-US') + (i.unit ? ' ' + i.unit : '') + (i.unit_price != null && i.unit_price !== '' ? ' at ' + money(i.unit_price) : '') : '';
@@ -163,7 +176,15 @@ module.exports = function mountBids(app, ctx) {
       }
     }
     { const certs = require('./insurance').attachedFor(e.id).filter(c => c.status !== 'expired'); if (certs.length) { d.heading('Insurance certificates', 11); for (const c of certs) d.para([require('./insurance').KIND_LABEL[c.kind] || c.kind, c.holder, c.carrier, c.policy_no ? 'policy ' + c.policy_no : '', c.expires_on ? 'expires ' + c.expires_on : ''].filter(Boolean).join(' — ')); } }
-    d.gap(4); d.text(Number(e.tax_pct) > 0 ? 'Total project investment (one lump-sum price, tax included)' : 'Total project investment (one lump-sum price)', { size: 13, bold: true }); d.text(money(e.proposal_total), { size: 13, bold: true, align: 'right' }); d.y -= 22;
+    d.gap(4);
+    if (optList.length && !chosenOpt) {
+      const low = optList.reduce((m, o) => (o.total < m.total ? o : m), optList[0]);
+      d.text('Total project investment: choose one option above', { size: 13, bold: true }); d.text(`from ${money(low.total)}${Number(e.tax_pct) > 0 ? ' before tax' : ''}`, { size: 13, bold: true, align: 'right' }); d.y -= 22;
+    } else if (chosenOpt) {
+      d.text(`Total project investment: ${chosenOpt.label}`, { size: 13, bold: true }); d.text(money(e.proposal_total), { size: 13, bold: true, align: 'right' }); d.y -= 22;
+    } else {
+      d.text(Number(e.tax_pct) > 0 ? 'Total project investment (one lump-sum price, tax included)' : 'Total project investment (one lump-sum price)', { size: 13, bold: true }); d.text(money(e.proposal_total), { size: 13, bold: true, align: 'right' }); d.y -= 22;
+    }
     if (e.assumptions) { d.heading('Assumptions', 11); d.para(e.assumptions); }
     if (e.exclusions) { d.heading('Exclusions', 11); d.para(e.exclusions); }
     if (e.terms) { d.heading('Terms', 11); d.para(e.terms, { size: 9 }); }

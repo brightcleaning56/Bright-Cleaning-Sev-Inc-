@@ -492,7 +492,16 @@ async function startServer(env, dataDir) {
     const ok = await req('POST', `/api/proposal/${tok}/respond`, { json: { decision: 'approve', option_id: opt[1].id, signer_name: 'Pat Client', agree: true } });
     const after = (await req('GET', '/api/admin/estimates/' + id, { token: T })).data.estimate;
     assert(ok.status === 200 && after.status === 'Approved' && after.selected_option_id === opt[1].id && after.proposal_total === want2, JSON.stringify([ok.status, after.status, after.selected_option_id, after.proposal_total, want2]));
-    return `1-week $${want1} (after walkthrough $${put2.data.options[0].total}); 2-week $${want2}; client chose 2-week and the approved total is $${after.proposal_total}; price change kept with its reason`;
+    // The contract carries the chosen option's lines and its value. An approval may already have made the contract (auto hand-off).
+    const cc = await req('POST', `/api/admin/estimates/${id}/create-contract`, { token: T });
+    const cid = cc.status === 201 ? cc.data.contract_id : cc.data.contract_id;
+    const dbc = new (require('better-sqlite3'))(require('path').join(globalThis.__dataDir, 'brightclean.db'));
+    const crow = dbc.prepare('SELECT scope, value FROM contracts WHERE id=?').get(cid); dbc.close();
+    assert((cc.status === 201 || cc.status === 409) && crow && /Pricing option chosen: 2-week final clean/.test(crow.scope) && /Units/.test(crow.scope) && /\$47,520\.00/.test(crow.scope) && Number(crow.value) === want2, JSON.stringify([cc.status, crow]));
+    const pdf = await fetch(B + `/api/proposal/${tok}/pdf`);
+    const pdfBuf = Buffer.from(await pdf.arrayBuffer());
+    assert(pdf.status === 200 && pdfBuf.subarray(0, 4).toString() === '%PDF' && pdfBuf.length > 1500, JSON.stringify([pdf.status, pdfBuf.length]));
+    return `1-week $${want1} (after walkthrough $${put2.data.options[0].total}); 2-week $${want2}; client chose 2-week and the approved total is $${after.proposal_total}; price change kept with its reason; the proposal PDF is produced`;
   });
   await check('Proposals', 'Estimate rejects an invalid customer email', async () => {
     const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'x', scope: 'y', email: 'bad@email' } });

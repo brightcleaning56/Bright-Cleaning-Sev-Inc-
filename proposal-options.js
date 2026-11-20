@@ -176,6 +176,17 @@ module.exports = (app, { db, auth, logAction, clean }) => {
   });
 };
 
+// The scope text a contract starts with: the proposal scope, plus the chosen option's lines when one is chosen.
+function contractScope(db, e) {
+  const base = e.scope || '';
+  const chosen = optionsFor(db, e.id).find(o => o.id === Number(e.selected_option_id));
+  if (!chosen) return base;
+  const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const lines = chosen.lines.map(l => `- ${l.description}: ${Number(l.quantity).toLocaleString('en-US')}${l.unit ? ' ' + l.unit : ''} at ${money(l.unit_price)} = ${money(l.amount)}`);
+  return [base, `Pricing option chosen: ${chosen.label}`, ...lines, `Option subtotal ${money(chosen.total)}${Number(e.tax_pct) > 0 ? ' before tax' : ''}; contract value ${money(e.proposal_total)}.`].filter(Boolean).join('\n');
+}
+
+module.exports.contractScope = contractScope;
 module.exports.optionsFor = optionsFor;
 module.exports.signature = signature;
 module.exports.LOCKED = LOCKED;
