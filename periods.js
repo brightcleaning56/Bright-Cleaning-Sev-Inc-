@@ -30,6 +30,7 @@ function closePeriod(db, through, by) {
   if (!tb.balanced) throw new Error('The trial balance does not balance, so the period cannot be closed.');
   const id = db.prepare('INSERT INTO ledger_periods(closed_through,closed_at,closed_by,trial_balance_ok) VALUES(?,?,?,1)')
     .run(through, new Date().toISOString(), by || null).lastInsertRowid;
+  require('./audit').record(db, { actor: by, action: 'closed books', entity: 'period', entityId: id, detail: 'closed through ' + through });
   return { id, closed_through: through };
 }
 
@@ -46,6 +47,7 @@ function reconcileCash(db, { asOf, statementBalance, note, by }) {
   if (!Number.isFinite(sb)) throw new Error('Enter the bank statement balance as a number.');
   const ledgerBalance = L.trialBalance(db, { asOf }).accounts.find(a => a.code === '1000').balance;
   const difference = r2(sb - ledgerBalance);
+  require('./audit').record(db, { actor: by, action: 'bank reconciliation', entity: 'cash', entityId: asOf, detail: 'statement ' + r2(sb).toFixed(2) + ', ledger ' + r2(ledgerBalance).toFixed(2) + ', difference ' + difference.toFixed(2) });
   const id = db.prepare('INSERT INTO bank_reconciliations(as_of,statement_balance,ledger_balance,difference,note,reconciled_by,created_at) VALUES(?,?,?,?,?,?,?)')
     .run(asOf, r2(sb), r2(ledgerBalance), difference, String(note || '').slice(0, 300), by || null, new Date().toISOString()).lastInsertRowid;
   return { id, as_of: asOf, statement_balance: r2(sb), ledger_balance: r2(ledgerBalance), difference, matched: difference === 0,

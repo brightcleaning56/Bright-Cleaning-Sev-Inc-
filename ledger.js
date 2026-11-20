@@ -113,6 +113,7 @@ function reverseEntry(db, entryId, { reason, by = 'system' } = {}) {
   if (e.reverses_id) throw new Error('A reversing entry cannot itself be reversed.');
   if (db.prepare('SELECT 1 FROM ledger_entries WHERE reverses_id=?').get(e.id)) throw new Error('This entry has already been reversed.');
   if (!String(reason || '').trim()) throw new Error('Give a reason for the reversal.');
+  require('./audit').record(db, { actor: by, action: 'reversed entry', entity: 'ledger_entry', entityId: e.id, detail: String(reason).trim() });
   const lines = db.prepare('SELECT account_code, debit_cents, credit_cents FROM ledger_lines WHERE entry_id=?').all(e.id);
   return postEntry(db, {
     date: new Date().toISOString().slice(0, 10), memo: `Reversal of entry ${e.id}: ${reason}`, source: 'reversal', sourceRef: String(e.id), by, reverses: e.id,

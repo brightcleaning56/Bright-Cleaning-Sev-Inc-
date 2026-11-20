@@ -95,6 +95,7 @@ function mount(app, ctx) {
   app.post('/api/admin/ledger/sync', auth, (req, res) => {
     try {
       const out = syncAll(db), ex = require('./expenses').syncRecorded(db);
+      require('./audit').record(db, { actor: req.user && req.user.email, action: 'ran ledger sync', entity: 'ledger', detail: `invoices ${out.invoices_posted}, payments ${out.payments_posted}, bills ${ex.bills_posted}, job costs ${ex.project_costs_posted}, payroll ${ex.payroll_posted}, burden ${ex.burden_posted || 0}` });
       res.json({ ok: true, invoices_posted: out.invoices_posted, invoices_reversed: out.invoices_reversed, payments_posted: out.payments_posted, bills_posted: ex.bills_posted, project_costs_posted: ex.project_costs_posted, payroll_posted: ex.payroll_posted, errors: [...out.errors, ...ex.errors], tie_out: tieOut(db), cost_drift: require('./expenses').costDrift(db) });
     }
     catch (e) { res.status(500).json({ error: 'The ledger sync failed: ' + e.message }); }
@@ -107,6 +108,7 @@ function mount(app, ctx) {
     if (!Number.isFinite(tax) || tax < 0 || tax > 1e7) return res.status(400).json({ error: 'Sales tax must be zero or more.' });
     if (postedEntry(db, 'invoice', 'invoice:' + inv.id)) return res.status(409).json({ error: 'This invoice is already on the ledger. Void it and issue a corrected invoice to change its tax.' });
     db.prepare('UPDATE invoices SET tax_amount=? WHERE id=?').run(Math.round(tax * 100) / 100, inv.id);
+    require('./audit').record(db, { actor: req.user && req.user.email, action: 'set sales tax', entity: 'invoice', entityId: inv.id, detail: 'sales tax ' + (Math.round(tax * 100) / 100).toFixed(2) + ' (was ' + Number(inv.tax_amount || 0).toFixed(2) + ')' });
     res.json({ ok: true, tax_amount: Math.round(tax * 100) / 100 });
   });
   app.get('/api/admin/receivables/tie-out', auth, (req, res) => res.json(tieOut(db)));
