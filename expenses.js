@@ -18,7 +18,7 @@ function ensureSchema(db) {
     paid_at TEXT, created_by TEXT, created_at TEXT NOT NULL)`);
   // Receipts and approvals (audit G11). Added on first use; switched on by settings (both off by default).
   const cols = db.prepare('PRAGMA table_info(expense_bills)').all().map(c => c.name);
-  for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
+  for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT'], ['receipt_file', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
 }
 // Settings that make approval and a receipt required before a bill is paid. Both are off until the owner turns them on.
 function billRule(db, key) {
@@ -197,9 +197,41 @@ function costDrift(db) {
   return drift;
 }
 
-function mount(app, ctx) {
-  const { db, auth } = ctx;
+// Receipt files for bills (audit G11). The file is stored by the upload guard (virus check and type check) under a random name.
+// The bill keeps the original name as its receipt reference. Only owners and managers can attach or download.
+function attachReceipt(db, { billId, file, by, uploadDir }) {
   ensureSchema(db);
+  const b = db.prepare('SELECT id, vendor, amount FROM expense_bills WHERE id=?').get(Number(billId));
+  if (!b) throw new Error('Bill not found.');
+  if (!file || !file.filename) throw new Error('Choose a receipt file.');
+  const name = String(file.originalname || file.filename).slice(0, 300);
+  db.prepare("UPDATE expense_bills SET receipt_file=?, receipt_ref=COALESCE(NULLIF(receipt_ref,''), ?) WHERE id=?").run(file.filename, name, b.id);
+  require('./audit').record(db, { actor: by, action: 'attached receipt', entity: 'bill', entityId: b.id, detail: name });
+  return { id: b.id, receipt: name };
+}
+
+function receiptPath(db, billId, uploadDir) {
+  ensureSchema(db);
+  const b = db.prepare('SELECT receipt_file, receipt_ref FROM expense_bills WHERE id=?').get(Number(billId));
+  if (!b || !b.receipt_file) return null;
+  const path = require('path'), fs = require('fs');
+  const p = path.join(uploadDir, path.basename(b.receipt_file));
+  if (!fs.existsSync(p)) return null;
+  return { path: p, name: b.receipt_ref || b.receipt_file };
+}
+
+function mount(app, ctx) {
+  const { db, auth, upload, uploadDir } = ctx;
+  ensureSchema(db);
+  app.post('/api/admin/expenses/:id/receipt', auth, ...(upload ? upload.single('receipt') : []), (req, res) => {
+    try { res.status(201).json({ ok: true, ...attachReceipt(db, { billId: req.params.id, file: req.file, by: req.user && req.user.email, uploadDir }) }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  app.get('/api/admin/expenses/:id/receipt', auth, (req, res) => {
+    const r = receiptPath(db, req.params.id, uploadDir);
+    if (!r) return res.status(404).json({ error: 'No receipt is attached to this bill.' });
+    res.download(r.path, r.name);
+  });
   app.get('/api/admin/expenses', auth, (req, res) => res.json({ bills: db.prepare('SELECT * FROM expense_bills ORDER BY id DESC LIMIT 300').all() }));
   app.post('/api/admin/expenses', auth, (req, res) => {
     try { const id = createBill(db, req.body || {}, req.user && req.user.email); res.status(201).json({ ok: true, id }); }
@@ -220,4 +252,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, createBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, mount };
+module.exports = { ensureSchema, createBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, mount };

@@ -82,7 +82,7 @@ const ROLE_RULES=[
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/invoices\/\d+\/(deposit|earn)$/,roles:['owner','manager'],why:'Deposits and earned revenue are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/(adjustments|entries\/\d+\/reverse)$/,roles:['owner','manager'],why:'Only an owner or manager can post adjustments or reversals.'},
   {m:/^GET$/,p:/^\/api\/admin\/receivables\/tie-out$/,roles:['owner','manager'],why:'Receivables tie-out is limited to owners and managers.'},
-  {m:/^(GET|POST)$/,p:/^\/api\/admin\/expenses(\/\d+\/(pay|approve))?$/,roles:['owner','manager'],why:'Bills and payments are limited to owners and managers.'},
+  {m:/^(GET|POST)$/,p:/^\/api\/admin\/expenses(\/\d+\/(pay|approve|receipt))?$/,roles:['owner','manager'],why:'Bills and payments are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/periods\/close$/,roles:['owner'],why:'Only an owner can close the books for a period.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/reconciliations$/,roles:['owner','manager'],why:'Bank reconciliations are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/invoices\/\d+\/tax$/,roles:['owner','manager'],why:'Only an owner or manager can set sales tax on an invoice.'},
@@ -173,7 +173,7 @@ require('./leadlog').mount(app,{db,auth,roleOf:roleFor,touchLead:app.locals.touc
 require('./scopes')(app,{db,auth,logAction,clean});
 require('./command')(app,{db,auth,adminEmail});
 require('./integrity')(app,{db,auth});
-require('./intake')(app,{db,upload,clean,isEmail,notify,logLead,getOps:()=>ops,path,fs});require('./spam-screen').mount(app,{db,auth});require('./ledger').mount(app,{db,auth});require('./contract-value').mount(app,{db,auth});require('./job-cost').mount(app,{db,auth});require('./invoice-ledger').mount(app,{db,auth});require('./expenses').mount(app,{db,auth});require('./ledger-reports').mount(app,{db,auth});require('./periods').mount(app,{db,auth});require('./exports').mount(app,{db,auth});require('./trace').mount(app,{db,auth});require('./receivables').mount(app,{db,auth});require('./aging').mount(app,{db,auth});require('./audit').mount(app,{db,auth});require('./bank').mount(app,{db,auth});require('./task-costs').mount(app,{db,auth});require('./compare').mount(app,{db,auth});
+require('./intake')(app,{db,upload,clean,isEmail,notify,logLead,getOps:()=>ops,path,fs});require('./spam-screen').mount(app,{db,auth});require('./ledger').mount(app,{db,auth});require('./contract-value').mount(app,{db,auth});require('./job-cost').mount(app,{db,auth});require('./invoice-ledger').mount(app,{db,auth});require('./expenses').mount(app,{db,auth,upload,uploadDir});require('./ledger-reports').mount(app,{db,auth});require('./periods').mount(app,{db,auth});require('./exports').mount(app,{db,auth});require('./trace').mount(app,{db,auth});require('./receivables').mount(app,{db,auth});require('./aging').mount(app,{db,auth});require('./audit').mount(app,{db,auth});require('./bank').mount(app,{db,auth});require('./task-costs').mount(app,{db,auth});require('./compare').mount(app,{db,auth});
 require('./approvals')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./suite')(app,{db,auth,logAction,clean,upload,path,fs,getOps:()=>ops,isEmail});
 // Email Center log: record every email the system sends (or fails to send) through the configured provider.

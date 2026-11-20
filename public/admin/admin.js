@@ -2341,7 +2341,7 @@
     const rowsOf = list => list.length ? list.map(x => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${money(x.amount)}</td></tr>`).join('') : '<tr><td colspan="3" class="muted">Nothing posted yet.</td></tr>';
     const total = (label, v) => `<tr><th colspan="2">${esc(label)}</th><th class="num">${money(v)}</th></tr>`;
     const tieBadge = tie.tied_out ? '<span class="pill st-Approved">Tied out</span>' : '<span class="pill st-Declined">Not tied out</span>';
-    const billRows = (bills.bills || []).map(b => `<tr><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}</td><td>${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
+    const billRows = (bills.bills || []).map(b => `<tr><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}</td><td>${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
     const reconRows = (recs.reconciliations || []).slice(0, 10).map(r => `<tr><td>${esc(r.as_of)}</td><td class="num">${money(r.statement_balance)}</td><td class="num">${money(r.ledger_balance)}</td><td class="num">${money(r.difference)}</td><td>${esc(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No reconciliations yet.</td></tr>';
     const driftRows = (drift.drift || []).map(d => `<li>${esc(d.ref)}: ${esc(d.issue)}</li>`).join('') || '<li class="muted">No recorded costs changed after posting.</li>';
     const openRows = (tie.unposted || []).map(i => `<tr><td>${esc(i.invoice_number || i.id)}</td><td class="num">${money(i.amount)}</td><td class="num">${money(i.tax_amount)}</td><td><button class="btn small ghost" data-acctax="${i.id}" type="button">Set sales tax</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Every invoice is on the ledger.</td></tr>';
@@ -2502,6 +2502,26 @@
       openForm({ title: 'Sales tax on ' + (inv.invoice_number || 'invoice'), sub: 'Tax on this invoice posts to sales tax payable. Revenue stays the invoice amount.',
         defs: [{ name: 'tax_amount', label: 'Sales tax ($)', type: 'number' }, { name: 'billing_kind', label: 'Billing', type: 'select', options: [['arrears', 'Work done (revenue on issue)'], ['advance', 'Paid ahead (deposit until earned)']] }], values: { tax_amount: inv.tax_amount || 0, billing_kind: inv.billing_kind || 'arrears' },
         submit: b => api('/api/admin/invoices/' + inv.id + '/tax', { method: 'POST', json: { tax_amount: b.tax_amount, billing_kind: b.billing_kind } }), after: () => { toast('Sales tax saved'); loadAccounting(); } });
+    });
+    body.querySelectorAll('[data-accattach]').forEach(btn => btn.onclick = () => {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip';
+      inp.onchange = async () => {
+        const f = inp.files && inp.files[0]; if (!f) return;
+        const fd = new FormData(); fd.append('receipt', f);
+        try { await api('/api/admin/expenses/' + btn.dataset.accattach + '/receipt', { method: 'POST', body: fd }); toast('Receipt attached'); loadAccounting(); }
+        catch (err) { toast(err.message, true); }
+      };
+      inp.click();
+    });
+    body.querySelectorAll('[data-accview]').forEach(btn => btn.onclick = async () => {
+      try {
+        const r = await fetch('/api/admin/expenses/' + btn.dataset.accview + '/receipt', { credentials: 'same-origin' });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'The receipt could not be opened.');
+        const url = URL.createObjectURL(await r.blob());
+        window.open(url, '_blank', 'noopener');
+      } catch (err) { toast(err.message, true); }
     });
     body.querySelectorAll('[data-accappr]').forEach(btn => btn.onclick = async () => {
       try { await api('/api/admin/expenses/' + btn.dataset.accappr + '/approve', { method: 'POST', json: {} }); toast('Bill approved'); loadAccounting(); }
