@@ -51,4 +51,14 @@ assert.strictEqual(drift.length, 2, 'two drift items');
 assert.ok(drift.some(d => /changed/.test(d.issue)) && drift.some(d => /deleted/.test(d.issue)));
 console.log('ok - costs changed or deleted after posting are flagged, not re-posted');
 
+// Pay-rate snapshot: an entry approved at $15 keeps $15 after the employee's rate changes to $40.
+E.syncRecorded(db); // makes sure the labor_rate column exists
+db.prepare("INSERT INTO time_entries(id,employee_id,project_id,clock_in,minutes,approved_by,cost_id,labor_rate) VALUES(4,1,NULL,'2026-11-25T08:00:00Z',60,'owner',NULL,15)").run();
+db.prepare("UPDATE employees SET hourly_rate=40 WHERE id=1").run();
+const before = L.trialBalance(db).accounts.find(a => a.code === '6100').balance;
+E.syncRecorded(db);
+const after = L.trialBalance(db).accounts.find(a => a.code === '6100').balance;
+assert.strictEqual(Math.round((after - before) * 100) / 100, 15, 'posted at the snapshot rate, not the new 40 rate');
+console.log('ok - a later pay-rate change does not change an approved entry');
+
 console.log('\nAll expense checks passed.');

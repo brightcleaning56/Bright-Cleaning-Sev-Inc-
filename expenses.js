@@ -19,6 +19,11 @@ function ensureSchema(db) {
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
 const postedEntry = (db, source, ref) => db.prepare('SELECT id FROM ledger_entries WHERE source=? AND source_ref=? AND reverses_id IS NULL').get(source, ref);
+// Each approved time entry keeps the pay rate in force when it was approved (labor_rate). Older entries fall back to the employee's rate.
+function ensureRateColumn(db) {
+  const cols = db.prepare('PRAGMA table_info(time_entries)').all().map(c => c.name);
+  if (cols.length && !cols.includes('labor_rate')) db.exec('ALTER TABLE time_entries ADD COLUMN labor_rate REAL');
+}
 const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
 
 function postBill(db, id) {
@@ -65,7 +70,7 @@ function payBill(db, id, { date, by } = {}) {
 
 // Posts recorded project costs, bills and approved unassigned time that are not yet on the ledger.
 function syncRecorded(db) {
-  ensureSchema(db); L.seedChart(db);
+  ensureSchema(db); L.seedChart(db); ensureRateColumn(db);
   const out = { bills_posted: 0, project_costs_posted: 0, payroll_posted: 0, errors: [] };
   for (const b of db.prepare("SELECT id FROM expense_bills WHERE status<>'Void' ORDER BY id").all()) {
     try { if (postBill(db, b.id)) out.bills_posted++; } catch (e) { out.errors.push('bill ' + b.id + ': ' + e.message); }
@@ -87,7 +92,7 @@ function syncRecorded(db) {
     }
   }
   if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
-    const rows = db.prepare('SELECT t.*, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all();
+    const rows = db.prepare('SELECT t.*, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all();
     for (const t of rows) {
       const ref = 'time:' + t.id;
       const amount = r2((Number(t.minutes) || 0) / 60 * (Number(t.hourly_rate) || 0));
@@ -114,6 +119,7 @@ function burdenPct(db) {
 function syncBurden(db) {
   const pct = burdenPct(db);
   if (!pct) return 0;
+  ensureRateColumn(db);
   let n = 0;
   const post = (ref, base, date, memo, account) => {
     const amt = r2(base * pct / 100);
@@ -129,7 +135,7 @@ function syncBurden(db) {
     }
   }
   if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
-    for (const t of db.prepare('SELECT t.*, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all()) {
+    for (const t of db.prepare('SELECT t.*, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all()) {
       if (!postedEntry(db, 'payroll', 'time:' + t.id)) continue;
       const base = (Number(t.minutes) || 0) / 60 * (Number(t.hourly_rate) || 0);
       post('burden:time:' + t.id, base, String(t.clock_in).slice(0, 10), 'Labor burden on unassigned time ' + t.id, '6100');

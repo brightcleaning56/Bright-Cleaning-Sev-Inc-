@@ -343,7 +343,8 @@ module.exports = function mountSched(app, ctx) {
     let costId = null; const cost = Math.round(t.minutes / 60 * (t.hourly_rate || 0) * 100) / 100;
     // The cost is dated on the business day of the shift (company time zone), not the UTC day.
     if (t.project_id && cost > 0) { try { costId = db.prepare("INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at) VALUES(?,'Labor',?,?,?,?,?)").run(t.project_id, `Time: ${t.name} ${(t.minutes / 60).toFixed(2)} h`, cost, require('./bizdate').today(new Date(t.clock_in)), who(req), now()).lastInsertRowid; } catch { /* projects module absent */ } }
-    db.prepare('UPDATE time_entries SET approved_by=?, approved_at=?, cost_id=? WHERE id=?').run(who(req), now(), costId, t.id);
+    try { db.exec('ALTER TABLE time_entries ADD COLUMN labor_rate REAL'); } catch { /* column already exists */ }
+    db.prepare('UPDATE time_entries SET approved_by=?, approved_at=?, cost_id=?, labor_rate=? WHERE id=?').run(who(req), now(), costId, Number(t.hourly_rate) || 0, t.id);
     logAction(req, 'approved time', 'employee', t.employee_id, `${t.name}: ${(t.minutes / 60).toFixed(2)} h${costId ? `, $${cost} labor posted to project` : ''}`);
     res.json({ ok: true, cost, posted: !!costId });
   });

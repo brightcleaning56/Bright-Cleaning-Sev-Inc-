@@ -35,7 +35,7 @@ function jobCostReport(db, projectId) {
   // Approved time that has not been posted to a cost yet (cost_id is empty).
   let unposted = 0, unpostedMinutes = 0;
   if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
-    const rows = db.prepare(`SELECT t.minutes, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id
+    const rows = db.prepare(`SELECT t.minutes, ${db.prepare('PRAGMA table_info(time_entries)').all().some(c => c.name === 'labor_rate') ? 'COALESCE(t.labor_rate, e.hourly_rate)' : 'e.hourly_rate'} AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id
       WHERE t.project_id=? AND t.approved_by IS NOT NULL AND t.cost_id IS NULL`).all(p.id);
     for (const t of rows) { unpostedMinutes += Number(t.minutes) || 0; unposted += ((Number(t.minutes) || 0) / 60) * (Number(t.hourly_rate) || 0); }
   }
