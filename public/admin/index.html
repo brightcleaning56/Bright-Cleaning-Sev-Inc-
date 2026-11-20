@@ -785,6 +785,7 @@
       <button data-view="takeoffs">Takeoffs</button>
       <div class="sep"></div>
       <button data-view="reports">Reports</button>
+      <button data-view="accounting">Accounting</button>
       <button data-view="scopes">Cleaning scopes <span class="count" id="navScopes" hidden></span></button>
       <button data-view="website">Website photos &amp; video</button>
       <button data-view="activity">Activity log</button>
@@ -974,6 +975,7 @@
       <div class="kpis6" id="takeoffKpis"></div>
       <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Takeoff</th><th>Drawing set</th><th>Category</th><th class="num">Building SF</th><th class="num">Lines</th><th class="num">Priced</th><th>Status</th><th></th></tr></thead><tbody id="takeoffsRows"></tbody></table></div>
     </section>
+    <section class="view" id="v-accounting"><div class="pagehead"><div><h1>Accounting</h1><p>Bright Clean's own ledger, read from posted entries. Owners and managers only.</p></div><div class="headact"><button class="btn ghost" id="accSync" type="button">Post to ledger</button></div></div><div id="accBody"></div></section>
     <section class="view" id="v-reports">
       <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><div class="headact"><button class="btn ghost" id="repCsv" type="button">Export CSV</button><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select><span id="repAcct"><button class="btn ghost" id="acctInv" type="button">Invoices for QuickBooks</button><button class="btn ghost" id="acctPay" type="button">Payments for QuickBooks</button><button class="btn ghost" id="acctHrs" type="button">Payroll hours</button><button class="btn ghost" id="acctTot" type="button">Pay preview and ADP totals</button></span></div></div>
       <div class="segtabs" id="repTabs" role="tablist"><button data-rt="overview" class="on">Overview</button><button data-rt="pl">Profit &amp; loss</button><button data-rt="aging">A/R aging</button><button data-rt="labor">Labor</button><button data-rt="projects">Project profitability</button><button data-rt="sched">Scheduled reports</button></div>

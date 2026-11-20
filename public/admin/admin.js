@@ -500,7 +500,7 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['website', 'overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'scopes', 'activity', 'settings', 'insurance'];
+  const VIEWS = ['website', 'overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'accounting', 'scopes', 'activity', 'settings', 'insurance'];
   function go(view, replace) {
     view = String(view || '').split('/')[0];
     if (view === 'customer') view = 'customers';
@@ -552,6 +552,7 @@
       if (view === 'quality') await loadQuality();
       if (view === 'documents') await loadDocuments();
       if (view === 'reports') await loadReports();
+      if (view === 'accounting') await loadAccounting();
       if (view === 'emails') await loadEmails();
       if (view === 'takeoffs') await loadTakeoffs();
       if (view === 'scopes') await loadScopes();
@@ -2325,6 +2326,68 @@
     } catch (err) { msg.className = 'msg err'; msg.textContent = err.message; }
     finally { $('#estSave').disabled = false; }
   });
+
+  // ---------- Accounting: Bright Clean's own ledger (owners and managers) ----------
+  async function loadAccounting() {
+    const body = $('#accBody'); if (!body) return;
+    body.innerHTML = '<p class="muted">Loading the books…</p>';
+    let pl, bs, tie, periods, recs, bills, drift;
+    try {
+      [pl, bs, tie, periods, recs, bills, drift] = await Promise.all([
+        api('/api/admin/ledger/pnl'), api('/api/admin/ledger/balance-sheet'), api('/api/admin/receivables/tie-out'),
+        api('/api/admin/ledger/periods'), api('/api/admin/ledger/reconciliations'), api('/api/admin/expenses'), api('/api/admin/ledger/cost-drift')]);
+    } catch (err) { body.innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; return; }
+    const rowsOf = list => list.length ? list.map(x => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${money(x.amount)}</td></tr>`).join('') : '<tr><td colspan="3" class="muted">Nothing posted yet.</td></tr>';
+    const total = (label, v) => `<tr><th colspan="2">${esc(label)}</th><th class="num">${money(v)}</th></tr>`;
+    const tieBadge = tie.tied_out ? '<span class="pill st-Approved">Tied out</span>' : '<span class="pill st-Declined">Not tied out</span>';
+    const billRows = (bills.bills || []).map(b => `<tr><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}</td><td>${b.status === 'Open' ? `<button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
+    const reconRows = (recs.reconciliations || []).slice(0, 10).map(r => `<tr><td>${esc(r.as_of)}</td><td class="num">${money(r.statement_balance)}</td><td class="num">${money(r.ledger_balance)}</td><td class="num">${money(r.difference)}</td><td>${esc(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No reconciliations yet.</td></tr>';
+    const driftRows = (drift.drift || []).map(d => `<li>${esc(d.ref)}: ${esc(d.issue)}</li>`).join('') || '<li class="muted">No recorded costs changed after posting.</li>';
+    const closedTo = periods.closed_through ? 'Closed through ' + esc(periods.closed_through) : 'Books are open (not closed yet)';
+    body.innerHTML = `
+      <div class="kpis6">${kt('money', 'navy', 'Revenue (posted)', money(pl.revenue_total), 'from invoices')}${kt('check', 'green', 'Gross profit', money(pl.gross_profit), pl.gross_margin_pct == null ? '' : pl.gross_margin_pct + '% margin')}${kt('money', 'blue', 'Net profit', money(pl.net_profit), 'after operating costs')}${kt('clock', 'amber', 'Owed by customers', money(tie.invoices_owed), 'ledger receivable ' + money(tie.ledger_receivable))}</div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Receivables tie-out ${tieBadge}</h2>
+        <p class="muted">Difference between what customers owe and the ledger's receivable: <b>${money(tie.difference)}</b>. Unposted invoices: ${tie.unposted_invoices}. Unposted payments: ${tie.unposted_payments}.</p>
+        <p class="muted">${esc(tie.gap)}</p></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Profit and loss</h2>
+        <div class="tablewrap"><table class="t"><thead><tr><th>Code</th><th>Account</th><th class="num">Amount</th></tr></thead><tbody>
+          ${rowsOf(pl.revenue)}${total('Revenue', pl.revenue_total)}${rowsOf(pl.cost_of_services)}${total('Cost of services', pl.cost_of_services_total)}${total('Gross profit', pl.gross_profit)}${rowsOf(pl.operating_expenses)}${total('Operating expenses', pl.operating_expenses_total)}${total('Net profit', pl.net_profit)}
+        </tbody></table></div>
+        <p class="muted">${(pl.notes || []).map(esc).join(' ')}</p></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Balance sheet ${bs.balances ? '<span class="pill st-Approved">Balances</span>' : '<span class="pill st-Declined">Off by ' + money(bs.difference) + '</span>'}</h2>
+        <div class="tablewrap"><table class="t"><tbody>
+          ${rowsOf(bs.assets)}${total('Assets', bs.assets_total)}${rowsOf(bs.liabilities)}${total('Liabilities', bs.liabilities_total)}${rowsOf(bs.equity)}${total('Equity', bs.equity_total)}${total('Earnings to date', bs.earnings_to_date)}
+        </tbody></table></div></div>
+      <div class="card" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bills and expenses</h2><button class="btn small" id="accNewBill" type="button">New bill</button></div>
+        <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Periods</h2>
+        <p class="muted">${closedTo}. Once closed, nothing can be posted on or before that date.</p>
+        <button class="btn small" id="accClose" type="button">Close the books through a date</button></div>
+      <div class="card" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bank reconciliation</h2><button class="btn small" id="accRecon" type="button">Reconcile cash</button></div>
+        <div class="tablewrap"><table class="t"><thead><tr><th>As of</th><th class="num">Bank</th><th class="num">Ledger</th><th class="num">Difference</th><th>Note</th></tr></thead><tbody>${reconRows}</tbody></table></div></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Recorded costs changed after posting</h2><ul>${driftRows}</ul></div>`;
+    $('#accSync').onclick = async () => {
+      if (!confirm('Post invoices, bills, job costs and unassigned payroll to the ledger? Posted entries cannot be edited, only reversed.')) return;
+      try { const r = await api('/api/admin/ledger/sync', { method: 'POST' }); toast(`Posted: ${r.invoices_posted} invoice(s), ${r.payments_posted} payment(s), ${r.bills_posted} bill(s), ${r.project_costs_posted} job cost(s), ${r.payroll_posted} payroll line(s)`); loadAccounting(); }
+      catch (err) { toast(err.message, true); }
+    };
+    $('#accNewBill').onclick = () => openForm({ title: 'New bill', sub: 'Recorded as an expense when entered. Mark it paid when it is paid.',
+      defs: [{ name: 'vendor', label: 'Vendor' }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example materials, equipment, insurance)' },
+        { name: 'amount', label: 'Amount ($)', type: 'number' }, { name: 'bill_date', label: 'Bill date', type: 'date' }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
+      submit: b => api('/api/admin/expenses', { method: 'POST', json: b }), after: () => { toast('Bill saved'); loadAccounting(); } });
+    body.querySelectorAll('[data-accpay]').forEach(btn => btn.onclick = async () => {
+      if (!confirm('Mark this bill paid today? The payment posts to the ledger.')) return;
+      try { await api('/api/admin/expenses/' + btn.dataset.accpay + '/pay', { method: 'POST', json: {} }); toast('Bill marked paid'); loadAccounting(); }
+      catch (err) { toast(err.message, true); }
+    });
+    $('#accClose').onclick = () => openForm({ title: 'Close the books', sub: 'After this, nothing can be posted on or before the date. Close only after the period is final.',
+      defs: [{ name: 'through', label: 'Close through (date)', type: 'date' }],
+      submit: b => api('/api/admin/ledger/periods/close', { method: 'POST', json: { through: b.through } }), after: () => { toast('Books closed'); loadAccounting(); } });
+    $('#accRecon').onclick = () => openForm({ title: 'Bank reconciliation', sub: 'Enter the bank statement balance for the date.',
+      defs: [{ name: 'as_of', label: 'As of (date)', type: 'date' }, { name: 'statement_balance', label: 'Bank statement balance ($)', type: 'number' }, { name: 'note', label: 'Note', wide: true }],
+      submit: b => api('/api/admin/ledger/reconciliations', { method: 'POST', json: b }),
+      after: r => { toast(r.matched ? 'Matched to the ledger' : 'Difference ' + money(r.difference) + ': ' + r.next_step); loadAccounting(); } });
+  }
 
   // ---------- Contracts / projects / invoices ----------
   const REG = {
