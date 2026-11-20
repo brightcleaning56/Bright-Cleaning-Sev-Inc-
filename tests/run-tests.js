@@ -1190,6 +1190,13 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(a.status === 400 && /resolved/.test(a.data.error) && b.status === 400 && /corrective action/.test(b.data.error) && /Update the customer/.test(b.data.error) && b2.status === 400 && /corrective action/.test(b2.data.error) && c.status === 200 && c.data.issue.resolved_at && !c.data.issue.overdue && closeUnverified.status === 400 && /verified/.test(closeUnverified.data.error) && v.status === 200 && v.data.issue.status === 'Verified' && v.data.issue.verified_by === OWNER && cl.status === 200 && log.some(e => e.entity === 'complaint' && e.action === 'resolved') && log.some(e => e.entity === 'complaint' && e.action === 'verified'), JSON.stringify([a.data, b.data, b2.data, closeUnverified.data, v.data]));
     return `no resolution 400; no corrective action 400; customer not updated 400; resolved; close before verification 400; verified by ${v.data.issue.verified_by}; closed; all logged`;
   });
+  await check('Issues', 'Unknown or inherited type names are refused with 400, not a server error', async () => {
+    const made = await req('POST', '/api/admin/issues', { token: T, json: { type: 'constructor', title: 'Bad type' } });
+    const patched = await req('PATCH', '/api/admin/issues/' + complaintId, { token: T, json: { type: 'toString' } });
+    const listed = await req('GET', '/api/admin/issues?type=constructor', { token: T });
+    assert(made.status === 400 && patched.status === 400 && listed.status === 200, JSON.stringify([made.status, patched.status, listed.status]));
+    return 'create and change with inherited type names return 400; the type filter ignores them';
+  });
   await check('Issues', 'Reopen clears the resolved date; notes default to closed and can be deleted; complaints cannot', async () => {
     const r = await req('PATCH', '/api/admin/issues/' + complaintId, { token: T, json: { status: 'Open' } });
     const n = await req('POST', '/api/admin/issues', { token: T, json: { type: 'note', title: 'Prefers calls after 3pm', customer_id: cust0.id } });

@@ -1,6 +1,8 @@
 // Issues & Tasks: complaints, service requests, incidents, employee tasks, follow-ups and internal notes.
 // Internal only: no public route reads these tables.
 const TYPES = { complaint: 'Complaint', service_request: 'Service request', incident: 'Incident', task: 'Task', follow_up: 'Follow-up', note: 'Note' };
+// Only the listed type names are valid. A plain TYPES[x] lookup also finds inherited names such as "constructor".
+const hasType = t => typeof t === 'string' && Object.prototype.hasOwnProperty.call(TYPES, t);
 const PREFIX = { complaint: 'ISS', service_request: 'REQ', incident: 'INC', task: 'TSK', follow_up: 'FUP', note: 'NOTE' };
 const LEGACY_CATEGORIES = ['Quality', 'Schedule', 'Billing', 'Safety', 'Damage', 'Staff conduct', 'Site access', 'Scope change', 'Sales', 'Other'];
 const DEFAULT_CATEGORIES = ['Cleaning quality', 'Missed service', 'Schedule', 'Billing / payment', 'Safety', 'Damage / incident', 'Staff conduct', 'Site access', 'Scope change', 'Supplies / equipment', 'Inspection', 'Sales', 'General'];
@@ -47,7 +49,7 @@ module.exports = function mountIssues(app, ctx) {
   function validate(b, cur) {
     const out = {}, errs = [];
     const pick = (k, list, label) => { if (k in b) { if (!list.includes(b[k])) errs.push(`Choose a valid ${label}.`); else out[k] = b[k]; } };
-    if (!cur || 'type' in b) { if (!TYPES[b.type]) errs.push('Choose a type: complaint, service request, incident, task, follow-up or note.'); else out.type = b.type; }
+    if (!cur || 'type' in b) { if (!hasType(b.type)) errs.push('Choose a type: complaint, service request, incident, task, follow-up or note.'); else out.type = b.type; }
     if (!cur || 'title' in b) { const t = clean(b.title, 200); if (!t) errs.push('A short title is required.'); else out.title = t; }
     pick('category', ['', ...categories(), ...LEGACY_CATEGORIES], 'category'); pick('priority', PRIORITIES, 'priority');
     pick('status', STATUSES, 'status'); pick('customer_comms', COMMS, 'customer update status');
@@ -84,7 +86,7 @@ module.exports = function mountIssues(app, ctx) {
     if (q.project_id) { where.push('i.project_id=?'); args.push(Number(q.project_id)); }
     if (q.group === 'issues') where.push("i.type='complaint'"); else if (q.group === 'tasks') where.push("i.type IN ('task','follow_up')");
     else if (q.group === 'notes') where.push("i.type='note'"); else if (q.group === 'requests') where.push("i.type='service_request'"); else if (q.group === 'incidents') where.push("i.type='incident'");
-    if (TYPES[q.type]) { where.push('i.type=?'); args.push(q.type); }
+    if (hasType(q.type)) { where.push('i.type=?'); args.push(q.type); }
     for (const [k, col] of [['category', 'category'], ['priority', 'priority'], ['source', 'source']]) if (q[k]) { where.push(`i.${col}=?`); args.push(q[k]); }
     if (q.assigned === 'me' && who(req)) { where.push('lower(i.assigned_to)=?'); args.push(who(req)); }
     else if (q.assigned === 'none') where.push("(i.assigned_to IS NULL OR i.assigned_to='')");
