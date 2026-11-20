@@ -23,9 +23,9 @@ Last updated: 2026-11-15.
 - **QC-1001 and QC-1002 are overdue.** Approve the corrective-cleaning visits, and approve the customer reply for QC-1001. QC-1002 is linked to a ZZ TEST customer and needs the real customer.
 - **Two customers left Active on purpose:** "Eric Moore" (info@compass.com) and "Cutler Construction". Set them Inactive?
 - **Microsoft 365 inbox** needs an app registration on your Microsoft account.
-- **Overdue follow-ups:** "Call back Danielle Kelly" (due Nov 11) and "Call back TEST" (due Nov 5). Mark done, or tell me what to do.
+- **Overdue follow-ups:** "Call back Danielle Kelly" (due Nov 11) is done (see below). "Call back TEST" (due Nov 5) was a test record and was closed on 2026-11-19 with the other test records.
 - **Automated follow-up email to a customer.** On Nov 11 the system emailed josh.wallace@robinsmorton.com a follow-up on the Terrell proposal ($291,652.56). The proposal follow-up rule is on in Settings. Keep it on, or turn it off?
-- **Danielle Kelly calls.** About 10 outbound "missed call, call back" attempts since Nov 4, plus an overdue callback task. Her number (515-778-5860) is also listed under "Daniel Sailee". Confirm whether these are the same person, and whether the automatic callbacks should stop.
+- **Danielle Kelly calls. DONE 2026-11-19 (owner approved).** The overdue "Call back Danielle Kelly" task (FUP-1012) is marked Resolved. The call-back request on lead #49 ("Daniel Sailee", number 515-778-5860) is cleared, so automatic callbacks to that number have stopped. Whether it is the same person as Danielle Kelly is still unconfirmed.
 - **Blueprint upload limit.** The Goldfinch Lofts drawing set is 128 MB; uploads are capped at 30 MB. Split the PDF into sets, or approve raising the cap for drawings.
 - **Window access.** Confirm with the architect whether exterior glass is done from ladders or a lift.
 - **Onboarding gate (employees).** New employees added from 2026-11-16 and anyone whose checklist has started cannot be assigned until required items are done. Confirm the rule, and confirm with counsel which items the background check applies to.
