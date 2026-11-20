@@ -2367,9 +2367,38 @@
         <button class="btn small" id="accClose" type="button">Close the books through a date</button></div>
       <div class="card" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bank reconciliation</h2><button class="btn small" id="accRecon" type="button">Reconcile cash</button></div>
         <div class="tablewrap"><table class="t"><thead><tr><th>As of</th><th class="num">Bank</th><th class="num">Ledger</th><th class="num">Difference</th><th>Note</th></tr></thead><tbody>${reconRows}</tbody></table></div></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Trace a document</h2>
+        <p class="muted">Start from an estimate, contract, project, invoice or subscription number to see the whole chain, the money at each step, and where it sits on the ledger.</p>
+        <div class="filt"><select id="accTKind"><option value="estimate">Estimate</option><option value="contract">Contract</option><option value="project">Project</option><option value="invoice">Invoice</option><option value="subscription">Subscription</option></select><input id="accTId" type="number" min="1" placeholder="Number"><button class="btn small" id="accTGo" type="button">Trace</button></div>
+        <div id="accTOut"></div></div>
       <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Invoices not yet on the ledger</h2><p class="muted">Set sales tax before the sync posts the invoice. Tax set after posting cannot be changed in place.</p>
         <div class="tablewrap"><table class="t"><thead><tr><th>Invoice</th><th class="num">Amount</th><th class="num">Sales tax</th><th></th></tr></thead><tbody>${openRows}</tbody></table></div></div>
       <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Recorded costs changed after posting</h2><ul>${driftRows}</ul></div>`;
+    const traceTable = (heads, rows) => `<div class="tablewrap"><table class="t"><thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${heads.length}" class="muted">None in this chain.</td></tr>`}</tbody></table></div>`;
+    const renderTrace = t => {
+      const e = v => esc(v == null ? '' : v);
+      const sec = (title, inner) => `<h3 class="secth" style="margin:14px 0 6px">${esc(title)}</h3>${inner}`;
+      const f = t.figures;
+      $('#accTOut').innerHTML =
+        sec('Estimate and proposal', traceTable(['Number', 'Project', 'Customer', 'Status', 'Proposal total', 'Cost'], t.estimates.map(x => [e(x.id), e(x.project_name), e(x.customer_name), e(x.status), money(x.proposal_total), money(x.total_cost)]))) +
+        sec('Contracts, amendments and renewals', traceTable(['Number', 'Kind', 'Status', 'Signature', 'Value'], t.contracts.map(x => [e(x.id), e(x.kind || 'Contract'), e(x.status), e(x.signature_status), money(x.value)]))) +
+        sec('Projects', traceTable(['Number', 'Name', 'Status'], t.projects.map(x => [e(x.id), e(x.name), e(x.status)]))) +
+        sec('Subscriptions', traceTable(['Number', 'Customer', 'Service', 'Monthly', 'Status'], t.subscriptions.map(x => [e(x.id), e(x.customer_name), e(x.service), money(x.monthly_amount), e(x.status)]))) +
+        sec('Invoices', traceTable(['Invoice', 'Kind', 'Amount', 'Sales tax', 'Paid', 'Balance', 'On ledger'], t.invoices.map(x => [e(x.invoice_number || x.id), x.subscription_id ? 'Subscription ' + e(x.billing_period || '') : 'Project', money(x.amount), money(x.tax_amount), money(x.paid), money(x.balance), x.on_ledger ? 'Yes' : 'No']))) +
+        sec('Payments', traceTable(['Number', 'Invoice', 'Amount', 'Received'], t.payments.map(x => [e(x.id), e(x.invoice_id), money(x.amount), e(String(x.received_at || '').slice(0, 10))]))) +
+        sec('Ledger entries', traceTable(['Entry', 'Date', 'Memo', 'Source', 'Reference', 'Status'], t.ledger_entries.map(x => [e(x.id), e(x.entry_date), e(x.memo), e(x.source), e(x.source_ref || ''), x.reverses_id ? 'Reversal of ' + e(x.reverses_id) : 'Posted']))) +
+        sec('Figures', traceTable(['Figure', 'Amount'], [
+          ['Estimate proposal total', money(f.estimate_proposal_total)], ['Estimate cost', money(f.estimate_cost)], ['Contract value (reports rule)', money(f.contract_value)],
+          ['Project invoices', money(f.project_invoiced)], ['Sales tax on project invoices', money(f.project_sales_tax)], ['Subscription invoices', money(f.subscription_invoiced)],
+          ['Paid', money(f.paid)], ['Owed', money(f.owed)]].map(([a, b]) => [esc(a), b]))) +
+        (t.notes.length ? sec('What to check', `<ul>${t.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`) : '');
+    };
+    $('#accTGo').onclick = async () => {
+      const kind = $('#accTKind').value, id = $('#accTId').value;
+      if (!id) return toast('Enter the number of the document.', true);
+      try { renderTrace(await api(`/api/admin/accounting/trace?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`)); }
+      catch (err) { $('#accTOut').innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; }
+    };
     $('#accSync').onclick = async () => {
       if (!confirm('Post invoices, bills, job costs and unassigned payroll to the ledger? Posted entries cannot be edited, only reversed.')) return;
       try { const r = await api('/api/admin/ledger/sync', { method: 'POST' }); toast(`Posted: ${r.invoices_posted} invoice(s), ${r.payments_posted} payment(s), ${r.bills_posted} bill(s), ${r.project_costs_posted} job cost(s), ${r.payroll_posted} payroll line(s)`); loadAccounting(); }
