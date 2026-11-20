@@ -11,7 +11,9 @@ function rules() {
   try { return { ...DEFAULTS, ...(r ? JSON.parse(r.value) : {}) }; } catch { return { ...DEFAULTS }; }
 }
 function fingerprint(e) {
-  return crypto.createHash('sha256').update(JSON.stringify([Number(e.proposal_total), Number(e.total_cost), e.scope, e.line_items, e.terms, e.expires_on, e.email])).digest('hex').slice(0, 24);
+  // Proposal options add to the fingerprint only when the estimate has options, so existing approvals stay valid.
+  const optSig = require('./proposal-options').signature(DB, e.id);
+  return crypto.createHash('sha256').update(JSON.stringify([Number(e.proposal_total), Number(e.total_cost), e.scope, e.line_items, e.terms, e.expires_on, e.email, ...(optSig ? [optSig] : [])])).digest('hex').slice(0, 24);
 }
 function actualMargin(e) {
   const price = Number(e.proposal_total) / (1 + Number(e.tax_pct || 0) / 100);

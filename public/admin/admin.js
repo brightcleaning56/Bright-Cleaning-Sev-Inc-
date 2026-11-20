@@ -398,6 +398,79 @@
     });
   }
 
+  // ---------- Proposal options: several choices, each with its own units and prices ----------
+  async function loadEstOptions(id) {
+    const box = $('#estOpts'); if (!box) return;
+    let d;
+    try { d = await api('/api/admin/estimates/' + id + '/options'); } catch (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; return; }
+    const SCOPE_CHOICES = ['Whole project', 'Per building'];
+    const blankLine = () => ({ id: null, description: '', unit: '', quantity: 0, unit_price: 0 });
+    let opts = d.options.map(o => ({ ...o, lines: o.lines.map(l => ({ ...l })) }));
+    // Read what is on screen back into opts, so a redraw keeps unsaved edits.
+    const capture = () => {
+      box.querySelectorAll('[data-opt]').forEach(card => {
+        const o = opts[Number(card.dataset.opt)]; if (!o) return;
+        o.label = card.querySelector('[data-f="label"]').value;
+        o.duration_weeks = card.querySelector('[data-f="duration_weeks"]').value;
+        o.scope_kind = card.querySelector('[data-f="scope_kind"]').value;
+        o.building = card.querySelector('[data-f="building"]').value;
+        card.querySelectorAll('[data-line]').forEach(row => {
+          const l = o.lines[Number(row.dataset.line)]; if (!l) return;
+          l.description = row.querySelector('[data-l="description"]').value;
+          l.unit = row.querySelector('[data-l="unit"]').value;
+          l.quantity = row.querySelector('[data-l="quantity"]').value;
+          l.unit_price = row.querySelector('[data-l="unit_price"]').value;
+        });
+      });
+    };
+    const lineAmount = l => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
+    const draw = () => {
+      const locked = d.locked;
+      const dis = locked ? ' disabled' : '';
+      box.innerHTML = '<h3 class="secth" style="margin-top:0">Price options</h3>' +
+        '<p class="muted">Offer the client several choices, for example a 1-, 2- or 3-week finish, or one building at a time. Each option lists its units, price per unit and amount. The client picks one on the proposal. Prices stay editable until the client accepts.</p>' +
+        (d.selected_option_id ? '<p class="notice">The client chose option #' + d.selected_option_id + '. Its total is the proposal total.</p>' : '') +
+        (locked ? '<p class="warn" style="display:block;padding:6px 10px;border-radius:8px">This proposal is ' + esc(String(d.status).toLowerCase()) + ', so its options can not be changed. Duplicate it to revise.</p>' : '') +
+        (opts.length ? '' : '<p class="muted">No options yet. The proposal uses its single price below.</p>') +
+        opts.map((o, oi) => '<div class="card" style="margin:8px 0;padding:10px" data-opt="' + oi + '">' +
+          '<div class="f"><label>Option name</label><input data-f="label" value="' + esc(o.label || '') + '"' + dis + '></div>' +
+          '<div class="f"><label>Weeks to finish</label><input type="number" min="1" max="52" data-f="duration_weeks" value="' + esc(o.duration_weeks ?? '') + '"' + dis + '></div>' +
+          '<div class="f"><label>Scope</label><select data-f="scope_kind"' + dis + '>' + SCOPE_CHOICES.map(s => '<option' + (s === o.scope_kind ? ' selected' : '') + '>' + esc(s) + '</option>').join('') + '</select></div>' +
+          '<div class="f"><label>Building (for a per-building option)</label><input data-f="building" value="' + esc(o.building || '') + '"' + dis + '></div>' +
+          '<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Item</th><th>Unit</th><th>Units</th><th>Price per unit</th><th>Amount</th><th></th></tr></thead><tbody>' +
+          o.lines.map((l, li) => '<tr data-line="' + li + '"><td><input data-l="description" value="' + esc(l.description || '') + '"' + dis + '></td>' +
+            '<td><input data-l="unit" value="' + esc(l.unit || '') + '" style="width:90px"' + dis + '></td>' +
+            '<td><input data-l="quantity" type="number" min="0" step="any" value="' + esc(l.quantity) + '" style="width:90px"' + dis + '></td>' +
+            '<td><input data-l="unit_price" type="number" min="0" step="0.01" value="' + esc(l.unit_price) + '" style="width:110px"' + dis + '></td>' +
+            '<td class="num">' + money(lineAmount(l)) + '</td>' +
+            '<td>' + (locked ? '' : '<button class="btn ghost small danger" data-rmline="' + li + '">Remove</button>') + '</td></tr>').join('') +
+          '</tbody></table></div>' +
+          '<p><b>Option total: ' + money(o.lines.reduce((s, l) => s + lineAmount(l), 0)) + '</b> before tax</p>' +
+          (locked ? '' : '<button class="btn ghost small" data-addline="' + oi + '">Add item</button> <button class="btn ghost small danger" data-rmopt="' + oi + '">Remove option</button>') +
+          '</div>').join('') +
+        (locked ? '' : '<p><button class="btn ghost small" id="optAdd">Add option</button></p>' +
+          '<div class="f"><label for="optReason">Why the prices changed (kept in the history)</label><input id="optReason" placeholder="e.g. walkthrough: more floor work"></div>' +
+          '<button class="btn small" id="optSave">Save options</button>');
+      if (locked) return;
+      $('#optAdd').onclick = () => { capture(); opts.push({ id: null, label: 'New option', duration_weeks: null, scope_kind: 'Whole project', building: '', lines: [blankLine()] }); draw(); };
+      box.querySelectorAll('[data-addline]').forEach(b => b.onclick = () => { capture(); opts[Number(b.dataset.addline)].lines.push(blankLine()); draw(); });
+      box.querySelectorAll('[data-rmline]').forEach(b => b.onclick = () => { capture(); const oi = Number(b.closest('[data-opt]').dataset.opt); opts[oi].lines.splice(Number(b.dataset.rmline), 1); draw(); });
+      box.querySelectorAll('[data-rmopt]').forEach(b => b.onclick = () => { if (!confirm('Remove this option and its items?')) return; capture(); opts.splice(Number(b.dataset.rmopt), 1); draw(); });
+      $('#optSave').onclick = async () => {
+        capture();
+        const payload = opts.map(o => ({ id: o.id || null, label: String(o.label || '').trim(), duration_weeks: o.duration_weeks === '' ? null : Number(o.duration_weeks), scope_kind: o.scope_kind, building: o.building || '',
+          lines: o.lines.map(l => ({ id: l.id || null, description: String(l.description || '').trim(), unit: l.unit || '', quantity: Number(l.quantity) || 0, unit_price: Number(l.unit_price) || 0 })) }));
+        try {
+          const r = await api('/api/admin/estimates/' + id + '/options', { method: 'PUT', json: { options: payload, reason: $('#optReason').value } });
+          toast('Options saved');
+          if (r.resend_needed) toast('The client already has the link. Send the proposal again so they see the new prices.');
+          openEstimate(id);
+        } catch (err) { toast(err.message, true); }
+      };
+    };
+    draw();
+  }
+
   // ---------- Client insurance on a proposal ----------
   const INS_TYPES_UI = { general_liability: 'General liability', workers_comp: 'Workers comp', auto: 'Auto', umbrella: 'Umbrella', bond: 'Bond', subcontractor: 'Subcontractor', other: 'Other' };
   async function loadEstIns(id) {
@@ -1820,6 +1893,7 @@
           ${e.decided_at ? `<dt>Decision</dt><dd>${badge(e.status)} ${esc(fmtWhen(e.decided_at))}${e.decision_ip ? ' · by the customer online' : ' · set in admin'}</dd>` : ''}
           ${e.lead_id ? `<dt>From lead</dt><dd><button class="linklike" data-lead="${e.lead_id}">Lead #${e.lead_id}</button></dd>` : ''}
         </dl>
+        <div class="card" id="estOpts" style="margin:10px 0"></div>
         <div class="card" id="estIns" style="margin:10px 0"></div>
         <div class="card" id="estFiles" style="margin:10px 0"><h3 class="secth" style="margin-top:0">Attached files</h3><p class="muted">Loading…</p></div>
         <div id="apprBox"></div>
@@ -1854,6 +1928,7 @@
     };
     loadEstFiles();
     loadEstIns(e.id);
+    loadEstOptions(e.id);
     loadEstFollow(e.id, e.customer_name);
     bindOpeners($('#drawerRoot'));
     api(`/api/admin/estimates/${e.id}/approval`).then(ap => {

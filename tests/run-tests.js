@@ -462,6 +462,38 @@ async function startServer(env, dataDir) {
     assert(r.status === 201 && e.proposal_total === m.proposal_total && e.crew_days === 0.5 && e.mobilization_cost === 150 && e.template_key === 'post-construction-final', JSON.stringify(e).slice(0, 300));
     return `#${E1} total $${e.proposal_total} = calculated; 12 labor h / (3 x 8) = 0.5 crew days`;
   });
+  await check('Proposals', 'Options: each option has its own priced lines; the client sees them and approves one; the chosen total is used', async () => {
+    const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Option Client', company: 'Jensen Test', email: 'options@test.test', project_name: 'Options test', scope: 'Final clean', labor_hours: 1, labor_rate: 10 } });
+    const id = r.data.estimate.id, tok = r.data.estimate.public_token;
+    const lines = (rates) => [{ description: 'Units', unit: 'unit', quantity: 264, unit_price: rates[0] }, { description: 'Stairways', unit: 'stairway', quantity: 12, unit_price: rates[1] }, { description: 'Windows', unit: 'window', quantity: 1200, unit_price: 10 }];
+    const put = await req('PUT', `/api/admin/estimates/${id}/options`, { token: T, json: { reason: 'Walkthrough', options: [
+      { label: '1-week final clean', duration_weeks: 1, scope_kind: 'Whole project', lines: lines([160, 130]) },
+      { label: '2-week final clean', duration_weeks: 2, scope_kind: 'Whole project', lines: lines([130, 100]) }] } });
+    const want1 = 264 * 160 + 12 * 130 + 1200 * 10, want2 = 264 * 130 + 12 * 100 + 1200 * 10;
+    assert(put.status === 200 && put.data.options.length === 2 && put.data.options[0].total === want1 && put.data.options[1].total === want2, JSON.stringify([put.status, put.data.options && put.data.options.map(o => o.total)]));
+    // Public: hidden while the proposal is still a draft
+    const pubDraft = await req('GET', `/api/proposal/${tok}/options`);
+    assert(pubDraft.status === 200 && pubDraft.data.options.length === 0, JSON.stringify(pubDraft.data));
+    // Price change after the walkthrough is kept with its reason
+    const opt = put.data.options;
+    const lines2 = lines([175, 130]);
+    const put2 = await req('PUT', `/api/admin/estimates/${id}/options`, { token: T, json: { reason: 'Walkthrough: more floor work', options: [
+      { id: opt[0].id, label: opt[0].label, duration_weeks: 1, scope_kind: 'Whole project', lines: lines2.map((l, i) => ({ ...l, id: opt[0].lines[i].id })) },
+      { id: opt[1].id, label: opt[1].label, duration_weeks: 2, scope_kind: 'Whole project', lines: opt[1].lines.map(l => ({ id: l.id, description: l.description, unit: l.unit, quantity: l.quantity, unit_price: l.unit_price })) }] } });
+    const dbh = new (require('better-sqlite3'))(require('path').join(globalThis.__dataDir, 'brightclean.db'));
+    const hist = dbh.prepare("SELECT field, old_value, new_value, reason FROM estimate_option_changes WHERE estimate_id=? AND field='unit_price'").all(id);
+    dbh.prepare("UPDATE estimates SET status='Sent' WHERE id=?").run(id); dbh.close();
+    assert(put2.status === 200 && put2.data.options[0].total === 264 * 175 + 12 * 130 + 1200 * 10 && hist.some(h => h.old_value === '160' && h.new_value === '175' && h.reason === 'Walkthrough: more floor work'), JSON.stringify(hist));
+    // Public: now visible, and approval needs a choice
+    const pub = await req('GET', `/api/proposal/${tok}/options`);
+    const noPick = await req('POST', `/api/proposal/${tok}/respond`, { json: { decision: 'approve', signer_name: 'Pat Client', agree: true } });
+    assert(pub.data.options.length === 2 && noPick.status === 400, JSON.stringify([pub.data.options.length, noPick.status]));
+    // Choose the 2-week option and approve
+    const ok = await req('POST', `/api/proposal/${tok}/respond`, { json: { decision: 'approve', option_id: opt[1].id, signer_name: 'Pat Client', agree: true } });
+    const after = (await req('GET', '/api/admin/estimates/' + id, { token: T })).data.estimate;
+    assert(ok.status === 200 && after.status === 'Approved' && after.selected_option_id === opt[1].id && after.proposal_total === want2, JSON.stringify([ok.status, after.status, after.selected_option_id, after.proposal_total, want2]));
+    return `1-week $${want1} (after walkthrough $${put2.data.options[0].total}); 2-week $${want2}; client chose 2-week and the approved total is $${after.proposal_total}; price change kept with its reason`;
+  });
   await check('Proposals', 'Estimate rejects an invalid customer email', async () => {
     const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'x', scope: 'y', email: 'bad@email' } });
     assert(r.status === 400, r.status); return '400 ' + r.data.error;
