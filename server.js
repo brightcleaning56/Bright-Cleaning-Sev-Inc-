@@ -77,6 +77,7 @@ const ROLE_RULES=[
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/reports\/schedules(\/.*)?$/,roles:['owner','manager'],why:'Report schedules are limited to owners and managers.'},
   {m:/^GET$/,p:/^\/api\/admin\/audit-log$/,roles:['owner','manager'],why:'The full activity log is limited to owners and managers.'},
   {m:/^GET$/,p:/^\/api\/admin\/financial-summary$/,roles:['owner','manager'],why:'Financial totals are limited to owners and managers.'},
+  {m:/^GET$/,p:/^\/api\/admin\/(ledger(\/.*)?|contract-value|projects\/\d+\/job-cost|blocked-intake)$/,roles:['owner','manager'],why:'Accounting, job-cost and intake-screen records are limited to owners and managers.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/api-keys(\/\d+\/revoke)?$/,roles:['owner'],why:'Only an owner can create or revoke API keys.'},
   {m:/^(GET|PUT)$/,p:/^\/api\/admin\/labor-assumptions$/,roles:['owner','manager','staff'],why:'Labor assumptions are limited to owners, managers and office staff.'},
   {m:/^(GET|PUT)$/,p:/^\/api\/admin\/outbound-callbacks$/,roles:['owner'],why:'Only the owner can change automatic callbacks.'},

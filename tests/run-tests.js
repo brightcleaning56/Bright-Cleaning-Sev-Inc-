@@ -278,6 +278,15 @@ async function startServer(env, dataDir) {
     for (const [m, u] of adminWrites) { const r = await req(m, u, { json: {} }); if (r.status !== 401) bad.push(m + ' ' + u + ' ' + r.status); }
     assert(!bad.length, bad.join(', ')); return 'all 401';
   });
+  await check('Security', 'Accounting, job-cost and intake-screen records refuse a signed-in non-owner (staff) token', async () => {
+    const jwt = require('jsonwebtoken');
+    const staff = jwt.sign({ role: 'admin', email: 'staff.member@test.test' }, env.JWT_SECRET, { expiresIn: '1h' });
+    const paths = ['/api/admin/ledger/trial-balance', '/api/admin/ledger/accounts', '/api/admin/ledger/entries', '/api/admin/contract-value', '/api/admin/projects/1/job-cost', '/api/admin/blocked-intake'];
+    const got = [];
+    for (const p of paths) { const r = await req('GET', p, { token: staff }); if (r.status === 200) got.push(p); }
+    assert(!got.length, 'a non-owner token could read: ' + got.join(', '));
+    return 'refused for a non-owner token on ' + paths.length + ' routes';
+  });
   await check('Security', 'Forged, expired and wrong-secret tokens are refused', async () => {
     const jwt = require('jsonwebtoken');
     const forged = jwt.sign({ role: 'admin', email: OWNER }, 'wrong-secret-wrong-secret-wrong-secret');
