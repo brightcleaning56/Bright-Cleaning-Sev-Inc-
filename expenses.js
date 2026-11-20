@@ -15,6 +15,13 @@ function ensureSchema(db) {
     id INTEGER PRIMARY KEY AUTOINCREMENT, vendor TEXT NOT NULL, description TEXT, category TEXT,
     amount REAL NOT NULL, bill_date TEXT NOT NULL, project_id INTEGER, status TEXT NOT NULL DEFAULT 'Open',
     paid_at TEXT, created_by TEXT, created_at TEXT NOT NULL)`);
+  // Receipts and approvals (audit G11). Added on first use; switched on by settings (both off by default).
+  const cols = db.prepare('PRAGMA table_info(expense_bills)').all().map(c => c.name);
+  for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
+}
+// Settings that make approval and a receipt required before a bill is paid. Both are off until the owner turns them on.
+function billRule(db, key) {
+  try { const r = db.prepare('SELECT value FROM settings WHERE key=?').get(key); return !!r && r.value === '1'; } catch { return false; }
 }
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
@@ -45,11 +52,22 @@ function createBill(db, b, by) {
   if (!(amount > 0)) throw new Error('A bill needs an amount above zero.');
   if (!isDate(b.bill_date)) throw new Error('A bill needs a real date (YYYY-MM-DD).');
   require('./aging').ensureVendor(db, vendor);
-  const id = db.prepare('INSERT INTO expense_bills(vendor,description,category,amount,bill_date,project_id,status,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+  const id = db.prepare('INSERT INTO expense_bills(vendor,description,category,amount,bill_date,project_id,status,created_by,created_at,receipt_ref) VALUES(?,?,?,?,?,?,?,?,?,?)')
     .run(vendor.slice(0, 200), String(b.description || '').slice(0, 300), String(b.category || '').slice(0, 80), amount, b.bill_date,
-      b.project_id ? Number(b.project_id) : null, 'Open', by || null, new Date().toISOString()).lastInsertRowid;
+      b.project_id ? Number(b.project_id) : null, 'Open', by || null, new Date().toISOString(), String(b.receipt_ref || '').trim().slice(0, 300) || null).lastInsertRowid;
   postBill(db, id);
   return id;
+}
+
+function approveBill(db, id, by) {
+  ensureSchema(db);
+  const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(Number(id));
+  if (!b) throw new Error('Bill not found.');
+  if (b.status === 'Void') throw new Error('A void bill cannot be approved.');
+  if (b.approved_by) throw new Error('This bill is already approved.');
+  db.prepare('UPDATE expense_bills SET approved_by=?, approved_at=? WHERE id=?').run(by || 'owner', new Date().toISOString(), b.id);
+  require('./audit').record(db, { actor: by, action: 'approved bill', entity: 'bill', entityId: b.id, detail: b.vendor + ' ' + Number(b.amount).toFixed(2) });
+  return b.id;
 }
 
 function payBill(db, id, { date, by } = {}) {
@@ -58,6 +76,8 @@ function payBill(db, id, { date, by } = {}) {
   if (!b) throw new Error('Bill not found.');
   if (b.status === 'Paid') throw new Error('This bill is already paid.');
   if (b.status === 'Void') throw new Error('A void bill cannot be paid.');
+  if (billRule(db, 'bill_receipt_required') && !b.receipt_ref) throw new Error('This bill needs a receipt reference before it is paid.');
+  if (billRule(db, 'bill_approval_required') && !b.approved_by) throw new Error('This bill needs approval before it is paid.');
   const d = date || new Date().toISOString().slice(0, 10);
   if (!isDate(d)) throw new Error('Payment date must be a real date.');
   postBill(db, b.id);
@@ -184,6 +204,10 @@ function mount(app, ctx) {
     try { const id = createBill(db, req.body || {}, req.user && req.user.email); res.status(201).json({ ok: true, id }); }
     catch (e) { res.status(400).json({ error: e.message }); }
   });
+  app.post('/api/admin/expenses/:id/approve', auth, (req, res) => {
+    try { approveBill(db, req.params.id, req.user && req.user.email); res.json({ ok: true }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
   app.post('/api/admin/expenses/:id/pay', auth, (req, res) => {
     try { payBill(db, req.params.id, { date: (req.body || {}).date, by: req.user && req.user.email }); res.json({ ok: true }); }
     catch (e) { res.status(400).json({ error: e.message }); }
@@ -195,4 +219,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, createBill, payBill, syncRecorded, costDrift, recordPayrollPayment, mount };
+module.exports = { ensureSchema, createBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, mount };

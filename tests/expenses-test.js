@@ -71,4 +71,18 @@ assert.throws(() => E.recordPayrollPayment(db, { kind: 'net', amount: 0, date: '
 assert.throws(() => E.recordPayrollPayment(db, { kind: 'bonus', amount: 5, date: '2026-11-26', memo: 'x' }), /net pay or payroll taxes/);
 console.log('ok - payroll payments clear accrued payroll and payroll taxes, and bad input is refused');
 
+// Receipts and approvals (G11): off by default; when the owner turns a rule on, a bill cannot be paid without it.
+db.exec("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)");
+db.prepare("INSERT INTO settings(key,value) VALUES('bill_approval_required','1')").run();
+const needApproval = E.createBill(db, { vendor: 'Glass Co', description: 'Squeegees', amount: 80, bill_date: '2026-11-26', receipt_ref: 'receipt-0042.pdf' }, 'staff@test');
+assert.throws(() => E.payBill(db, needApproval, { date: '2026-11-27' }), /needs approval/);
+E.approveBill(db, needApproval, 'owner@test');
+E.payBill(db, needApproval, { date: '2026-11-27', by: 'owner@test' });
+db.prepare("UPDATE settings SET value='1' WHERE key='bill_approval_required'").run();
+db.prepare("INSERT INTO settings(key,value) VALUES('bill_receipt_required','1')").run();
+const noReceipt = E.createBill(db, { vendor: 'Mop Co', description: 'Mops', amount: 40, bill_date: '2026-11-26' }, 'staff@test');
+E.approveBill(db, noReceipt, 'owner@test');
+assert.throws(() => E.payBill(db, noReceipt, { date: '2026-11-27' }), /needs a receipt/);
+console.log('ok - approval and receipt rules block payment until met');
+
 console.log('\nAll expense checks passed.');

@@ -80,7 +80,7 @@ const ROLE_RULES=[
   {m:/^GET$/,p:/^\/api\/admin\/(ledger(\/.*)?|contract-value|projects\/\d+\/job-cost|blocked-intake)$/,roles:['owner','manager'],why:'Accounting, job-cost and intake-screen records are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/sync$/,roles:['owner'],why:'Only an owner can post invoices and payments to the ledger.'},
   {m:/^GET$/,p:/^\/api\/admin\/receivables\/tie-out$/,roles:['owner','manager'],why:'Receivables tie-out is limited to owners and managers.'},
-  {m:/^(GET|POST)$/,p:/^\/api\/admin\/expenses(\/\d+\/pay)?$/,roles:['owner','manager'],why:'Bills and payments are limited to owners and managers.'},
+  {m:/^(GET|POST)$/,p:/^\/api\/admin\/expenses(\/\d+\/(pay|approve))?$/,roles:['owner','manager'],why:'Bills and payments are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/periods\/close$/,roles:['owner'],why:'Only an owner can close the books for a period.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/reconciliations$/,roles:['owner','manager'],why:'Bank reconciliations are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/invoices\/\d+\/tax$/,roles:['owner','manager'],why:'Only an owner or manager can set sales tax on an invoice.'},
