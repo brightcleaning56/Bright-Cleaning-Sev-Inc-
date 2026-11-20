@@ -2329,6 +2329,15 @@
   });
 
   // ---------- Accounting: Bright Clean's own ledger (owners and managers) ----------
+  // Rates and thresholds (owner sets them; owners and managers see them). Each save is in the activity log.
+  async function loadRatesCard(body) {
+    let r; try { r = await api("/api/admin/ledger/rates"); } catch (e) { return; }
+    const el = document.createElement("div"); el.className = "card"; el.style.margin = "12px 0";
+    el.innerHTML = `<h2 class="secth" style="margin-top:0">Rates and thresholds</h2><p class="muted">Only the owner can change these. Each change is recorded in the activity log.</p>` +
+      r.rates.map(x => `<form class="inl ratef" data-rkey="${esc(x.key)}"><div><label>${esc(x.label)}</label><input name="value" type="number" step="${x.step}" min="${x.min}" max="${x.max}" value="${x.value}" required></div><div><button class="btn small" type="submit">Save</button></div><p class="muted" style="flex-basis:100%;margin:4px 0 0">${esc(x.applies)} Default ${x.default}.</p></form>`).join("");
+    body.appendChild(el);
+    el.querySelectorAll(".ratef").forEach(f => f.onsubmit = async ev => { ev.preventDefault(); try { await api("/api/admin/ledger/rates", { method: "POST", json: { key: f.dataset.rkey, value: f.elements.value.value } }); toast("Rate saved"); loadAccounting(); } catch (e) { toast(e.message, true); } });
+  }
   async function loadAccounting() {
     const body = $('#accBody'); if (!body) return;
     body.innerHTML = '<p class="muted">Loading the books…</p>';
@@ -2395,6 +2404,7 @@
       <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Invoices not yet on the ledger</h2><p class="muted">Set sales tax before the sync posts the invoice. Tax set after posting cannot be changed in place.</p>
         <div class="tablewrap"><table class="t"><thead><tr><th>Invoice</th><th class="num">Amount</th><th class="num">Sales tax</th><th></th></tr></thead><tbody>${openRows}</tbody></table></div></div>
       <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Recorded costs changed after posting</h2><ul>${driftRows}</ul></div>`;
+    loadRatesCard(body);
     const traceTable = (heads, rows) => `<div class="tablewrap"><table class="t"><thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${heads.length}" class="muted">None in this chain.</td></tr>`}</tbody></table></div>`;
     const renderTrace = t => {
       const e = v => esc(v == null ? '' : v);
@@ -5217,7 +5227,7 @@
       $$('#pjBody [data-iss]').forEach(r => r.onclick = () => openIssue({ id: Number(r.dataset.iss) }, null));
     } else if (t === 'costs') {
       B.innerHTML = `<div class="card"><h2>Costs &amp; budget</h2><dl class="stat"><dt>Budget</dt><dd>${money(p.budget)}</dd><dt>Actual cost (recorded)</dt><dd>${money(p.actual_cost)}</dd><dt>Variance</dt><dd style="color:${p.budget && p.actual_cost > p.budget ? '#d1382f' : 'inherit'}">${p.budget ? money(p.budget - p.actual_cost) : '—'}</dd>${Object.entries(p.cost_by).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${money(v)}</dd>`).join('')}</dl>
-        <form class="inl" id="costForm"><div><label>Category</label><select name="category">${(d.cost_categories || []).map(c => `<option>${c}</option>`).join('')}</select></div><div><label>Amount ($)</label><input name="amount" inputmode="decimal" required></div><div><label>Date</label><input type="date" name="cost_date" value="${todayISO()}"></div><div class="wide"><label>Description</label><input name="description"></div><div class="wide"><button class="btn">Record cost</button></div></form>
+        <form class="inl" id="costForm"><div><label>Category</label><select name="category">${(d.cost_categories || []).map(c => `<option>${c}</option>`).join('')}</select></div><div><label>Amount ($)</label><input name="amount" inputmode="decimal" required></div><div><label>Date</label><input type="date" name="cost_date" value="${todayISO()}"></div><div><label>Vendor</label><input name="vendor" placeholder="Who you bought it from"></div><div><label>Task</label><select name="task_id"><option value="">Whole project</option>${(d.tasks || []).map(x => `<option value="${x.id}">${esc(x.title)}</option>`).join('')}</select></div><div class="wide"><label>Description</label><input name="description"></div><div class="wide"><button class="btn">Record cost</button></div></form>
         ${rowsOr(d.costs.map(c => `<tr><td>${fmtDate(c.cost_date)}</td><td>${esc(c.category)}</td><td>${esc(c.description || '')}</td><td class="num">${money(c.amount)}</td><td>${esc(c.entered_by || '')}</td></tr>`), ['Date', 'Category', 'Description', 'Amount', 'Entered by'], 'No costs recorded yet. Actual profit appears once real costs are entered.')}</div>`;
       $('#costForm').onsubmit = async ev => { ev.preventDefault(); try { await api(`/api/admin/pm/projects/${p.id}/costs`, { method: 'POST', json: formObj(ev.target) }); toast('Cost recorded'); reload(); } catch (e) { toast(e.message, true); } };
     } else if (t === 'comms') {

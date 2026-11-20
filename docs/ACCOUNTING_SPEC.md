@@ -48,7 +48,7 @@ Status key: BUILT = in code and tested. BUILT-OFF = in code, off until the owner
 | G5 | Amendments and renewals | BUILT | Signed amendments add to contract value (owner decision: not already in the original). Renewals add once signed. Superseded and archived rows do not count. |
 | G6 | Task budgets and task cost | BUILT | Budgets on tasks; time and costs assigned to tasks; the parts add back to project cost. Screen on the Accounting page. |
 | G7 | Overhead allocation | BUILT | Overhead at the estimate's rate on actual cost, shown beside cost (not posted). |
-| G8 | Labor burden and overtime | BUILT (overtime) / BUILT-OFF (burden) | Overtime: weekly hours over 40 (setting `overtime_after_hours`) cost 1.5 times the rate, into the job the employee is working on (owner decision). Burden: rate setting `ledger_burden_pct`, zero. The owner has not given a burden rate yet. |
+| G8 | Labor burden and overtime | BUILT (overtime) / BUILT-OFF (burden; rate set on the Accounting page, Rates and thresholds) | Overtime: weekly hours over 40 (setting `overtime_after_hours`) cost 1.5 times the rate, into the job the employee is working on (owner decision). Burden: rate setting `ledger_burden_pct`, zero. The owner has not given a burden rate yet. |
 | G9 | Sales tax | DECIDED (amounts) / SET (Iowa rate) | Owner decision: invoice amounts are before tax; tax is added on top and posted to sales tax payable (2100). No tax is charged until an amount is set on the invoice. The Iowa state rate of 6% (Iowa Code 423.2) is suggested on the invoice; cleaning tied to new construction or remodeling, and residential cleaning paid by the occupant, are exempt and recorded with a reason. Local option taxes (city or county) are not included and need the accountant. |
 | G10 | Revenue timing | DECIDED (policy) / BUILT | Policy: work done is revenue when invoiced (`arrears`, the default). Money taken ahead of work is a customer deposit (`advance`), earned into revenue as the work is done (earn entry, cannot exceed the deposit). |
 | G11 | Receipts and approvals | BUILT (receipt upload; approval and receipt rules off by default) | Receipt file attached to the bill (guarded upload, owner and manager). Approval and receipt-before-payment rules are settings, off by default. |
@@ -160,7 +160,7 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 | 7 project with tasks and budgets | `task-costs-test.js` |
 | 8 employees record time | Existing time tests |
 | 9 pay rate change keeps history | `expenses-test.js` (pay-rate snapshot) |
-| 10 material purchases to tasks | `task-costs-test.js` (costs assigned to tasks; purchasing screen not built) |
+| 10 material purchases to tasks | `material-task-test.js`; the Costs tab on a project has a Vendor and Task field |
 | 11 expense with receipt and approval | `expenses-test.js` (receipt reference and approval rules); `receipt-test.js` (file upload and download) |
 | 12 task cost to date | `task-costs-test.js` |
 | 13 partial invoice, receivable | `invoice-ledger-test.js` |
@@ -183,4 +183,4 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 2. Burden rate, when the owner gives one (G8).
 3. ADP details, when ready (G2).
 4. Switch the Reports page to the ledger (G16): done in ae0fb92.
-5. Staging run of the 25 QA items with synthetic records (section 8), then the first live sync with the owner present. Item 10 (a purchasing screen that records materials against a task) is not built; costs can be assigned to tasks today.
+5. Staging run of the 25 QA items with synthetic records (section 8), then the first live sync with the owner present. Item 10 is built: the Costs tab records a purchase with vendor and task. The owner-present run uses docs/QA_CHECKLIST_ACCOUNTING.md (sample data and the 25 items).

@@ -273,8 +273,13 @@ module.exports = function mountPM(app, ctx) {
     if (!COST_CATS.includes(b.category)) return res.status(400).json({ error: 'Choose a cost category.' });
     if (!(amt > 0 && amt < 1e8)) return res.status(400).json({ error: 'Enter the amount spent.' });
     if (b.cost_date && !validDate(b.cost_date)) return res.status(400).json({ error: 'Enter a valid cost date (YYYY-MM-DD).' });
-    const id = db.prepare('INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at) VALUES(?,?,?,?,?,?,?)').run(p.id, b.category, clean(b.description, 300), Math.round(amt * 100) / 100, clean(b.cost_date, 10) || today(), who(req), now()).lastInsertRowid;
-    logAction(req, 'recorded', 'project cost', id, `${number(p)}: ${b.category} $${amt.toFixed(2)}`);
+    // A purchase can be allocated to a task on this project (materials bought for one part of the job). Optional; the vendor is kept with the description.
+    let taskId = null;
+    if (b.task_id) { const t = db.prepare('SELECT id FROM project_tasks WHERE id=? AND project_id=?').get(Number(b.task_id), p.id); if (!t) return res.status(400).json({ error: 'Choose a task on this project.' }); taskId = t.id; }
+    const vendor = clean(b.vendor, 120), desc = [vendor, clean(b.description, 300)].filter(Boolean).join(' — ');
+    const id = db.prepare('INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at) VALUES(?,?,?,?,?,?,?)').run(p.id, b.category, desc || null, Math.round(amt * 100) / 100, clean(b.cost_date, 10) || today(), who(req), now()).lastInsertRowid;
+    if (taskId) require('./task-costs').assignCost(db, id, taskId, who(req));
+    logAction(req, 'recorded', 'project cost', id, `${number(p)}: ${b.category} $${amt.toFixed(2)}${taskId ? ' (task ' + taskId + ')' : ''}`);
     res.status(201).json({ id, costs: costs(p.id) });
   });
   // Recorded-cost corrections (audit MF-3). Owner or manager only. Every correction and removal is written to project_cost_log

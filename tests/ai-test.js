@@ -42,7 +42,7 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
   const FAKE = 'http://127.0.0.1:' + fake.address().port;
   const PORT = 4400 + Math.floor(Math.random() * 50), B = 'http://127.0.0.1:' + PORT;
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'bc-ai-')); const OWNER = 'owner@brightclean.test', PW = 'owner-password-1234';
-  const env = { ...process.env, PORT: String(PORT), NODE_ENV: 'staging', JWT_SECRET: crypto.randomBytes(32).toString('hex'), ADMIN_EMAIL: OWNER, ADMIN_PASSWORD_HASH: await bcrypt.hash(PW, 8),
+  const env = { ...process.env, PORT: String(PORT), NODE_ENV: 'staging', PRICEBOOK_IMPORT: 'on', JWT_SECRET: crypto.randomBytes(32).toString('hex'), ADMIN_EMAIL: OWNER, ADMIN_PASSWORD_HASH: await bcrypt.hash(PW, 8),
     DATA_DIR: path.join(work, 'data'), UPLOAD_DIR: path.join(work, 'up'), ANTHROPIC_API_KEY: 'test-ai-key', ANTHROPIC_API_URL: FAKE, TWILIO_AUTH_TOKEN: 'tw-ai-token', PUBLIC_BASE_URL: 'https://brightclean.net', TWILIO_FORWARD_TO: '+15155550199', TWILIO_ACCOUNT_SID: 'AC' + 'a'.repeat(32), TWILIO_NUMBER: '+15153033024', ANTHROPIC_MODEL: 'test-model', AI_SWEEP_MS: '400',
     POSTMARK_TOKEN: 'pm', POSTMARK_API_URL: FAKE, FROM_EMAIL: 'info@brightclean.net', NOTIFY_EMAIL: 'info@brightclean.net' };
   delete env.SMTP_HOST;

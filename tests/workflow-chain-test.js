@@ -211,6 +211,9 @@ async function waitHealthy() {
     assert(rated.status === 200, 'rate ' + rated.status);
     const signed = await req('POST', `/api/admin/qc/inspections/${invId}/sign`, owner, { name: 'Test Inspector' });
     assert(signed.status === 200, 'sign ' + signed.status + ' ' + JSON.stringify(signed.body).slice(0, 160));
+    // The crew completes the visit in the field (checklist, office review, time closed out). This test sets the visit Done directly,
+    // as the other suites do, because the field steps are covered elsewhere. Sign-off needs a completed visit on the project.
+    { const w = new Database(path.join(env.DATA_DIR, 'brightclean.db')); const at = new Date().toISOString(); w.prepare("UPDATE visits SET status='Done', completed_at=?, updated_at=? WHERE project_id=?").run(at, at, prj.id); w.close(); }
     const so = await req('POST', `/api/admin/pm/projects/${prj.id}/signoff`, owner, { name: 'Dana Builder', title: 'Site manager' });
     assert(so.status === 200, 'sign-off ' + so.status + ' ' + JSON.stringify(so.body).slice(0, 160));
     return `task verified; inspection ${invId} signed; customer sign-off recorded`;

@@ -252,4 +252,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, createBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, mount };
+module.exports = { ensureSchema, createBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, burdenPct, mount };
