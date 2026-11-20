@@ -182,6 +182,18 @@ function mount(app, ctx) {
     try { res.status(201).json({ ok: true, entry: earnDeposit(db, { invoiceId: req.params.id, amount: (req.body || {}).amount, date: (req.body || {}).date, note: (req.body || {}).note, by: req.user && req.user.email }) }); }
     catch (e) { res.status(400).json({ error: e.message }); }
   });
+  // Remove a payment that is NOT on the ledger (held, for example a test row with no invoice). Owner only, reason required.
+  // A payment that is on the ledger must be reversed instead, so the books keep a record.
+  app.delete('/api/admin/payments/:id', auth, (req, res) => {
+    const p = db.prepare('SELECT * FROM payments WHERE id=?').get(Number(req.params.id));
+    if (!p) return res.status(404).json({ error: 'Payment not found.' });
+    if (postedEntry(db, 'payment', 'payment:' + p.id)) return res.status(409).json({ error: 'This payment is on the ledger. Reverse its entry instead.' });
+    const reason = String((req.body && req.body.reason) || '').trim();
+    if (!reason) return res.status(400).json({ error: 'Give the reason for removing this payment.' });
+    db.prepare('DELETE FROM payments WHERE id=?').run(p.id);
+    require('./audit').record(db, { actor: req.user && req.user.email, action: 'deleted unposted payment', entity: 'payment', entityId: p.id, detail: `${Number(p.amount).toFixed(2)} for invoice ${p.invoice_id}: ${reason}` });
+    res.json({ ok: true });
+  });
   app.get('/api/admin/receivables/tie-out', auth, (req, res) => res.json(tieOut(db)));
 }
 

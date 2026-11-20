@@ -34,4 +34,18 @@ assert.strictEqual(L.trialBalance(db).accounts.find(a => a.code === '1000').bala
 assert.strictEqual(L.trialBalance(db).balanced, true);
 console.log('ok - held payment posts once the invoice is issued; the sync is safe to repeat');
 
+// The removal route: owner only (checked in the access rules); refuses a payment on the ledger; needs a reason; audited.
+process.env.LEDGER_AUTO_SYNC_MS = '0';
+const routes = {};
+IL.mount({ post: (p, m, h) => { routes['POST ' + p] = h; }, get: (p, m, h) => { routes['GET ' + p] = h; }, delete: (p, m, h) => { routes['DELETE ' + p] = h; } }, { db, auth: (q, s, n) => n() });
+const call = (id, body) => { let out; const res = { status(c) { this.code = c; return this; }, json(b) { out = { code: this.code || 200, body: b }; return this; } }; routes['DELETE /api/admin/payments/:id']({ params: { id: String(id) }, body, user: { email: 'owner@test' } }, res); return out; };
+db.prepare("INSERT INTO payments(id,invoice_id,amount,received_at) VALUES(4,88,40,'2026-11-28T10:00:00Z')").run();
+assert.strictEqual(call(4, {}).code, 400, 'a reason is required');
+assert.strictEqual(call(4, { reason: 'test row' }).code, 200, 'held payment removed with a reason');
+assert.strictEqual(call(4, { reason: 'again' }).code, 404, 'gone');
+assert.strictEqual(call(1, { reason: 'try' }).code, 409, 'a payment on the ledger is refused');
+assert.ok(require('../audit').list(db).some(e => e.action === 'deleted unposted payment' && /test row/.test(e.detail)), 'removal is in the audit trail');
+console.log('ok - removal route: reason required, posted payments refused, removal audited');
+
+
 console.log('\nAll held-payment checks passed.');

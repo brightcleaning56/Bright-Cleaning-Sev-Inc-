@@ -79,6 +79,7 @@ const ROLE_RULES=[
   {m:/^GET$/,p:/^\/api\/admin\/financial-summary$/,roles:['owner','manager'],why:'Financial totals are limited to owners and managers.'},
   {m:/^GET$/,p:/^\/api\/admin\/(ledger(\/.*)?|contract-value|projects\/\d+\/job-cost|blocked-intake)$/,roles:['owner','manager'],why:'Accounting, job-cost and intake-screen records are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/sync$/,roles:['owner','manager'],why:'Only an owner or manager can run the ledger sync.'},
+  {m:/^DELETE$/,p:/^\/api\/admin\/payments\/\d+$/,roles:['owner'],why:'Only an owner can remove a payment that is not on the ledger.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/invoices\/\d+\/(deposit|earn)$/,roles:['owner','manager'],why:'Deposits and earned revenue are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/(adjustments|entries\/\d+\/reverse)$/,roles:['owner','manager'],why:'Only an owner or manager can post adjustments or reversals.'},
   {m:/^GET$/,p:/^\/api\/admin\/receivables\/tie-out$/,roles:['owner','manager'],why:'Receivables tie-out is limited to owners and managers.'},
