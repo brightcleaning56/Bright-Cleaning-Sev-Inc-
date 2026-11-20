@@ -22,7 +22,7 @@ db.prepare("INSERT INTO invoices VALUES(1,'INV-1',50000,'Sent','2026-11-20',NULL
 db.prepare("INSERT INTO payments VALUES(1,1,25000,'2026-11-21T10:00:00Z')").run();
 const { mountRoutes } = (() => {
   const routes = {};
-  const app = { post: (p, mw, h) => { routes['POST ' + p] = h; }, get: (p, mw, h) => { routes['GET ' + p] = h; } };
+  const app = { post: (p, mw, h) => { routes['POST ' + p] = h; }, get: (p, mw, h) => { routes['GET ' + p] = h; }, delete: (p, mw, h) => { routes['DELETE ' + p] = h; }, put: () => {}, patch: () => {} };
   IL.mount(app, { db, auth: (q, s, n) => n() });
   return { mountRoutes: routes };
 })();

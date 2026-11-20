@@ -154,14 +154,14 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 | 1 estimate cost, margin, tax, total | Existing estimate tests (not the ledger) |
 | 2 proposal version preserved | Existing proposal tests |
 | 3 contract amount to the cent | `contract-value-test.js`, existing contract tests |
-| 4 one-cent mismatch blocked | Not automated |
-| 5 change order updates contract | Not built (G5) |
+| 4 one-cent mismatch blocked | `contract-cent-test.js` (countersigning refuses a one-cent difference from the approved proposal; the tolerance was 50 cents before and is now exact to the cent) |
+| 5 change order updates contract | `contract-value-test.js` (amendments add to contract value) |
 | 6 renewal no duplicate value | `contract-value-test.js` |
 | 7 project with tasks and budgets | `task-costs-test.js` |
 | 8 employees record time | Existing time tests |
 | 9 pay rate change keeps history | `expenses-test.js` (pay-rate snapshot) |
 | 10 material purchases to tasks | `task-costs-test.js` (costs assigned to tasks; purchasing screen not built) |
-| 11 expense with receipt and approval | `expenses-test.js` (receipt reference and approval rules; upload not built) |
+| 11 expense with receipt and approval | `expenses-test.js` (receipt reference and approval rules); `receipt-test.js` (file upload and download) |
 | 12 task cost to date | `task-costs-test.js` |
 | 13 partial invoice, receivable | `invoice-ledger-test.js` |
 | 14 partial payment, balance | `invoice-ledger-test.js` |
@@ -174,7 +174,7 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 | 21 bank reconciliation | `periods-test.js` (recorded, manual) |
 | 22 period close restricts posting | `periods-test.js` |
 | 23 unauthorised users refused | Suite gate test |
-| 24 dashboards match | Not automated |
+| 24 dashboards match | `run-tests.js` consistency check (one payment moves the Command Center, finance report and customer profile the same way); Reports P&L reads the ledger |
 | 25 audit history | Activity log (G15) |
 
 ## 9. Remaining work
@@ -183,4 +183,4 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 2. Burden rate, when the owner gives one (G8).
 3. ADP details, when ready (G2).
 4. Switch the Reports page to the ledger (G16): done in ae0fb92.
-5. Staging run of the 25 QA items with synthetic records (section 8), then the first live sync with the owner present.
+5. Staging run of the 25 QA items with synthetic records (section 8), then the first live sync with the owner present. Item 10 (a purchasing screen that records materials against a task) is not built; costs can be assigned to tasks today.

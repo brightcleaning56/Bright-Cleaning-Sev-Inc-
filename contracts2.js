@@ -113,7 +113,7 @@ module.exports = function mountContracts(app, ctx) {
       // The client approved the proposal's price, not whatever the contract says now: it must still match, and a declined contract cannot be executed.
       if (['Declined', 'Void'].includes(k.signature_status) || k.status === 'Void') return res.status(409).json({ error: 'This contract was declined or voided. It cannot be countersigned.' });
       pe = k.estimate_id ? db.prepare('SELECT proposal_total, signer_name, signer_title, signed_at, decision_ip FROM estimates WHERE id=?').get(k.estimate_id) : null;
-      if (!pe || Math.abs(Number(k.value || 0) - Number(pe.proposal_total || 0)) > 0.5) return res.status(409).json({ error: 'The contract value no longer matches the proposal the client approved. Check it against the proposal before countersigning.' });
+      if (!pe || Math.round(Number(k.value || 0) * 100) !== Math.round(Number(pe.proposal_total || 0) * 100)) return res.status(409).json({ error: 'The contract value no longer matches the proposal the client approved. Check it against the proposal before countersigning.' });
     }
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Type your full name to countersign.' });
     // M8: the customer's acceptance of the proposal is the customer's signature on the contract, so the executed copy records it.
