@@ -50,6 +50,9 @@ function ensureSchema(db) {
       debit_cents INTEGER NOT NULL DEFAULT 0 CHECK (debit_cents >= 0),
       credit_cents INTEGER NOT NULL DEFAULT 0 CHECK (credit_cents >= 0),
       CHECK ((debit_cents > 0 AND credit_cents = 0) OR (debit_cents = 0 AND credit_cents > 0)));
+    CREATE TABLE IF NOT EXISTS ledger_periods(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, closed_through TEXT NOT NULL, closed_at TEXT NOT NULL,
+      closed_by TEXT, trial_balance_ok INTEGER NOT NULL);
     CREATE TRIGGER IF NOT EXISTS ledger_entries_no_update BEFORE UPDATE ON ledger_entries
       BEGIN SELECT RAISE(ABORT, 'Posted ledger entries cannot be changed. Post a reversing entry instead.'); END;
     CREATE TRIGGER IF NOT EXISTS ledger_entries_no_delete BEFORE DELETE ON ledger_entries
@@ -73,6 +76,8 @@ function seedChart(db) {
 function postEntry(db, { date, memo, source, sourceRef = null, lines, by = 'system', reverses = null }) {
   ensureSchema(db);
   if (!isDate(date)) throw new Error('Entry date must be a real date (YYYY-MM-DD).');
+  const closed = db.prepare('SELECT MAX(closed_through) m FROM ledger_periods').get();
+  if (closed && closed.m && date <= closed.m) throw new Error('The books are closed through ' + closed.m + '. Post the entry after that date, or a reversing entry today.');
   if (!String(memo || '').trim()) throw new Error('Every entry needs a memo.');
   if (!String(source || '').trim()) throw new Error('Every entry needs a source.');
   if (!Array.isArray(lines) || lines.length < 2) throw new Error('An entry needs at least two lines.');
