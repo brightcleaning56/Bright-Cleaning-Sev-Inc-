@@ -4616,7 +4616,7 @@
       <td>${esc(i.property_name || i.property || '—')}<small>${esc(i.project_name || i.work_order || '')}</small></td>
       <td><span class="pill t-${i.type}">${esc((ITYPE[i.type] || [])[2] || o.types[i.type])}</span></td><td>${esc(i.category || '—')}</td>
       <td><span class="pill p-${i.priority}">${esc(i.priority)}</span></td>
-      <td>${i.assigned_to ? `<span class="avs"><i>${personInitials(i.assigned_to)}</i>${esc(who(i.assigned_to))}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${i.assigned_to ? `<span class="avs"><i>${esc(personInitials(i.assigned_to))}</i>${esc(who(i.assigned_to))}</span>` : '<span class="muted">—</span>'}</td>
       <td class="${i.overdue ? 'due-late' : ''}">${i.due_date ? fmtDate(i.due_date) : '—'}${i.overdue ? '<small style="color:#d1382f">overdue</small>' : ''}</td>
       <td><span class="pill s-${pillCls(i.status)}">${esc(i.status)}</span></td></tr>`; }).join('')
       : `<tr><td class="emptyrow" colspan="9">${$('#issStatus').value === 'open' ? 'No open items. Nice.' : 'Nothing matches.'}</td></tr>`;
