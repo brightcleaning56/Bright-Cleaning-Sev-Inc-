@@ -40,7 +40,11 @@ assert.strictEqual(bal('4000'), 50000, 'revenue is the invoice amount, not the t
 assert.strictEqual(bal('2100'), 4000, 'tax is payable');
 assert.strictEqual(tb.balanced, true);
 assert.strictEqual(IL.tieOut(db).tied_out, true, 'receivables tie out with tax included');
-console.log('ok - sales tax posts to tax payable; revenue excludes it; receivables tie out');
+db.prepare("INSERT INTO invoices(id,invoice_number,amount,status,issue_date,created_at) VALUES(2,'INV-2',1000,'Sent','2026-11-24',NULL)").run();
+const open = IL.tieOut(db).unposted;
+assert.deepStrictEqual(open.map(i => i.id), [2], 'only the invoice not yet on the ledger is listed');
+assert.strictEqual(open[0].amount, 1000);
+console.log('ok - sales tax posts to tax payable; revenue excludes it; receivables tie out; unposted invoices are listed');
 
 // Once posted, tax cannot be changed in place.
 assert.strictEqual(setTax(1, 9999).code, 409, 'tax refused after the invoice is on the ledger');

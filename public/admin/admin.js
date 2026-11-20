@@ -2344,6 +2344,7 @@
     const billRows = (bills.bills || []).map(b => `<tr><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}</td><td>${b.status === 'Open' ? `<button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
     const reconRows = (recs.reconciliations || []).slice(0, 10).map(r => `<tr><td>${esc(r.as_of)}</td><td class="num">${money(r.statement_balance)}</td><td class="num">${money(r.ledger_balance)}</td><td class="num">${money(r.difference)}</td><td>${esc(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No reconciliations yet.</td></tr>';
     const driftRows = (drift.drift || []).map(d => `<li>${esc(d.ref)}: ${esc(d.issue)}</li>`).join('') || '<li class="muted">No recorded costs changed after posting.</li>';
+    const openRows = (tie.unposted || []).map(i => `<tr><td>${esc(i.invoice_number || i.id)}</td><td class="num">${money(i.amount)}</td><td class="num">${money(i.tax_amount)}</td><td><button class="btn small ghost" data-acctax="${i.id}" type="button">Set sales tax</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Every invoice is on the ledger.</td></tr>';
     const closedTo = periods.closed_through ? 'Closed through ' + esc(periods.closed_through) : 'Books are open (not closed yet)';
     body.innerHTML = `
       <div class="kpis6">${kt('money', 'navy', 'Revenue (posted)', money(pl.revenue_total), 'from invoices')}${kt('check', 'green', 'Gross profit', money(pl.gross_profit), pl.gross_margin_pct == null ? '' : pl.gross_margin_pct + '% margin')}${kt('money', 'blue', 'Net profit', money(pl.net_profit), 'after operating costs')}${kt('clock', 'amber', 'Owed by customers', money(tie.invoices_owed), 'ledger receivable ' + money(tie.ledger_receivable))}</div>
@@ -2366,6 +2367,8 @@
         <button class="btn small" id="accClose" type="button">Close the books through a date</button></div>
       <div class="card" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bank reconciliation</h2><button class="btn small" id="accRecon" type="button">Reconcile cash</button></div>
         <div class="tablewrap"><table class="t"><thead><tr><th>As of</th><th class="num">Bank</th><th class="num">Ledger</th><th class="num">Difference</th><th>Note</th></tr></thead><tbody>${reconRows}</tbody></table></div></div>
+      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Invoices not yet on the ledger</h2><p class="muted">Set sales tax before the sync posts the invoice. Tax set after posting cannot be changed in place.</p>
+        <div class="tablewrap"><table class="t"><thead><tr><th>Invoice</th><th class="num">Amount</th><th class="num">Sales tax</th><th></th></tr></thead><tbody>${openRows}</tbody></table></div></div>
       <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Recorded costs changed after posting</h2><ul>${driftRows}</ul></div>`;
     $('#accSync').onclick = async () => {
       if (!confirm('Post invoices, bills, job costs and unassigned payroll to the ledger? Posted entries cannot be edited, only reversed.')) return;
@@ -2376,6 +2379,13 @@
       defs: [{ name: 'vendor', label: 'Vendor' }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example materials, equipment, insurance)' },
         { name: 'amount', label: 'Amount ($)', type: 'number' }, { name: 'bill_date', label: 'Bill date', type: 'date' }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
       submit: b => api('/api/admin/expenses', { method: 'POST', json: b }), after: () => { toast('Bill saved'); loadAccounting(); } });
+    body.querySelectorAll('[data-acctax]').forEach(btn => btn.onclick = () => {
+      const inv = (tie.unposted || []).find(i => String(i.id) === btn.dataset.acctax);
+      if (!inv) return;
+      openForm({ title: 'Sales tax on ' + (inv.invoice_number || 'invoice'), sub: 'Tax on this invoice posts to sales tax payable. Revenue stays the invoice amount.',
+        defs: [{ name: 'tax_amount', label: 'Sales tax ($)', type: 'number' }], values: { tax_amount: inv.tax_amount || 0 },
+        submit: b => api('/api/admin/invoices/' + inv.id + '/tax', { method: 'POST', json: { tax_amount: b.tax_amount } }), after: () => { toast('Sales tax saved'); loadAccounting(); } });
+    });
     body.querySelectorAll('[data-accpay]').forEach(btn => btn.onclick = async () => {
       if (!confirm('Mark this bill paid today? The payment posts to the ledger.')) return;
       try { await api('/api/admin/expenses/' + btn.dataset.accpay + '/pay', { method: 'POST', json: {} }); toast('Bill marked paid'); loadAccounting(); }

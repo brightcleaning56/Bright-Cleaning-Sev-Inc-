@@ -83,7 +83,8 @@ function tieOut(db) {
   const unpostedInvoices = invoices.filter(inv => !postedEntry(db, 'invoice', 'invoice:' + inv.id) && (Number(inv.amount) || 0) > 0).length;
   const unpostedPayments = db.prepare('SELECT id FROM payments').all().filter(p => !postedEntry(db, 'payment', 'payment:' + p.id)).length;
   const difference = Math.round((owed - ar) * 100) / 100;
-  return { invoices_owed: Math.round(owed * 100) / 100, ledger_receivable: ar, difference, unposted_invoices: unpostedInvoices, unposted_payments: unpostedPayments,
+  const unposted = invoices.filter(inv => !postedEntry(db, 'invoice', 'invoice:' + inv.id) && (Number(inv.amount) || 0) > 0).map(inv => ({ id: inv.id, invoice_number: inv.invoice_number, amount: Number(inv.amount) || 0, tax_amount: taxOf(inv) }));
+  return { unposted, invoices_owed: Math.round(owed * 100) / 100, ledger_receivable: ar, difference, unposted_invoices: unpostedInvoices, unposted_payments: unpostedPayments,
     tied_out: Math.abs(difference) < 0.005 && unpostedInvoices === 0 && unpostedPayments === 0,
     gap: 'Sales tax is posted only on invoices where tax is set. Any other invoice posts its whole amount as revenue.' };
 }
