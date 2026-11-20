@@ -1194,8 +1194,15 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const made = await req('POST', '/api/admin/issues', { token: T, json: { type: 'constructor', title: 'Bad type' } });
     const patched = await req('PATCH', '/api/admin/issues/' + complaintId, { token: T, json: { type: 'toString' } });
     const listed = await req('GET', '/api/admin/issues?type=constructor', { token: T });
+    // Date checks use a throwaway note (deletable), so the complaint keeps the due date the Filters check relies on.
+    const scratch = (await req('POST', '/api/admin/issues', { token: T, json: { type: 'note', title: 'Due date check note' } })).data.issue;
+    const badDate = await req('PATCH', '/api/admin/issues/' + scratch.id, { token: T, json: { due_date: '2026-13-45' } });
+    const badDay = await req('PATCH', '/api/admin/issues/' + scratch.id, { token: T, json: { due_date: '2026-02-30' } });
+    const goodDate = await req('PATCH', '/api/admin/issues/' + scratch.id, { token: T, json: { due_date: '2026-12-01' } });
+    await req('DELETE', '/api/admin/issues/' + scratch.id, { token: T });
     assert(made.status === 400 && patched.status === 400 && listed.status === 200, JSON.stringify([made.status, patched.status, listed.status]));
-    return 'create and change with inherited type names return 400; the type filter ignores them';
+    assert(badDate.status === 400 && badDay.status === 400 && goodDate.status === 200 && goodDate.data.issue.due_date === '2026-12-01', JSON.stringify([badDate.status, badDay.status, goodDate.status]));
+    return 'inherited type names return 400; impossible due dates (2026-13-45, 2026-02-30) return 400; a real date is saved';
   });
   await check('Issues', 'Reopen clears the resolved date; notes default to closed and can be deleted; complaints cannot', async () => {
     const r = await req('PATCH', '/api/admin/issues/' + complaintId, { token: T, json: { status: 'Open' } });

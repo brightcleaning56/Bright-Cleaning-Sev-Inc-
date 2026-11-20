@@ -3,6 +3,8 @@
 const TYPES = { complaint: 'Complaint', service_request: 'Service request', incident: 'Incident', task: 'Task', follow_up: 'Follow-up', note: 'Note' };
 // Only the listed type names are valid. A plain TYPES[x] lookup also finds inherited names such as "constructor".
 const hasType = t => typeof t === 'string' && Object.prototype.hasOwnProperty.call(TYPES, t);
+// A due date must be YYYY-MM-DD and an actual calendar day (rejects 2026-13-45 and 2026-02-30).
+const isRealDate = s => { if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const d = new Date(s + 'T00:00:00Z'); return !isNaN(d) && d.toISOString().slice(0, 10) === s; };
 const PREFIX = { complaint: 'ISS', service_request: 'REQ', incident: 'INC', task: 'TSK', follow_up: 'FUP', note: 'NOTE' };
 const LEGACY_CATEGORIES = ['Quality', 'Schedule', 'Billing', 'Safety', 'Damage', 'Staff conduct', 'Site access', 'Scope change', 'Sales', 'Other'];
 const DEFAULT_CATEGORIES = ['Cleaning quality', 'Missed service', 'Schedule', 'Billing / payment', 'Safety', 'Damage / incident', 'Staff conduct', 'Site access', 'Scope change', 'Supplies / equipment', 'Inspection', 'Sales', 'General'];
@@ -56,7 +58,7 @@ module.exports = function mountIssues(app, ctx) {
     pick('source', ['', ...SOURCES], 'source'); pick('recurrence', RECUR, 'repeat setting');
     for (const k of ['description', 'property', 'required_action', 'resolution', 'corrective_action', 'verification_note']) if (k in b) out[k] = clean(b[k], 5000);
     for (const k of ['work_order', 'reported_by']) if (k in b) out[k] = clean(b[k], 120);
-    if ('due_date' in b) { const d = clean(b.due_date, 10); if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) errs.push('Due date must be a date.'); else out.due_date = d || null; }
+    if ('due_date' in b) { const d = clean(b.due_date, 10); if (d && !isRealDate(d)) errs.push('Due date must be a date.'); else out.due_date = d || null; }
     if ('reminder_at' in b) { const d = clean(b.reminder_at, 25); if (d && isNaN(Date.parse(d))) errs.push('Reminder must be a date and time.'); else { out.reminder_at = d ? new Date(d).toISOString() : null; out.reminded_at = null; } }
     if ('assigned_to' in b) { const a = clean(b.assigned_to, 254).toLowerCase(); if (a && !users().includes(a)) errs.push('Assign to someone who has access to Bright Clean.'); else out.assigned_to = a || null; }
     const ref = (k, table, label) => { if (k in b) { const id = b[k] === '' || b[k] == null ? null : Number(b[k]); if (id !== null && !db.prepare(`SELECT 1 FROM ${table} WHERE id=?`).get(id)) errs.push(`That ${label} was not found.`); else out[k] = id; } };
