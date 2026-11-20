@@ -399,8 +399,8 @@
   }
 
   // ---------- Proposal options: several choices, each with its own units and prices ----------
-  async function loadEstOptions(id) {
-    const box = $('#estOpts'); if (!box) return;
+  async function loadEstOptions(id, target) {
+    const box = target || $('#estOpts'); if (!box) return;
     let d;
     try { d = await api('/api/admin/estimates/' + id + '/options'); } catch (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; return; }
     const SCOPE_CHOICES = ['Whole project', 'Per building'];
@@ -2118,6 +2118,7 @@
     }
     if (!est && !(lead && lead.intake)) $('#slCat').dataset.want = '';
     syncScopeCat(); renderScopeLines();
+    { const ob = $('#estOptsForm'); if (ob) { ob.innerHTML = ''; if (est) loadEstOptions(est.id, ob); } }
     $('#estTitle').textContent = est ? `Edit estimate — ${est.project_name || est.customer_name}` : 'New estimate';
     $('#estSave').textContent = est ? 'Save changes' : 'Save estimate';
     $('#estMsg').textContent = '';

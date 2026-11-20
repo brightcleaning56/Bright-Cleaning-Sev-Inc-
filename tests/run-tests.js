@@ -462,6 +462,21 @@ async function startServer(env, dataDir) {
     assert(r.status === 201 && e.proposal_total === m.proposal_total && e.crew_days === 0.5 && e.mobilization_cost === 150 && e.template_key === 'post-construction-final', JSON.stringify(e).slice(0, 300));
     return `#${E1} total $${e.proposal_total} = calculated; 12 labor h / (3 x 8) = 0.5 crew days`;
   });
+  await check('Proposals', 'Options survive the estimator form: saving an estimate that has options from the Edit form keeps the option price and both options', async () => {
+    const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Edit Keep Client', company: 'Jensen Test', email: 'editkeep@test.test', project_name: 'Edit keep test', scope: 'Final clean', labor_hours: 1, labor_rate: 10 } });
+    const id = r.data.estimate.id;
+    const lines = (rates) => [{ description: 'Units', unit: 'unit', quantity: 264, unit_price: rates[0] }, { description: 'Stairways', unit: 'stairway', quantity: 12, unit_price: rates[1] }, { description: 'Windows', unit: 'window', quantity: 1200, unit_price: 10 }];
+    await req('PUT', `/api/admin/estimates/${id}/options`, { token: T, json: { reason: 'Edit form check', options: [
+      { label: '1-week', duration_weeks: 1, scope_kind: 'Whole project', lines: lines([160, 130]) },
+      { label: '2-week', duration_weeks: 2, scope_kind: 'Whole project', lines: lines([130, 100]) }] } });
+    const lowest = 264 * 130 + 12 * 100 + 1200 * 10;
+    // The estimator form sends its own fields, with no options and no typed total, the way the Edit screen does.
+    const save = await req('PUT', `/api/admin/estimates/${id}`, { token: T, json: { customer_name: 'Edit Keep Client', company: 'Jensen Test', email: 'editkeep@test.test', project_name: 'Edit keep test', scope: 'Final clean', labor_hours: 1, labor_rate: 10, area_sqft: 0, production_rate: 0, line_items: [] } });
+    const after = (await req('GET', '/api/admin/estimates/' + id, { token: T })).data.estimate;
+    const opts = (await req('GET', `/api/admin/estimates/${id}/options`, { token: T })).data.options;
+    assert(save.status === 200 && after.proposal_total === lowest && opts.length === 2 && opts[0].total === 264 * 160 + 12 * 130 + 1200 * 10, JSON.stringify([save.status, after.proposal_total, lowest, opts.length]));
+  });
+
   await check('Proposals', 'Options: each option has its own priced lines; the client sees them and approves one; the chosen total is used', async () => {
     const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Option Client', company: 'Jensen Test', email: 'options@test.test', project_name: 'Options test', scope: 'Final clean', labor_hours: 1, labor_rate: 10 } });
     const id = r.data.estimate.id, tok = r.data.estimate.public_token;

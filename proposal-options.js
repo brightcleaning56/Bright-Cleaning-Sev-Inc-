@@ -26,6 +26,17 @@ function optionsFor(db, estimateId) {
 // What the estimate's proposal total becomes for an option subtotal (tax applied the same way as the estimate).
 function totalWithTax(e, subtotal) { return round2(subtotal * (1 + num(e.tax_pct) / 100)); }
 
+// The price the options give right now: the chosen option, or the lowest until one is chosen. null when there are no options.
+// Used when an estimate is saved from the estimator form, which does not carry the options, so its own math must not replace them.
+function currentTotal(db, estimateId, taxPct) {
+  const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(estimateId);
+  const opts = e ? optionsFor(db, estimateId) : [];
+  if (!opts.length) return null;
+  const chosen = opts.find(o => o.id === e.selected_option_id);
+  const pick = chosen || opts.slice().sort((a, b) => a.total - b.total)[0];
+  return totalWithTax({ ...e, tax_pct: taxPct }, pick.total);
+}
+
 // Text that feeds the approval fingerprint. Empty when there are no options, so existing approvals stay valid.
 function signature(db, estimateId) {
   const o = optionsFor(db, estimateId);
@@ -195,6 +206,7 @@ function contractScope(db, e) {
 }
 
 module.exports.contractScope = contractScope;
+module.exports.currentTotal = currentTotal;
 module.exports.optionsFor = optionsFor;
 module.exports.signature = signature;
 module.exports.LOCKED = LOCKED;

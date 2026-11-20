@@ -79,6 +79,8 @@ module.exports = function mountAdminExt(app, ctx) {
     const scopeErr = require('./scopes').resolveLines(db, b);
     if (scopeErr) return res.status(400).json({ error: scopeErr });
     const m = estimateMath(b);
+    // With options, the total is the option price. The estimator form does not carry the options, so its own math must not replace them.
+    { const optTotal = require('./proposal-options').currentTotal(db, e.id, b.tax_pct !== undefined ? b.tax_pct : e.tax_pct); if (optTotal !== null) m.proposal_total = optTotal; }
     // A proposal the client has seen keeps its price. Any field left out of the request is priced as zero, which would change the total; refuse that.
     if (FROZEN.includes(e.status) && Math.abs(Number(m.proposal_total) - Number(e.proposal_total || 0)) > 0.005) return res.status(409).json({ error: 'This proposal was already sent, and its price would change. Duplicate the proposal to revise the price.' });
     const f = { ...estimateFields(b), labor_hours: m.labor_hours, labor_cost: m.labor_cost, total_cost: m.total_cost, proposal_total: m.proposal_total, updated_at: new Date().toISOString(), id: e.id };
