@@ -78,7 +78,8 @@ function tieOut(db) {
   const invoices = db.prepare("SELECT id, invoice_number, amount, tax_amount, status FROM invoices WHERE status NOT IN ('Draft','Void')").all();
   const paidStmt = db.prepare('SELECT COALESCE(SUM(amount),0) v FROM payments WHERE invoice_id=?');
   let owed = 0;
-  for (const inv of invoices) owed += (Number(inv.amount) || 0) + taxOf(inv) - paidStmt.get(inv.id).v;
+  const R = require('./receivables');
+  for (const inv of invoices) owed += R.invoiceBalance(db, inv.id).owed;
   const ar = L.trialBalance(db).accounts.find(a => a.code === '1100').balance;
   const unpostedInvoices = invoices.filter(inv => !postedEntry(db, 'invoice', 'invoice:' + inv.id) && (Number(inv.amount) || 0) > 0).length;
   const unpostedPayments = db.prepare('SELECT id FROM payments').all().filter(p => !postedEntry(db, 'payment', 'payment:' + p.id)).length;
