@@ -67,4 +67,15 @@ assert.strictEqual(tb.balanced, true);
 assert.strictEqual(E.syncRecorded(db).burden_posted, 0, 'burden posts once');
 console.log('ok - labor burden is off by default, then posts 10% once, and the books balance');
 
+// Iowa state rate: 6% suggested on the invoice amount; an exemption reason (for example construction) forces tax to zero and is kept.
+let sug; { const res = { json(b) { sug = b; return this; }, status() { return this; } }; mountRoutes['GET /api/admin/invoices/:id/tax-suggestion']({ params: { id: '2' } }, res); }
+assert.strictEqual(sug.rate_pct, 6, 'Iowa state rate 6%');
+assert.strictEqual(sug.suggested, 60, '6% of the 1,000 invoice');
+console.log('ok - Iowa 6% state rate is suggested on the invoice amount');
+const exempt = (() => { let out; const res = { status(c) { this.code = c; return this; }, json(b) { out = { code: this.code || 200, body: b }; return this; } }; mountRoutes['POST /api/admin/invoices/:id/tax']({ params: { id: '2' }, body: { tax_amount: 60, tax_exempt_reason: 'New construction cleaning (exempt)' } }, res); return out; })();
+assert.strictEqual(exempt.code, 200);
+assert.strictEqual(db.prepare('SELECT tax_amount, tax_exempt_reason FROM invoices WHERE id=2').get().tax_amount, 0, 'an exemption sets the tax to zero');
+assert.strictEqual(db.prepare('SELECT tax_exempt_reason FROM invoices WHERE id=2').get().tax_exempt_reason, 'New construction cleaning (exempt)', 'the reason is kept');
+console.log('ok - an exemption reason sets tax to zero and is kept with the invoice');
+
 console.log('\nAll tax and burden checks passed.');

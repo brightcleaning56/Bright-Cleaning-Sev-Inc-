@@ -2496,12 +2496,14 @@
       defs: [{ name: 'vendor', label: 'Vendor' }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example materials, equipment, insurance)' },
         { name: 'amount', label: 'Amount ($)', type: 'number' }, { name: 'bill_date', label: 'Bill date', type: 'date' }, { name: 'receipt_ref', label: 'Receipt reference (file name or number)' }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
       submit: b => api('/api/admin/expenses', { method: 'POST', json: b }), after: () => { toast('Bill saved'); loadAccounting(); } });
-    body.querySelectorAll('[data-acctax]').forEach(btn => btn.onclick = () => {
+    body.querySelectorAll('[data-acctax]').forEach(btn => btn.onclick = async () => {
       const inv = (tie.unposted || []).find(i => String(i.id) === btn.dataset.acctax);
       if (!inv) return;
-      openForm({ title: 'Sales tax on ' + (inv.invoice_number || 'invoice'), sub: 'Tax on this invoice posts to sales tax payable. Revenue stays the invoice amount.',
-        defs: [{ name: 'tax_amount', label: 'Sales tax ($)', type: 'number' }, { name: 'billing_kind', label: 'Billing', type: 'select', options: [['arrears', 'Work done (revenue on issue)'], ['advance', 'Paid ahead (deposit until earned)']] }], values: { tax_amount: inv.tax_amount || 0, billing_kind: inv.billing_kind || 'arrears' },
-        submit: b => api('/api/admin/invoices/' + inv.id + '/tax', { method: 'POST', json: { tax_amount: b.tax_amount, billing_kind: b.billing_kind } }), after: () => { toast('Sales tax saved'); loadAccounting(); } });
+      let sug = null; try { sug = await api('/api/admin/invoices/' + inv.id + '/tax-suggestion'); } catch { /* no suggestion */ }
+      const taxLabel = sug ? `Sales tax ($). Iowa state rate ${sug.rate_pct}% suggests ${money(sug.suggested)}` : 'Sales tax ($)';
+      openForm({ title: 'Sales tax on ' + (inv.invoice_number || 'invoice'), sub: 'Tax on this invoice posts to sales tax payable. Revenue stays the invoice amount. Leave the exemption reason empty unless the work is exempt.',
+        defs: [{ name: 'tax_amount', label: taxLabel, type: 'number' }, { name: 'tax_exempt_reason', label: 'Exemption reason (for example: cleaning tied to new construction)', wide: true }, { name: 'billing_kind', label: 'Billing', type: 'select', options: [['arrears', 'Work done (revenue on issue)'], ['advance', 'Paid ahead (deposit until earned)']] }], values: { tax_amount: inv.tax_amount || (sug ? sug.suggested : 0), billing_kind: inv.billing_kind || 'arrears', tax_exempt_reason: sug && sug.exempt_reason ? sug.exempt_reason : '' },
+        submit: b => api('/api/admin/invoices/' + inv.id + '/tax', { method: 'POST', json: { tax_amount: b.tax_amount, billing_kind: b.billing_kind, tax_exempt_reason: b.tax_exempt_reason } }), after: () => { toast('Sales tax saved'); loadAccounting(); } });
     });
     body.querySelectorAll('[data-accattach]').forEach(btn => btn.onclick = () => {
       const inp = document.createElement('input');

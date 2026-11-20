@@ -13,12 +13,20 @@ const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const ISSUED_SKIP = ['Draft'];
 const dateOf = s => String(s || new Date().toISOString()).slice(0, 10);
 
+// Iowa state sales tax on janitorial and building cleaning for nonresidential customers is 6% (Iowa Code 423.2). Cleaning tied to new
+// construction or remodeling, and residential cleaning paid by the occupant, are exempt. The rate is a setting; local option taxes are not included.
+function taxRatePct(db) {
+  try { const r = db.prepare("SELECT value FROM settings WHERE key='sales_tax_rate_pct'").get(); const v = Number(r && r.value); return v >= 0 && v <= 20 ? v : 6; }
+  catch { return 6; }
+}
+
 // Sales tax per invoice is optional. The column is added on first use; zero means the invoice amount is the whole amount, as before.
 function ensureTaxColumn(db) {
   const cols = db.prepare('PRAGMA table_info(invoices)').all().map(c => c.name);
   if (!cols.includes('tax_amount')) db.exec('ALTER TABLE invoices ADD COLUMN tax_amount REAL DEFAULT 0');
-  // Revenue timing (decision): 'arrears' (default) = work already done, revenue on issue; 'advance' = paid ahead, held as a customer deposit until earned.
+// Revenue timing (decision): 'arrears' (default) = work already done, revenue on issue; 'advance' = paid ahead, held as a customer deposit until earned.
   if (!cols.includes('billing_kind')) db.exec("ALTER TABLE invoices ADD COLUMN billing_kind TEXT DEFAULT 'arrears'");
+  if (!cols.includes('tax_exempt_reason')) db.exec('ALTER TABLE invoices ADD COLUMN tax_exempt_reason TEXT');
 }
 const taxOf = inv => Math.round((Number(inv.tax_amount) || 0) * 100) / 100;
 
@@ -150,16 +158,25 @@ function mount(app, ctx) {
     const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(Number(req.params.id));
     if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
     const body = req.body || {};
-    const tax = body.tax_amount === undefined ? taxOf(inv) : Number(body.tax_amount);
+    const exemptReason = String(body.tax_exempt_reason || '').trim().slice(0, 300);
+    const tax = exemptReason ? 0 : (body.tax_amount === undefined ? taxOf(inv) : Number(body.tax_amount));
     if (!Number.isFinite(tax) || tax < 0 || tax > 1e7) return res.status(400).json({ error: 'Sales tax must be zero or more.' });
     const kind = body.billing_kind === undefined ? (inv.billing_kind || 'arrears') : String(body.billing_kind);
     if (!['arrears', 'advance'].includes(kind)) return res.status(400).json({ error: 'Billing must be arrears (work done) or advance (paid ahead).' });
     if (postedEntry(db, 'invoice', 'invoice:' + inv.id)) return res.status(409).json({ error: 'This invoice is already on the ledger. Void it and issue a corrected invoice to change its tax or billing.' });
-    db.prepare('UPDATE invoices SET tax_amount=?, billing_kind=? WHERE id=?').run(Math.round(tax * 100) / 100, kind, inv.id);
+    db.prepare('UPDATE invoices SET tax_amount=?, billing_kind=?, tax_exempt_reason=? WHERE id=?').run(Math.round(tax * 100) / 100, kind, exemptReason || null, inv.id);
     require('./audit').record(db, { actor: req.user && req.user.email, action: 'set sales tax', entity: 'invoice', entityId: inv.id, detail: 'sales tax ' + (Math.round(tax * 100) / 100).toFixed(2) + ' (was ' + Number(inv.tax_amount || 0).toFixed(2) + ')' });
     res.json({ ok: true, tax_amount: Math.round(tax * 100) / 100 });
   });
   // Advance billing: how much of an invoice is still held as a deposit, and earning part of it as work is done.
+  app.get('/api/admin/invoices/:id/tax-suggestion', auth, (req, res) => {
+    ensureTaxColumn(db);
+    const inv = db.prepare('SELECT id, amount, tax_exempt_reason FROM invoices WHERE id=?').get(Number(req.params.id));
+    if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
+    const rate = taxRatePct(db);
+    res.json({ rate_pct: rate, suggested: Math.round((Number(inv.amount) || 0) * rate) / 100, exempt_reason: inv.tax_exempt_reason || null,
+      note: 'Iowa state rate for nonresidential janitorial and building cleaning. Not charged on cleaning tied to new construction or remodeling, or on residential cleaning paid by the occupant. Local option taxes are not included.' });
+  });
   app.get('/api/admin/invoices/:id/deposit', auth, (req, res) => { try { res.json(depositOf(db, req.params.id)); } catch (e) { res.status(400).json({ error: e.message }); } });
   app.post('/api/admin/invoices/:id/earn', auth, (req, res) => {
     try { res.status(201).json({ ok: true, entry: earnDeposit(db, { invoiceId: req.params.id, amount: (req.body || {}).amount, date: (req.body || {}).date, note: (req.body || {}).note, by: req.user && req.user.email }) }); }

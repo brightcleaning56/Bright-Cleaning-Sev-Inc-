@@ -87,7 +87,7 @@ const ROLE_RULES=[
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/reconciliations$/,roles:['owner','manager'],why:'Bank reconciliations are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/invoices\/\d+\/tax$/,roles:['owner','manager'],why:'Only an owner or manager can set sales tax on an invoice.'},
   {m:/^GET$/,p:/^\/api\/admin\/accounting\/trace$/,roles:['owner','manager'],why:'Document traces are limited to owners and managers.'},
-  {m:/^(GET|POST)$/,p:/^\/api\/admin\/invoices\/\d+\/(balance|refund|credit-note)$/,roles:['owner','manager'],why:'Refunds, credit notes and balances are limited to owners and managers.'},
+  {m:/^(GET|POST)$/,p:/^\/api\/admin\/invoices\/\d+\/(balance|refund|credit-note|tax-suggestion)$/,roles:['owner','manager'],why:'Refunds, credit notes and balances are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/payroll-payment$/,roles:['owner'],why:'Only an owner can record payroll payments.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/vendors$/,roles:['owner','manager'],why:'The vendor list is limited to owners and managers.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/bank(\/.*)?$/,roles:['owner','manager'],why:'Bank statements and matching are limited to owners and managers.'},
