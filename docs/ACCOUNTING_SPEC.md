@@ -35,35 +35,49 @@ Bright Clean keeps its own double-entry ledger. The operations modules stay the 
 
 Tests: `tests/ledger-test.js`, `invoice-ledger-test.js`, `expenses-test.js`, `ledger-reports-test.js`, `periods-test.js`, `exports-test.js`, `tax-burden-test.js`, `job-cost-test.js`, `contract-value-test.js`, `trace-test.js`, `spam-screen-test.js`, and the HTTP checks in `tests/run-tests.js`.
 
-## 2. Gaps against the audit (status after the step-by-step pass)
+## 2. Gaps against the audit (status after the decisions round)
 
-Status key: BUILT = in code and tested. BUILT-OFF = in code, switched off until the owner decides. DECISION = needs the owner. DEFERRED = not built now, with the reason. ACCESS = needs a connection or details only the owner has.
+Status key: BUILT = in code and tested. BUILT-OFF = in code, off until the owner sets a value. DECIDED = decision recorded here. ACCESS = needs details only the owner has. DEFERRED = not built, by design.
 
 | # | Gap | Status | What exists now / what is left |
 | --- | --- | --- | --- |
-| G1 | Ledger posting is run by the owner, not automatic | DECISION | `POST /ledger/sync` (owner). Choose automatic or owner-run. |
-| G2 | Payroll payments | BUILT (interim) + ACCESS | Owner records net pay and payroll taxes (`POST /ledger/payroll-payment`). ADP link needs company code, file-number format, RUN or Workforce Now. |
-| G3 | Refunds, credit notes, payment allocation | BUILT | `receivables.js`: refund (cannot exceed paid), credit note (cannot exceed owed), tie-out includes both. Payments stay one per invoice (allocation is the invoice id). |
-| G4 | AR and AP aging on the ledger | BUILT | `aging.js`: receivables by days past due; payables by bill age, by vendor. |
-| G5 | Amendments and renewals; change orders | DECISION | Contract value follows the reports rule. Amendment value is listed, not added. Owner to confirm the rule. Change-order approval flow not built. |
-| G6 | Task budgets and task-level cost | BUILT | `task-costs.js`: budgets on tasks, time and costs assigned to tasks, report that adds back to project cost. Budget entry is by API; a screen is not built yet. |
-| G7 | Overhead allocation | BUILT | Job cost allocates overhead at the estimate's rate on actual cost, shown beside cost (not posted). |
-| G8 | Labor burden and overtime | BUILT-OFF (burden) / DECISION (overtime) | Burden rate setting `ledger_burden_pct` (zero). Overtime not in cost. Owner to set the rate and decide overtime. |
-| G9 | Sales tax on invoices | BUILT-OFF (default) / DECISION | Tax per invoice posts to tax payable; zero by default. Owner to decide default and whether invoice amounts include tax. |
-| G10 | Revenue recognition policy | DECISION | Revenue posts on invoice issue. Milestone or other policy not chosen. |
-| G11 | Expense receipts and approvals | BUILT-OFF | Receipt reference and approval on bills; settings `bill_receipt_required` and `bill_approval_required` (both off). Receipt file upload not built. |
-| G12 | Vendors | BUILT | Vendors table; bills link to vendors by name (found or created). |
-| G13 | Multiple accounting entities | DEFERRED | Bright Clean is one company. Add when a second company uses the system. |
-| G14 | Bank statement import and matching | BUILT | `bank.js`: import CSV, safe re-import, automatic and manual matching, outstanding items. Bank feed (live) not built. |
-| G15 | Accounting audit trail | BUILT | `audit.js`: sync, reversals, closes, reconciliations, tax changes, bill approvals, task budgets and assignments, statement imports. Postings carry who and when. |
-| G16 | Reports on the ledger | BUILT (comparison) / DECISION (switch) | `compare.js` shows each Reports figure beside the ledger with the reason for any difference. Switching the Reports page is the owner's choice of basis. |
-| G17 | Incremental sync | DEFERRED | The sync is safe to repeat and runs over all records. Revisit if slow. |
-| G18 | Database (SQLite or PostgreSQL) | DECISION | Stays on SQLite. Not changed. |
-| G19 | Pay rate used for labor cost | BUILT | Rate in force at approval is kept on each time entry; ledger, job cost, timesheet and reports use it. Entries approved before this change use the current rate. |
-| G20 | Customer and employee portals | BUILT (balance) / DEFERRED (rest) | Customer portal balance includes tax, refunds and credits. Employee portal time and expense submission through the ledger not built. |
-| G21 | Other account reconciliations (cards, loans, equity) | DEFERRED | Accounts exist in the chart; no feeds. |
+| G1 | Ledger posting | BUILT | Posts automatically every 15 minutes (`LEDGER_AUTO_SYNC_MS` to change, 0 to stop). Owner and manager can also run it now. Payments with no issued invoice are held with a reason, not posted. |
+| G2 | Payroll payments | BUILT (interim) + ACCESS | Owner records net pay and payroll taxes by hand. ADP link waits for the ADP details (company code, file-number format, RUN or Workforce Now). Kept out for now, by the owner's choice. |
+| G3 | Refunds, credit notes | BUILT | Refund cannot exceed payments; credit note cannot exceed what is owed; both in the tie-out. |
+| G4 | AR and AP aging | BUILT | Receivables by days past due; payables by bill age, by vendor. |
+| G5 | Amendments and renewals | BUILT | Signed amendments add to contract value (owner decision: not already in the original). Renewals add once signed. Superseded and archived rows do not count. |
+| G6 | Task budgets and task cost | BUILT | Budgets on tasks; time and costs assigned to tasks; the parts add back to project cost. Screen on the Accounting page. |
+| G7 | Overhead allocation | BUILT | Overhead at the estimate's rate on actual cost, shown beside cost (not posted). |
+| G8 | Labor burden and overtime | BUILT (overtime) / BUILT-OFF (burden) | Overtime: weekly hours over 40 (setting `overtime_after_hours`) cost 1.5 times the rate, into the job the employee is working on (owner decision). Burden: rate setting `ledger_burden_pct`, zero. The owner has not given a burden rate yet. |
+| G9 | Sales tax | DECIDED (amounts) / BUILT-OFF (rate) | Owner decision: invoice amounts are before tax; tax is added on top and posted to sales tax payable (2100). No tax is charged until an amount is set on the invoice. The tax rate per service is not in the system and needs the accountant's input. |
+| G10 | Revenue timing | DECIDED (policy) / BUILT | Policy: work done is revenue when invoiced (`arrears`, the default). Money taken ahead of work is a customer deposit (`advance`), earned into revenue as the work is done (earn entry, cannot exceed the deposit). |
+| G11 | Receipts and approvals | BUILT (receipt upload; approval and receipt rules off by default) | Receipt file attached to the bill (guarded upload, owner and manager). Approval and receipt-before-payment rules are settings, off by default. |
+| G12 | Vendors | BUILT | Vendors table; bills link to vendors by name. |
+| G13 | Multiple accounting entities | DEFERRED | One company. Add when a second company uses the system. |
+| G14 | Bank statements | BUILT | Import CSV, safe re-import, automatic and manual matching, outstanding items. Live bank feed not built. |
+| G15 | Audit trail | BUILT | Append-only list of accounting actions with who, when and why. |
+| G16 | Reports on the ledger | BUILT (comparison) / DECIDED basis: ledger | `compare.js` shows the Reports figures beside the ledger, with the reason for each difference. The Reports page should read the ledger; that switch is the next step. |
+| G17 | Incremental sync | DEFERRED | The sync is safe to repeat and runs over all records. Revisit if it gets slow. |
+| G18 | Database | DECIDED: stay on SQLite | See section 10. |
+| G19 | Pay rate used for labor cost | BUILT | Labor cost is worked out at approval (with overtime) and stored on the entry. |
+| G20 | Customer and employee portals | BUILT (customer balance) / DEFERRED (rest) | Customer portal balance includes tax, refunds, credits. Employee portal time and expense submission not built, by design. |
+| G21 | Other account feeds (cards, loans, equity) | DEFERRED | Accounts exist; no feeds, by design. |
 
-Open decisions, in order of impact: G5 (amendments), G9 (sales tax default), G10 (revenue timing), G8 (burden rate and overtime), G1 (sync timing), G18 (database). Access needed: G2 (ADP details).
+## 10. Database decision: stay on SQLite
+
+Decision: keep SQLite for now. Move to PostgreSQL later, as a separate project, when one of the triggers below happens.
+
+Reasons:
+- The application reads and writes the database synchronously across most modules. Moving to PostgreSQL means rewriting data access across the whole application, with live customer, payroll and financial records in the middle. That is the largest risk in this work.
+- Bright Clean runs as one server with a small office team. SQLite in write-ahead mode handles that load. The ledger uses integer cents and database triggers, which work the same way in SQLite.
+- Backups already run daily with an off-site copy, and a restore drill is part of the owner list.
+
+Triggers that would justify the move:
+- More than one application server running at the same time (the single-file database cannot be shared across machines).
+- Several staff writing heavily at the same moment, with lock waits showing in the logs.
+- A need for point-in-time recovery that the daily backup cannot give.
+
+When it is time: write the migration as a plan, run it on a copy of the live data, and check every financial report and tie-out matches before switching.
 
 ## 3. Posting rules (as built)
 
@@ -117,15 +131,19 @@ Central gate: `ROLE_RULES` in `server.js`. A route not listed there is open to a
 - Rollback: the ledger tables can be dropped without touching operations data. Nothing in the operations modules reads them.
 - Before the first live sync: check the 2 payments on the ledger tie-out that have no invoice on the live system (see G1).
 
-## 7. Decisions the owner must make
+## 7. Decisions
 
-1. Amendments: is an amendment's value already inside the contract it changes (current assumption), or is it new work?
-2. Sales tax: default for invoices (zero, or a tax rate applied to taxable services), and whether invoice amounts include tax.
-3. Labor burden rate and whether overtime is added to job cost.
-4. Revenue recognition: revenue on invoice (current), or on completed milestones, or another measure.
-5. Database: keep SQLite, or move to PostgreSQL as a separate project.
-6. When the ledger is posted: owner-run (current) or automatic.
-7. Payroll: the ADP details (company code, file-number format, RUN or Workforce Now) to record payroll payments.
+| Decision | Answer | Where |
+| --- | --- | --- |
+| Amendments add to contract value once signed | Yes (not already inside the original) | G5, contract-value.js |
+| Invoice amounts before tax; tax added on top | Yes. Rate per service still to confirm with the accountant | G9 |
+| Revenue timing | Work done = revenue on issue (default); paid ahead = deposit, earned as work is done | G10 |
+| Overtime goes into the job | Yes, at 1.5 times, weekly over 40 hours | G8, labor.js |
+| Burden rate | Not given yet (off) | G8 |
+| Ledger posts automatically | Yes. Owner and manager can adjust and reverse | G1 |
+| Database | Stay on SQLite | section 10 |
+| ADP details | Out for now | G2 |
+| Multiple companies, incremental sync, card/loan/equity feeds, employee portal submission | Not built, by design | G13, G17, G21, G20 |
 
 ## 8. Acceptance
 
@@ -161,8 +179,8 @@ Automated tests cover items 1, 3 through 8, 11 through 14, 16, 18 and 20 of the 
 
 ## 9. Remaining work
 
-1. Owner decisions in section 2: amendments (G5), sales tax default (G9), revenue timing (G10), burden and overtime (G8), sync timing (G1), database (G18).
-2. ADP details for payroll (G2).
-3. Screens not yet built: task budget entry, purchasing and receipt upload, bank statement upload (the API exists; the Accounting page has no upload yet).
-4. Deferred by design: multiple entities (G13), incremental sync (G17), other account feeds (G21), employee portal time and expense submission (G20).
+1. Confirm the sales-tax rate for each service with the accountant (G9).
+2. Burden rate, when the owner gives one (G8).
+3. ADP details, when ready (G2).
+4. Switch the Reports page to the ledger (G16).
 5. Staging run of the 25 QA items with synthetic records (section 8), then the first live sync with the owner present.
