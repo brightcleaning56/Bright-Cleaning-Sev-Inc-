@@ -15,6 +15,7 @@ const STARTER_CHART = [
   ['2000', 'Accounts payable', 'liability'],
   ['2100', 'Sales tax payable', 'liability'],
   ['2200', 'Customer deposits (not yet earned)', 'liability'],
+  ['2300', 'Accrued payroll', 'liability'],
   ['3000', "Owner's equity", 'equity'],
   ['4000', 'Cleaning service revenue', 'revenue'],
   ['5000', 'Direct labor', 'expense'],
@@ -22,7 +23,8 @@ const STARTER_CHART = [
   ['5200', 'Equipment and rentals', 'expense'],
   ['5300', 'Subcontractors', 'expense'],
   ['5400', 'Travel and disposal', 'expense'],
-  ['6000', 'Operating expenses', 'expense']
+  ['6000', 'Operating expenses', 'expense'],
+  ['6100', 'Payroll not assigned to a job', 'expense']
 ];
 
 const cents = v => Math.round(Number(v) * 100);

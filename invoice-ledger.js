@@ -84,7 +84,10 @@ function tieOut(db) {
 function mount(app, ctx) {
   const { db, auth } = ctx;
   app.post('/api/admin/ledger/sync', auth, (req, res) => {
-    try { const out = syncAll(db); res.json({ ok: true, ...out, tie_out: tieOut(db) }); }
+    try {
+      const out = syncAll(db), ex = require('./expenses').syncRecorded(db);
+      res.json({ ok: true, invoices_posted: out.invoices_posted, invoices_reversed: out.invoices_reversed, payments_posted: out.payments_posted, bills_posted: ex.bills_posted, project_costs_posted: ex.project_costs_posted, payroll_posted: ex.payroll_posted, errors: [...out.errors, ...ex.errors], tie_out: tieOut(db), cost_drift: require('./expenses').costDrift(db) });
+    }
     catch (e) { res.status(500).json({ error: 'The ledger sync failed: ' + e.message }); }
   });
   app.get('/api/admin/receivables/tie-out', auth, (req, res) => res.json(tieOut(db)));

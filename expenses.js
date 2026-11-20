@@ -1,0 +1,136 @@
+// Expenses and payroll costs posted to Bright Clean's ledger (Phase 5 of the accounting plan).
+// - Vendor bills: recognised on the bill date (Dr expense / Cr accounts payable). Paying a bill: Dr payable / Cr cash.
+// - Recorded project costs (materials, equipment, subcontractors, travel, other): Dr expense / Cr accounts payable.
+//   Recorded project labor: Dr job labor / Cr accrued payroll.
+// - Approved time not tied to a job: Dr payroll not assigned to a job / Cr accrued payroll.
+// Each source posts once (keyed by its id); running the sync again posts nothing new.
+// Known gaps, shown in the drift check: labor burden and overtime are not added; payroll cash payments are not recorded yet
+// (the ADP file is not connected); a project cost that changes after it posted is flagged, not re-posted.
+
+const L = require('./ledger');
+const { accountFor } = require('./job-cost');
+
+function ensureSchema(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS expense_bills(
+    id INTEGER PRIMARY KEY AUTOINCREMENT, vendor TEXT NOT NULL, description TEXT, category TEXT,
+    amount REAL NOT NULL, bill_date TEXT NOT NULL, project_id INTEGER, status TEXT NOT NULL DEFAULT 'Open',
+    paid_at TEXT, created_by TEXT, created_at TEXT NOT NULL)`);
+}
+const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
+const postedEntry = (db, source, ref) => db.prepare('SELECT id FROM ledger_entries WHERE source=? AND source_ref=? AND reverses_id IS NULL').get(source, ref);
+const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
+
+function postBill(db, id) {
+  const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(id);
+  if (!b || b.status === 'Void' || postedEntry(db, 'bill', 'bill:' + id)) return false;
+  const exp = accountFor(b.category || b.description || b.vendor);
+  L.postEntry(db, {
+    date: b.bill_date, memo: 'Bill from ' + b.vendor + (b.description ? ': ' + b.description : ''), source: 'bill', sourceRef: 'bill:' + id, by: 'expense-sync',
+    lines: [{ account: exp.code, debit: b.amount }, { account: '2000', credit: b.amount }]
+  });
+  return true;
+}
+
+function createBill(db, b, by) {
+  ensureSchema(db); L.seedChart(db);
+  const vendor = String(b.vendor || '').trim();
+  const amount = r2(b.amount);
+  if (!vendor) throw new Error('A bill needs a vendor.');
+  if (!(amount > 0)) throw new Error('A bill needs an amount above zero.');
+  if (!isDate(b.bill_date)) throw new Error('A bill needs a real date (YYYY-MM-DD).');
+  const id = db.prepare('INSERT INTO expense_bills(vendor,description,category,amount,bill_date,project_id,status,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+    .run(vendor.slice(0, 200), String(b.description || '').slice(0, 300), String(b.category || '').slice(0, 80), amount, b.bill_date,
+      b.project_id ? Number(b.project_id) : null, 'Open', by || null, new Date().toISOString()).lastInsertRowid;
+  postBill(db, id);
+  return id;
+}
+
+function payBill(db, id, { date, by } = {}) {
+  ensureSchema(db); L.seedChart(db);
+  const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(Number(id));
+  if (!b) throw new Error('Bill not found.');
+  if (b.status === 'Paid') throw new Error('This bill is already paid.');
+  if (b.status === 'Void') throw new Error('A void bill cannot be paid.');
+  const d = date || new Date().toISOString().slice(0, 10);
+  if (!isDate(d)) throw new Error('Payment date must be a real date.');
+  postBill(db, b.id);
+  L.postEntry(db, {
+    date: d, memo: 'Paid bill ' + b.id + ' to ' + b.vendor, source: 'bill-payment', sourceRef: 'bill-payment:' + b.id, by: by || 'expense-sync',
+    lines: [{ account: '2000', debit: b.amount }, { account: '1000', credit: b.amount }]
+  });
+  db.prepare("UPDATE expense_bills SET status='Paid', paid_at=? WHERE id=?").run(new Date().toISOString(), b.id);
+  return b.id;
+}
+
+// Posts recorded project costs, bills and approved unassigned time that are not yet on the ledger.
+function syncRecorded(db) {
+  ensureSchema(db); L.seedChart(db);
+  const out = { bills_posted: 0, project_costs_posted: 0, payroll_posted: 0, errors: [] };
+  for (const b of db.prepare("SELECT id FROM expense_bills WHERE status<>'Void' ORDER BY id").all()) {
+    try { if (postBill(db, b.id)) out.bills_posted++; } catch (e) { out.errors.push('bill ' + b.id + ': ' + e.message); }
+  }
+  if (hasTable(db, 'project_costs')) {
+    for (const c of db.prepare('SELECT * FROM project_costs ORDER BY id').all()) {
+      const ref = 'project-cost:' + c.id;
+      if (postedEntry(db, 'project-cost', ref) || !(Number(c.amount) > 0)) continue;
+      const isLabor = /labou?r|crew|wage|payroll/i.test(String(c.category || ''));
+      const exp = accountFor(c.category);
+      const date = String(c.cost_date || c.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+      try {
+        L.postEntry(db, {
+          date, memo: 'Job cost: ' + (c.description || c.category) + ' (project ' + c.project_id + ')', source: 'project-cost', sourceRef: ref, by: 'expense-sync',
+          lines: [{ account: exp.code, debit: r2(c.amount) }, { account: isLabor ? '2300' : '2000', credit: r2(c.amount) }]
+        });
+        out.project_costs_posted++;
+      } catch (e) { out.errors.push('project cost ' + c.id + ': ' + e.message); }
+    }
+  }
+  if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
+    const rows = db.prepare('SELECT t.*, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all();
+    for (const t of rows) {
+      const ref = 'time:' + t.id;
+      const amount = r2((Number(t.minutes) || 0) / 60 * (Number(t.hourly_rate) || 0));
+      if (postedEntry(db, 'payroll', ref) || !(amount > 0)) continue;
+      try {
+        L.postEntry(db, {
+          date: String(t.clock_in).slice(0, 10), memo: 'Approved time not assigned to a job (time ' + t.id + ')', source: 'payroll', sourceRef: ref, by: 'expense-sync',
+          lines: [{ account: '6100', debit: amount }, { account: '2300', credit: amount }]
+        });
+        out.payroll_posted++;
+      } catch (e) { out.errors.push('time ' + t.id + ': ' + e.message); }
+    }
+  }
+  return out;
+}
+
+// Recorded costs that changed or disappeared after they posted. Shown for review, never silently re-posted.
+function costDrift(db) {
+  const drift = [];
+  if (!hasTable(db, 'project_costs')) return drift;
+  const posted = db.prepare("SELECT e.source_ref, SUM(l.debit_cents) d FROM ledger_entries e JOIN ledger_lines l ON l.entry_id=e.id WHERE e.source='project-cost' AND e.reverses_id IS NULL GROUP BY e.id").all();
+  for (const p of posted) {
+    const id = Number(String(p.source_ref).split(':')[1]);
+    const c = db.prepare('SELECT amount FROM project_costs WHERE id=?').get(id);
+    if (!c) drift.push({ ref: p.source_ref, issue: 'The cost was deleted after it posted to the ledger.' });
+    else if (Math.round(c.amount * 100) !== p.d) drift.push({ ref: p.source_ref, issue: 'The cost changed after it posted (ledger ' + (p.d / 100).toFixed(2) + ', now ' + r2(c.amount).toFixed(2) + ').' });
+  }
+  return drift;
+}
+
+function mount(app, ctx) {
+  const { db, auth } = ctx;
+  ensureSchema(db);
+  app.get('/api/admin/expenses', auth, (req, res) => res.json({ bills: db.prepare('SELECT * FROM expense_bills ORDER BY id DESC LIMIT 300').all() }));
+  app.post('/api/admin/expenses', auth, (req, res) => {
+    try { const id = createBill(db, req.body || {}, req.user && req.user.email); res.status(201).json({ ok: true, id }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  app.post('/api/admin/expenses/:id/pay', auth, (req, res) => {
+    try { payBill(db, req.params.id, { date: (req.body || {}).date, by: req.user && req.user.email }); res.json({ ok: true }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  app.get('/api/admin/ledger/cost-drift', auth, (req, res) => res.json({ drift: costDrift(db) }));
+}
+
+module.exports = { ensureSchema, createBill, payBill, syncRecorded, costDrift, mount };
