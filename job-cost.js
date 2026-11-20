@@ -19,6 +19,7 @@ function accountFor(category) {
   return { code: '6000', name: 'Operating expenses (unmapped category)' };
 }
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const hasCol = (db, t, c) => db.prepare(`PRAGMA table_info(${t})`).all().some(x => x.name === c);
 const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
 
 function jobCostReport(db, projectId) {
@@ -59,6 +60,13 @@ function jobCostReport(db, projectId) {
     if (e) { budgetCost = r2(e.total_cost); budgetPrice = r2(e.proposal_total); budgetHours = Number(e.labor_hours) || 0; }
   } else budgetNote = 'No estimate is linked to this project, so there is no projected cost.';
 
+  // Overhead allocated to the job at the estimate's overhead rate (audit G7). Shown beside the cost, not posted.
+  let overheadPct = 0;
+  if (p.estimate_id && hasTable(db, 'estimates') && hasCol(db, 'estimates', 'overhead_pct')) {
+    const e = db.prepare('SELECT overhead_pct FROM estimates WHERE id=?').get(p.estimate_id);
+    overheadPct = e ? Number(e.overhead_pct) || 0 : 0;
+  }
+  const allocatedOverhead = r2(actualCost * overheadPct / 100);
   const price = contractValue != null ? contractValue : budgetPrice;
   const priceSource = contractValue != null ? 'contract' : (budgetPrice != null ? 'estimate (no contract linked)' : null);
   return {
@@ -67,9 +75,10 @@ function jobCostReport(db, projectId) {
       gross_margin_pct: budgetPrice > 0 && budgetCost != null ? r2((budgetPrice - budgetCost) / budgetPrice * 100) : null, note: budgetNote },
     actual: { revenue_basis: price, revenue_source: priceSource, cost: actualCost, gross_profit: price != null ? r2(price - actualCost) : null,
       gross_margin_pct: price > 0 ? r2((price - actualCost) / price * 100) : null,
+      overhead_rate_pct: overheadPct, allocated_overhead: allocatedOverhead, profit_after_overhead: price != null ? r2(price - actualCost - allocatedOverhead) : null,
       unposted_labor: r2(unposted), unposted_labor_hours: r2(unpostedMinutes / 60), contract_note: contractNote },
     cost_by_account: lines,
-    gaps: ['Labor is at the employee hourly rate only; burden and overtime are not added yet.', 'Tasks have no budget fields, so task-level cost is not reported.', 'Invoiced and collected amounts are not part of this report yet (Phase 4).']
+    gaps: ['Labor is at the employee hourly rate only; burden and overtime are not added yet.', 'Tasks have no budget fields, so task-level cost is not reported.', 'Overhead is allocated at the estimate rate on actual cost, shown separately, and is not posted.', 'Invoiced and collected amounts are not part of this report yet (Phase 4).']
   };
 }
 

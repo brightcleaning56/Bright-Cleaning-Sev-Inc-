@@ -17,6 +17,7 @@ module.exports = function mountSched(app, ctx) {
     CREATE TABLE IF NOT EXISTS time_entries(id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, visit_id INTEGER, project_id INTEGER, clock_in TEXT NOT NULL, clock_out TEXT,
       minutes INTEGER, source TEXT DEFAULT 'crew', note TEXT, approved_by TEXT, approved_at TEXT, cost_id INTEGER, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS te_emp ON time_entries(employee_id);`);
+  try { db.exec('ALTER TABLE time_entries ADD COLUMN labor_rate REAL'); } catch { /* exists */ }
   const vcols = db.prepare('PRAGMA table_info(visits)').all().map(c => c.name);
   for (const [c, t] of [['dispatched_at', 'TEXT'], ['dispatched_by', 'TEXT'], ['arrived_at', 'TEXT'], ['departed_at', 'TEXT'], ['completed_at', 'TEXT'], ['priority', "TEXT DEFAULT 'Normal'"],
     ['crew_needed', 'INTEGER'], ['instructions', 'TEXT'], ['equipment', 'TEXT'], ['checklist', "TEXT DEFAULT '[]'"], ['skip_reason', 'TEXT'], ['moved_from', 'TEXT'],
@@ -319,7 +320,7 @@ module.exports = function mountSched(app, ctx) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return res.status(400).json({ error: 'Dates must look like 2026-11-14.' });
     // A clock-in belongs to the business day it happens on (Central time), not the UTC day: an evening shift must not move to tomorrow.
     const [winStart, winEnd] = require('./bizdate').window(from, to);
-    const rows = db.prepare(`SELECT t.*, e.name, e.hourly_rate, v.title visit_title, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN visits v ON v.id=t.visit_id LEFT JOIN projects p ON p.id=t.project_id
+    const rows = db.prepare(`SELECT t.*, e.name, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate, v.title visit_title, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN visits v ON v.id=t.visit_id LEFT JOIN projects p ON p.id=t.project_id
       WHERE t.clock_in >= ? AND t.clock_in < ? ORDER BY t.clock_in DESC`).all(winStart, winEnd).map(t => ({ ...t, cost: t.minutes ? Math.round(t.minutes / 60 * (t.hourly_rate || 0) * 100) / 100 : 0 }));
     res.json({ entries: rows, totals: { minutes: rows.reduce((s, t) => s + (t.minutes || 0), 0), cost: Math.round(rows.reduce((s, t) => s + t.cost, 0) * 100) / 100, open: rows.filter(t => !t.clock_out).length, unapproved: rows.filter(t => t.clock_out && !t.approved_by).length } });
   });
@@ -676,7 +677,7 @@ module.exports = function mountSched(app, ctx) {
   };
   // Labor cost of a job from the same time entries and hourly rates payroll uses, plus what the project has invoiced.
   const jobMoney = v => {
-    const rows = db.prepare('SELECT t.clock_in, t.clock_out, t.minutes, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.visit_id=?').all(v.id);
+    const rows = db.prepare('SELECT t.clock_in, t.clock_out, t.minutes, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.visit_id=?').all(v.id);
     let mins = 0, cost = 0;
     for (const r of rows) { const m = r.clock_out ? minutesBetween(r.clock_in, r.clock_out) : Number(r.minutes || 0); mins += m; cost += (m / 60) * Number(r.hourly_rate || 0); }
     let invoiced = 0;

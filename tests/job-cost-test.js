@@ -8,13 +8,13 @@ const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE projects(id INTEGER PRIMARY KEY, name TEXT, customer_name TEXT, company TEXT, contract_id INTEGER, estimate_id INTEGER);
   CREATE TABLE contracts(id INTEGER PRIMARY KEY, value REAL, kind TEXT, status TEXT);
-  CREATE TABLE estimates(id INTEGER PRIMARY KEY, proposal_total REAL, total_cost REAL, labor_hours REAL);
+  CREATE TABLE estimates(id INTEGER PRIMARY KEY, proposal_total REAL, total_cost REAL, labor_hours REAL, overhead_pct REAL DEFAULT 10);
   CREATE TABLE project_costs(id INTEGER PRIMARY KEY, project_id INTEGER, category TEXT, amount REAL);
   CREATE TABLE employees(id INTEGER PRIMARY KEY, hourly_rate REAL);
   CREATE TABLE time_entries(id INTEGER PRIMARY KEY, employee_id INTEGER, project_id INTEGER, minutes INTEGER, approved_by TEXT, cost_id INTEGER);
 `);
 db.prepare("INSERT INTO contracts VALUES(1,50000,'Contract','Active')").run();
-db.prepare("INSERT INTO estimates VALUES(1,50000,19000,100)").run();
+db.prepare("INSERT INTO estimates(id,proposal_total,total_cost,labor_hours) VALUES(1,50000,19000,100)").run();
 db.prepare("INSERT INTO projects VALUES(1,'Commercial construction cleaning','Test Builder','Test Co',1,1)").run();
 // Recorded costs = the audit's 19,000.
 [['Labor', 12000], ['Materials', 2000], ['Equipment rental', 1000], ['Subcontractor', 3000], ['Travel and disposal', 1000]]
@@ -35,6 +35,9 @@ assert.strictEqual(r.actual.gross_profit, 30800, 'actual gross profit on the 50,
 assert.strictEqual(r.actual.revenue_source, 'contract', 'revenue basis is the linked contract');
 const labor = r.cost_by_account.find(l => l.code === '5000');
 assert.strictEqual(labor.amount, 12200, 'labor = posted 12,000 + unposted 200');
+assert.strictEqual(r.actual.overhead_rate_pct, 10, 'overhead rate from the estimate');
+assert.strictEqual(r.actual.allocated_overhead, 1920, 'overhead = 10% of actual cost 19,200');
+assert.strictEqual(r.actual.profit_after_overhead, 28880, 'actual gross profit less allocated overhead');
 assert.ok(r.gaps.length >= 3, 'known gaps are listed');
 console.log('ok - worked example: projected GP', r.projected.gross_profit, '| actual cost', r.actual.cost, '| actual GP', r.actual.gross_profit, '| labor', labor.amount);
 

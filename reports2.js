@@ -31,7 +31,7 @@ module.exports = function mountReports2(app, ctx) {
     if (project_id) costRows = costRows.filter(c => c.project_id === project_id);
     const byCat = {}; for (const c of costRows) byCat[c.category] = r2((byCat[c.category] || 0) + c.amount);
     // Approved time that is not tied to a project (so it was not posted as a project cost) still costs money.
-    let unposted = 0; if (has('time_entries')) unposted = r2(db.prepare(`SELECT COALESCE(SUM(t.minutes/60.0*e.hourly_rate),0) v FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).get(...require('./bizdate').window(from, to)).v);
+    let unposted = 0; if (has('time_entries')) unposted = r2(db.prepare(`SELECT COALESCE(SUM(t.minutes/60.0*COALESCE(t.labor_rate, e.hourly_rate)),0) v FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).get(...require('./bizdate').window(from, to)).v);
     if (unposted && !project_id) byCat['Labor (not tied to a project)'] = unposted;
     const costs = r2(Object.values(byCat).reduce((s, v) => s + v, 0));
     // Project profitability: everything recorded against each project, all time (projects span periods).
@@ -66,7 +66,7 @@ module.exports = function mountReports2(app, ctx) {
   }
   function labor({ from, to }) {
     if (!has('time_entries')) return { from, to, employees: [], projects: [], totals: { hours: 0, cost: 0, pending_hours: 0, overtime_hours: 0 } };
-    const rows = db.prepare(`SELECT t.*, e.name, e.hourly_rate, e.max_week_hours, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN projects p ON p.id=t.project_id WHERE t.clock_out IS NOT NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(...require('./bizdate').window(from, to));
+    const rows = db.prepare(`SELECT t.*, e.name, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate, e.max_week_hours, p.name project_name FROM time_entries t JOIN employees e ON e.id=t.employee_id LEFT JOIN projects p ON p.id=t.project_id WHERE t.clock_out IS NOT NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(...require('./bizdate').window(from, to));
     const wk = d => { const x = new Date(d.slice(0, 10) + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
     const emp = {}, proj = {}, weeks = {};
     for (const t of rows) {
@@ -93,7 +93,7 @@ module.exports = function mountReports2(app, ctx) {
       if (project_id && i.project_id !== project_id) continue; const d = bz.invoiceDay(i); if (d >= from && d <= to) bump(String(d).slice(0, 7), 'revenue', i.amount || 0);
     }
     if (has('project_costs')) for (const c of db.prepare('SELECT amount, cost_date, project_id FROM project_costs WHERE cost_date BETWEEN ? AND ?').all(from, to).filter(c => !project_id || c.project_id === project_id)) bump(String(c.cost_date).slice(0, 7), 'costs', c.amount || 0);
-    if (has('time_entries') && !project_id) for (const t of db.prepare(`SELECT t.clock_in, t.minutes, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(...bz.window(from, to))) bump(String(t.clock_in).slice(0, 7), 'costs', (t.minutes / 60) * (t.hourly_rate || 0));
+    if (has('time_entries') && !project_id) for (const t of db.prepare(`SELECT t.clock_in, t.minutes, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.clock_in >= ? AND t.clock_in < ?`).all(...bz.window(from, to))) bump(String(t.clock_in).slice(0, 7), 'costs', (t.minutes / 60) * (t.hourly_rate || 0));
     const all = Object.values(months).sort((a, b) => a.month.localeCompare(b.month));
     const revenue = r2(all.reduce((s, m) => s + m.revenue, 0)), costs = r2(all.reduce((s, m) => s + m.costs, 0));
     return { from, to, project_id: project_id || null, months: all.slice(-36), revenue, costs };
