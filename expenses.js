@@ -44,6 +44,7 @@ function createBill(db, b, by) {
   if (!vendor) throw new Error('A bill needs a vendor.');
   if (!(amount > 0)) throw new Error('A bill needs an amount above zero.');
   if (!isDate(b.bill_date)) throw new Error('A bill needs a real date (YYYY-MM-DD).');
+  require('./aging').ensureVendor(db, vendor);
   const id = db.prepare('INSERT INTO expense_bills(vendor,description,category,amount,bill_date,project_id,status,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
     .run(vendor.slice(0, 200), String(b.description || '').slice(0, 300), String(b.category || '').slice(0, 80), amount, b.bill_date,
       b.project_id ? Number(b.project_id) : null, 'Open', by || null, new Date().toISOString()).lastInsertRowid;
