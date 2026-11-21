@@ -157,6 +157,7 @@ function queue(db, { assigned_to = null } = {}) {
 
 function mount(app, { db, auth }) {
   ensureSchema(db);
+  try { migrateEmailState(db); } catch (e) { console.error('work engine: email queue carry-over failed:', e.message); }
   const who = req => (req.user && req.user.email) || 'admin';
   app.get('/api/admin/work-items', auth, (req, res) => {
     const assigned = r(req.query.assigned_to);
@@ -177,4 +178,73 @@ function mount(app, { db, auth }) {
   });
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount };
+// ---- Email queue, on the engine ----
+// One work item per email (kind 'email', ref_type 'inbox', ref_id = the message). The item is reused when it is reopened.
+const emailItemOf = (db, messageId) => db.prepare(`SELECT * FROM work_items WHERE kind='email' AND ref_type='inbox' AND ref_id=? ORDER BY id DESC LIMIT 1`).get(Number(messageId));
+
+function ensureEmailItem(db, messageId, by) {
+  const cur = emailItemOf(db, messageId);
+  if (cur) return cur.id;
+  const m = db.prepare('SELECT subject FROM inbox_messages WHERE id=?').get(Number(messageId));
+  if (!m) throw new Error('Email not found.');
+  return create(db, { kind: 'email', ref_type: 'inbox', ref_id: Number(messageId), title: m.subject || '(no subject)', by }).id;
+}
+
+// The queue's view of an email: the same shape the queue has always used for its buckets.
+function emailState(db, messageId) {
+  const it = emailItemOf(db, messageId);
+  if (!it) return null;
+  const done = it.status === 'completed' || it.status === 'cancelled';
+  return {
+    status: done ? 'completed' : it.status === 'waiting' ? 'waiting' : 'open',
+    follow_up_date: it.status === 'waiting' ? (it.next_follow_up || it.due_date || null) : (it.due_date || null),
+    snooze_until: null, assigned_to: it.assigned_to, note: it.completion_note || it.cancel_reason || null,
+    item_id: it.id, item_status: it.status
+  };
+}
+
+// Applies one email action from the queue screen through the engine. Returns the updated item.
+function applyEmailAction(db, messageId, body = {}, by = null) {
+  ensureSchema(db);
+  const id = ensureEmailItem(db, messageId, by);
+  const it = get(db, id);
+  const finished = TERMINAL.includes(it.status);
+  const action = String(body.action || '');
+  if (action === 'handle') return act(db, id, 'complete', { note: body.note }, by);
+  if (action === 'waiting') return act(db, id, 'wait', { waiting_on: body.waiting_on || body.note, next_follow_up: body.date }, by);
+  if (action === 'cancel') return act(db, id, 'cancel', { reason: body.reason }, by);
+  if (action === 'reopen') return act(db, id, 'reopen', { reason: body.reason || body.note }, by);
+  if (action === 'assign') {
+    if (!String(body.assigned_to || '').trim()) throw new Error('Choose who to assign it to.');
+    return act(db, id, 'reassign', { assigned_to: body.assigned_to }, by);
+  }
+  if (action === 'schedule' || action === 'snooze') {
+    if (finished) throw new Error('This email is finished. Reopen it, with a reason, before changing its date.');
+    const date = action === 'schedule' ? body.date : (body.until ? require('./bizdate').today(new Date(body.until)) : null);
+    if (action === 'snooze' && !date) throw new Error('Choose when to bring it back.');
+    return act(db, id, 'edit', { due_date: date }, by);
+  }
+  throw new Error('Unknown email action.');
+}
+
+// Carries the old email queue states (inbox_state) onto the engine, once. Safe to run again: messages that already have an item are skipped.
+function migrateEmailState(db) {
+  ensureSchema(db);
+  const has = t => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
+  if (!has('inbox_state') || !has('inbox_messages')) return 0;
+  let n = 0;
+  for (const s of db.prepare('SELECT * FROM inbox_state').all()) {
+    if (emailItemOf(db, s.message_id)) continue;
+    const m = db.prepare('SELECT subject FROM inbox_messages WHERE id=?').get(s.message_id);
+    if (!m) continue;
+    const id = create(db, { kind: 'email', ref_type: 'inbox', ref_id: s.message_id, title: m.subject || '(no subject)', by: 'migration' }).id;
+    if (s.assigned_to) act(db, id, 'reassign', { assigned_to: s.assigned_to }, 'migration');
+    if (s.status === 'completed') act(db, id, 'complete', { note: s.note || 'Completed before the work engine.' }, 'migration');
+    else if (s.status === 'waiting') act(db, id, 'wait', { waiting_on: 'Carried over from the email queue', next_follow_up: isDate(s.follow_up_date) ? s.follow_up_date : today() }, 'migration');
+    else if (isDate(s.follow_up_date)) act(db, id, 'edit', { due_date: s.follow_up_date }, 'migration');
+    n++;
+  }
+  return n;
+}
+
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState };

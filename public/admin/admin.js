@@ -4830,7 +4830,7 @@
     const btn = (act, label, cls = 'ghost') => `<button class="btn ${cls}" type="button" data-wq-act="${act}" data-wq-dept="${d}" data-id="${id}">${label}</button>`;
     let next = '';
     if (d === 'emails') {
-      next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting for reply')}${btn('task', 'Create task')}${btn('link', 'Link')}${btn('thread', 'Thread')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
+      next = `${btn('handle', 'Complete', '')}${btn('waiting', 'Waiting for reply')}${btn('cancel', 'Cancel')}${it.bucket === 'completed' ? btn('reopen', 'Reopen') : ''}${btn('task', 'Create task')}${btn('link', 'Link')}${btn('thread', 'Thread')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
         <div class="wqrow-act"><input type="datetime-local" data-until-for="${id}" aria-label="Snooze until">${btn('snooze', 'Snooze')}</div>`;
     } else if (d === 'calls') {
       next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
@@ -4917,6 +4917,16 @@
     const act = btn.dataset.wqAct, d = btn.dataset.wqDept, id = btn.dataset.id;
     if (act === 'link') return wqLink(id);
     if (act === 'thread') return wqThread(id);
+    // Completing, waiting, cancelling and reopening need a note, a follow-up date or a reason. Collect it first, then send it.
+    if (d === 'emails' && ['handle', 'waiting', 'cancel', 'reopen'].includes(act)) {
+      const defs = act === 'handle' ? [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }]
+        : act === 'waiting' ? [{ name: 'waiting_on', label: 'Waiting on (what, or who)', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }]
+        : [{ name: 'reason', label: act === 'cancel' ? 'Reason for cancelling' : 'Reason for reopening', type: 'textarea', wide: true }];
+      const title = { handle: 'Complete this email', waiting: 'Waiting for reply', cancel: 'Cancel this email', reopen: 'Reopen this email' }[act];
+      return openForm({ title, sub: 'The reason or note is kept with the item and in its history.', defs,
+        submit: f => api(`/api/admin/inbox/${id}/state`, { method: 'POST', json: { action: act, ...f } }),
+        after: () => { toast(act === 'handle' ? 'Completed' : act === 'cancel' ? 'Cancelled' : act === 'reopen' ? 'Reopened' : 'Waiting'); loadWorkQueue(); } });
+    }
     const date = (document.querySelector(`[data-date-for="${id}"]`) || {}).value || '';
     const ownerEl = document.querySelector(`[data-owner-for="${id}"]`);
     const owner = ownerEl ? ownerEl.value.trim() : '';

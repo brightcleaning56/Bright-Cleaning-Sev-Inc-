@@ -59,3 +59,18 @@ Not yet done:
 - The existing queues (email, calls, leads, project tasks, issues, QC) still use their own states. Each must be moved onto the engine, one module at a time, with existing data carried over.
 - No screen buttons yet for the new actions. The Today's Work screen must show the engine's queue and the actions.
 - Other kinds of work (estimate approvals, invoice follow-up, maintenance requests) have no creators yet.
+
+## Step 3 (progress): email queue on the work engine
+
+Done:
+- Every email action goes through the engine: Complete (note required), Waiting (what it waits on and a follow-up date), Cancel (reason), Reopen (reason, finished emails only), Assign, Schedule and Snooze (date changes, refused on finished emails).
+- The queue reads each email's state from the engine. The end-of-day report counts emails completed in the engine.
+- The old email states carry over to the engine once (`migrateEmailState`), with their people and dates. Running it again changes nothing.
+- The queue screen collects the note, the waiting details or the reason before it sends the action.
+- Existing tests updated for the new rules (note to complete, reason to reopen, date to wait).
+
+Results: server suite 313/313, admin UI 94/94, work-engine 10 groups, work-item API 10 checks, carry-over checks pass.
+
+Still to do:
+- The on-screen flow (Complete, Waiting, Cancel, Reopen forms) is checked by source and the suites, not yet in a browser.
+- Calls, leads, project tasks, issues and QC still have their own states.

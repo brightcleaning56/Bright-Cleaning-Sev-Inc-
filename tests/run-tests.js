@@ -4672,10 +4672,12 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const countAll = ((await req('GET', '/api/admin/work-queue?dept=emails', { token: T })).data.items || []).filter(i => i.id === mid).length;
     const todayFu = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: bizToday } });
     const inToday = !!(await find('today'));
-    const handled = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'handle' } });
+    const handled = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'handle', note: 'Sent the quote' } });
     const completed = !!(await find('completed')), leftToday = !(await find('today'));
     const bad = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: 'next week' } });
     const missing = await req('POST', '/api/admin/inbox/999999/state', { token: T, json: { action: 'handle' } });
+    // A finished email is reopened, with a reason, before it can be snoozed again.
+    await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'reopen', reason: 'Customer asked again' } });
     const snooze = await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'snooze', until: new Date(Date.now() + 86400000 * 3).toISOString() } });
     const snoozed = !!(await find('scheduled'));
     const chk = { inNew, stillNew, scheduled, notToday, notNew, sched: sched.status === 200, noDuplicate: countAll === 1 && sched2.status === 200, inToday: todayFu.status === 200 && inToday, handled: handled.status === 200 && completed && leftToday, badRefused: bad.status === 400, missing404: missing.status === 404, snoozed: snooze.status === 200 && snoozed };
@@ -4756,7 +4758,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const hid = pdb.prepare("INSERT INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,created_at) VALUES(?,?,?,?,?,?,?)")
       .run('wq-close-' + Date.now(), 'closeout.test@example.com', 'Closeout Test', 'Closeout handled email', 'Quote request', new Date().toISOString(), new Date().toISOString()).lastInsertRowid;
     pdb.close();
-    await req('POST', `/api/admin/inbox/${hid}/state`, { token: T, json: { action: 'handle' } });
+    await req('POST', `/api/admin/inbox/${hid}/state`, { token: T, json: { action: 'handle', note: 'Handled in the test' } });
     const c = await req('GET', '/api/admin/closeout', { token: T });
     const r = c.data;
     const chk = { summaryMatches: countsMatch, closeoutOk: c.status === 200 && typeof r.calls_handled === 'number', emailHandledCounted: r.emails_handled >= 1, rescheduledCounted: r.activities_rescheduled >= 1, exceptionsList: Array.isArray(r.exceptions), badDate: (await req('GET', '/api/admin/closeout?date=nope', { token: T })).status === 400 };
@@ -4807,7 +4809,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
       inspector: (await getAs('insp.wq2@roles.test')).status,
       signedOut: (await req('GET', '/api/admin/work-queue?dept=emails')).status,
       inspectorWrites: (await req('POST', '/api/admin/inbox/1/state', { token: mint('insp.wq2@roles.test'), json: { action: 'handle' } })).status,
-      salesCanAct: (await req('POST', '/api/admin/inbox/1/state', { token: mint('sales.wq2@roles.test'), json: { action: 'waiting' } })).status
+      salesCanAct: (await req('POST', '/api/admin/inbox/1/state', { token: mint('sales.wq2@roles.test'), json: { action: 'waiting', waiting_on: 'Customer reply', date: '2099-06-01' } })).status
     };
     const chk = { ownerOk: r.owner === 200, managerOk: r.manager === 200, supervisorOk: r.supervisor === 200, salesOk: r.sales === 200, staffOk: r.staff === 200, inspectorRefused: r.inspector === 403, signedOutRefused: r.signedOut === 401, inspectorWriteRefused: r.inspectorWrites === 403, salesActs: r.salesCanAct === 200 || r.salesCanAct === 404 };
     assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, r }));
@@ -4837,9 +4839,9 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: '2099-05-05' } });
     await req('POST', `/api/admin/inbox/${mid}/state`, { token: T, json: { action: 'schedule', date: '2099-05-05' } });
     const rows = (await req('GET', '/api/admin/work-queue?dept=emails', { token: T })).data.items.filter(i => i.id === mid);
-    const stateRows = (() => { const d = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true }); const n = d.prepare('SELECT COUNT(*) n FROM inbox_state WHERE message_id=?').get(mid).n; d.close(); return n; })();
+    const stateRows = (() => { const d = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true }); const n = d.prepare("SELECT COUNT(*) n FROM work_items WHERE kind='email' AND ref_id=?").get(mid).n; d.close(); return n; })();
     assert(rows.length === 1 && stateRows === 1, JSON.stringify({ rows: rows.length, stateRows }));
-    return 'a repeated schedule keeps one state row and one item in the queue';
+    return 'a repeated schedule keeps one work item and one item in the queue';
   });
 
   await check('Work queue', 'Lead views: a lead received today needing first contact is Contact today; an untouched lead from earlier is Overdue; a lead with a proposal in progress is Qualified; a customer is Converted; a lost lead is Lost / closed', async () => {

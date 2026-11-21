@@ -106,14 +106,20 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   function items(dept) {
     const t = today(), now = nowIso();
     if (dept === 'emails') {
+      // The state of each email comes from the work engine (one lifecycle for all work). Project links stay on the email's own record.
+      const WE = require('./work-engine');
       return db.prepare(`SELECT m.id, m.from_name, m.from_addr, m.subject, m.preview, m.received_at, m.lead_id, m.customer_id,
-          s.status AS state, s.follow_up_date, s.snooze_until, s.assigned_to, s.note, s.updated_at AS state_at, s.project_id
-        FROM inbox_messages m LEFT JOIN inbox_state s ON s.message_id = m.id
-        WHERE m.from_addr NOT LIKE '%@brightclean.net' ORDER BY m.received_at DESC LIMIT 1000`).all().map(r => ({
-          dept, id: r.id, title: r.subject || '(no subject)', who: r.from_name || r.from_addr, when: r.received_at,
-          assigned_to: r.assigned_to, lead_id: r.lead_id, customer_id: r.customer_id, project_id: r.project_id || null, due: r.follow_up_date || (r.snooze_until ? r.snooze_until.slice(0, 10) : null),
-          bucket: emailBucket(r, r.state ? { status: r.state, follow_up_date: r.follow_up_date, snooze_until: r.snooze_until } : null, t, now), note: r.note
-        }));
+          (SELECT project_id FROM inbox_state WHERE message_id = m.id) AS project_id
+        FROM inbox_messages m
+        WHERE m.from_addr NOT LIKE '%@brightclean.net' ORDER BY m.received_at DESC LIMIT 1000`).all().map(r => {
+          const st = WE.emailState(db, r.id);
+          return {
+            dept, id: r.id, title: r.subject || '(no subject)', who: r.from_name || r.from_addr, when: r.received_at,
+            assigned_to: st ? st.assigned_to : null, lead_id: r.lead_id, customer_id: r.customer_id, project_id: r.project_id || null,
+            due: st && st.follow_up_date ? st.follow_up_date : null,
+            bucket: emailBucket(r, st, t, now), note: st ? st.note : null
+          };
+        });
     }
     if (dept === 'sent') {
       // Outgoing emails. A reply from the same address after sending means the email is answered.
@@ -236,33 +242,19 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const id = Number(req.params.id);
     const m = db.prepare('SELECT id, subject FROM inbox_messages WHERE id=?').get(id);
     if (!m) return res.status(404).json({ error: 'Email not found.' });
+    // Every email action goes through the work engine, which enforces the rules: a note to complete, a reason to cancel or reopen,
+    // a reason and follow-up date to wait. The engine's history records who did it and when.
     const b = req.body || {};
     const action = clean(b.action, 30);
-    const cur = db.prepare('SELECT * FROM inbox_state WHERE message_id=?').get(id) || { status: 'open' };
-    const t = nowIso(), who = (req.user && req.user.email) || 'admin';
-    const next = { ...cur, message_id: id };
-    if (action === 'handle') { next.status = 'completed'; next.follow_up_date = null; next.snooze_until = null; }
-    else if (action === 'waiting') { next.status = 'waiting'; }
-    else if (action === 'reopen') { next.status = 'open'; next.snooze_until = null; }
-    else if (action === 'schedule') {
-      if (!validDate(b.date)) return res.status(400).json({ error: 'Choose a valid follow-up date.' });
-      next.status = 'open'; next.follow_up_date = b.date; next.snooze_until = null;
+    const who = (req.user && req.user.email) || 'admin';
+    const WE = require('./work-engine');
+    try {
+      const item = WE.applyEmailAction(db, id, { ...b, action }, who);
+      logAction(req, `email ${action}`, 'inbox_message', id, `${m.subject || ''}${item.due_date ? ' → ' + item.due_date : ''}${b.reason || b.note ? ' — ' + clean(b.reason || b.note, 200) : ''}`);
+      res.json({ ok: true, status: item.status === 'completed' || item.status === 'cancelled' ? 'completed' : item.status === 'waiting' ? 'waiting' : 'open', item_status: item.status });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
     }
-    else if (action === 'snooze') {
-      const until = String(b.until || '');
-      if (!until || isNaN(Date.parse(until))) return res.status(400).json({ error: 'Choose when to bring it back.' });
-      next.status = 'open'; next.snooze_until = new Date(until).toISOString();
-    }
-    else if (action === 'assign') { next.assigned_to = clean(b.assigned_to, 120) || null; }
-    else return res.status(400).json({ error: 'Unknown email action.' });
-    if (b.note !== undefined) next.note = clean(b.note, 500) || null;
-    next.updated_by = who; next.updated_at = t;
-    db.prepare(`INSERT INTO inbox_state(message_id,status,follow_up_date,snooze_until,assigned_to,note,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?)
-      ON CONFLICT(message_id) DO UPDATE SET status=excluded.status, follow_up_date=excluded.follow_up_date, snooze_until=excluded.snooze_until,
-      assigned_to=excluded.assigned_to, note=excluded.note, updated_by=excluded.updated_by, updated_at=excluded.updated_at`)
-      .run(id, next.status, next.follow_up_date || null, next.snooze_until || null, next.assigned_to || null, next.note || null, who, t);
-    logAction(req, `email ${action}`, 'inbox_message', id, `${m.subject || ''}${next.follow_up_date ? ' → ' + next.follow_up_date : ''}${next.snooze_until ? ' → snoozed until ' + next.snooze_until : ''}`);
-    res.json({ ok: true, status: next.status });
   });
 
   // Link an email to a lead, customer and/or project. Only records that exist can be linked.
@@ -412,7 +404,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       date: d, timezone: TZ,
       new_leads_received: one('SELECT COUNT(*) n FROM leads WHERE created_at >= ? AND created_at < ?', ...win),
       calls_handled: one('SELECT COUNT(*) n FROM calls WHERE handled_at >= ? AND handled_at < ?', ...win),
-      emails_handled: one("SELECT COUNT(*) n FROM inbox_state WHERE status='completed' AND updated_at >= ? AND updated_at < ?", ...win),
+      emails_handled: one("SELECT COUNT(*) n FROM work_items WHERE kind='email' AND status='completed' AND completed_at >= ? AND completed_at < ?", ...win),
       follow_ups_completed: one('SELECT COUNT(*) n FROM calls WHERE follow_up_done=1 AND handled_at >= ? AND handled_at < ?', ...win),
       tasks_completed: one("SELECT COUNT(*) n FROM customer_issues WHERE status IN ('Resolved','Verified','Closed') AND COALESCE(resolved_at,updated_at) >= ? AND COALESCE(resolved_at,updated_at) < ?", ...win),
       activities_rescheduled: one("SELECT COUNT(*) n FROM audit_log WHERE created_at >= ? AND created_at < ? AND (action IN ('email schedule','email snooze','call schedule','updated task schedule'))", ...win),
