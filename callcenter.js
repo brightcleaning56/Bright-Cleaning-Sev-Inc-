@@ -9,8 +9,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const DAY = 86400000;
 
   // Callbacks: a missed call stays in Missed / callbacks until someone marks its follow-up done.
+  // Calls that are on the work queue are left alone: the queue owns their state.
   function ensureMissedCallbacks() {
-    db.prepare("UPDATE calls SET follow_up_date=? WHERE outcome='Missed' AND follow_up_done=0 AND (follow_up_date IS NULL OR follow_up_date='')").run(bizdate.today());
+    db.prepare(`UPDATE calls SET follow_up_date=? WHERE outcome='Missed' AND follow_up_done=0 AND (follow_up_date IS NULL OR follow_up_date='')
+      AND id NOT IN (SELECT ref_id FROM work_items WHERE kind='call' AND ref_type='call' AND ref_id IS NOT NULL)`).run(bizdate.today());
   }
 
   function directory() {
