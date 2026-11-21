@@ -153,11 +153,13 @@ module.exports = function mountAdminExt(app, ctx) {
     if (!amt) return res.status(400).json({ error: 'Enter a payment amount greater than zero.' });
     if (inv.status === 'Void') return res.status(409).json({ error: 'This invoice is void. Payments cannot be recorded on it.' });
     if (inv.status === 'Draft') return res.status(409).json({ error: 'Send this invoice before recording a payment on it.' });
-    const balance = Math.round((Number(inv.amount || 0) - Number(inv.paid_amount || 0)) * 100) / 100;
+    // The balance includes sales tax: the invoice is owed amount + tax, the same figure the tie-out and receivables aging use.
+    const billed = Math.round((Number(inv.amount || 0) + Number(inv.tax_amount || 0)) * 100) / 100;
+    const balance = Math.round((billed - Number(inv.paid_amount || 0)) * 100) / 100;
     if (balance <= 0) return res.status(409).json({ error: 'This invoice is already paid in full.' });
     if (amt > balance + 0.005) return res.status(400).json({ error: `That is more than the balance due ($${balance.toFixed(2)}). Record only the balance. This app does not hold customer credits yet, so return the extra to the customer outside the app.` });
     const paid = Math.round((Number(inv.paid_amount || 0) + amt) * 100) / 100;
-    const status = paid >= Number(inv.amount || 0) ? 'Paid' : 'Partially Paid';
+    const status = paid >= billed - 0.005 ? 'Paid' : 'Partially Paid';
     // Dated payment record (feeds "collected this month" on the Command Center).
     const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.received_on || '')) && req.body.received_on <= require('./bizdate').today() ? req.body.received_on : null;
     const nowIso = new Date().toISOString();
@@ -172,7 +174,7 @@ module.exports = function mountAdminExt(app, ctx) {
   });
 
   // ---------- Invoices: refund ----------
-  // A refund returns money already received. It is kept as a negative payment so the payment history stays complete.
+  // A refund returns money already received. It is recorded through receivables.recordRefund so the ledger and trail see it.
   app.post('/api/admin/invoices/:id/refund', auth, (req, res) => {
     if (!['owner', 'manager'].includes(roleOf(req.user && req.user.email))) return res.status(403).json({ error: 'Only an owner or manager can record a refund.' });
     const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(id(req));
@@ -185,13 +187,16 @@ module.exports = function mountAdminExt(app, ctx) {
     const before = Math.round(Number(inv.paid_amount || 0) * 100) / 100;
     if (amt > before + 0.005) return res.status(409).json({ error: `Only $${before.toFixed(2)} has been received on this invoice, so the refund cannot be more than that.` });
     const paid = Math.round((before - amt) * 100) / 100;
-    const status = paid <= 0 ? 'Sent' : (paid >= Number(inv.amount || 0) ? 'Paid' : 'Partially Paid');
-    const nowIso = new Date().toISOString();
-    db.transaction(() => {
-      db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)')
-        .run(inv.id, -amt, 'Refund: ' + note, nowIso, (req.user && req.user.email) || null, nowIso);
-      db.prepare('UPDATE invoices SET paid_amount=?,status=? WHERE id=?').run(paid, status, inv.id);
-    })();
+    const billed = Math.round((Number(inv.amount || 0) + Number(inv.tax_amount || 0)) * 100) / 100;
+    const status = paid <= 0 ? 'Sent' : (paid >= billed - 0.005 ? 'Paid' : 'Partially Paid');
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.date) || '')) && req.body.date <= today() ? req.body.date : today();
+    // The refund goes through the receivables refund code: it is kept in the refunds table and posted to the ledger (cash down, receivable up).
+    try {
+      db.transaction(() => {
+        require('./receivables').recordRefund(db, { invoiceId: inv.id, amount: amt, date: day, reason: note, by: (req.user && req.user.email) || null });
+        db.prepare('UPDATE invoices SET paid_amount=?,status=? WHERE id=?').run(paid, status, inv.id);
+      })();
+    } catch (e) { return res.status(409).json({ error: e.message }); }
     logAction(req, 'refunded', 'invoice', inv.id, `$${amt.toFixed(2)} refunded — ${note}`);
     res.json({ ok: true, paid_amount: paid, status });
   });

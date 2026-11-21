@@ -47,6 +47,11 @@ module.exports = function mountCRM(app, ctx) {
     let complaints = []; try { complaints = db.prepare('SELECT id, status, severity, category, description, property, service_date, reported_at, response_due, resolved_at, closed_at, created_at, updated_at FROM quality_complaints WHERE customer_id=? ORDER BY id DESC').all(c.id); } catch { /* table is created by the quality module at startup */ }
     const iids = new Set(invoices.map(i => i.id));
     let payments = []; try { payments = db.prepare('SELECT * FROM payments ORDER BY received_at DESC').all().filter(p => iids.has(p.invoice_id)); } catch { /* no payments table */ }
+    // Refunds are kept in their own table; show them in the payment history as negative amounts, so the history stays complete.
+    try {
+      const refunds = db.prepare('SELECT * FROM refunds ORDER BY refund_date DESC').all().filter(r => iids.has(r.invoice_id));
+      payments = payments.concat(refunds.map(r => ({ id: 'refund-' + r.id, invoice_id: r.invoice_id, amount: -Number(r.amount), note: 'Refund: ' + r.reason, received_at: r.refund_date + 'T12:00:00.000Z', recorded_by: r.recorded_by, created_at: r.created_at })));
+    } catch { /* no refunds table yet */ }
     const calls = db.prepare('SELECT * FROM calls ORDER BY id DESC').all().filter(x => x.customer_id === c.id || (x.phone && phones.has(String(x.phone).replace(/\D/g, '').slice(-10))) || (company && String(x.company || '').toLowerCase().trim() === company));
     let mail = []; try { mail = db.prepare('SELECT id,to_addr,subject,body,status,error,created_at FROM email_log ORDER BY id DESC LIMIT 500').all().filter(m => String(m.to_addr || '').toLowerCase().split(/,\s*/).some(e => emails.has(e))); } catch { /* */ }
     const replies = [...emails].length ? db.prepare(`SELECT id,from_addr,from_name,subject,preview,received_at FROM inbox_messages WHERE LOWER(from_addr) IN (${[...emails].map(() => '?').join(',')}) ORDER BY received_at DESC LIMIT 500`).all(...emails) : [];

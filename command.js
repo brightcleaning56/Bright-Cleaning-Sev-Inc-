@@ -27,19 +27,25 @@ module.exports = function mountCommand(app, ctx) {
     const leads = leadsIn(from, nowIso), leadsPrev = leadsIn(prevFrom, from);
     const sent = sentIn(from, nowIso), sentPrev = sentIn(prevFrom, from);
     const won = wonIn(from, nowIso), wonPrev = wonIn(prevFrom, from);
-    const collectedMonth = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, monthStart).v;
+    // Collected = payments received less refunds paid out (refunds live in their own table, dated by refund_date).
+    const refundsIn = (a, b) => { try { return b ? one(`SELECT COALESCE(SUM(amount),0) v FROM refunds WHERE refund_date>=? AND refund_date<?`, a, b).v : one(`SELECT COALESCE(SUM(amount),0) v FROM refunds WHERE refund_date>=?`, a).v; } catch { return 0; } };
+    const collectedMonth = Math.round((one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, monthStart).v - refundsIn(String(monthStart).slice(0, 10))) * 100) / 100;
     // Command Center invoice tile: money received in the last 30 days (fixed window, like the mockup's "Collected (30 days)")
-    const collected30 = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, iso(new Date(now - 30 * 864e5)).slice(0, 10)).v;
+    const d30 = iso(new Date(now - 30 * 864e5)).slice(0, 10);
+    const collected30 = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, d30).v - refundsIn(d30);
     // Revenue tile: money collected in the selected period, compared with the period before it
-    const collectedPeriod = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, from.slice(0, 10)).v;
-    const collectedPrev = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=? AND received_at<?`, prevFrom.slice(0, 10), from.slice(0, 10)).v;
+    const collectedPeriod = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=?`, from.slice(0, 10)).v - refundsIn(from.slice(0, 10));
+    const collectedPrev = one(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE received_at>=? AND received_at<?`, prevFrom.slice(0, 10), from.slice(0, 10)).v - refundsIn(prevFrom.slice(0, 10), from.slice(0, 10));
     const followUpsToday = one(`SELECT COUNT(*) n FROM calls WHERE follow_up_date = ? AND COALESCE(follow_up_done,0)=0`, today).n;
     const activeProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived')`).n;
 
     const overdueInvoices = one(`SELECT COUNT(*) n FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND due_date<>'' AND due_date IS NOT NULL AND due_date<? AND paid_amount<amount`, today).n;
     // Command Center invoice tiles: what is open, what is overdue, and what came in this month
-    const invOpen = one(`SELECT COUNT(*) n, COALESCE(SUM(amount-COALESCE(paid_amount,0)),0) v FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<amount`);
-    const invOver = one(`SELECT COUNT(*) n, COALESCE(SUM(amount-COALESCE(paid_amount,0)),0) v FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<amount AND due_date<>'' AND due_date IS NOT NULL AND due_date<?`, today);
+    // Owed = amount + sales tax - paid (the same figure the receivables tie-out and aging use).
+    const hasTaxCol = db.prepare('PRAGMA table_info(invoices)').all().some(c => c.name === 'tax_amount');
+    const owedExpr = hasTaxCol ? 'amount+COALESCE(tax_amount,0)' : 'amount';
+    const invOpen = one(`SELECT COUNT(*) n, COALESCE(SUM(${owedExpr}-COALESCE(paid_amount,0)),0) v FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<${owedExpr}`);
+    const invOver = one(`SELECT COUNT(*) n, COALESCE(SUM(${owedExpr}-COALESCE(paid_amount,0)),0) v FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<${owedExpr} AND due_date<>'' AND due_date IS NOT NULL AND due_date<?`, today);
     const lateProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled') AND due_date<>'' AND due_date IS NOT NULL AND due_date<?`, today).n;
     const staleLeads = one(`SELECT COUNT(*) n FROM leads WHERE kind IN ('bid','inquiry') AND status='New' AND created_at<?`, iso(new Date(now - 2 * 864e5))).n;
     const iss = one(`SELECT SUM(type='complaint') complaints, SUM(type<>'complaint' AND due_date IS NOT NULL AND due_date<>'' AND due_date<?) overdue FROM customer_issues WHERE status NOT IN ('Resolved','Verified','Closed')`, today);

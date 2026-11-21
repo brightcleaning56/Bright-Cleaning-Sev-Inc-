@@ -37,7 +37,8 @@ const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type
 function postBill(db, id) {
   const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(id);
   if (!b || b.status === 'Void' || postedEntry(db, 'bill', 'bill:' + id)) return false;
-  const exp = accountFor(b.category || b.description || b.vendor);
+  // A bill on a job is job cost (by category). A bill with no job is an operating expense (6000), whatever its category.
+  const exp = b.project_id ? accountFor(b.category || b.description || b.vendor) : { code: '6000' };
   L.postEntry(db, {
     date: b.bill_date, memo: 'Bill from ' + b.vendor + (b.description ? ': ' + b.description : ''), source: 'bill', sourceRef: 'bill:' + id, by: 'expense-sync',
     lines: [{ account: exp.code, debit: b.amount }, { account: '2000', credit: b.amount }]
