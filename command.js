@@ -39,11 +39,11 @@ module.exports = function mountCommand(app, ctx) {
     const followUpsToday = one(`SELECT COUNT(*) n FROM calls WHERE follow_up_date = ? AND COALESCE(follow_up_done,0)=0`, today).n;
     const activeProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived')`).n;
 
-    const overdueInvoices = one(`SELECT COUNT(*) n FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND due_date<>'' AND due_date IS NOT NULL AND due_date<? AND paid_amount<amount`, today).n;
-    // Command Center invoice tiles: what is open, what is overdue, and what came in this month
+        // Command Center invoice tiles: what is open, what is overdue, and what came in this month
     // Owed = amount + sales tax - paid (the same figure the receivables tie-out and aging use).
     const hasTaxCol = db.prepare('PRAGMA table_info(invoices)').all().some(c => c.name === 'tax_amount');
     const owedExpr = hasTaxCol ? 'amount+COALESCE(tax_amount,0)' : 'amount';
+    const overdueInvoices = one(`SELECT COUNT(*) n FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND due_date<>'' AND due_date IS NOT NULL AND due_date<? AND COALESCE(paid_amount,0)<${owedExpr}`, today).n;
     const invOpen = one(`SELECT COUNT(*) n, COALESCE(SUM(${owedExpr}-COALESCE(paid_amount,0)),0) v FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<${owedExpr}`);
     const invOver = one(`SELECT COUNT(*) n, COALESCE(SUM(${owedExpr}-COALESCE(paid_amount,0)),0) v FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND COALESCE(paid_amount,0)<${owedExpr} AND due_date<>'' AND due_date IS NOT NULL AND due_date<?`, today);
     const lateProjects = one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled') AND due_date<>'' AND due_date IS NOT NULL AND due_date<?`, today).n;

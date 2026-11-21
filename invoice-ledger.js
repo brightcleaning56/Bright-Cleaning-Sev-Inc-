@@ -187,7 +187,11 @@ function mount(app, ctx) {
   app.delete('/api/admin/payments/:id', auth, (req, res) => {
     const p = db.prepare('SELECT * FROM payments WHERE id=?').get(Number(req.params.id));
     if (!p) return res.status(404).json({ error: 'Payment not found.' });
-    if (postedEntry(db, 'payment', 'payment:' + p.id)) return res.status(409).json({ error: 'This payment is on the ledger. Reverse its entry instead.' });
+    if (postedEntry(db, 'payment', 'payment:' + p.id)) {
+      // Refused attempts are kept in the audit trail too, so a try to remove a posted payment is visible.
+      require('./audit').record(db, { actor: req.user && req.user.email, action: 'refused payment removal', entity: 'payment', entityId: p.id, detail: `${Number(p.amount).toFixed(2)} for invoice ${p.invoice_id}: payment is on the ledger, reversal required` });
+      return res.status(409).json({ error: 'This payment is on the ledger. Reverse its entry instead.' });
+    }
     const reason = String((req.body && req.body.reason) || '').trim();
     if (!reason) return res.status(400).json({ error: 'Give the reason for removing this payment.' });
     db.prepare('DELETE FROM payments WHERE id=?').run(p.id);
