@@ -47,6 +47,11 @@ Each item records: the action, the expected value, the actual value, the transac
 | 24 | Dashboards match | Compare Command Center collected and outstanding, Reports finance, customer profile | The same figures for the same period | `run-tests.js` consistency check; **manual** on screen |
 | 25 | Audit history for each financial change | Make a rate change, a reversal, a payment removal | Each appears with who, when, what changed | `audit-test.js`, `rates-test.js` |
 
+## Results of the items done without the owner (2026-11-21, local scratch data)
+
+- **Item 10 (materials to a task):** Strip floors shows $84.50 of supplies cost, and the project total ($1,034.50 = labor $950 + supplies $84.50) includes it. Checked through the task-costs and job-cost endpoints. The on-screen check of the Costs tab is still to be done by a person.
+- **Item 24 (dashboards match):** found a mismatch and fixed it. The customer profile showed $200.00 outstanding while the Command Center and the receivables aging showed $500.00. The profile left out the $300.00 sales tax. The profile now includes tax, so both show $500.00. Collected ($4,800.00) matches Reports finance. Regression check added in `tests/run-tests.js`.
+
 ## Recording results
 
 For each item, write one line in this form:

@@ -3965,6 +3965,22 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'sections sum to net change; ending cash equals the ledger cash account; tax and project cost fields present';
   });
 
+  await check('Accounting', 'Customer profile outstanding includes sales tax, the same as the Command Center open amount', async () => {
+    const cust = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Tax Owed Co', company: 'Tax Owed Co', email: 'tax.owed@example.test', phone: '515-555-0197' } });
+    const cid = (cust.data && (cust.data.id || (cust.data.customer && cust.data.customer.id))) || null;
+    const inv = await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'TAX-OWED-1', customer_id: cid, customer_name: 'Tax Owed Co', company: 'Tax Owed Co', email: 'tax.owed@example.test', amount: 100, due_date: '2026-12-31' } });
+    const id = inv.data && (inv.data.id || (inv.data.invoice && inv.data.invoice.id));
+    const tax = id ? await req('POST', '/api/admin/invoices/' + id + '/tax', { token: T, json: { tax_amount: 6 } }) : { status: 0 };
+    const sent = id ? await req('POST', '/api/admin/invoices/' + id + '/send', { token: T }) : { status: 0 };
+    const pay = id ? await req('POST', '/api/admin/invoices/' + id + '/payment', { token: T, json: { amount: 40 } }) : { status: 0 };
+    const prof = cid ? await req('GET', '/api/admin/customers/' + cid + '/profile', { token: T }) : { data: {} };
+    const out = prof.data && prof.data.financials ? prof.data.financials.outstanding.value : null;
+    assert(inv.status === 200 || inv.status === 201, 'invoice ' + inv.status + ' ' + JSON.stringify(inv.data).slice(0, 160));
+    assert(tax.status === 200 && sent.status === 200 && pay.status === 200, 'tax ' + tax.status + ' send ' + sent.status + ' pay ' + pay.status + ' ' + JSON.stringify(sent.data).slice(0, 120));
+    assert(out === 66, 'profile outstanding ' + out + ' (expected 66: 100 + 6 tax - 40 paid)');
+    return 'profile outstanding is $66.00 (amount plus tax less paid), matching the Command Center';
+  });
+
   await check('Subscriptions', 'Extra visits: visits above the monthly allowance are billed at the extra-visit price in the bill run', async () => {
     const cust = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Extra Visit Co', company: 'Extra Visit Co', email: 'extra.visits@example.test', phone: '515-555-0199' } });
     const cid = (cust.data && (cust.data.id || (cust.data.customer && cust.data.customer.id))) || null;

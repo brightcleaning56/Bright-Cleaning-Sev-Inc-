@@ -61,6 +61,7 @@ module.exports = function mountCRM(app, ctx) {
     const inspections = db.prepare('SELECT id,area,date,score,passed,project_id FROM inspections WHERE customer_id=? OR project_id IN (' + ([...pids].join(',') || '0') + ') ORDER BY date DESC').all(c.id);
     const sum = (a, f) => Math.round(a.reduce((t, x) => t + Number(f(x) || 0), 0) * 100) / 100;
     const liveInv = invoices.filter(i => i.status !== 'Void');
+    const owed = i => Math.round((Number(i.amount || 0) + Number(i.tax_amount || 0)) * 100) / 100;
     const signed = contracts.filter(k => ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status));
     const financials = {
       estimates: { value: sum(est.filter(e => ['Draft', 'Ready'].includes(e.status)), e => e.proposal_total), count: est.filter(e => ['Draft', 'Ready'].includes(e.status)).length },
@@ -70,7 +71,8 @@ module.exports = function mountCRM(app, ctx) {
       contracts_unsigned: { value: sum(contracts.filter(k => !signed.includes(k)), k => k.value), count: contracts.length - signed.length },
       invoiced: { value: sum(liveInv, i => i.amount), count: liveInv.length },
       collected: { value: sum(liveInv, i => i.paid_amount), count: payments.length },
-      outstanding: { value: sum(liveInv.filter(i => i.paid_amount < i.amount), i => i.amount - i.paid_amount), count: liveInv.filter(i => i.paid_amount < i.amount).length }
+      // Owed includes sales tax, the same as the Command Center and the receivables aging.
+      outstanding: { value: sum(liveInv.filter(i => owed(i) > Number(i.paid_amount || 0)), i => owed(i) - Number(i.paid_amount || 0)), count: liveInv.filter(i => owed(i) > Number(i.paid_amount || 0)).length }
     };
     // Communication history: calls, emails and notes in one timeline.
     const notes = db.prepare('SELECT * FROM customer_notes WHERE customer_id=? ORDER BY pinned DESC, id DESC').all(c.id);
