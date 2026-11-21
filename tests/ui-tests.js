@@ -556,6 +556,20 @@ async function check(area, name, fn) {
     return 'filter to ' + opt.text.slice(0, 40) + ' shows the one-project note';
   });
 
+  await check('Accounting UI', 'Accounting header shows the seven tabs; the sidebar lists the same seven; Reports Center lists nine reports; the Profit & Loss statement renders', async () => {
+    await nav('accounting'); await sleep(1500);
+    const tabs = [...d.querySelectorAll('#accTabs button')].map(b => b.textContent.trim());
+    const side = [...d.querySelectorAll('#navAccSub button')].map(b => b.textContent.trim());
+    d.querySelector('#accTabs button[data-acctab="reports"]').click(); await sleep(900);
+    const tiles = d.querySelectorAll('#accReportsHost .rptile[data-rp-open]').length;
+    d.querySelector('#accReportsHost [data-rp-open="pl"]').click(); await sleep(1200);
+    const pl = txt('#accReportsHost');
+    const want = ['Overview', 'Reports', 'Expenses', 'Job Costing', 'Reconciliation', 'Ledger & Audit', 'Settings'];
+    assert(JSON.stringify(tabs) === JSON.stringify(want) && JSON.stringify(side) === JSON.stringify(want), JSON.stringify({ tabs, side }));
+    assert(tiles === 9, 'tiles ' + tiles);
+    assert(/Profit & Loss Statement/.test(pl) && /Net profit/.test(pl) && /Report insights/.test(pl), pl.slice(0, 200));
+    return 'seven tabs in the header and sidebar; nine report tiles; P&L statement and insights render';
+  });
   await check('Reports UI', 'Accounting exports (invoices, payments, payroll hours) show on the Reports overview and hide on report tabs', async () => {
     await nav('reports'); await sleep(800);
     d.querySelector('#repTabs [data-rt="overview"]').click(); await sleep(300);

@@ -2421,8 +2421,377 @@
     accTab = name;
     const b = $('#accBody'); if (!b) return;
     b.querySelectorAll('[data-accg]').forEach(el => { el.hidden = el.dataset.accg !== name; });
-    b.querySelectorAll('#accTabs button').forEach(t => t.classList.toggle('on', t.dataset.acctab === name));
+    $$('#accTabs button').forEach(t => t.classList.toggle('on', t.dataset.acctab === name));
+    if (name === 'reports' && $('#accReportsHost')) rpRender();
     $$('#navAccSub button').forEach(t => t.classList.toggle('active', t.dataset.accTab === name));
+  }
+
+  // ---------- Accounting: Reports Center and the nine report pages ----------
+  // Every figure comes from the server's ledger or report endpoints. Where the ledger has no account for a line in the design
+  // (inventory, prepaid, equipment, retained earnings), the line is shown at $0.00 with a note, never invented.
+  const RP_REPORTS = [
+    { key: 'pl', label: 'Profit & Loss', icon: 'bars', tone: 'blue', desc: 'Revenue, expenses, and net profit' },
+    { key: 'bs', label: 'Balance Sheet', icon: 'layers', tone: 'navy', desc: 'Assets, liabilities, and equity' },
+    { key: 'cf', label: 'Cash Flow', icon: 'arrows', tone: 'green', desc: 'Cash in, cash out, and net change' },
+    { key: 'jobs', label: 'Job Profitability', icon: 'briefcase', tone: 'amber', desc: 'Project and job performance' },
+    { key: 'payroll', label: 'Payroll', icon: 'team', tone: 'green', desc: 'Labor costs, burden, and overtime' },
+    { key: 'ar', label: 'A/R Aging', icon: 'doc', tone: 'amber', desc: 'Customer receivables and aging' },
+    { key: 'ap', label: 'A/P Aging', icon: 'doc', tone: 'purple', desc: 'Vendor payables and aging' },
+    { key: 'tax', label: 'Tax Reports', icon: 'receipt', tone: 'blue', desc: 'Sales tax, liability, and filings' },
+    { key: 'summary', label: 'Financial Summary', icon: 'grid', tone: 'navy', desc: 'Company performance overview' }
+  ];
+  const RP_TINT = { blue: '#eef5ff', green: '#ecf9f2', amber: '#fff7e6', red: '#fdf0ef', purple: '#f3efff', navy: '#eef2f7', teal: '#e8f8f7' };
+  const rp = { key: 'hub', preset: 'month', from: '', to: '', seq: 0, data: null, filter: { project: '', customer: '', status: '', q: '' } };
+  const rpIso = d => localISO(d);
+  const rpPresets = [['month', 'This month'], ['last', 'Last month'], ['quarter', 'Last 3 months'], ['ytd', 'Year to date'], ['year', 'Last 12 months'], ['custom', 'Custom']];
+  function rpRange(preset) {
+    const t = new Date(), y = t.getFullYear(), m = t.getMonth();
+    if (preset === 'last') return [rpIso(new Date(y, m - 1, 1)), rpIso(new Date(y, m, 0))];
+    if (preset === 'quarter') return [rpIso(new Date(y, m - 2, 1)), rpIso(new Date(y, m + 1, 0))];
+    if (preset === 'ytd') return [`${y}-01-01`, rpIso(t)];
+    if (preset === 'year') return [rpIso(new Date(y, m - 11, 1)), rpIso(t)];
+    return [rpIso(new Date(y, m, 1)), rpIso(new Date(y, m + 1, 0))];
+  }
+  const rpCurrentRange = () => (rp.preset === 'custom' && rp.from && rp.to ? [rp.from, rp.to] : rpRange(rp.preset));
+  // The period of the same length right before the current one, for comparisons.
+  function rpPrior(from, to) {
+    const a = new Date(from + 'T12:00:00'), b = new Date(to + 'T12:00:00');
+    const days = Math.round((b - a) / 864e5) + 1;
+    const pTo = new Date(a); pTo.setDate(pTo.getDate() - 1);
+    const pFrom = new Date(pTo); pFrom.setDate(pFrom.getDate() - days + 1);
+    return [rpIso(pFrom), rpIso(pTo)];
+  }
+  // The six calendar months ending with the month of `to`.
+  function rpMonths(to, n = 6) {
+    const e = new Date(to + 'T12:00:00'), out = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const s = new Date(e.getFullYear(), e.getMonth() - i, 1), f = new Date(s.getFullYear(), s.getMonth() + 1, 0);
+      out.push({ label: s.toLocaleDateString('en-US', { month: 'short' }), month: `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}`, from: rpIso(s), to: rpIso(f) });
+    }
+    return out;
+  }
+  const rpPct = v => (v == null || !isFinite(v) ? '—' : (Math.round(v * 10) / 10) + '%');
+  const rpSum = (list, key) => (list || []).reduce((s, x) => s + (Number(x[key]) || 0), 0);
+  // Change against the prior period, in the same wording the design uses.
+  function rpDelta(cur, prev) {
+    if (!prev) return cur ? 'N/A (no prior amount)' : '0% vs prior period';
+    const d = Math.round((cur - prev) / Math.abs(prev) * 1000) / 10;
+    return `${d >= 0 ? '↑' : '↓'} ${Math.abs(d)}% vs prior period`;
+  }
+  const rpKpi = (icon, tone, label, value, sub) => `<div class="rpk t-${tone}"><span class="rpk-ic">${ic(icon)}</span><div><small>${esc(label)}</small><b>${esc(value)}</b>${sub ? `<em>${esc(sub)}</em>` : ''}</div></div>`;
+  const rpCell = v => (v == null ? '—' : esc(money(v)));
+  // A number in a table cell, red when negative.
+  const rpNum = v => `<td class="num${Number(v) < 0 ? ' neg' : ''}">${esc(money(v))}</td>`;
+  function rpTable(heads, bodyHtml, cls = '') {
+    return `<div class="tablewrap"><table class="t rpt ${cls}"><thead><tr>${heads.map((h, i) => `<th${i ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+  }
+  // Bars for one or two series; negative values go below the zero line.
+  function rpBars(labels, series) {
+    if (!labels.length) return '<p class="muted">No months to show yet.</p>';
+    const W = 560, H = 230, pad = 52, base = H - 26, top = 12;
+    const all = series.flatMap(s => s.values.map(v => Number(v) || 0));
+    const max = Math.max(0, ...all), min = Math.min(0, ...all), span = (max - min) || 1;
+    const y = v => base - ((v - min) / span) * (base - top);
+    let s = '';
+    for (let i = 0; i <= 4; i++) {
+      const v = min + span * i / 4, yy = y(v);
+      s += `<line x1="${pad}" x2="${W}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="#e2e8f0"/><text x="${pad - 6}" y="${(yy + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="#7b8794">${esc('$' + Math.round(v))}</text>`;
+    }
+    const step = (W - pad) / labels.length, bw = Math.min(22, step * 0.3 / Math.max(1, series.length));
+    labels.forEach((lab, i) => {
+      const cx = pad + step * i + step / 2;
+      series.forEach((se, k) => {
+        const v = Number(se.values[i]) || 0, x = cx + (k - (series.length - 1) / 2) * (bw + 3) - bw / 2;
+        const yTop = Math.min(y(v), y(0)), h = Math.abs(y(v) - y(0));
+        s += `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" rx="3" fill="${v < 0 ? '#e5534b' : se.color}"><title>${esc(se.name)} ${esc(lab)}: ${esc(money(v))}</title></rect>`;
+      });
+      s += `<text x="${cx.toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#7b8794">${esc(lab)}</text>`;
+    });
+    const legend = series.map(se => `<span><i style="background:${se.color}"></i>${esc(se.name)}</span>`).join('');
+    return `<div class="rpleg">${legend}</div><svg class="accchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map(x => x.name).join(' and '))} by month">${s}</svg>`;
+  }
+  const rpBucketsOf = (b, cur) => ({ cur: (Number(b.current) || 0) + (Number(b['1-30']) || 0), d31: Number(b['31-60']) || 0, d61: Number(b['61-90']) || 0, d90: Number(b['over-90']) || 0 });
+  function rpCsv(rows, name) {
+    const q = v => `"${csvText(v == null ? '' : v)}"`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
+    a.download = name; a.click();
+  }
+
+  // Each report returns { title, sub, kpis, body, csv:[rows], file }.
+  async function rpPL(from, to) {
+    const [pf, pt] = rpPrior(from, to), months = rpMonths(to);
+    const [cur, prev, mon] = await Promise.all([api(`/api/admin/ledger/pnl?from=${from}&to=${to}`), api(`/api/admin/ledger/pnl?from=${pf}&to=${pt}`), Promise.all(months.map(m => api(`/api/admin/ledger/pnl?from=${m.from}&to=${m.to}`)))]);
+    const exp = c => (Number(c.cost_of_services_total) || 0) + (Number(c.operating_expenses_total) || 0);
+    const rev = Number(cur.revenue_total) || 0;
+    const kpis = [
+      rpKpi('money', 'blue', 'Revenue', money(rev), rpDelta(rev, Number(prev.revenue_total) || 0)),
+      rpKpi('layers', 'red', 'Expenses', money(exp(cur)), rpDelta(exp(cur), exp(prev))),
+      rpKpi('bars', 'amber', 'Gross profit', money(cur.gross_profit), rpDelta(Number(cur.gross_profit) || 0, Number(prev.gross_profit) || 0)),
+      rpKpi('check', 'purple', 'Net profit', money(cur.net_profit), rpDelta(Number(cur.net_profit) || 0, Number(prev.net_profit) || 0))
+    ].join('');
+    const lines = [], pushSec = (title, rows, total) => { lines.push({ section: title }); rows.forEach(r => lines.push({ name: r.name, amount: Number(r.amount) || 0 })); lines.push({ total: title, amount: total }); };
+    pushSec('Revenue', cur.revenue, cur.revenue_total);
+    pushSec('Cost of services', cur.cost_of_services, cur.cost_of_services_total);
+    lines.push({ total: 'Gross profit', amount: cur.gross_profit, strong: true, tone: Number(cur.gross_profit) < 0 ? 'red' : 'green' });
+    pushSec('Operating expenses', cur.operating_expenses, cur.operating_expenses_total);
+    lines.push({ total: 'Net profit', amount: cur.net_profit, strong: true, tone: Number(cur.net_profit) < 0 ? 'red' : 'green' });
+    const body2 = lines.map(l => {
+      if (l.section) return `<tr class="sec"><th colspan="3">${esc(l.section)}</th></tr>`;
+      if (l.name) return `<tr><td class="ind">${esc(l.name)}</td>${rpNum(l.amount)}<td class="num">${rpPct(rev ? l.amount / rev * 100 : null)}</td></tr>`;
+      if (l.strong) return `<tr class="grand t-${l.tone}"><th>${esc(l.total)}</th>${rpNum(l.amount)}<td class="num">${rpPct(rev ? l.amount / rev * 100 : null)}</td></tr>`;
+      return `<tr class="tot"><th>Total ${esc(l.total.toLowerCase())}</th>${rpNum(l.amount)}<td class="num">${rpPct(rev ? l.amount / rev * 100 : null)}</td></tr>`;
+    }).join('');
+    const ins = [];
+    if (!rev) ins.push('No revenue was recorded for this period.');
+    if (Number(cur.cost_of_services_total) > 0) ins.push(`${money(cur.cost_of_services_total)} in cost of services was posted.`);
+    if (Number(cur.operating_expenses_total) > 0) ins.push(`${money(cur.operating_expenses_total)} in operating expenses were recorded.`);
+    ins.push(`Net profit is ${money(cur.net_profit)} for the selected period.`);
+    if (cur.gross_margin_pct != null) ins.push(`Gross margin is ${cur.gross_margin_pct}% against a ${ACC_GOAL_MARGIN}% target.`);
+    (cur.notes || []).forEach(n => ins.push(n));
+    const body = `<div class="rpgrid">
+      <div class="card rpmain"><div class="rpsec"><h3>Profit &amp; Loss Statement</h3><span class="muted">${esc(from)} to ${esc(to)}</span></div>
+        <div class="tablewrap"><table class="t rpt stmt"><thead><tr><th>Account</th><th class="num">Amount</th><th class="num">% of revenue</th></tr></thead><tbody>${body2}</tbody></table></div></div>
+      <div class="rpside">
+        <div class="card"><h3 class="secth" style="margin-top:0">Profit trend</h3>${rpBars(mon.map((_, i) => months[i].label), [{ name: 'Net profit', color: '#1f6fd1', values: mon.map(m => m.net_profit) }])}</div>
+        <div class="card"><h3 class="secth" style="margin-top:0">Report insights</h3><ul class="rpins">${ins.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
+      </div></div>`;
+    const csv = [['Account', 'Amount', '% of revenue']];
+    lines.forEach(l => { if (l.section) csv.push([l.section]); else if (l.name) csv.push([l.name, l.amount, rev ? (l.amount / rev * 100).toFixed(1) : '']); else csv.push([l.total, l.amount, rev ? (l.amount / rev * 100).toFixed(1) : '']); });
+    return { title: 'Financial Reports', sub: 'Profit and loss for the period', kpis, body, csv, file: `profit-and-loss-${from}-${to}.csv` };
+  }
+
+  async function rpBS(from, to) {
+    const bs = await api(`/api/admin/ledger/balance-sheet?as_of=${to}`);
+    const amt = (list, code) => { const x = (list || []).find(a => a.code === code); return x ? Number(x.amount) || 0 : 0; };
+    const row = (label, v, note) => `<tr><td class="ind">${esc(label)}${note ? ` <small class="muted">${esc(note)}</small>` : ''}</td>${rpNum(v)}</tr>`;
+    const NA = 'no ledger account yet';
+    const assetsCur = [row('Cash & Bank', amt(bs.assets, '1000')), row('Accounts Receivable', amt(bs.assets, '1100')), row('Inventory & Supplies', 0, NA), row('Prepaid Expenses', 0, NA)].join('');
+    const assetsFix = [row('Equipment & Vehicles', 0, NA), row('Accumulated Depreciation', 0, NA)].join('');
+    const liab = [row('Accounts Payable', amt(bs.liabilities, '2000')), row('Accrued Payroll', amt(bs.liabilities, '2300')), row('Sales Tax Payable', amt(bs.liabilities, '2100')), row('Customer Deposits', amt(bs.liabilities, '2200')), row('Payroll Taxes Payable', amt(bs.liabilities, '2400'))].join('');
+    const eq = [row("Owner's Contributions", amt(bs.equity, '3000')), row('Retained Earnings', 0, 'closed years not tracked yet'), row('Current Year Earnings', Number(bs.earnings_to_date) || 0)].join('');
+    const eqTotal = (Number(bs.equity_total) || 0) + (Number(bs.earnings_to_date) || 0);
+    const body = `<div class="rpgrid two">
+      <div class="card"><div class="rpsec"><h3>Assets</h3><span class="muted">As of ${esc(to)}</span></div>
+        <div class="tablewrap"><table class="t rpt stmt"><tbody>
+          <tr class="sec"><th colspan="2">Current assets</th></tr>${assetsCur}<tr class="tot"><th>Total current assets</th>${rpNum(bs.assets_total)}</tr>
+          <tr class="sec"><th colspan="2">Fixed assets</th></tr>${assetsFix}<tr class="tot"><th>Total fixed assets</th>${rpNum(0)}</tr>
+          <tr class="grand t-blue"><th>Total assets</th>${rpNum(bs.assets_total)}</tr></tbody></table></div></div>
+      <div class="card"><div class="rpsec"><h3>Liabilities &amp; Equity</h3><span class="badge ${bs.balances ? 'green' : 'red'}">${bs.balances ? 'Balances' : 'Off by ' + esc(money(bs.difference))}</span></div>
+        <div class="tablewrap"><table class="t rpt stmt"><tbody>
+          <tr class="sec"><th colspan="2">Current liabilities</th></tr>${liab}<tr class="tot"><th>Total liabilities</th>${rpNum(bs.liabilities_total)}</tr>
+          <tr class="sec"><th colspan="2">Equity</th></tr>${eq}<tr class="tot"><th>Total equity</th>${rpNum(eqTotal)}</tr>
+          <tr class="grand t-blue"><th>Total liabilities &amp; equity</th>${rpNum(bs.liabilities_and_equity_total)}</tr></tbody></table></div></div>
+      </div><p class="muted rpnote">Inventory, prepaid expenses, equipment, accumulated depreciation and retained earnings have no ledger account yet, so they show at $0.00.</p>`;
+    const csv = [['Line', 'Amount']];
+    csv.push(['Cash & Bank', amt(bs.assets, '1000')], ['Accounts Receivable', amt(bs.assets, '1100')], ['Total assets', bs.assets_total], ['Accounts Payable', amt(bs.liabilities, '2000')], ['Sales Tax Payable', amt(bs.liabilities, '2100')], ['Total liabilities', bs.liabilities_total], ["Owner's Contributions", amt(bs.equity, '3000')], ['Current Year Earnings', bs.earnings_to_date], ['Total liabilities & equity', bs.liabilities_and_equity_total]);
+    return { title: 'Financial Reports', sub: `Balance sheet as of ${to}`, kpis: rpKpi('layers', 'navy', 'Total assets', money(bs.assets_total), bs.balances ? 'Balances' : 'Does not balance') + rpKpi('bars', 'amber', 'Total liabilities', money(bs.liabilities_total), '') + rpKpi('check', 'green', 'Total equity', money(eqTotal), ''), body, csv, file: `balance-sheet-${to}.csv` };
+  }
+
+  async function rpCF(from, to) {
+    const months = rpMonths(to);
+    const [cf, mon] = await Promise.all([api(`/api/admin/ledger/cash-flow?from=${from}&to=${to}`), Promise.all(months.map(m => api(`/api/admin/ledger/cash-flow?from=${m.from}&to=${m.to}`)))]);
+    const line = (l) => `<tr><td class="ind">${esc(l.label)}</td>${rpNum(l.amount)}</tr>`;
+    const sec = (title, s) => `<tr class="sec"><th colspan="2">${esc(title)}</th></tr>${s.lines.map(line).join('')}<tr class="tot"><th>Net cash from ${esc(title.toLowerCase())}</th>${rpNum(s.total)}</tr>`;
+    const body = `<div class="rpgrid">
+      <div class="card rpmain"><div class="rpsec"><h3>Cash Flow Statement</h3><span class="muted">${esc(from)} to ${esc(to)}</span></div>
+        <div class="tablewrap"><table class="t rpt stmt"><thead><tr><th>Category</th><th class="num">Amount</th></tr></thead><tbody>
+          ${sec('Operating activities', cf.operating)}${sec('Investing activities', cf.investing)}${sec('Financing activities', cf.financing)}
+          <tr class="grand t-${Number(cf.net_change) < 0 ? 'red' : 'green'}"><th>Net change in cash</th>${rpNum(cf.net_change)}</tr>
+        </tbody></table></div></div>
+      <div class="rpside">
+        <div class="card"><h3 class="secth" style="margin-top:0">Cash position</h3>
+          <dl class="rpdl"><dt>Beginning cash</dt><dd>${esc(money(cf.beginning_cash))}</dd><dt>Net change</dt><dd>${esc(money(cf.net_change))}</dd><dt>Ending cash</dt><dd><b>${esc(money(cf.ending_cash))}</b></dd></dl></div>
+        <div class="card"><h3 class="secth" style="margin-top:0">Cash flow trend</h3>${rpBars(months.map(m => m.label), [{ name: 'Net change in cash', color: '#2fb67c', values: mon.map(x => x.net_change) }])}</div>
+      </div></div><p class="muted rpnote">${esc(cf.note)}</p>`;
+    const csv = [['Category', 'Amount']];
+    [['Operating activities', cf.operating], ['Investing activities', cf.investing], ['Financing activities', cf.financing]].forEach(([t, s]) => { csv.push([t]); s.lines.forEach(l => csv.push([l.label, l.amount])); csv.push(['Net ' + t.toLowerCase(), s.total]); });
+    csv.push(['Beginning cash', cf.beginning_cash], ['Net change in cash', cf.net_change], ['Ending cash', cf.ending_cash]);
+    return { title: 'Financial Reports', sub: 'Cash in, cash out, and net change', kpis: rpKpi('arrows', 'green', 'Net cash from operations', money(cf.operating.total), '') + rpKpi('layers', 'navy', 'Beginning cash', money(cf.beginning_cash), '') + rpKpi('check', 'green', 'Ending cash', money(cf.ending_cash), ''), body, csv, file: `cash-flow-${from}-${to}.csv` };
+  }
+
+  async function rpJobs(from, to) {
+    const fin = await api(`/api/admin/reports/finance?from=${from}&to=${to}`);
+    const all = fin.projects || [];
+    const f = rp.filter;
+    const customers = [...new Set(all.map(p => p.customer_name || p.company).filter(Boolean))].sort();
+    const statuses = [...new Set(all.map(p => p.status).filter(Boolean))].sort();
+    const rows = all.filter(p => (!f.project || String(p.id) === f.project) && (!f.customer || (p.customer_name || p.company) === f.customer) && (!f.status || p.status === f.status) && (!f.q || String(p.name || '').toLowerCase().includes(f.q.toLowerCase())));
+    const tot = k => rows.reduce((s, p) => s + (Number(p[k]) || 0), 0);
+    const revenue = tot('invoiced'), cost = tot('cost'), profit = revenue - cost;
+    const margin = revenue > 0 ? Math.round(profit / revenue * 1000) / 10 : null;
+    const kpis = rpKpi('money', 'blue', 'Total revenue', money(revenue), 'invoiced to date') + rpKpi('layers', 'red', 'Total cost', money(cost), 'job costs recorded') + rpKpi('bars', 'amber', 'Gross profit', money(profit), '') + rpKpi('percent', 'green', 'Margin', rpPct(margin), '');
+    const sel = (id, label, list, cur) => `<select id="${id}" data-rp-filter aria-label="${label}"><option value="">All ${label.toLowerCase()}</option>${list.map(v => `<option value="${esc(v.value)}"${String(v.value) === cur ? ' selected' : ''}>${esc(v.label)}</option>`).join('')}</select>`;
+    const bar = `<div class="rpfilt">${sel('rpFProject', 'Projects', all.map(p => ({ value: p.id, label: p.name || '#' + p.id })), f.project)}${sel('rpFCustomer', 'Customers', customers.map(c => ({ value: c, label: c })), f.customer)}${sel('rpFStatus', 'Statuses', statuses.map(s => ({ value: s, label: s })), f.status)}<input id="rpFQ" data-rp-filter type="search" placeholder="Search jobs" value="${esc(f.q)}" aria-label="Search jobs"></div>`;
+    const tr = p => `<tr><td>${esc(p.name || '#' + p.id)}<small class="muted">${esc(p.status || '')}</small></td><td>${esc(p.customer_name || p.company || '—')}</td>${rpNum(p.invoiced)}${rpNum(p.labor)}${rpNum(p.materials)}${rpNum(p.other_cost)}${rpNum(p.cost)}<td class="num${p.profit != null && p.profit < 0 ? ' neg' : ''}">${p.profit == null ? '—' : esc(money(p.profit))}</td><td class="num">${rpPct(p.margin)}</td></tr>`;
+    const body = `<div class="card"><div class="rpsec"><h3>Job Profitability Report</h3><span class="muted">Invoices and job costs to date; cost-only jobs show no profit</span></div>${bar}
+      ${rpTable(['Project / job', 'Customer', 'Revenue', 'Labor', 'Materials', 'Other', 'Total cost', 'Profit', 'Margin'], rows.map(tr).join('') || '<tr><td colspan="9" class="muted">No projects match these filters.</td></tr>', 'jobs')}</div>
+      <p class="muted rpnote">Project figures use invoices and project costs recorded to date. Overhead not tied to a project is not included.</p>`;
+    const csv = [['Project', 'Customer', 'Revenue', 'Labor', 'Materials', 'Other', 'Total cost', 'Profit', 'Margin %']];
+    rows.forEach(p => csv.push([p.name || '#' + p.id, p.customer_name || p.company || '', p.invoiced, p.labor, p.materials, p.other_cost, p.cost, p.profit == null ? '' : p.profit, p.margin == null ? '' : p.margin]));
+    return { title: 'Financial Reports', sub: 'Project and job performance', kpis, body, csv, file: `job-profitability-${from}-${to}.csv` };
+  }
+
+  async function rpPayroll(from, to) {
+    const [lab, rates] = await Promise.all([api(`/api/admin/reports/labor?from=${from}&to=${to}`), api('/api/admin/ledger/rates')]);
+    const burden = Number((rates.rates || []).find(r => r.key === 'ledger_burden_pct')?.value) || 0;
+    const emps = (lab.employees || []).map(e => {
+      const hrs = Number(e.hours) || 0, ot = Number(e.overtime_hours) || 0, direct = Number(e.cost) || 0;
+      return { name: e.name, reg: Math.max(0, hrs - ot), ot, rate: hrs > 0 ? Math.round(direct / hrs * 100) / 100 : 0, direct, burden: Math.round(direct * burden) / 100, total: Math.round((direct + direct * burden / 100) * 100) / 100 };
+    });
+    const direct = rpSum(emps, 'direct'), bur = rpSum(emps, 'burden'), total = direct + bur, otHrs = rpSum(emps, 'ot');
+    const kpis = rpKpi('team', 'green', 'Total payroll', money(direct), 'hours × hourly rate') + rpKpi('percent', 'amber', 'Labor burden', money(bur), `${burden}% of payroll`) + rpKpi('clock', 'blue', 'Overtime hours', String(Math.round(otHrs * 100) / 100), 'premium not in costs yet') + rpKpi('layers', 'navy', 'Total labor cost', money(total), '');
+    const donut = total > 0 ? accDonutSvg([{ amount: direct }, { amount: bur }], total) : '<p class="muted">No labor cost in this period.</p>';
+    const pending = Number(lab.totals && lab.totals.pending_hours) || 0;
+    const body = `<div class="rpgrid">
+      <div class="card rpmain"><div class="rpsec"><h3>Payroll Cost Report</h3><span class="muted">${esc(from)} to ${esc(to)}</span></div>
+        ${rpTable(['Employee', 'Regular hrs', 'OT hrs', 'Pay rate', 'Direct cost', 'Burden', 'Total cost'], emps.map(e => `<tr><td>${esc(e.name)}</td><td class="num">${esc(e.reg)}</td><td class="num">${esc(e.ot)}</td><td class="num">${esc(money(e.rate))}/hr</td>${rpNum(e.direct)}${rpNum(e.burden)}${rpNum(e.total)}</tr>`).join('') || '<tr><td colspan="7" class="muted">No approved hours in this period.</td></tr>', 'payroll')}
+        ${pending ? `<p class="muted">${esc(pending)} hour(s) are not approved yet and are not in these costs.</p>` : ''}</div>
+      <div class="rpside"><div class="card"><h3 class="secth" style="margin-top:0">Labor cost breakdown</h3><div class="rpdonut">${donut}<div class="legend"><div><i style="background:#1f6fd1"></i><span style="flex:1">Direct labor</span><b>${esc(money(direct))}</b></div><div><i style="background:#2fb67c"></i><span style="flex:1">Labor burden</span><b>${esc(money(bur))}</b></div></div></div></div></div></div>
+      <p class="muted rpnote">${esc(lab.basis || '')}${burden ? '' : ' Labor burden is 0% in Settings, so no burden is added.'}</p>`;
+    const csv = [['Employee', 'Regular hours', 'OT hours', 'Pay rate', 'Direct cost', 'Burden', 'Total cost']];
+    emps.forEach(e => csv.push([e.name, e.reg, e.ot, e.rate, e.direct, e.burden, e.total]));
+    return { title: 'Financial Reports', sub: 'Labor costs, burden, and overtime', kpis, body, csv, file: `payroll-${from}-${to}.csv` };
+  }
+
+  // A/R and A/P aging: the same five buckets. "Current" here means 0 to 30 days (current plus 1 to 30).
+  function rpAging(kind, data, to) {
+    const isAR = kind === 'ar';
+    const rowsOf = isAR ? (() => {
+      const byCust = new Map();
+      (data.rows || []).forEach(r => { const k = r.customer || 'Unnamed customer'; const b = byCust.get(k) || { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, 'over-90': 0 }; b[r.bucket] = (b[r.bucket] || 0) + (Number(r.owed) || 0); byCust.set(k, b); });
+      return [...byCust.entries()].map(([name, b]) => ({ name, b }));
+    })() : (data.vendors || []).map(v => ({ name: v.vendor, b: v.buckets || {} }));
+    const T = data.totals || {};
+    const tot = rpBucketsOf(T, 0);
+    const grand = Object.values(tot).reduce((s, x) => s + x, 0);
+    const label = isAR ? 'Receivables' : 'Payables';
+    const kpis = rpKpi(isAR ? 'money' : 'doc', isAR ? 'amber' : 'purple', `Total ${label.toLowerCase()}`, money(grand), `as of ${data.as_of || to}`) + rpKpi('check', 'green', 'Current (0-30)', money(tot.cur), '') + rpKpi('clock', 'amber', '31-60 days', money(tot.d31), '') + rpKpi('alert', 'red', '61-90 days', money(tot.d61), '') + rpKpi('alert', 'red', 'Over 90 days', money(tot.d90), '');
+    const rowsHtml = rowsOf.map(({ name, b }) => { const x = rpBucketsOf(b, 0), t = x.cur + x.d31 + x.d61 + x.d90; return `<tr><td>${esc(name)}</td>${rpNum(x.cur)}${rpNum(x.d31)}${rpNum(x.d61)}${rpNum(x.d90)}${rpNum(t)}</tr>`; }).join('');
+    const dRows = [{ amount: tot.cur }, { amount: tot.d31 }, { amount: tot.d61 }, { amount: tot.d90 }];
+    const legend = [['Current (0-30)', '#2fb67c', tot.cur], ['31-60 days', '#f2a93b', tot.d31], ['61-90 days', '#e5534b', tot.d61], ['Over 90 days', '#8b5cf6', tot.d90]].map(([n, c, v]) => `<div><i style="background:${c}"></i><span style="flex:1">${n}</span><b>${esc(money(v))}</b></div>`).join('');
+    const body = `<div class="rpgrid">
+      <div class="card rpmain"><div class="rpsec"><h3>${isAR ? 'Accounts Receivable' : 'Accounts Payable'} Aging</h3><span class="muted">As of ${esc(data.as_of || to)}</span></div>
+        ${rpTable(['Customer', 'Current (0-30)', '31-60', '61-90', 'Over 90', 'Total'], rowsHtml || `<tr><td colspan="6" class="muted">No outstanding ${isAR ? 'receivables' : 'payables'}.</td></tr>`, 'aging')}</div>
+      <div class="rpside"><div class="card"><h3 class="secth" style="margin-top:0">Aging breakdown</h3><div class="rpdonut">${grand > 0 ? accDonutSvg(dRows, grand) : '<p class="muted">Nothing outstanding.</p>'}<div class="legend">${legend}</div></div></div></div></div>`;
+    const csv = [['Name', 'Current (0-30)', '31-60', '61-90', 'Over 90', 'Total']];
+    rowsOf.forEach(({ name, b }) => { const x = rpBucketsOf(b, 0); csv.push([name, x.cur, x.d31, x.d61, x.d90, x.cur + x.d31 + x.d61 + x.d90]); });
+    return { title: 'Financial Reports', sub: isAR ? 'Customer receivables and aging' : 'Vendor payables and aging', kpis, body, csv, file: `${kind}-aging-${to}.csv` };
+  }
+  async function rpAR(from, to) { return rpAging('ar', await api(`/api/admin/ledger/ar-aging?as_of=${to}`), to); }
+  async function rpAP(from, to) { return rpAging('ap', await api(`/api/admin/ledger/ap-aging?as_of=${to}`), to); }
+
+  async function rpTax(from, to) {
+    const [tx, rates] = await Promise.all([api(`/api/admin/reports/tax?from=${from}&to=${to}`), api('/api/admin/ledger/rates')]);
+    const configured = Number((rates.rates || []).find(r => r.key === 'sales_tax_rate_pct')?.value) || 0;
+    const kpis = rpKpi('money', 'blue', 'Taxable sales', money(tx.taxable_sales), 'invoices issued with tax') + rpKpi('receipt', 'amber', `Sales tax (${configured}%)`, money(tx.tax_collected), tx.effective_rate == null ? 'no taxed invoices yet' : `effective ${tx.effective_rate}%`) + rpKpi('check', 'green', 'Tax collected', money(tx.tax_collected), '') + rpKpi('alert', 'red', 'Tax liability', money(tx.tax_liability), 'owed on the ledger');
+    const body = `<div class="card"><div class="rpsec"><h3>Tax Reports</h3><span class="muted">${esc(from)} to ${esc(to)}</span></div>
+      ${rpTable(['Period', 'Taxable amount', 'Tax rate', 'Tax collected'], tx.periods.map(p => `<tr><td>${esc(p.month)}</td>${rpNum(p.taxable)}<td class="num">${rpPct(p.rate)}</td>${rpNum(p.tax)}</tr>`).join('') || '<tr><td colspan="4" class="muted">No invoices with sales tax issued in this period.</td></tr>', 'tax')}</div>
+      <p class="muted rpnote">${esc(tx.note)} The rate in Settings is ${configured}%.</p>`;
+    const csv = [['Period', 'Taxable amount', 'Tax rate', 'Tax collected']];
+    tx.periods.forEach(p => csv.push([p.month, p.taxable, p.rate == null ? '' : p.rate, p.tax]));
+    return { title: 'Financial Reports', sub: 'Sales tax, liability, and filings', kpis, body, csv, file: `sales-tax-${from}-${to}.csv` };
+  }
+
+  async function rpSummary(from, to) {
+    const months = rpMonths(to);
+    const [pl, bs, mon] = await Promise.all([api(`/api/admin/ledger/pnl?from=${from}&to=${to}`), api(`/api/admin/ledger/balance-sheet?as_of=${to}`), Promise.all(months.map(m => api(`/api/admin/ledger/pnl?from=${m.from}&to=${m.to}`)))]);
+    const exp = (Number(pl.cost_of_services_total) || 0) + (Number(pl.operating_expenses_total) || 0);
+    const cash = (bs.assets || []).find(a => a.code === '1000');
+    const kpis = rpKpi('money', 'blue', 'Revenue', money(pl.revenue_total), '') + rpKpi('layers', 'red', 'Total expenses', money(exp), '') + rpKpi('bars', 'amber', 'Gross profit', money(pl.gross_profit), pl.gross_margin_pct == null ? '' : pl.gross_margin_pct + '% margin') + rpKpi('wallet', 'purple', 'Operating expenses', money(pl.operating_expenses_total), '') + rpKpi('check', Number(pl.net_profit) < 0 ? 'red' : 'green', 'Net profit', money(pl.net_profit), '') + rpKpi('arrows', 'navy', 'Cash position', money(cash ? cash.amount : 0), 'as of ' + to);
+    const body = `<div class="rpgrid">
+      <div class="card rpmain"><div class="rpsec"><h3>Revenue vs. expenses</h3><span class="muted">Last six months, from the ledger</span></div>${rpBars(months.map(m => m.label), [{ name: 'Revenue', color: '#1f6fd1', values: mon.map(m => m.revenue_total) }, { name: 'Expenses', color: '#2fb67c', values: mon.map(m => (Number(m.cost_of_services_total) || 0) + (Number(m.operating_expenses_total) || 0)) }])}</div>
+      <div class="rpside"><div class="card"><h3 class="secth" style="margin-top:0">Key figures</h3>
+        <dl class="rpdl"><dt>Revenue</dt><dd>${esc(money(pl.revenue_total))}</dd><dt>Cost of services</dt><dd>${esc(money(pl.cost_of_services_total))}</dd><dt>Gross profit</dt><dd>${esc(money(pl.gross_profit))}</dd><dt>Operating expenses</dt><dd>${esc(money(pl.operating_expenses_total))}</dd><dt>Net profit</dt><dd><b>${esc(money(pl.net_profit))}</b></dd><dt>Assets</dt><dd>${esc(money(bs.assets_total))}</dd><dt>Liabilities &amp; equity</dt><dd>${esc(money(bs.liabilities_and_equity_total))}</dd></dl></div></div></div>`;
+    const csv = [['Figure', 'Amount'], ['Revenue', pl.revenue_total], ['Total expenses', exp], ['Gross profit', pl.gross_profit], ['Operating expenses', pl.operating_expenses_total], ['Net profit', pl.net_profit], ['Cash position', cash ? cash.amount : 0]];
+    return { title: 'Financial Reports', sub: 'Company performance overview', kpis, body, csv, file: `financial-summary-${from}-${to}.csv` };
+  }
+
+  const RP_RUN = { pl: rpPL, bs: rpBS, cf: rpCF, jobs: rpJobs, payroll: rpPayroll, ar: rpAR, ap: rpAP, tax: rpTax, summary: rpSummary };
+
+  function rpPeriodBar(from, to) {
+    const opts = rpPresets.map(([k, l]) => `<option value="${k}"${rp.preset === k ? ' selected' : ''}>${esc(l)}</option>`).join('');
+    const label = `${fmtDate(from)} – ${fmtDate(to)}`;
+    return `<div class="rpbar">
+      <label class="rpper"><span>Reporting period</span><select id="rpPreset" data-rp-preset>${opts}</select><b>${esc(label)}</b></label>
+      ${rp.preset === 'custom' ? `<label class="rpper"><span>From</span><input type="date" id="rpFrom" value="${esc(from)}"></label><label class="rpper"><span>To</span><input type="date" id="rpTo" value="${esc(to)}"></label>` : ''}
+      <button class="btn" type="button" data-rp-act="run">Run Report</button></div>`;
+  }
+  function rpHubHtml(from, to) {
+    const tiles = RP_REPORTS.map(r => `<button type="button" class="rptile" data-rp-open="${r.key}"><span class="chip ${r.tone}">${ic(r.icon)}</span><div><b>${esc(r.label)}</b><small>${esc(r.desc)}</small></div></button>`).join('');
+    return `<div class="rphead"><div class="rphd"><span class="rphic">${ic('bars')}</span><div><h2>Reports Center</h2><p class="muted">Generate financial statements and business reports for any period.</p></div></div>${rpPeriodBar(from, to)}</div>
+      <div class="rptiles">${tiles}</div>`;
+  }
+  function rpPageHtml(key, from, to, r) {
+    const cur = RP_REPORTS.find(x => x.key === key);
+    const subs = RP_REPORTS.map(x => `<button type="button" class="rpsub${x.key === key ? ' on' : ''}" data-rp-open="${x.key}">${ic(x.icon)}<span>${esc(x.label)}</span></button>`).join('');
+    const actions = `<div class="rpacts">${key === 'pl' ? '<button class="btn ghost small" type="button" data-rp-act="tx">View Transactions</button>' : ''}<button class="btn ghost small" type="button" data-rp-act="csv">Export CSV</button><button class="btn ghost small" type="button" data-rp-act="print">Export PDF</button><button class="btn ghost small" type="button" data-rp-act="print">Print</button></div>`;
+    return `<div class="rphead"><div class="rphd"><span class="rphic">${ic(cur.icon)}</span><div><h2>${esc(r.title)}</h2><p class="muted">${esc(r.sub)}</p></div></div>${rpPeriodBar(from, to)}</div>
+      <div class="rpsubs">${subs}</div>
+      <div class="rpkpis">${r.kpis}</div>
+      <div class="rpacthead"><button class="btn ghost small" type="button" data-rp-act="hub">${ic('back')} Reports Center</button>${actions}</div>
+      <div class="rpbody">${r.body}</div>`;
+  }
+  // Renders the Reports tab. Called on open, on period change and on each report switch.
+  async function rpRender() {
+    const host = $('#accReportsHost'); if (!host) return;
+    const seq = ++rp.seq;
+    const [from, to] = rpCurrentRange();
+    host.innerHTML = '<p class="muted">Loading the report…</p>';
+    if (rp.key === 'hub') { host.innerHTML = rpHubHtml(from, to); return; }
+    try {
+      const r = await RP_RUN[rp.key](from, to);
+      if (seq !== rp.seq) return;
+      rp.data = r; host.innerHTML = rpPageHtml(rp.key, from, to, r);
+    } catch (err) { if (seq === rp.seq) host.innerHTML = rpPageHtml(rp.key, from, to, { title: 'Financial Reports', sub: '', kpis: '', body: `<p class="msg err">${esc(err.message)}</p>`, csv: null }); }
+  }
+  // One delegated handler for the whole Reports tab.
+  function rpBind() {
+    const host = $('#accReportsHost'); if (!host || host.dataset.bound) return;
+    host.dataset.bound = '1';
+    host.addEventListener('click', e => {
+      const open = e.target.closest('[data-rp-open]'), act = e.target.closest('[data-rp-act]');
+      if (open) { rp.key = open.dataset.rpOpen; rp.filter = { project: '', customer: '', status: '', q: '' }; return rpRender(); }
+      if (!act) return;
+      const a = act.dataset.rpAct;
+      if (a === 'hub') { rp.key = 'hub'; return rpRender(); }
+      if (a === 'run') { const pf = $('#rpFrom'), pt = $('#rpTo'); if (rp.preset === 'custom' && pf && pt) { rp.from = pf.value; rp.to = pt.value; } return rpRender(); }
+      if (a === 'tx') return showAccTab('ledger');
+      if (a === 'print') return window.print();
+      if (a === 'csv' && rp.data && rp.data.csv) return rpCsv(rp.data.csv, rp.data.file);
+    });
+    host.addEventListener('change', e => {
+      const p = e.target.closest('[data-rp-preset]');
+      if (p) { rp.preset = p.value; if (p.value !== 'custom') { rp.from = ''; rp.to = ''; return rpRender(); } const [f, t] = rpRange('month'); rp.from = f; rp.to = t; return rpRender(); }
+      if (e.target.closest('[data-rp-filter]')) {
+        rp.filter = { project: $('#rpFProject') ? $('#rpFProject').value : '', customer: $('#rpFCustomer') ? $('#rpFCustomer').value : '', status: $('#rpFStatus') ? $('#rpFStatus').value : '', q: $('#rpFQ') ? $('#rpFQ').value.trim() : '' };
+        return rpRender();
+      }
+    });
+  }
+
+  // The accounting tab bar (in the page header) and the journal rows.
+  const ACC_TABS = [['overview', 'Overview', 'home'], ['reports', 'Reports', 'bars'], ['expenses', 'Expenses', 'wallet'], ['jobs', 'Job Costing', 'briefcase'], ['reconciliation', 'Reconciliation', 'bank'], ['ledger', 'Ledger & Audit', 'book'], ['settings', 'Settings', 'gear']];
+  function renderAccTabs() {
+    const nav = $('#accTabs'); if (!nav) return;
+    nav.innerHTML = ACC_TABS.map(([k, l, i]) => `<button type="button" data-acctab="${k}">${ic(i)}<span>${esc(l)}</span></button>`).join('');
+    if (!nav.dataset.bound) { nav.dataset.bound = '1'; nav.addEventListener('click', e => { const b = e.target.closest('button[data-acctab]'); if (b) showAccTab(b.dataset.acctab); }); }
+  }
+  // Journal: the latest posted entries, newest first. The amount is the total of each entry's debits.
+  function accJournalHtml(entries) {
+    const rows = entries.slice(0, 25).map(e => {
+      const amt = (e.lines || []).reduce((s, l) => s + (Number(l.debit) || 0), 0);
+      return `<tr><td>${esc(fmtDate(e.entry_date))}</td><td>#${esc(e.id)}</td><td>${esc(e.memo || '')}</td><td>${esc(e.source || '')}</td><td class="num">${esc(money(amt))}</td></tr>`;
+    }).join('');
+    return rows || '<tr><td colspan="5" class="muted">No entries posted yet.</td></tr>';
+  }
+  async function accCsv(kind) {
+    const url = kind === 'journal' ? '/api/admin/ledger/export/journal.csv' : '/api/admin/ledger/export/trial-balance.csv';
+    try {
+      const r = await fetch(url, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('Export failed (' + r.status + ')');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(await r.blob()); a.download = kind === 'journal' ? 'journal.csv' : 'trial-balance.csv'; a.click();
+    } catch (err) { toast(err.message, true); }
   }
 
   async function loadAccounting() {
@@ -2452,21 +2821,12 @@
     const entries = entR.status === 'fulfilled' ? (entR.value.entries || []) : [];
     const overviewHtml = accOverviewHtml({ pl, tie, monthly, fin, entries });
     body.innerHTML = `
-      <nav class="acctabs" id="accTabs" aria-label="Accounting pages">${[['overview', 'Overview'], ['invoices', 'Invoices'], ['payments', 'Payments'], ['expenses', 'Expenses'], ['payroll', 'Payroll'], ['jobs', 'Job profitability'], ['reconciliation', 'Reconciliation'], ['reports', 'Reports']].map(([k, l]) => `<button type="button" data-acctab="${k}">${l}</button>`).join('')}</nav>
       <div class="accg accov" data-accg="overview">${overviewHtml}</div>
-      <div class="accg" data-accg="reports" id="accRatesHost" hidden></div>
-      <div class="card accg" data-accg="payments" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Receivables tie-out ${tieBadge}</h2>
+      <div class="accg" data-accg="reports" id="accReportsHost" hidden></div>
+      <div class="accg" data-accg="settings" id="accRatesHost" hidden></div>
+      <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Receivables tie-out ${tieBadge}</h2>
         <p class="muted">Difference between what customers owe and the ledger's receivable: <b>${money(tie.difference)}</b>. Unposted invoices: ${tie.unposted_invoices}. Unposted payments: ${tie.unposted_payments}.</p>
         <p class="muted">${esc(tie.gap)}</p></div>
-      <div class="card accg" data-accg="reports" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Profit and loss</h2>
-        <div class="tablewrap"><table class="t"><thead><tr><th>Code</th><th>Account</th><th class="num">Amount</th></tr></thead><tbody>
-          ${rowsOf(pl.revenue)}${total('Revenue', pl.revenue_total)}${rowsOf(pl.cost_of_services)}${total('Cost of services', pl.cost_of_services_total)}${total('Gross profit', pl.gross_profit)}${rowsOf(pl.operating_expenses)}${total('Operating expenses', pl.operating_expenses_total)}${total('Net profit', pl.net_profit)}
-        </tbody></table></div>
-        <p class="muted">${(pl.notes || []).map(esc).join(' ')}</p></div>
-      <div class="card accg" data-accg="reports" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Balance sheet ${bs.balances ? '<span class="pill st-Approved">Balances</span>' : '<span class="pill st-Declined">Off by ' + money(bs.difference) + '</span>'}</h2>
-        <div class="tablewrap"><table class="t"><tbody>
-          ${rowsOf(bs.assets)}${total('Assets', bs.assets_total)}${rowsOf(bs.liabilities)}${total('Liabilities', bs.liabilities_total)}${rowsOf(bs.equity)}${total('Equity', bs.equity_total)}${total('Earnings to date', bs.earnings_to_date)}
-        </tbody></table></div></div>
       <div class="card accg" data-accg="expenses" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bills and expenses</h2><button class="btn small" id="accNewBill" type="button">New bill</button></div>
         <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div></div>
       <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Periods</h2>
@@ -2483,11 +2843,14 @@
         <p class="muted">Enter a project number to see each task's budget, its actual cost, and what is not on a task yet.</p>
         <div class="filt"><input id="accTaskProject" type="number" min="1" placeholder="Project number"><button class="btn small" id="accTaskGo" type="button">Show tasks</button></div>
         <div id="accTaskOut"></div></div>
-      <div class="card accg" data-accg="payments" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Earn advance billing</h2>
+      <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Earn advance billing</h2>
         <p class="muted">For an invoice billed ahead (paid ahead), move the part of the deposit that is now earned into revenue, as the work is done. Work billed after it is done goes to revenue on issue and does not need this.</p>
         <div class="filt"><input id="accEarnId" type="number" min="1" placeholder="Invoice number"><input id="accEarnAmt" type="number" min="0" step="0.01" placeholder="Amount earned ($)"><input id="accEarnDate" type="date" aria-label="Date the work was done"><input id="accEarnNote" placeholder="Note" style="flex:1"><button class="btn small" id="accEarnGo" type="button">Earn</button></div>
         <div id="accEarnOut" class="muted"></div></div>
-      <div class="card accg" data-accg="reports" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Adjustments</h2>
+      <div class="card accg" data-accg="ledger" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Journal</h2><p class="muted">The latest posted entries.</p>
+        <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Entry</th><th>Memo</th><th>Source</th><th class="num">Amount</th></tr></thead><tbody>${accJournalHtml(entries)}</tbody></table></div>
+        <div class="filt"><button class="btn small ghost" type="button" data-acccsv="journal">Export journal CSV</button><button class="btn small ghost" type="button" data-acccsv="trial">Export trial balance CSV</button></div></div>
+      <div class="card accg" data-accg="ledger" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Adjustments</h2>
         <p class="muted">The ledger posts on its own. Use an adjustment for a correction. One line per account: <code>account | debit | credit</code>. Debits must equal credits. Dates in a closed period are refused.</p>
         <div class="filt"><input id="accAdjDate" type="date" aria-label="Adjustment date"><input id="accAdjMemo" placeholder="Memo (why)" style="flex:1"></div>
         <textarea id="accAdjLines" rows="4" style="width:100%" placeholder="1000 | 500 | 0&#10;4000 | 0 | 500"></textarea>
@@ -2495,15 +2858,16 @@
         <p class="muted">Reverse an entry (the reversal is a new entry; the original stays):</p>
         <div class="filt"><input id="accRevId" type="number" min="1" placeholder="Entry number"><input id="accRevReason" placeholder="Reason" style="flex:1"><button class="btn small ghost" id="accRevGo" type="button">Reverse</button></div>
       </div>
-      <div class="card accg" data-accg="reports" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Trace a document</h2>
+      <div class="card accg" data-accg="ledger" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Trace a document</h2>
         <p class="muted">Start from an estimate, contract, project, invoice or subscription number to see the whole chain, the money at each step, and where it sits on the ledger.</p>
         <div class="filt"><select id="accTKind"><option value="estimate">Estimate</option><option value="contract">Contract</option><option value="project">Project</option><option value="invoice">Invoice</option><option value="subscription">Subscription</option></select><input id="accTId" type="number" min="1" placeholder="Number"><button class="btn small" id="accTGo" type="button">Trace</button></div>
         <div id="accTOut"></div></div>
-      <div class="card accg" data-accg="invoices" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Invoices not yet on the ledger</h2><p class="muted">Set sales tax before the sync posts the invoice. Tax set after posting cannot be changed in place.</p>
+      <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Invoices not yet on the ledger</h2><p class="muted">Set sales tax before the sync posts the invoice. Tax set after posting cannot be changed in place.</p>
         <div class="tablewrap"><table class="t"><thead><tr><th>Invoice</th><th class="num">Amount</th><th class="num">Sales tax</th><th></th></tr></thead><tbody>${openRows}</tbody></table></div></div>
-      <div class="card accg" data-accg="payroll" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Recorded costs changed after posting</h2><ul>${driftRows}</ul></div>`;
+      <div class="card accg" data-accg="jobs" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Recorded costs changed after posting</h2><ul>${driftRows}</ul></div>`;
     // Tab bar, overview quick actions and the transaction filter.
-    body.querySelectorAll('#accTabs button').forEach(t => t.onclick = () => showAccTab(t.dataset.acctab));
+    renderAccTabs(); rpBind();
+    body.querySelectorAll('[data-acccsv]').forEach(b => b.onclick = () => accCsv(b.dataset.acccsv === 'journal' ? 'journal' : 'trial'));
     const accEl = body.querySelector('.accov');
     if (accEl) accEl.addEventListener('click', e => {
       const seg = e.target.closest('[data-accseg]'), go2 = e.target.closest('[data-acctab-go]');
@@ -3515,6 +3879,24 @@
     chev: '<path d="m9 6 6 6-6 6"/>', trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>', send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>'
   };
   IC.estimator = IC.proposals; IC.customer = IC.customers; IC.website = IC.documents || IC.overview;
+  Object.assign(IC, {
+    money: '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+    bars: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    layers: '<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>',
+    arrows: '<path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3"/>',
+    briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
+    team: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
+    receipt: '<path d="M4 2h16v20l-3-2-3 2-2-2-2 2-3-2-3 2z"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+    alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>',
+    percent: '<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+    wallet: '<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18M16 15h2"/>',
+    home: '<path d="M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+    bank: '<path d="M3 10h18M5 10v9M9 10v9M15 10v9M19 10v9M2 21h20M12 3 2 8h20z"/>',
+    book: '<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v15H6.5A2.5 2.5 0 0 0 4 19.5zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+    back: '<path d="M19 12H5M12 19l-7-7 7-7"/>'
+  });
   const ic = (k, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.overview}</svg>`;
   $$('#nav button[data-view]').forEach(b => { if (!b.querySelector('.ic')) b.insertAdjacentHTML('afterbegin', ic(b.dataset.view)); });
   // Accounting in the sidebar is a drop-down: the parent opens the list of accounting pages.

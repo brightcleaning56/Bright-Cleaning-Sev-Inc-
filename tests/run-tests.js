@@ -3943,6 +3943,28 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'sent email recorded with sent_by: ' + row.sent_by;
   });
 
+  await check('Accounting', 'Cash flow sections add up to the net change and end at the ledger cash; opening cash is zero for all dates; tax report and project cost split answer', async () => {
+    const cf = await req('GET', '/api/admin/ledger/cash-flow', { token: T });
+    const cfr = await req('GET', '/api/admin/ledger/cash-flow?from=2000-01-01&to=2100-12-31', { token: T });
+    const tb = await req('GET', '/api/admin/ledger/trial-balance', { token: T });
+    const tax = await req('GET', '/api/admin/reports/tax?from=2000-01-01&to=2100-12-31', { token: T });
+    const fin = await req('GET', '/api/admin/reports/finance?from=2000-01-01&to=2100-12-31', { token: T });
+    const cash = ((tb.data && tb.data.accounts) || []).find(a => a.code === '1000');
+    const d = cf.data || {};
+    const sections = (d.operating ? d.operating.total : 0) + (d.investing ? d.investing.total : 0) + (d.financing ? d.financing.total : 0);
+    const chk = {
+      statusOk: cf.status === 200 && cfr.status === 200 && tax.status === 200 && fin.status === 200,
+      openingZeroAllTime: d.beginning_cash === 0,
+      sectionsAddUp: Math.abs(sections - d.net_change) < 0.005,
+      endsAtLedgerCash: !!cash && Math.abs(d.ending_cash - cash.balance) < 0.005,
+      taxShape: Array.isArray(tax.data.periods) && typeof tax.data.tax_liability === 'number',
+      projectSplit: (fin.data.projects || []).every(p => typeof p.other_cost === 'number' && typeof p.materials === 'number')
+    };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ cf: d, cash, tax: tax.data }).slice(0, 400));
+    return 'sections sum to net change; ending cash equals the ledger cash account; tax and project cost fields present';
+  });
+
   await check('Subscriptions', 'Extra visits: visits above the monthly allowance are billed at the extra-visit price in the bill run', async () => {
     const cust = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Extra Visit Co', company: 'Extra Visit Co', email: 'extra.visits@example.test', phone: '515-555-0199' } });
     const cid = (cust.data && (cust.data.id || (cust.data.customer && cust.data.customer.id))) || null;

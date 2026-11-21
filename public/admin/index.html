@@ -772,6 +772,78 @@
     .ccrow4 { grid-template-columns: minmax(0, 1fr) !important; }
     .invtiles { grid-template-columns: 1fr 1fr 1fr; }
   }
+  /* Accounting: header tabs, Reports Center and the report pages */
+  .pagehead .acctabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 6px; background: var(--card); border: 1px solid var(--line2); border-radius: 14px; }
+  .acctabs button { display: inline-flex; align-items: center; gap: 6px; }
+  .acctabs button svg { width: 15px; height: 15px; flex: 0 0 15px; }
+  .acctabs button.on svg { stroke: #fff; }
+  .rphead { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 14px; }
+  .rphd { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .rphd h2 { margin: 0; font-size: 22px; }
+  .rphd p { margin: 2px 0 0; }
+  .rphic { width: 42px; height: 42px; border-radius: 12px; background: #e6f0fd; color: #1f6fd1; display: grid; place-items: center; flex: 0 0 42px; }
+  .rphic svg { width: 22px; height: 22px; }
+  .rpbar { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+  .rpper { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .rpper select, .rpper input { border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px; font: inherit; background: var(--card); color: inherit; min-width: 170px; }
+  .rpper b { font-size: 13px; color: inherit; font-weight: 600; }
+  .rptiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .rptile { display: flex; align-items: center; gap: 14px; text-align: left; background: var(--card); border: 1px solid var(--line2); border-radius: 14px; padding: 16px; font: inherit; cursor: pointer; min-width: 0; color: inherit; }
+  .rptile:hover { box-shadow: 0 8px 20px rgba(16,38,62,.10); transform: translateY(-1px); }
+  .rptile b { display: block; font-size: 15px; }
+  .rptile small { display: block; color: var(--muted); margin-top: 2px; }
+  .rptile .chip { width: 44px; height: 44px; flex: 0 0 44px; }
+  .rpsubs { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0; }
+  .rpsub { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line2); background: var(--card); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer; color: inherit; }
+  .rpsub svg { width: 15px; height: 15px; flex: 0 0 15px; }
+  .rpsub.on { background: #1f6fd1; border-color: #1f6fd1; color: #fff; }
+  .rpsub.on svg { stroke: #fff; }
+  .rpkpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .rpk { display: flex; gap: 12px; align-items: flex-start; border-radius: 14px; padding: 14px; border: 1px solid var(--line2); min-width: 0; }
+  .rpk small { display: block; color: var(--muted); font-size: 12px; }
+  .rpk b { display: block; font-size: 22px; margin: 2px 0; overflow-wrap: anywhere; }
+  .rpk em { display: block; font-style: normal; font-size: 12px; color: var(--muted); }
+  .rpk-ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,.7); flex: 0 0 36px; }
+  .rpk-ic svg { width: 18px; height: 18px; }
+  .rpk.t-blue { background: #eef5ff; } .rpk.t-green { background: #ecf9f2; } .rpk.t-amber { background: #fff7e6; } .rpk.t-red { background: #fdf0ef; } .rpk.t-purple { background: #f3efff; } .rpk.t-navy { background: #eef2f7; } .rpk.t-teal { background: #e8f8f7; }
+  .rpacthead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
+  .rpacts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rpacthead .btn { display: inline-flex; align-items: center; gap: 6px; }
+  .rpacthead .btn svg { width: 15px; height: 15px; }
+  .rpgrid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+  .rpgrid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rpgrid .card { margin: 0; min-width: 0; }
+  .rpside { display: grid; gap: 12px; min-width: 0; }
+  .rpside .card { margin: 0; }
+  .rpsec { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .rpsec h3 { margin: 0; font-size: 16px; }
+  .rpt tr.sec th { background: #e8f0fb; color: #1f3b5c; text-align: left; }
+  .rpt tr.tot th, .rpt tr.tot td { font-weight: 600; }
+  .rpt tr.grand th, .rpt tr.grand td { font-weight: 700; }
+  .rpt tr.grand.t-red th, .rpt tr.grand.t-red td { background: #fdf0ef; color: #c0392b; }
+  .rpt tr.grand.t-green th, .rpt tr.grand.t-green td { background: #ecf9f2; color: #1e8a5a; }
+  .rpt tr.grand.t-blue th, .rpt tr.grand.t-blue td { background: #e6f0fd; color: #1f6fd1; }
+  .rpt td.ind { padding-left: 22px; }
+  .rpt td.neg { color: #c0392b; }
+  .rpt th.num, .rpt td.num { text-align: right; white-space: nowrap; }
+  .rpleg { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .rpleg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
+  .rpins { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13px; }
+  .rpdl { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; margin: 0; font-size: 14px; }
+  .rpdl dt { color: var(--muted); }
+  .rpdl dd { margin: 0; text-align: right; }
+  .rpdonut { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .rpdonut .legend { min-width: 170px; flex: 1; }
+  .rpfilt { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 12px; }
+  .rpfilt select, .rpfilt input { border: 1px solid var(--line2); border-radius: 10px; padding: 7px 10px; font: inherit; background: var(--card); color: inherit; min-width: 150px; }
+  .rpnote { margin: 12px 2px 0; font-size: 12px; }
+  table.rpt { min-width: 0 !important; }
+  table.rpt th, table.rpt td { padding: 10px 9px; }
+  table.rpt th.num, table.rpt td.num { white-space: nowrap; }
+  .rpgrid { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+  @media (max-width: 1100px) { .rptiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rpgrid { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 700px) { .rptiles { grid-template-columns: minmax(0, 1fr); } .rpgrid.two { grid-template-columns: minmax(0, 1fr); } .rpkpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rpper select, .rpper input { min-width: 0; width: 100%; } .rpbar { width: 100%; } }
+  @media print { .side, .topbar, .rpacthead, .rpbar, .rpsubs, .acctabs, .headact, .rpfilt { display: none !important; } .rpgrid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body class="adminbody">
@@ -818,13 +890,12 @@
         <button type="button" class="navparent" id="navAccToggle" aria-expanded="false" aria-controls="navAccSub">Accounting <span class="caret" aria-hidden="true">▾</span></button>
         <div class="navsub" id="navAccSub" hidden>
           <button type="button" data-view="accounting" data-acc-tab="overview">Overview</button>
-          <button type="button" data-view="accounting" data-acc-tab="invoices">Invoices</button>
-          <button type="button" data-view="accounting" data-acc-tab="payments">Payments</button>
-          <button type="button" data-view="accounting" data-acc-tab="expenses">Expenses</button>
-          <button type="button" data-view="accounting" data-acc-tab="payroll">Payroll</button>
-          <button type="button" data-view="accounting" data-acc-tab="jobs">Job profitability</button>
-          <button type="button" data-view="accounting" data-acc-tab="reconciliation">Reconciliation</button>
           <button type="button" data-view="accounting" data-acc-tab="reports">Reports</button>
+          <button type="button" data-view="accounting" data-acc-tab="expenses">Expenses</button>
+          <button type="button" data-view="accounting" data-acc-tab="jobs">Job Costing</button>
+          <button type="button" data-view="accounting" data-acc-tab="reconciliation">Reconciliation</button>
+          <button type="button" data-view="accounting" data-acc-tab="ledger">Ledger &amp; Audit</button>
+          <button type="button" data-view="accounting" data-acc-tab="settings">Settings</button>
         </div>
       </div>
       <button data-view="scopes">Cleaning scopes <span class="count" id="navScopes" hidden></span></button>
@@ -1016,7 +1087,7 @@
       <div class="kpis6" id="takeoffKpis"></div>
       <div class="tablewrap card" style="padding:0"><table class="t isst"><thead><tr><th>Takeoff</th><th>Drawing set</th><th>Category</th><th class="num">Building SF</th><th class="num">Lines</th><th class="num">Priced</th><th>Status</th><th></th></tr></thead><tbody id="takeoffsRows"></tbody></table></div>
     </section>
-    <section class="view" id="v-accounting"><div class="pagehead"><div><h1>Accounting</h1><p>Bright Clean's own ledger, read from posted entries. Owners and managers only.</p></div><div class="headact"><button class="btn ghost" id="accSync" type="button">Run ledger sync</button></div></div><div id="accBody"></div></section>
+    <section class="view" id="v-accounting"><div class="pagehead"><div><h1>Accounting</h1><p>Bright Clean Financial Reports</p></div><nav class="acctabs" id="accTabs" aria-label="Accounting pages"></nav><div class="headact"><button class="btn ghost" id="accSync" type="button">Run ledger sync</button></div></div><div id="accBody"></div></section>
     <section class="view" id="v-reports">
       <div class="pagehead"><div><h1>Reports</h1><p>Real figures from your records.</p></div><div class="headact"><button class="btn ghost" id="repCsv" type="button">Export CSV</button><select id="repMonths" aria-label="Period"><option value="6">Last 6 months</option><option value="12" selected>Last 12 months</option><option value="24">Last 24 months</option></select><span id="repAcct"><button class="btn ghost" id="acctInv" type="button">Invoices for QuickBooks</button><button class="btn ghost" id="acctPay" type="button">Payments for QuickBooks</button><button class="btn ghost" id="acctHrs" type="button">Payroll hours</button><button class="btn ghost" id="acctTot" type="button">Pay preview and ADP totals</button></span></div></div>
       <div class="segtabs" id="repTabs" role="tablist"><button data-rt="overview" class="on">Overview</button><button data-rt="pl">Profit &amp; loss</button><button data-rt="aging">A/R aging</button><button data-rt="labor">Labor</button><button data-rt="projects">Project profitability</button><button data-rt="sched">Scheduled reports</button></div>
