@@ -74,7 +74,6 @@ function mount(app, ctx) {
   ensureSchema(db);
   const run = (res, fn) => { try { res.json(fn()); } catch (e) { res.status(400).json({ error: e.message }); } };
   app.get('/api/admin/invoices/:id/balance', auth, (req, res) => run(res, () => invoiceBalance(db, req.params.id)));
-  app.post('/api/admin/invoices/:id/refund', auth, (req, res) => run(res, () => ({ ok: true, id: recordRefund(db, { invoiceId: req.params.id, amount: (req.body || {}).amount, date: (req.body || {}).date, reason: (req.body || {}).reason, by: req.user && req.user.email }) })));
   app.post('/api/admin/invoices/:id/credit-note', auth, (req, res) => run(res, () => ({ ok: true, id: recordCredit(db, { invoiceId: req.params.id, amount: (req.body || {}).amount, date: (req.body || {}).date, reason: (req.body || {}).reason, by: req.user && req.user.email }) })));
 }
 

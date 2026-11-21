@@ -23,3 +23,13 @@ Evidence is in the tests named. The owner and accountant decisions are listed at
 2. Amendment model: revised full contract value, or incremental change amount (F-05).
 3. Sales tax: service-location rules, local tax, and exemption handling (F-08).
 4. Payroll: stay manual until an approved provider is connected (F-09).
+
+## Cross-check against the master audit: the P0 money chain (2026-11-21)
+
+`tests/money-chain-test.js` runs one synthetic job through estimate, customer approval, contract countersignature, project, invoice with sales tax, sending, two payments, an overpayment refusal, a refund, ledger sync and tie-outs. 27 of 27 checks pass to the cent: the contract equals the proposal total; the invoice balance includes tax; A/R (1100) equals billed minus collected; cash equals collected; the tax liability (2100) equals the tax; revenue (4000) excludes tax; the A/R tie-out difference is zero; job cost shows invoiced and collected the same as the ledger; the customer's proposal total matches the contract.
+
+Defects found by the check:
+- **Invoice can be sent before its sales tax is set.** Tax is a separate step after creation. An invoice sent before that step goes out without tax, and the customer's balance changes after it was sent. Open: tax should be decided before sending (depends on the tax policy, F-08).
+- **Duplicate refund route** in `receivables.js` was never reached (shadowed by the route in `admin-ext.js`). Removed.
+
+Not yet covered by the check: task-level cost reconciliation (F-04), credit notes, subscriptions, and the portals.
