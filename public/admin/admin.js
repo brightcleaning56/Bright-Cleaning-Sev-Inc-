@@ -3898,7 +3898,9 @@
     back: '<path d="M19 12H5M12 19l-7-7 7-7"/>'
   });
   const ic = (k, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.overview}</svg>`;
-  $$('#nav button[data-view]').forEach(b => { if (!b.querySelector('.ic')) b.insertAdjacentHTML('afterbegin', ic(b.dataset.view)); });
+  // Accounting sub-items each get their own icon; every other sidebar button uses its view's icon.
+  const NAVSUB_ICON = { overview: 'overview', reports: 'bars', expenses: 'wallet', jobs: 'briefcase', reconciliation: 'bank', ledger: 'book', settings: 'settings' };
+  $$('#nav button[data-view]').forEach(b => { if (!b.querySelector('.ic')) b.insertAdjacentHTML('afterbegin', b.closest('.navsub') ? ic(NAVSUB_ICON[b.dataset.accTab] || 'overview') : ic(b.dataset.view)); });
   // Accounting in the sidebar is a drop-down: the parent opens the list of accounting pages.
   function setAccExpanded(open) { const t = $('#navAccToggle'), s = $('#navAccSub'); if (!t || !s) return; s.hidden = !open; t.setAttribute('aria-expanded', open ? 'true' : 'false'); }
   $('#navAccToggle') && $('#navAccToggle').addEventListener('click', () => setAccExpanded($('#navAccSub').hidden));
