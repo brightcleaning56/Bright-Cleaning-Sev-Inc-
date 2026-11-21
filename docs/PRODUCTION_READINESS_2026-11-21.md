@@ -70,3 +70,11 @@ This follows the first pass in `PRODUCTION_READINESS_AUDIT_2026-11-18.md`. That 
 - The probe covers 7 of the 42 Nov 18 findings. The rest were not re-tested here. Test-file coverage is not treated as proof of a fix.
 - Tests use fake or local stand-ins for Twilio, Postmark, Microsoft 365 and Backblaze. Real-provider behaviour is not proven.
 - The Nov 18 module reports (`docs/audit/`) list further findings, including the Nov 18 must-fix list, that were not re-audited here.
+
+## Fixed after this report (same day)
+
+- **Expenses cannot be corrected or deleted (launch gate 2): fixed.** Open bills can be edited (`PATCH /api/admin/expenses/:id`); the old ledger entry is reversed and the new one posted. Bills are voided, not deleted (`POST /api/admin/expenses/:id/void`, reason required); voiding a paid bill also reverses its payment. Both are in the accounting audit trail. Tested in `tests/expense-edit-test.js`.
+- **Labor posted on the UTC date (launch gate 3): fixed.** Time entries, burden, overtime weeks and reversals now use the business date (`bizdate.js`). Entries posted before this fix keep their old dates; review them before the first close.
+- **Screens without actions:** the Activity log had no buttons. It now has Refresh and Export CSV. A walk of every admin view (`tests/walk-screens.js`) lists the buttons on each view and in each record panel with seeded records.
+- Server suite 313/313, admin UI suite 94/94.
+- Still open: restore drill (needs the owner's key), malware scanning decision, uptime monitor, end-to-end workflow test, owner-blocked items.

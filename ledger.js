@@ -116,7 +116,7 @@ function reverseEntry(db, entryId, { reason, by = 'system' } = {}) {
   require('./audit').record(db, { actor: by, action: 'reversed entry', entity: 'ledger_entry', entityId: e.id, detail: String(reason).trim() });
   const lines = db.prepare('SELECT account_code, debit_cents, credit_cents FROM ledger_lines WHERE entry_id=?').all(e.id);
   return postEntry(db, {
-    date: new Date().toISOString().slice(0, 10), memo: `Reversal of entry ${e.id}: ${reason}`, source: 'reversal', sourceRef: String(e.id), by, reverses: e.id,
+    date: require('./bizdate').today(), memo: `Reversal of entry ${e.id}: ${reason}`, source: 'reversal', sourceRef: String(e.id), by, reverses: e.id,
     lines: lines.map(l => ({ account: l.account_code, debit: l.credit_cents / 100, credit: l.debit_cents / 100 }))
   });
 }

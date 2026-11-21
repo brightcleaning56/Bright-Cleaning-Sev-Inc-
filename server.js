@@ -83,7 +83,7 @@ const ROLE_RULES=[
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/invoices\/\d+\/(deposit|earn)$/,roles:['owner','manager'],why:'Deposits and earned revenue are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/(adjustments|entries\/\d+\/reverse)$/,roles:['owner','manager'],why:'Only an owner or manager can post adjustments or reversals.'},
   {m:/^GET$/,p:/^\/api\/admin\/receivables\/tie-out$/,roles:['owner','manager'],why:'Receivables tie-out is limited to owners and managers.'},
-  {m:/^(GET|POST)$/,p:/^\/api\/admin\/expenses(\/\d+\/(pay|approve|receipt))?$/,roles:['owner','manager'],why:'Bills and payments are limited to owners and managers.'},
+  {m:/^(GET|POST|PATCH)$/,p:/^\/api\/admin\/expenses(\/\d+(\/(pay|approve|receipt|void))?)?$/,roles:['owner','manager'],why:'Bills and payments are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/periods\/close$/,roles:['owner'],why:'Only an owner can close the books for a period.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/rates$/,roles:['owner'],why:'Only an owner can change burden, sales tax or the overtime threshold.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/reconciliations$/,roles:['owner','manager'],why:'Bank reconciliations are limited to owners and managers.'},

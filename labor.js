@@ -6,6 +6,7 @@
 
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const OT_MULTIPLIER = 1.5;
+const bizdate = require('./bizdate');
 
 function ensureColumns(db) {
   const cols = db.prepare('PRAGMA table_info(time_entries)').all().map(c => c.name);
@@ -35,7 +36,9 @@ function costOf(db, entry) {
   ensureColumns(db);
   const minutes = Number(entry.minutes) || 0;
   const rate = Number(entry.rate) || 0;
-  const day = String(entry.clock_in || '').slice(0, 10);
+  // The day and the week follow the business clock (Central), not UTC: a shift at 7 p.m. Central belongs to that day.
+  const when = entry.clock_in ? new Date(entry.clock_in) : null;
+  const day = when && !isNaN(when) ? bizdate.today(when) : '';
   const threshold = thresholdHours(db) * 60;
   let before = 0;
   if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
@@ -45,7 +48,7 @@ function costOf(db, entry) {
     const prior = db.prepare(`SELECT COALESCE(SUM(minutes),0) m FROM time_entries
       WHERE employee_id=? AND approved_by IS NOT NULL AND id<>?
         AND clock_in >= ? AND clock_in < ?
-        AND (clock_in < ? OR (clock_in = ? AND id < ?))`).get(entry.employee_id, entry.id || 0, start, next, entry.clock_in, entry.clock_in, entry.id || 0);
+        AND (clock_in < ? OR (clock_in = ? AND id < ?))`).get(entry.employee_id, entry.id || 0, bizdate.startUTC(start), bizdate.startUTC(next), entry.clock_in, entry.clock_in, entry.id || 0);
     before = Number(prior.m) || 0;
   }
   const regular = Math.max(0, Math.min(minutes, threshold - before));

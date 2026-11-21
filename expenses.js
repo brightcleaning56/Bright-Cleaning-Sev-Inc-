@@ -18,7 +18,7 @@ function ensureSchema(db) {
     paid_at TEXT, created_by TEXT, created_at TEXT NOT NULL)`);
   // Receipts and approvals (audit G11). Added on first use; switched on by settings (both off by default).
   const cols = db.prepare('PRAGMA table_info(expense_bills)').all().map(c => c.name);
-  for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT'], ['receipt_file', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
+  for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT'], ['receipt_file', 'TEXT'], ['void_reason', 'TEXT'], ['void_by', 'TEXT'], ['void_at', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
 }
 // Settings that make approval and a receipt required before a bill is paid. Both are off until the owner turns them on.
 function billRule(db, key) {
@@ -27,6 +27,10 @@ function billRule(db, key) {
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
 const postedEntry = (db, source, ref) => db.prepare('SELECT id FROM ledger_entries WHERE source=? AND source_ref=? AND reverses_id IS NULL').get(source, ref);
+// A bill's entry that has not been reversed. A reversed bill can be posted again (after an edit).
+const activeEntry = (db, source, ref) => db.prepare(`SELECT e.id FROM ledger_entries e WHERE e.source=? AND e.source_ref=? AND e.reverses_id IS NULL
+  AND NOT EXISTS (SELECT 1 FROM ledger_entries r WHERE r.reverses_id=e.id)`).get(source, ref);
+const bizdate = require('./bizdate');
 // Each approved time entry keeps the pay rate in force when it was approved (labor_rate). Older entries fall back to the employee's rate.
 function ensureRateColumn(db) {
   const cols = db.prepare('PRAGMA table_info(time_entries)').all().map(c => c.name);
@@ -36,7 +40,7 @@ const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type
 
 function postBill(db, id) {
   const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(id);
-  if (!b || b.status === 'Void' || postedEntry(db, 'bill', 'bill:' + id)) return false;
+  if (!b || b.status === 'Void' || activeEntry(db, 'bill', 'bill:' + id)) return false;
   // A bill on a job is job cost (by category). A bill with no job is an operating expense (6000), whatever its category.
   const exp = b.project_id ? accountFor(b.category || b.description || b.vendor) : { code: '6000' };
   L.postEntry(db, {
@@ -91,6 +95,80 @@ function payBill(db, id, { date, by } = {}) {
   return b.id;
 }
 
+// Checks the fields of a bill and returns them cleaned. Used for new bills and for edits.
+function cleanBill(b) {
+  const vendor = String(b.vendor || '').trim();
+  const amount = r2(b.amount);
+  if (!vendor) throw new Error('A bill needs a vendor.');
+  if (!(amount > 0)) throw new Error('A bill needs an amount above zero.');
+  if (!isDate(b.bill_date)) throw new Error('A bill needs a real date (YYYY-MM-DD).');
+  return {
+    vendor: vendor.slice(0, 200), amount, bill_date: b.bill_date,
+    description: String(b.description || '').slice(0, 300), category: String(b.category || '').slice(0, 80),
+    project_id: b.project_id ? Number(b.project_id) : null, receipt_ref: String(b.receipt_ref || '').trim().slice(0, 300) || null
+  };
+}
+
+// Edits an open bill. The old bill entry is reversed and the bill is posted again with the new figures, in one transaction,
+// so the ledger always shows the current bill. A bill that is paid cannot be edited (void it, which reverses the payment).
+// Changing the amount, vendor, date, category or job clears the approval, so the change is approved again.
+function updateBill(db, id, body, by) {
+  ensureSchema(db); L.seedChart(db);
+  const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(Number(id));
+  if (!b) throw new Error('Bill not found.');
+  if (b.status === 'Void') throw new Error('A void bill cannot be edited.');
+  if (b.status === 'Paid') throw new Error('A paid bill cannot be edited. Void it (this reverses the payment) and enter the bill again.');
+  const next = cleanBill({
+    vendor: body.vendor !== undefined ? body.vendor : b.vendor,
+    description: body.description !== undefined ? body.description : b.description,
+    category: body.category !== undefined ? body.category : b.category,
+    amount: body.amount !== undefined ? body.amount : b.amount,
+    bill_date: body.bill_date !== undefined ? body.bill_date : b.bill_date,
+    project_id: body.project_id !== undefined ? body.project_id : b.project_id,
+    receipt_ref: body.receipt_ref !== undefined ? body.receipt_ref : b.receipt_ref
+  });
+  const costFields = ['vendor', 'amount', 'bill_date', 'category', 'project_id'];
+  const changed = costFields.filter(k => String(next[k] ?? '') !== String(b[k] ?? ''));
+  const other = ['description', 'receipt_ref'].filter(k => String(next[k] ?? '') !== String(b[k] ?? ''));
+  if (!changed.length && !other.length) return b.id;
+  require('./aging').ensureVendor(db, next.vendor);
+  const summary = [...changed, ...other].map(k => `${k}: ${b[k] ?? ''} -> ${next[k] ?? ''}`).join('; ');
+  db.transaction(() => {
+    // Only a change to the cost (or the job, category or date) needs the ledger entry redone. A note or receipt reference does not.
+    if (changed.length) {
+      const posted = activeEntry(db, 'bill', 'bill:' + b.id);
+      if (posted) L.reverseEntry(db, posted.id, { reason: 'Bill ' + b.id + ' edited', by });
+    }
+    db.prepare('UPDATE expense_bills SET vendor=?,description=?,category=?,amount=?,bill_date=?,project_id=?,receipt_ref=?,approved_by=?,approved_at=? WHERE id=?')
+      .run(next.vendor, next.description, next.category, next.amount, next.bill_date, next.project_id, next.receipt_ref,
+        changed.length ? null : b.approved_by, changed.length ? null : b.approved_at, b.id);
+    require('./audit').record(db, { actor: by, action: 'edited bill', entity: 'bill', entityId: b.id, detail: summary.slice(0, 500) });
+    if (changed.length) postBill(db, b.id);
+  })();
+  return b.id;
+}
+
+// Voids a bill. Nothing is deleted: the bill's entry (and its payment entry, if it was paid) is reversed, and the bill
+// keeps its history with the reason and who voided it. A void bill cannot be paid, approved or edited.
+function voidBill(db, id, { reason, by } = {}) {
+  ensureSchema(db); L.seedChart(db);
+  const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(Number(id));
+  if (!b) throw new Error('Bill not found.');
+  if (b.status === 'Void') throw new Error('This bill is already void.');
+  const why = String(reason || '').trim();
+  if (!why) throw new Error('Give a reason for voiding the bill.');
+  db.transaction(() => {
+    const note = 'Bill ' + b.id + ' voided: ' + why;
+    const pay = activeEntry(db, 'bill-payment', 'bill-payment:' + b.id);
+    if (pay) L.reverseEntry(db, pay.id, { reason: note, by });
+    const bill = activeEntry(db, 'bill', 'bill:' + b.id);
+    if (bill) L.reverseEntry(db, bill.id, { reason: note, by });
+    db.prepare('UPDATE expense_bills SET status=?, void_reason=?, void_by=?, void_at=? WHERE id=?').run('Void', why.slice(0, 300), by || null, new Date().toISOString(), b.id);
+    require('./audit').record(db, { actor: by, action: 'voided bill', entity: 'bill', entityId: b.id, detail: (b.vendor + ' ' + Number(b.amount).toFixed(2) + ': ' + why).slice(0, 500) });
+  })();
+  return b.id;
+}
+
 // Posts recorded project costs, bills and approved unassigned time that are not yet on the ledger.
 function syncRecorded(db) {
   ensureSchema(db); L.seedChart(db); ensureRateColumn(db); LB.ensureColumns(db);
@@ -104,7 +182,7 @@ function syncRecorded(db) {
       if (postedEntry(db, 'project-cost', ref) || !(Number(c.amount) > 0)) continue;
       const isLabor = /labou?r|crew|wage|payroll/i.test(String(c.category || ''));
       const exp = accountFor(c.category);
-      const date = String(c.cost_date || c.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+      const date = String(c.cost_date || '').slice(0, 10) || (c.created_at ? bizdate.today(new Date(c.created_at)) : bizdate.today());
       try {
         L.postEntry(db, {
           date, memo: 'Job cost: ' + (c.description || c.category) + ' (project ' + c.project_id + ')', source: 'project-cost', sourceRef: ref, by: 'expense-sync',
@@ -122,7 +200,7 @@ function syncRecorded(db) {
       if (postedEntry(db, 'payroll', ref) || !(amount > 0)) continue;
       try {
         L.postEntry(db, {
-          date: String(t.clock_in).slice(0, 10), memo: 'Approved time not assigned to a job (time ' + t.id + ')', source: 'payroll', sourceRef: ref, by: 'expense-sync',
+          date: bizdate.today(new Date(t.clock_in)), memo: 'Approved time not assigned to a job (time ' + t.id + ')', source: 'payroll', sourceRef: ref, by: 'expense-sync',
           lines: [{ account: '6100', debit: amount }, { account: '2300', credit: amount }]
         });
         out.payroll_posted++;
@@ -154,14 +232,14 @@ function syncBurden(db) {
     for (const c of db.prepare('SELECT * FROM project_costs ORDER BY id').all()) {
       if (!/labou?r|crew|wage|payroll/i.test(String(c.category || ''))) continue;
       if (!postedEntry(db, 'project-cost', 'project-cost:' + c.id)) continue;
-      post('burden:project-cost:' + c.id, Number(c.amount) || 0, String(c.cost_date || c.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10), 'Labor burden on job cost ' + c.id, '5000');
+      post('burden:project-cost:' + c.id, Number(c.amount) || 0, String(c.cost_date || '').slice(0, 10) || (c.created_at ? bizdate.today(new Date(c.created_at)) : bizdate.today()), 'Labor burden on job cost ' + c.id, '5000');
     }
   }
   if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
     for (const t of db.prepare('SELECT t.*, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NOT NULL AND t.cost_id IS NULL AND t.project_id IS NULL AND t.clock_in IS NOT NULL ORDER BY t.id').all()) {
       if (!postedEntry(db, 'payroll', 'time:' + t.id)) continue;
       const base = LB.storedCost(t);
-      post('burden:time:' + t.id, base, String(t.clock_in).slice(0, 10), 'Labor burden on unassigned time ' + t.id, '6100');
+      post('burden:time:' + t.id, base, bizdate.today(new Date(t.clock_in)), 'Labor burden on unassigned time ' + t.id, '6100');
     }
   }
   return n;
@@ -238,6 +316,15 @@ function mount(app, ctx) {
     try { const id = createBill(db, req.body || {}, req.user && req.user.email); res.status(201).json({ ok: true, id }); }
     catch (e) { res.status(400).json({ error: e.message }); }
   });
+  app.patch('/api/admin/expenses/:id', auth, (req, res) => {
+    try { updateBill(db, req.params.id, req.body || {}, req.user && req.user.email); res.json({ ok: true }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  // Bills are voided, not deleted: the reversal and the reason stay on record.
+  app.post('/api/admin/expenses/:id/void', auth, (req, res) => {
+    try { voidBill(db, req.params.id, { reason: (req.body || {}).reason, by: req.user && req.user.email }); res.json({ ok: true }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
   app.post('/api/admin/expenses/:id/approve', auth, (req, res) => {
     try { approveBill(db, req.params.id, req.user && req.user.email); res.json({ ok: true }); }
     catch (e) { res.status(400).json({ error: e.message }); }
@@ -253,4 +340,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, createBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, burdenPct, mount };
+module.exports = { ensureSchema, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, burdenPct, mount };
