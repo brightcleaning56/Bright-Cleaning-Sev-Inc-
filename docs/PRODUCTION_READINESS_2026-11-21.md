@@ -79,3 +79,12 @@ This follows the first pass in `PRODUCTION_READINESS_AUDIT_2026-11-18.md`. That 
 - Server suite 313/313, admin UI suite 94/94.
 - Still open: restore drill (needs the owner's key), malware scanning decision, uptime monitor, end-to-end workflow test, owner-blocked items.
 - **Screen walk (`tests/walk-screens.js`, seeded records, local server):** every admin view has actions. Activity had none and now has Refresh and Export CSV. Record panels checked with seeded records: overview/leads, customers, issues, calls, emails, proposals, contracts, projects, invoices, schedule, quality, documents, scopes. Takeoffs has no list records until a takeoff is started from a document; only the empty-state "New takeoff" is visible there.
+
+## Edits that did not save or show (fixed 2026-11-21)
+
+- **Sent estimates and proposals did not take changes.** A sent or viewed proposal refused any change that touched scope, hours, price, line items or the expiry date, with an error the screen did not explain. Now a change creates a new draft version (with its options); the sent version is kept, marked Superseded, and its old link is no longer the current offer. Send the new draft to the customer. Tested in `tests/edit-probe.js` and `tests/run-tests.js`.
+- **Customer email could not be changed** on the customer drawer (read-only), and the Edit account form had no email or contact name field. Both now save.
+- **Contacts could not be edited.** Each contact now has an Edit button (name, title, email, phone, primary, can sign). Tested in `tests/ui-edit-check.js`.
+- **Leads could not change contact details.** The lead route saved only status, notes and origin. Contact name, company, email, phone, address, project details and details now save, with an Edit details button on the lead.
+- **Company profile (Settings > General)** saves phone and email from the form (checked in `tests/ui-edit-check.js`); the API path was already correct.
+- **Scope items, invoices (drafts), employees and issues** save and read back (checked in `tests/edit-probe.js`).

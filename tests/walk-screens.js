@@ -46,6 +46,9 @@ const txt = b => (b.innerText || b.textContent || b.getAttribute('aria-label') |
     await api('POST', '/api/admin/invoices', { invoice_number: 'SEED-1', project_id: pj && pj.id, customer_name: 'Sam Seed', company: 'Seed Co', amount: 1500, due_date: '2026-12-31', status: 'Draft' }, T);
     const up = new FormData(); up.append('files', new Blob([Buffer.from('%PDF-1.4\n%seed\n%%EOF')], { type: 'application/pdf' }), 'seed.pdf'); up.append('kind', 'Drawings'); up.append('customer_id', String(cu));
     await fetch(B + '/api/admin/documents', { method: 'POST', headers: { Authorization: 'Bearer ' + T }, body: up });
+    // Draft a takeoff from the drawing, as the Documents screen does, so the Takeoffs list has a row.
+    const seedDocs = (await api('GET', '/api/admin/documents', null, T)).documents || [];
+    if (seedDocs[0]) await api('POST', `/api/admin/docs/${seedDocs[0].id}/takeoff`, null, T);
 
     const rows = [];
     for (const view of VIEWS) {

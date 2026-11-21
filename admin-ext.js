@@ -56,12 +56,38 @@ module.exports = function mountAdminExt(app, ctx) {
     terms: clean(b.terms, 5000), expires_on: clean(b.expires_on, 30)
   });
 
+  // A copy of an estimate as a new draft with its own link. The source is not changed.
+  const copyEstimate = src => {
+    const now = new Date().toISOString();
+    const copy = { ...src, status: 'Draft', public_token: crypto.randomBytes(24).toString('hex'), created_at: now, updated_at: now, sent_at: null, viewed_at: null, last_viewed_at: null, view_count: 0, decided_at: null, decision_ip: null, decision_agent: null };
+    delete copy.id;
+    const cols = Object.keys(copy);
+    const newId = db.prepare(`INSERT INTO estimates(${cols.join(',')}) VALUES(${cols.map(c => '@' + c).join(',')})`).run(copy).lastInsertRowid;
+    // Proposal options (and their lines) come with the copy, with the selected option pointed at its new id.
+    const optMap = new Map();
+    for (const o of db.prepare('SELECT * FROM estimate_options WHERE estimate_id=? ORDER BY position, id').all(src.id)) {
+      const oc = { ...o, estimate_id: newId }; delete oc.id;
+      const oCols = Object.keys(oc);
+      const nid = db.prepare(`INSERT INTO estimate_options(${oCols.join(',')}) VALUES(${oCols.map(c => '@' + c).join(',')})`).run(oc).lastInsertRowid;
+      optMap.set(o.id, nid);
+      for (const l of db.prepare('SELECT * FROM estimate_option_lines WHERE option_id=? ORDER BY position, id').all(o.id)) {
+        const lc = { ...l, option_id: nid }; delete lc.id;
+        const lCols = Object.keys(lc);
+        db.prepare(`INSERT INTO estimate_option_lines(${lCols.join(',')}) VALUES(${lCols.map(c => '@' + c).join(',')})`).run(lc);
+      }
+    }
+    if (src.selected_option_id && optMap.has(src.selected_option_id)) db.prepare('UPDATE estimates SET selected_option_id=? WHERE id=?').run(optMap.get(src.selected_option_id), newId);
+    return newId;
+  };
+
   app.put('/api/admin/estimates/:id', auth, (req, res) => {
     { const pr = Number((req.body || {}).production_rate); if (pr > 0 && pr < 20) return res.status(400).json({ error: `Production rate is square feet cleaned per labor hour (typically 1,000–3,000). ${pr} looks like a price per square foot — enter the rate in sq ft per hour.` }); }
     const b = req.body || {};
-    const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(id(req));
+    let e = db.prepare('SELECT * FROM estimates WHERE id=?').get(id(req));
     if (!e) return res.status(404).json({ error: 'Not found' });
     if (['Approved'].includes(e.status)) return res.status(409).json({ error: 'This proposal was approved by the customer. Duplicate it to make changes.' });
+    if (e.status === 'Superseded') return res.status(409).json({ error: 'This version was replaced by a newer one. Open the newest version to make changes.' });
+    let revisedFrom = null;
     const FROZEN = ['Sent', 'Viewed', 'Declined', 'Expired', 'Withdrawn', 'Superseded'];
     if (FROZEN.includes(e.status)) {
       const locked = ['proposal_total', 'scope', 'terms', 'tax_pct', 'area_sqft', 'production_rate', 'labor_hours', 'labor_rate', 'use_line_items', 'customer_name', 'email', 'company', 'site_address', 'project_name', 'windows_interior_panes', 'windows_interior_rate', 'windows_exterior_panes', 'windows_exterior_rate', 'windows_cost'];
@@ -72,7 +98,15 @@ module.exports = function mountAdminExt(app, ctx) {
       const { lineItemsOf } = require('./estimating');
       if (JSON.stringify(lineItemsOf({ line_items: e.line_items })) !== JSON.stringify(lineItemsOf(b))) changed.push('line_items');
       if (norm(String(clean(b.expires_on, 30) || '')) !== norm(e.expires_on)) changed.push('expires_on');
-      if (changed.length) return res.status(409).json({ error: `This proposal was already sent to the client, so ${changed.join(', ')} cannot change on it. Duplicate the proposal to revise it.` });
+      // The client has seen this version, so it is not changed. The edit becomes a new draft version; the sent one is kept as Superseded.
+      if (changed.length) {
+        const oldId = e.id;
+        const newId = copyEstimate(e);
+        db.prepare("UPDATE estimates SET status='Superseded', updated_at=? WHERE id=?").run(new Date().toISOString(), oldId);
+        logAction(req, 'revised', 'estimate', oldId, `sent version kept; new draft #${newId} with changes to ${changed.join(', ')}`);
+        revisedFrom = oldId;
+        e = db.prepare('SELECT * FROM estimates WHERE id=?').get(newId);
+      }
     }
     if (!required(b.customer_name) || !required(b.scope)) return res.status(400).json({ error: 'Customer and scope are required.' });
     if (b.email && !require('./ops').isEmail(b.email)) return res.status(400).json({ error: 'Enter a valid customer email address.' });
@@ -87,7 +121,7 @@ module.exports = function mountAdminExt(app, ctx) {
     db.prepare(`UPDATE estimates SET lead_id=@lead_id,customer_name=@customer_name,company=@company,email=@email,project_name=@project_name,site_address=@site_address,scope=@scope,area_sqft=@area_sqft,production_rate=@production_rate,labor_hours=@labor_hours,labor_rate=@labor_rate,labor_cost=@labor_cost,supplies_cost=@supplies_cost,equipment_cost=@equipment_cost,other_cost=@other_cost,overhead_pct=@overhead_pct,margin_pct=@margin_pct,tax_pct=@tax_pct,total_cost=@total_cost,proposal_total=@proposal_total,line_items=@line_items,terms=@terms,expires_on=@expires_on,updated_at=@updated_at WHERE id=@id`).run(f);
     require('./estimating').saveExtras(db, e.id, b, m);
     logAction(req, 'edited', 'estimate', e.id);
-    res.json({ estimate: db.prepare('SELECT * FROM estimates WHERE id=?').get(e.id) });
+    res.json({ estimate: db.prepare('SELECT * FROM estimates WHERE id=?').get(e.id), revised_from: revisedFrom });
   });
 
   app.post('/api/admin/estimates/:id/duplicate', auth, (req, res) => {

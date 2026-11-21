@@ -1441,11 +1441,18 @@
           <div class="f wide"><label class="chk"><input type="checkbox" id="lCb" ${l.callback_requested ? 'checked' : ''}> Call back requested (automatic calls only go to leads marked this way)</label></div>
           <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
         </div></div></div>`,
-      footer: `<button class="btn" id="lLog" type="button">Log activity</button>${l.phone ? `<a class="btn ghost" href="tel:${esc(l.phone)}">Call</a>` : ''}${l.email ? `<a class="btn ghost" href="mailto:${esc(l.email)}">Email</a>` : ''}<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}${l.customer_id ? '<button class="btn ghost" id="lOpenCust">Open customer</button>' : '<button class="btn ghost" id="lConvert">Convert to customer</button>'}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
+      footer: `<button class="btn" id="lLog" type="button">Log activity</button><button class="btn ghost" id="lEdit" type="button">Edit details</button>${l.phone ? `<a class="btn ghost" href="tel:${esc(l.phone)}">Call</a>` : ''}${l.email ? `<a class="btn ghost" href="mailto:${esc(l.email)}">Email</a>` : ''}<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}${l.customer_id ? '<button class="btn ghost" id="lOpenCust">Open customer</button>' : '<button class="btn ghost" id="lConvert">Convert to customer</button>'}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
     });
     $$('[data-file]').forEach(b => b.onclick = () => downloadFile(files[b.dataset.file]));
     renderLeadAI(l);
     if ($('#lLog')) $('#lLog').onclick = () => { const f = $('#lhSummary'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } };
+    if ($('#lEdit')) $('#lEdit').onclick = () => openForm({ title: 'Edit lead details', sub: `${KIND_LABEL[l.kind] || 'Lead'} #${l.id}`,
+      defs: [{ name: 'contact_name', label: 'Contact name' }, { name: 'company', label: 'Company' }, { name: 'email', label: 'Email', type: 'email' }, { name: 'phone', label: 'Phone' },
+        { name: 'project_name', label: 'Project name' }, { name: 'project_type', label: 'Project type' }, { name: 'service', label: 'Service' }, { name: 'address', label: 'Address', wide: true },
+        { name: 'square_footage', label: 'Square footage' }, { name: 'bid_due_date', label: 'Bid due date', type: 'date' }, { name: 'start_date', label: 'Start date', type: 'date' }, { name: 'frequency', label: 'Frequency' },
+        { name: 'details', label: 'Details', type: 'textarea', wide: true }],
+      values: { contact_name: l.contact_name || '', company: l.company || '', email: l.email || '', phone: l.phone || '', project_name: l.project_name || '', project_type: l.project_type || '', service: l.service || '', address: l.address || '', square_footage: l.square_footage || '', bid_due_date: l.bid_due_date || '', start_date: l.start_date || '', frequency: l.frequency || '', details: l.details || '' },
+      submit: f => api('/api/admin/leads/' + l.id, { method: 'PATCH', json: f }), after: () => { toast('Lead updated'); openLead(l.id); } });
     $('#lSave').onclick = async () => {
       try {
         await api('/api/admin/leads/' + l.id, { method: 'PATCH', json: { status: $('#ls').value, notes: $('#ln').value, origin: $('#lOrigin').value } });
@@ -1598,8 +1605,18 @@
       bindOpeners(B);
     } else if (t === 'contacts') {
       B.innerHTML = `<div class="card"><h2>Contacts</h2><form class="inl" id="ctForm"><div><label>Name *</label><input name="name" required></div><div><label>Title</label><input name="title"></div><div><label>Email</label><input name="email" type="email"></div><div><label>Phone</label><input name="phone"></div><div><label class="chk"><input type="checkbox" name="is_primary"> Primary contact</label></div><div><label class="chk"><input type="checkbox" name="can_sign"> Can sign contracts</label></div><div class="wide"><button class="btn">Save contact</button></div></form>
-        ${rowsOr(d.contacts.map(k => `<tr><td><b>${esc(k.name)}</b>${k.is_primary ? ' <span class="badge green">Primary</span>' : ''}${k.can_sign ? ' <span class="badge blue">Signer</span>' : ''}<small>${esc(k.title || '')}</small></td><td>${esc(k.email || '—')}</td><td>${esc(k.phone || '—')}</td><td>${k.is_primary ? '' : `<button class="btn small ghost" data-prim="${k.id}">Make primary</button> <button class="btn small danger" data-rmct="${k.id}">Remove</button>`}</td></tr>`), ['Name', 'Email', 'Phone', ''], 'No contacts yet.')}</div>`;
+        ${rowsOr(d.contacts.map(k => `<tr><td><b>${esc(k.name)}</b>${k.is_primary ? ' <span class="badge green">Primary</span>' : ''}${k.can_sign ? ' <span class="badge blue">Signer</span>' : ''}<small>${esc(k.title || '')}</small></td><td>${esc(k.email || '—')}</td><td>${esc(k.phone || '—')}</td><td><button class="btn small ghost" data-ctedit="${k.id}">Edit</button> ${k.is_primary ? '' : `<button class="btn small ghost" data-prim="${k.id}">Make primary</button> <button class="btn small danger" data-rmct="${k.id}">Remove</button>`}</td></tr>`), ['Name', 'Email', 'Phone', ''], 'No contacts yet.')}</div>`;
       $('#ctForm').onsubmit = async e => { e.preventDefault(); if (e.target.dataset.busy) return; e.target.dataset.busy = '1'; setTimeout(() => { delete e.target.dataset.busy; }, 1500); try { const b = formObj(e.target); b.is_primary = e.target.elements.is_primary.checked; b.can_sign = e.target.elements.can_sign.checked; await api(`/api/admin/customers/${c.id}/contacts`, { method: 'POST', json: b }); toast('Contact saved'); loadCustomerPage(); } catch (err) { toast(err.message, true); } };
+      $$('[data-ctedit]').forEach(b => b.onclick = () => {
+        const k = d.contacts.find(x => String(x.id) === b.dataset.ctedit);
+        if (!k) return;
+        openForm({ title: 'Edit contact', sub: esc(c.company || c.name || ''),
+          defs: [{ name: 'name', label: 'Name' }, { name: 'title', label: 'Title' }, { name: 'email', label: 'Email', type: 'email' }, { name: 'phone', label: 'Phone' },
+            { name: 'is_primary', label: 'Primary contact', type: 'checkbox' }, { name: 'can_sign', label: 'Can sign contracts', type: 'checkbox' }],
+          values: { name: k.name || '', title: k.title || '', email: k.email || '', phone: k.phone || '', is_primary: !!k.is_primary, can_sign: !!k.can_sign },
+          submit: f => api(`/api/admin/customers/${c.id}/contacts/${k.id}`, { method: 'PATCH', json: { name: f.name, title: f.title || '', email: f.email || '', phone: f.phone || '', is_primary: !!f.is_primary, can_sign: !!f.can_sign } }),
+          after: () => { toast('Contact updated'); loadCustomerPage(); } });
+      });
       $$('[data-prim]').forEach(b => b.onclick = async () => { try { await api(`/api/admin/customers/${c.id}/contacts/${b.dataset.prim}`, { method: 'PATCH', json: { is_primary: true } }); toast('Primary contact updated'); loadCustomerPage(); } catch (err) { toast(err.message, true); } });
       $$('[data-rmct]').forEach(b => b.onclick = async () => { if (!confirm('Remove this contact?')) return; try { await api(`/api/admin/customers/${c.id}/contacts/${b.dataset.rmct}`, { method: 'DELETE' }); toast('Contact removed'); loadCustomerPage(); } catch (err) { toast(err.message, true); } });
     } else if (t === 'properties') {
@@ -1677,7 +1694,7 @@
       openForm({ title: 'Send email', sub: esc(c.company || c.name), defs: [{ name: 'to', label: 'To', type: 'select', options: tos.map(k => [k.email, `${k.name} <${k.email}>`]) }, { name: 'subject', label: 'Subject', wide: true }, { name: 'body', label: 'Message', type: 'textarea' }],
         values: { to: pc.email || tos[0].email }, submit: b => api(`/api/admin/customers/${c.id}/email`, { method: 'POST', json: b }), after: () => { toast('Email sent'); loadCustomerPage(); } });
     } else if (a === 'edit') {
-      openForm({ title: 'Edit account', defs: [{ name: 'company', label: 'Company' }, { name: 'status', label: 'Status', type: 'select', options: d.options.statuses }, { name: 'account_owner', label: 'Account owner', type: 'select', options: [['', 'Unassigned'], ...d.users] }, { name: 'customer_type', label: 'Customer type', type: 'select', options: ['', 'Commercial', 'General contractor', 'Property management', 'Multifamily', 'Healthcare', 'Education', 'Government', 'Residential'] }, { name: 'industry', label: 'Industry' }, { name: 'tax_id', label: 'Tax ID / EIN' }, { name: 'phone', label: 'Main phone' }, { name: 'address', label: 'Billing address', wide: true }],
+      openForm({ title: 'Edit account', defs: [{ name: 'company', label: 'Company' }, { name: 'name', label: 'Contact name' }, { name: 'email', label: 'Email', type: 'email' }, { name: 'status', label: 'Status', type: 'select', options: d.options.statuses }, { name: 'account_owner', label: 'Account owner', type: 'select', options: [['', 'Unassigned'], ...d.users] }, { name: 'customer_type', label: 'Customer type', type: 'select', options: ['', 'Commercial', 'General contractor', 'Property management', 'Multifamily', 'Healthcare', 'Education', 'Government', 'Residential'] }, { name: 'industry', label: 'Industry' }, { name: 'tax_id', label: 'Tax ID / EIN' }, { name: 'phone', label: 'Main phone' }, { name: 'address', label: 'Billing address', wide: true }],
         values: c, submit: b => api(`/api/admin/customers/${c.id}/account`, { method: 'PATCH', json: b }), after: r => { toast(r.changed.length ? 'Saved' : 'No changes'); loadCustomerPage(); } });
     } else if (a === 'remove') {
       const label = c.company || c.name || c.email;
@@ -1699,7 +1716,7 @@
         <form id="custForm" class="grid" novalidate>
           <div class="f"><label for="c1">Contact name</label><input id="c1" name="name" value="${esc(c.name)}"></div>
           <div class="f"><label for="c2">Company</label><input id="c2" name="company" value="${esc(c.company)}"></div>
-          <div class="f"><label for="c3">Email</label><input id="c3" name="email" type="email" value="${esc(c.email)}"${isNew ? '' : ' readonly title="Email links this customer to their records"'}></div>
+          <div class="f"><label for="c3">Email</label><input id="c3" name="email" type="email" value="${esc(c.email)}"></div>
           <div class="f"><label for="c4">Phone</label><input id="c4" name="phone" value="${esc(c.phone)}"></div>
           <div class="f wide"><label for="c5">Address</label><input id="c5" name="address" value="${esc(c.address)}"></div>
           <div class="f wide"><label for="c6">Notes</label><textarea id="c6" name="notes" placeholder="Billing contacts, site access, preferences">${esc(c.notes)}</textarea></div>
@@ -1719,7 +1736,12 @@
       const v = formObj($('#custForm'));
       try {
         if (isNew) await api('/api/admin/customers', { method: 'POST', json: v });
-        else { delete v.email; await api('/api/admin/customers/' + c.id, { method: 'PATCH', json: v }); }
+        else {
+          // Name, company, phone, address and notes go through the customer route; email and the other account fields through the account route.
+          const { email, ...rest } = v;
+          await api('/api/admin/customers/' + c.id, { method: 'PATCH', json: rest });
+          if ((email || '') !== (c.email || '')) await api('/api/admin/customers/' + c.id + '/account', { method: 'PATCH', json: { email } });
+        }
         toast(isNew ? 'Customer added' : 'Saved'); closeDrawer(); loadCustomers();
       } catch (err) { $('#custMsg').className = 'msg err'; $('#custMsg').textContent = err.message; }
     };
@@ -2319,12 +2341,13 @@
     $('#estSave').disabled = true;
     try {
       let saved, pendingNotice = null;
-      if (id) saved = (await api('/api/admin/estimates/' + id, { method: 'PUT', json: b })).estimate;
+      let revisedFrom = null;
+      if (id) { const up = await api('/api/admin/estimates/' + id, { method: 'PUT', json: b }); saved = up.estimate; revisedFrom = up.revised_from || null; }
       else { const resp = await api('/api/admin/estimates', { method: 'POST', json: b }); saved = resp.estimate; pendingNotice = resp.notice || null; }
       if (b.lead_id && !id) {
         try { await api('/api/admin/leads/' + Number(b.lead_id), { method: 'PATCH', json: { status: 'Proposal in Progress' } }); } catch { /* lead may not exist */ }
       }
-      toast(id ? 'Estimate updated' : 'Estimate saved');
+      toast(revisedFrom ? `Saved as a new draft #${saved.id}. The sent version #${revisedFrom} is kept as Superseded: send the new draft to the customer.` : (id ? 'Estimate updated' : 'Estimate saved'));
       if (pendingNotice) toast(pendingNotice, true);
       go('proposals');
       openEstimate(saved.id);

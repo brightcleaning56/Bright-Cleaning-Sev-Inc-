@@ -694,19 +694,23 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'admin “Approved” refused (409), no contract; manual contract on an unapproved proposal refused; client approved online → 1 contract + 1 project (second approval did not duplicate)';
   });
 
-  await check('Proposals', 'A sent proposal keeps its line items and expiry date; an unchanged save still passes', async () => {
+  await check('Proposals', 'A sent proposal keeps its line items and expiry date; an edit becomes a new draft and the sent version is kept as Superseded', async () => {
     const base = { customer_name: 'Locked Lines', company: 'Lock Co', email: 'locked@test.test', scope: 'Office clean', labor_hours: 2, labor_rate: 20, margin_pct: 40, expires_on: '2027-06-30', line_items: [] };
     const r = await req('POST', '/api/admin/estimates', { token: T, json: base });
     const id = r.data.estimate.id;
     const sent = await req('POST', `/api/admin/estimates/${id}/send`, { token: T });
     const lines = await req('PUT', '/api/admin/estimates/' + id, { token: T, json: { ...base, line_items: [{ description: 'Added after sending', amount: 50 }] } });
-    const exp = await req('PUT', '/api/admin/estimates/' + id, { token: T, json: { ...base, expires_on: '2028-12-31' } });
-    const same = await req('PUT', '/api/admin/estimates/' + id, { token: T, json: base });
-    assert(sent.status === 200 && lines.status === 409 && /line_items/.test(lines.data.error) && exp.status === 409 && /expires_on/.test(exp.data.error) && same.status === 200,
-      JSON.stringify([sent.status, lines.status, lines.data, exp.status, exp.data, same.status]));
-    // Decline it so the proposal-reminder checks further down do not count it.
-    await req('POST', `/api/proposal/${r.data.estimate.public_token}/respond`, { json: { decision: 'decline' } });
-    return 'sent; line-item change 409; expiry change 409; unchanged save 200';
+    const newId = lines.data.estimate && lines.data.estimate.id;
+    const old = await req('GET', '/api/admin/estimates/' + id, { token: T });
+    const oldEst = old.data.estimate || old.data;
+    const exp = await req('PUT', '/api/admin/estimates/' + newId, { token: T, json: { ...base, line_items: [{ description: 'Added after sending', amount: 50 }], expires_on: '2028-12-31' } });
+    const same = await req('PUT', '/api/admin/estimates/' + newId, { token: T, json: { ...base, line_items: [{ description: 'Added after sending', amount: 50 }] } });
+    const frozenAgain = await req('PUT', '/api/admin/estimates/' + id, { token: T, json: { ...base, line_items: [{ description: 'Edit the old one', amount: 9 }] } });
+    assert(sent.status === 200 && lines.status === 200 && lines.data.revised_from === id && newId && newId !== id && oldEst.status === 'Superseded' && (Array.isArray(oldEst.line_items) ? oldEst.line_items : JSON.parse(oldEst.line_items || '[]')).length === 0
+      && exp.status === 200 && same.status === 200 && frozenAgain.status === 409 && /replaced by a newer/.test(frozenAgain.data.error),
+      JSON.stringify([sent.status, lines.status, lines.data, oldEst.status, exp.status, same.status, frozenAgain.status, frozenAgain.data]));
+    // The new draft was never sent, so the proposal-reminder checks further down do not count it.
+    return 'sent; line-item change saves as a new draft; sent version Superseded and unchanged; expiry edit on the draft 200; editing the superseded version 409';
   });
   await check('Proposals', 'A proposal with a price but no costs needs owner approval before it can be sent', async () => {
     const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'No Cost', company: 'NoCost Co', email: 'nocost@test.test', scope: 'Lump sum clean', minimum_charge: 500 } });
