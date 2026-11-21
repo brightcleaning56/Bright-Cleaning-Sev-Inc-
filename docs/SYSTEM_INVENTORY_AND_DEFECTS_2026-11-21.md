@@ -74,3 +74,19 @@ Results: server suite 313/313, admin UI 94/94, work-engine 10 groups, work-item 
 Still to do:
 - The on-screen flow (Complete, Waiting, Cancel, Reopen forms) is checked by source and the suites, not yet in a browser.
 - Calls, leads, project tasks, issues and QC still have their own states.
+
+## Step 3 (progress): call queue on the work engine
+
+Done:
+- Every call action goes through the engine: Complete (note required), Waiting (what it waits on and a follow-up date), Cancel (reason), Reopen (reason, finished calls only), Assign, and Schedule callback (a real date). The same rules as emails.
+- Each call with a follow-up, owner or handled state carries over once (`migrateCallState`). A call is seeded from its own fields the first time it is touched, so nothing is lost before the carry-over.
+- The calls table is kept in step after each engine action (follow-up done, handled time and person, follow-up date, Waiting or Callback marker, owner). Screens still reading those columns (callbacks due, command centre counts, end-of-day report) therefore agree with the queue.
+- Once a call has a queue item, the general call update no longer changes its follow-up (409, pointing to the queue actions). The call drawer and the call-centre callback buttons now use the queue actions.
+- Today's schedule callbacks come from the engine state, so a finished or waiting call is not listed twice.
+
+Results: call-queue-test (new) passes; server suite and admin UI suite re-run after these changes (see the report that accompanies this step).
+
+Still to do:
+- Browser check of the call forms (Complete, Waiting, Cancel, Reopen, Schedule).
+- Direct writes of call follow-up fields from the call-centre outcome and missed-call rules (callcenter.js) still write the calls table before a call has an item; they are read as the call's own state until the call is first touched.
+- Leads, project tasks, issues and QC still have their own states.

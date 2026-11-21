@@ -133,12 +133,23 @@ module.exports = function (app, { db, auth, logAction, clean }) {
         }));
     }
     if (dept === 'calls') {
+      const WE = require('./work-engine');
       return db.prepare(`SELECT id, direction, phone, contact_name, company, customer_id, lead_id, outcome, handling, summary, follow_up_date, follow_up_done,
-          assigned_to, handled_at, created_at FROM calls ORDER BY created_at DESC LIMIT 1000`).all().map(r => ({
-          dept, id: r.id, title: `${r.direction || 'Call'} · ${r.outcome || ''}`.trim(), who: r.contact_name || r.company || r.phone || 'Unknown caller',
-          when: r.created_at, assigned_to: r.assigned_to, lead_id: r.lead_id, customer_id: r.customer_id, due: r.follow_up_date || null,
-          bucket: callBucket(r, t), note: r.summary || '', escalated: isEscalated(r, Date.now())
-        }));
+          assigned_to, handled_at, created_at FROM calls ORDER BY created_at DESC LIMIT 1000`).all().map(r => {
+          // A call with a work item takes its state from the engine; a call without one keeps the rules it always had.
+          const st = WE.callState(db, r.id);
+          let bucket, due = r.follow_up_date || null, owner = r.assigned_to;
+          if (st) {
+            due = st.due; owner = st.assigned_to;
+            const finished = st.item_status === 'completed' || st.item_status === 'cancelled';
+            bucket = finished ? 'completed' : st.item_status === 'waiting' ? 'waiting' : validDate(due) ? dateBucket(due, t) : (MISSED.includes(r.outcome) ? 'missed' : 'new');
+          } else bucket = callBucket(r, t);
+          return {
+            dept, id: r.id, title: `${r.direction || 'Call'} · ${r.outcome || ''}`.trim(), who: r.contact_name || r.company || r.phone || 'Unknown caller',
+            when: r.created_at, assigned_to: owner, lead_id: r.lead_id, customer_id: r.customer_id, due: due || null,
+            bucket, note: r.summary || '', escalated: bucket === 'missed' && Date.parse(r.created_at) < Date.now() - ESCALATE_MIN * 60000
+          };
+        });
     }
     if (dept === 'leads') {
       return db.prepare(`SELECT id, kind, contact_name, company, email, phone, status, stage, follow_up_date, follow_up_note, customer_id, assigned_to, created_at
@@ -206,7 +217,9 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const day = validDate(req.query.date) ? String(req.query.date) : today();
     const visits = db.prepare("SELECT id, title, type, date, start_time, end_time, address, customer_id, lead_id, assigned_to, status FROM visits WHERE date=? AND status NOT IN ('Cancelled') ORDER BY COALESCE(start_time,'99:99'), id").all(day);
     const fuLeads = db.prepare("SELECT id, contact_name, company, follow_up_date, follow_up_note, assigned_to FROM leads WHERE follow_up_date IS NOT NULL AND follow_up_date<>'' AND follow_up_date<=? AND status NOT IN ('Won','Lost','Archived') ORDER BY follow_up_date, id LIMIT 200").all(day);
-    const fuCalls = db.prepare("SELECT id, contact_name, company, phone, follow_up_date, summary, assigned_to FROM calls WHERE follow_up_done=0 AND follow_up_date IS NOT NULL AND follow_up_date<>'' AND follow_up_date<=? ORDER BY follow_up_date, id LIMIT 200").all(day);
+    // Callbacks due today or earlier, from the call queue (engine state), so a finished or waiting call is not listed twice.
+    const fuCalls = items('calls').filter(c => c.bucket !== 'completed' && validDate(c.due) && c.due <= day).sort((a, b) => String(a.due).localeCompare(String(b.due)) || a.id - b.id).slice(0, 200)
+      .map(c => ({ id: c.id, company: null, contact_name: c.who, phone: null, follow_up_date: c.due, summary: c.note, assigned_to: c.assigned_to }));
     const fuTasks = db.prepare("SELECT id, title, type, due_date, assigned_to, customer_id FROM customer_issues WHERE due_date IS NOT NULL AND due_date<>'' AND due_date<=? AND status NOT IN ('Resolved','Verified','Closed') ORDER BY due_date, id LIMIT 200").all(day);
     const follow_ups = [
       ...fuLeads.map(l => ({ kind: 'lead', id: l.id, date: l.follow_up_date, who: l.company || l.contact_name || 'Lead #' + l.id, what: l.follow_up_note || 'Lead follow-up', owner: l.assigned_to || null, overdue: l.follow_up_date < day })),
@@ -311,25 +324,17 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     res.json({ ok: true, task_id: tid, existing: false });
   });
 
-  // Calls: handle the call, or schedule a callback (leaves Today, shows in Scheduled until its date), or assign.
+  // Calls: complete (note required), wait (what for, and when to follow up), cancel or reopen (reason), schedule a callback, or assign.
+  // Every move goes through the work engine, so the rules and the history are the same as for emails.
   app.post('/api/admin/calls/:id/work', auth, (req, res) => {
     const id = Number(req.params.id);
-    const c = db.prepare('SELECT id, contact_name, phone FROM calls WHERE id=?').get(id);
-    if (!c) return res.status(404).json({ error: 'Call not found.' });
-    const b = req.body || {}, action = clean(b.action, 30), who = (req.user && req.user.email) || 'admin', t = nowIso();
-    if (action === 'handle') {
-      db.prepare('UPDATE calls SET follow_up_done=1, handled_at=?, handled_by=?, follow_up_date=NULL WHERE id=?').run(t, who, id);
-    } else if (action === 'schedule') {
-      if (!validDate(b.date)) return res.status(400).json({ error: 'Choose a valid callback date.' });
-      db.prepare('UPDATE calls SET follow_up_date=?, follow_up_done=0, handled_at=NULL, handled_by=?, handling=?, assigned_to=COALESCE(?,assigned_to) WHERE id=?')
-        .run(b.date, who, 'Callback', clean(b.assigned_to, 120) || null, id);
-    } else if (action === 'waiting') {
-      db.prepare("UPDATE calls SET handling='Waiting' WHERE id=?").run(id);
-    } else if (action === 'assign') {
-      db.prepare('UPDATE calls SET assigned_to=? WHERE id=?').run(clean(b.assigned_to, 120) || null, id);
-    } else return res.status(400).json({ error: 'Unknown call action.' });
-    logAction(req, `call ${action}`, 'call', id, b.date ? `callback ${b.date}` : (b.assigned_to ? `assigned to ${b.assigned_to}` : ''));
-    res.json({ ok: true });
+    if (!db.prepare('SELECT id FROM calls WHERE id=?').get(id)) return res.status(404).json({ error: 'Call not found.' });
+    const b = req.body || {}, action = clean(b.action, 30), who = (req.user && req.user.email) || 'admin';
+    try {
+      const item = require('./work-engine').applyCallAction(db, id, { ...b, action }, who);
+      logAction(req, `call ${action}`, 'call', id, b.date ? `callback ${b.date}` : (b.assigned_to ? `assigned to ${b.assigned_to}` : (b.note || b.reason || '')).slice(0, 200));
+      res.json({ ok: true, item });
+    } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
   // Leads: assign an owner. Scheduling a lead's next action stays on the existing lead follow-up.

@@ -110,6 +110,10 @@ module.exports = function mountSuite(app, ctx) {
   app.patch('/api/admin/calls/:id', auth, (req, res) => {
     const cur = callRow(Number(req.params.id)); if (!cur) return res.status(404).json({ error: 'Call not found.' });
     const b = req.body || {}, set = {};
+    // Once a call is on the work queue, its follow-up moves only through the queue's actions (kept in the work history).
+    if (('follow_up_done' in b || 'follow_up_date' in b) && require('./work-engine').callItemOf(db, cur.id)) {
+      return res.status(409).json({ error: 'This call is on the work queue. Use Complete, Waiting, Schedule or Reopen on the call so the change is kept in its history.' });
+    }
     if ('follow_up_done' in b) set.follow_up_done = b.follow_up_done ? 1 : 0;
     if ('summary' in b) set.summary = clean(b.summary, 4000);
     if ('follow_up_date' in b) { if (b.follow_up_date && !isDate(b.follow_up_date)) return res.status(400).json({ error: 'Follow-up date must be a date.' }); set.follow_up_date = b.follow_up_date || null; }

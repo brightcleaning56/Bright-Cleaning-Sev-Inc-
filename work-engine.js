@@ -158,6 +158,7 @@ function queue(db, { assigned_to = null } = {}) {
 function mount(app, { db, auth }) {
   ensureSchema(db);
   try { migrateEmailState(db); } catch (e) { console.error('work engine: email queue carry-over failed:', e.message); }
+  try { migrateCallState(db); } catch (e) { console.error('work engine: call queue carry-over failed:', e.message); }
   const who = req => (req.user && req.user.email) || 'admin';
   app.get('/api/admin/work-items', auth, (req, res) => {
     const assigned = r(req.query.assigned_to);
@@ -247,4 +248,89 @@ function migrateEmailState(db) {
   return n;
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState };
+// ---- Call queue, on the engine ----
+// One work item per call (kind 'call', ref_type 'call', ref_id = the call). A call with no item still uses its own fields,
+// so nothing is lost before it is first touched; the first action seeds the item from those fields.
+// The calls table is kept in step after each action (follow_up_done, handled_at, follow_up_date, handling, assigned_to), so the
+// screens that still read those columns (callbacks due, command centre, call drawer) agree with the queue.
+const callItemOf = (db, callId) => db.prepare(`SELECT * FROM work_items WHERE kind='call' AND ref_type='call' AND ref_id=? ORDER BY id DESC LIMIT 1`).get(Number(callId));
+const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
+
+// Creates the item for a call and carries over what the call already records.
+function seedCallItem(db, row, by) {
+  const title = `${row.direction || 'Call'} · ${row.outcome || ''}`.trim().slice(0, 300) || 'Call';
+  const id = create(db, { kind: 'call', ref_type: 'call', ref_id: row.id, title, detail: row.summary || null, by }).id;
+  if (row.assigned_to) act(db, id, 'reassign', { assigned_to: row.assigned_to }, by);
+  if (row.follow_up_done === 1 || row.handled_at) act(db, id, 'complete', { note: 'Completed before the work engine.' }, by);
+  else if (row.handling === 'Waiting') act(db, id, 'wait', { waiting_on: 'Carried over from the call queue', next_follow_up: isDate(row.follow_up_date) ? row.follow_up_date : today() }, by);
+  else if (isDate(row.follow_up_date)) act(db, id, 'edit', { due_date: row.follow_up_date }, by);
+  return id;
+}
+
+function ensureCallItem(db, callId, by) {
+  const cur = callItemOf(db, callId);
+  if (cur) return cur.id;
+  const row = db.prepare('SELECT * FROM calls WHERE id=?').get(Number(callId));
+  if (!row) throw new Error('Call not found.');
+  return seedCallItem(db, row, by);
+}
+
+// The queue's view of a call, or null when the call has no item yet (the caller then uses the call's own fields).
+function callState(db, callId) {
+  const it = callItemOf(db, callId);
+  if (!it) return null;
+  return {
+    item_id: it.id, item_status: it.status, assigned_to: it.assigned_to, note: it.completion_note || it.cancel_reason || null,
+    due: it.status === 'waiting' ? (it.next_follow_up || it.due_date || null) : (it.due_date || null)
+  };
+}
+
+// Keeps the calls table in step with the engine item.
+function mirrorCall(db, callId, it, by, at) {
+  if (!hasTable(db, 'calls')) return;
+  const prev = db.prepare('SELECT handling FROM calls WHERE id=?').get(Number(callId));
+  if (!prev) return;
+  const done = it.status === 'completed' || it.status === 'cancelled';
+  const waiting = it.status === 'waiting';
+  const due = waiting ? it.next_follow_up : it.due_date;
+  const cleared = prev.handling === 'Waiting' || prev.handling === 'Callback';
+  const handling = waiting ? 'Waiting' : (!done && due) ? 'Callback' : (cleared ? null : prev.handling);
+  db.prepare(`UPDATE calls SET follow_up_done=?, handled_at=?, handled_by=?, follow_up_date=?, handling=?, assigned_to=? WHERE id=?`)
+    .run(done ? 1 : 0, it.status === 'completed' ? at : null, it.status === 'completed' ? by : null, done ? null : (due || null), handling, it.assigned_to || null, Number(callId));
+}
+
+// Applies one call action from the queue (or the call drawer) through the engine. Returns the updated item.
+function applyCallAction(db, callId, body = {}, by = null) {
+  ensureSchema(db);
+  const id = ensureCallItem(db, callId, by);
+  const action = String(body.action || '');
+  let out;
+  if (action === 'handle' || action === 'complete') out = act(db, id, 'complete', { note: body.note }, by);
+  else if (action === 'waiting' || action === 'wait') out = act(db, id, 'wait', { waiting_on: body.waiting_on || body.note, next_follow_up: body.date }, by);
+  else if (action === 'cancel') out = act(db, id, 'cancel', { reason: body.reason }, by);
+  else if (action === 'reopen') out = act(db, id, 'reopen', { reason: body.reason || body.note }, by);
+  else if (action === 'assign') {
+    if (!r(body.assigned_to)) throw new Error('Choose who to assign it to.');
+    out = act(db, id, 'reassign', { assigned_to: body.assigned_to }, by);
+  } else if (action === 'schedule') {
+    if (!isDate(body.date)) throw new Error('Choose a valid callback date.');
+    out = act(db, id, 'edit', { due_date: body.date }, by);
+    // A callback can also name its owner in the same step.
+    if (r(body.assigned_to) && r(body.assigned_to) !== out.assigned_to) out = act(db, id, 'reassign', { assigned_to: body.assigned_to }, by);
+  } else throw new Error('Unknown call action.');
+  mirrorCall(db, callId, out, by, nowIso());
+  return get(db, id);
+}
+
+// Carries the existing call follow-ups onto the engine, once. Calls that already have an item are skipped.
+function migrateCallState(db) {
+  ensureSchema(db);
+  if (!hasTable(db, 'calls')) return 0;
+  const rows = db.prepare(`SELECT * FROM calls WHERE (handled_at IS NOT NULL OR follow_up_done=1 OR (follow_up_date IS NOT NULL AND follow_up_date<>'')
+      OR handling='Waiting' OR (assigned_to IS NOT NULL AND assigned_to<>''))
+      AND id NOT IN (SELECT ref_id FROM work_items WHERE kind='call' AND ref_type='call' AND ref_id IS NOT NULL)`).all();
+  for (const row of rows) seedCallItem(db, row, 'migration');
+  return rows.length;
+}
+
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem };

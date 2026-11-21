@@ -4700,10 +4700,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const all = (await req('GET', '/api/admin/work-queue?dept=calls', { token: T })).data.items || [];
     const listedOnce = all.filter(i => i.id === cid).length === 1;
     const assigned = all.find(i => i.id === cid);
-    const handled = await req('POST', `/api/admin/calls/${cid}/work`, { token: T, json: { action: 'handle' } });
+    const handledNoNote = await req('POST', `/api/admin/calls/${cid}/work`, { token: T, json: { action: 'handle' } });
+    const handled = await req('POST', `/api/admin/calls/${cid}/work`, { token: T, json: { action: 'handle', note: 'Called back, booked a walkthrough' } });
     const done = await bucketOf('completed');
     const badAction = await req('POST', `/api/admin/calls/${cid}/work`, { token: T, json: { action: 'explode' } });
-    const chk = { startsNew: before === 1, schedOk: sch.status === 200, notToday: today1 === 0, scheduled: sched === 1, notNew: new1 === 0, listedOnce, assignedSaved: !!assigned && assigned.assigned_to === 'office@brightclean.net', handled: handled.status === 200 && done === 1, badActionRefused: badAction.status === 400 };
+    const chk = { startsNew: before === 1, schedOk: sch.status === 200, notToday: today1 === 0, scheduled: sched === 1, notNew: new1 === 0, listedOnce, assignedSaved: !!assigned && assigned.assigned_to === 'office@brightclean.net', handled: handled.status === 200 && done === 1, badActionRefused: badAction.status === 400, handleNeedsNote: handledNoNote.status === 400 };
     assert(Object.values(chk).every(Boolean), JSON.stringify(chk));
     return 'call: new → callback tomorrow (out of Today, in Scheduled) → handled and Completed; listed once; assignment saved';
   });
@@ -4868,7 +4869,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const calls = (await req('GET', '/api/admin/work-queue?dept=calls&bucket=missed', { token: T })).data.items || [];
     const oldItem = calls.find(c => c.id === old), recentItem = calls.find(c => c.id === recent);
     const firstIsEscalated = calls.length > 0 && calls[0].escalated === true;
-    const handled = await req('POST', `/api/admin/calls/${old}/work`, { token: T, json: { action: 'handle' } });
+    const handled = await req('POST', `/api/admin/calls/${old}/work`, { token: T, json: { action: 'handle', note: 'Returned the call' } });
     const after = ((await req('GET', '/api/admin/work-queue?dept=calls', { token: T })).data.items || []).find(c => c.id === old);
     const closeout = (await req('GET', '/api/admin/closeout', { token: T })).data;
     const wq = require('../workqueue');

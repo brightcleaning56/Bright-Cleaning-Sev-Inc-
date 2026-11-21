@@ -4197,7 +4197,7 @@
     };
     $('#ccTaskSave').onclick = async () => {
       const d = $('#ccTask').value; if (!d) return toast('Pick the callback date.', true);
-      try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_date: d, follow_up_done: 0 } }); toast('Callback task set for ' + fmtDate(d)); loadCalls(); }
+      try { await api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action: 'schedule', date: d } }); toast('Callback task set for ' + fmtDate(d)); loadCalls(); }
       catch (err) { toast(err.message, true); }
     };
     if ($('#ccEst')) $('#ccEst').onclick = () => { if (ld) openEstimator(null, ld); else openEstimator(null, { contact_name: name, company: cu.company, email: cu.email }); };
@@ -4280,7 +4280,11 @@
       } catch (e) { btn.disabled = false; btn.textContent = '▶ Try again'; toast(e.message, true); }
     };
     act('#callIssue', async () => { try { const r = await api(`/api/admin/calls/${c.id}/issue`, { method: 'POST', json: {} }); toast(`${r.issue.number} created from this call`); closeDrawer(); go('issues'); openIssue(r.issue); } catch (e) { toast(e.message, true); } });
-    act('#callDone', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_done: true } }); toast('Follow-up done'); closeDrawer(); loadCalls(); } catch (e) { toast(e.message, true); } });
+    act('#callDone', async () => {
+      openForm({ title: 'Complete this follow-up', sub: 'The note is kept with the call and in its history.', defs: [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }],
+        submit: f => api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action: 'handle', ...f } }),
+        after: () => { toast('Follow-up done'); closeDrawer(); loadCalls(); } });
+    });
     if ($('#callTranscribe')) $('#callTranscribe').onclick = async () => {
       const b = $('#callTranscribe'); b.disabled = true; b.textContent = 'Transcribing…';
       try {
@@ -4296,7 +4300,7 @@
       b.disabled = false; b.textContent = 'Transcribe recording';
     };
     act('#callAnalyze', async () => { const b = $('#callAnalyze'); b.disabled = true; b.textContent = 'Analyzing…'; try { await api(`/api/admin/ai/calls/${c.id}/analyze`, { method: 'POST', json: { transcript: $('#callTr').value } }); toast('Call analyzed'); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Analyze with AI'; } });
-    act('#callUseFu', async () => { try { await api('/api/admin/calls/' + c.id, { method: 'PATCH', json: { follow_up_date: a.follow_up_date, follow_up_done: false } }); toast('Follow-up set for ' + a.follow_up_date); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); } });
+    act('#callUseFu', async () => { try { await api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action: 'schedule', date: a.follow_up_date } }); toast('Follow-up set for ' + a.follow_up_date); loadCalls(); openCall(c); } catch (e) { toast(e.message, true); } });
     act('#callCopy', async () => { try { await navigator.clipboard.writeText(a.reply_draft); toast('Reply copied'); } catch { toast('Select the text to copy', true); } });
     $$('#drawerRoot [data-close]').forEach(el => el.onclick = closeDrawer);
   }
@@ -4833,7 +4837,7 @@
       next = `${btn('handle', 'Complete', '')}${btn('waiting', 'Waiting for reply')}${btn('cancel', 'Cancel')}${it.bucket === 'completed' ? btn('reopen', 'Reopen') : ''}${btn('task', 'Create task')}${btn('link', 'Link')}${btn('thread', 'Thread')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
         <div class="wqrow-act"><input type="datetime-local" data-until-for="${id}" aria-label="Snooze until">${btn('snooze', 'Snooze')}</div>`;
     } else if (d === 'calls') {
-      next = `${btn('handle', 'Handled', '')}${btn('waiting', 'Waiting')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
+      next = `${btn('handle', 'Complete', '')}${btn('waiting', 'Waiting')}${btn('cancel', 'Cancel')}${it.bucket === 'completed' ? btn('reopen', 'Reopen') : ''}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
     } else if (d === 'leads') {
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
     } else if (d === 'sent') {
@@ -4918,13 +4922,15 @@
     if (act === 'link') return wqLink(id);
     if (act === 'thread') return wqThread(id);
     // Completing, waiting, cancelling and reopening need a note, a follow-up date or a reason. Collect it first, then send it.
-    if (d === 'emails' && ['handle', 'waiting', 'cancel', 'reopen'].includes(act)) {
+    if ((d === 'emails' || d === 'calls') && ['handle', 'waiting', 'cancel', 'reopen'].includes(act)) {
+      const noun = d === 'calls' ? 'call' : 'email';
       const defs = act === 'handle' ? [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }]
         : act === 'waiting' ? [{ name: 'waiting_on', label: 'Waiting on (what, or who)', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }]
         : [{ name: 'reason', label: act === 'cancel' ? 'Reason for cancelling' : 'Reason for reopening', type: 'textarea', wide: true }];
-      const title = { handle: 'Complete this email', waiting: 'Waiting for reply', cancel: 'Cancel this email', reopen: 'Reopen this email' }[act];
+      const title = { handle: `Complete this ${noun}`, waiting: `Waiting on this ${noun}`, cancel: `Cancel this ${noun}`, reopen: `Reopen this ${noun}` }[act];
+      const url = d === 'calls' ? `/api/admin/calls/${id}/work` : `/api/admin/inbox/${id}/state`;
       return openForm({ title, sub: 'The reason or note is kept with the item and in its history.', defs,
-        submit: f => api(`/api/admin/inbox/${id}/state`, { method: 'POST', json: { action: act, ...f } }),
+        submit: f => api(url, { method: 'POST', json: { action: act, ...f } }),
         after: () => { toast(act === 'handle' ? 'Completed' : act === 'cancel' ? 'Cancelled' : act === 'reopen' ? 'Reopened' : 'Waiting'); loadWorkQueue(); } });
     }
     const date = (document.querySelector(`[data-date-for="${id}"]`) || {}).value || '';
