@@ -4834,10 +4834,15 @@
     const btn = (act, label, cls = 'ghost') => `<button class="btn ${cls}" type="button" data-wq-act="${act}" data-wq-dept="${d}" data-id="${id}">${label}</button>`;
     let next = '';
     if (d === 'emails') {
-      next = `${btn('handle', 'Complete', '')}${btn('waiting', 'Waiting for reply')}${btn('cancel', 'Cancel')}${it.bucket === 'completed' ? btn('reopen', 'Reopen') : ''}${btn('task', 'Create task')}${btn('link', 'Link')}${btn('thread', 'Thread')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
-        <div class="wqrow-act"><input type="datetime-local" data-until-for="${id}" aria-label="Snooze until">${btn('snooze', 'Snooze')}</div>`;
+      // A finished email can only be reopened before its date or state changes; the queue refuses those moves on it.
+      const finished = it.bucket === 'completed';
+      next = `${finished ? btn('reopen', 'Reopen') : `${btn('handle', 'Complete', '')}${btn('waiting', 'Waiting for reply')}${btn('cancel', 'Cancel')}`}${btn('task', 'Create task')}${btn('link', 'Link')}${btn('thread', 'Thread')}`
+        + (finished ? '' : `<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule')}</div>
+        <div class="wqrow-act"><input type="datetime-local" data-until-for="${id}" aria-label="Snooze until">${btn('snooze', 'Snooze')}</div>`);
     } else if (d === 'calls') {
-      next = `${btn('handle', 'Complete', '')}${btn('waiting', 'Waiting')}${btn('cancel', 'Cancel')}${it.bucket === 'completed' ? btn('reopen', 'Reopen') : ''}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
+      // A finished call can only be reopened; the queue refuses every other move on it.
+      next = it.bucket === 'completed' ? btn('reopen', 'Reopen')
+        : `${btn('handle', 'Complete', '')}${btn('waiting', 'Waiting')}${btn('cancel', 'Cancel')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
     } else if (d === 'leads') {
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
     } else if (d === 'sent') {
