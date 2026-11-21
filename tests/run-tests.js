@@ -130,6 +130,7 @@ async function startServer(env, dataDir) {
   await check('Health', '/health and /api/health report app and database status', async () => {
     const a = await req('GET', '/health'), b = await req('GET', '/api/health');
     assert(a.data.ok && a.data.db === 'ok' && b.data.ok, 'bad health');
+    assert('backup_age_h' in b.data && (b.data.backup_age_h === null || typeof b.data.backup_age_h === 'number'), 'backup_age_h missing or wrong type: ' + JSON.stringify(b.data));
     return JSON.stringify(a.data);
   });
 

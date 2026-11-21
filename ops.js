@@ -234,7 +234,10 @@ module.exports = function mountOps(app, ctx) {
   const health = (req, res) => {
     try {
       db.prepare('SELECT 1').get();
-      res.json({ ok: true, db: 'ok', uptime_s: Math.round((Date.now() - started) / 1000), version, build: BUILD.short, build_files: BUILD.files, errors_1h: ctx.monitoring && ctx.monitoring.errorsLastHour ? ctx.monitoring.errorsLastHour() : null });
+      // Hours since the last successful backup, so an external monitor can alert on a missed backup. Null when none is recorded.
+      let backup_age_h = null;
+      try { const b = db.prepare("SELECT created_at FROM automation_log WHERE kind='backup' AND status='ok' ORDER BY id DESC LIMIT 1").get(); if (b && b.created_at) backup_age_h = Math.round((Date.now() - Date.parse(b.created_at)) / 360000) / 10; } catch { /* leave null */ }
+      res.json({ ok: true, db: 'ok', uptime_s: Math.round((Date.now() - started) / 1000), version, build: BUILD.short, build_files: BUILD.files, errors_1h: ctx.monitoring && ctx.monitoring.errorsLastHour ? ctx.monitoring.errorsLastHour() : null, backup_age_h });
     } catch (e) { res.status(503).json({ ok: false, db: 'error' }); }
   };
   app.get('/health', health);
