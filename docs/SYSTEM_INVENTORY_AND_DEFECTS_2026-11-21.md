@@ -90,3 +90,16 @@ Still to do:
 - Browser check of the call forms (Complete, Waiting, Cancel, Reopen, Schedule).
 - Direct writes of call follow-up fields from the call-centre outcome and missed-call rules (callcenter.js) still write the calls table before a call has an item; they are read as the call's own state until the call is first touched.
 - Leads, project tasks, issues and QC still have their own states.
+
+## Step 3 (progress): lead next steps on the work engine
+
+Done:
+- A lead's next step is one work item; its due date is the follow-up date. Every follow-up setter on the lead updates the engine in the same step.
+- Complete needs a completion note and clears the lead's follow-up; Waiting needs what it waits on and a date; Clear, Set next step and owner changes go through the same rules.
+- A new date after a finished step starts a new step; the finished one stays in history.
+- Existing lead follow-ups carry over once (`migrateLeadState`).
+- Browser check (local, test data): Set next step, Waiting, Complete, the follow-up task closes on complete, the lead moves to "Needs next step".
+
+Observed, not changed:
+- The Tasks tab count includes closed follow-up tasks from leads (pre-existing count logic).
+- Each lead follow-up still creates a task in Issues & tasks (kept on purpose; see the decision in the progress notes).
