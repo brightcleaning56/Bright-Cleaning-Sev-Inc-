@@ -18,7 +18,7 @@ module.exports = function mountContracts(app, ctx) {
   const cols = db.prepare('PRAGMA table_info(contracts)').all().map(c => c.name);
   for (const [c, t] of [['customer_id', 'INTEGER'], ['project_id', 'INTEGER'], ['email', 'TEXT'], ['terms', 'TEXT'], ['payment_terms', 'TEXT'], ['billing', 'TEXT'], ['auto_renew', 'INTEGER DEFAULT 0'], ['notice_days', 'INTEGER DEFAULT 30'],
     ['public_token', 'TEXT'], ['sent_at', 'TEXT'], ['viewed_at', 'TEXT'], ['signer_name', 'TEXT'], ['signer_title', 'TEXT'], ['signed_at', 'TEXT'], ['signed_ip', 'TEXT'], ['decline_reason', 'TEXT'],
-    ['countersigned_by', 'TEXT'], ['countersigned_at', 'TEXT'], ['version', 'INTEGER DEFAULT 1'], ['parent_id', 'INTEGER'], ['superseded_by', 'INTEGER'], ['kind', "TEXT DEFAULT 'Contract'"], ['renewed_from', 'INTEGER'], ['updated_at', 'TEXT'], ['archived_at', 'TEXT'], ['archived_by', 'TEXT']])
+    ['countersigned_by', 'TEXT'], ['countersigned_at', 'TEXT'], ['executed_hash', 'TEXT'], ['executed_snapshot', 'TEXT'], ['version', 'INTEGER DEFAULT 1'], ['parent_id', 'INTEGER'], ['superseded_by', 'INTEGER'], ['kind', "TEXT DEFAULT 'Contract'"], ['renewed_from', 'INTEGER'], ['updated_at', 'TEXT'], ['archived_at', 'TEXT'], ['archived_by', 'TEXT']])
     if (!cols.includes(c)) db.exec(`ALTER TABLE contracts ADD COLUMN ${c} ${t}`);
   const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
@@ -125,6 +125,12 @@ module.exports = function mountContracts(app, ctx) {
     db.prepare("UPDATE projects SET status=CASE WHEN status='Planning' THEN 'Contracted' ELSE status END, updated_at=? WHERE contract_id=?").run(now(), k.id);
     // Visits planned before sign-off go live now, so staff and the customer portal see them.
     db.prepare("UPDATE visits SET status='Scheduled', updated_at=? WHERE status='Tentative' AND project_id IN (SELECT id FROM projects WHERE contract_id=?)").run(now(), k.id);
+    // Executed copy: a frozen snapshot of the signed content and its SHA-256, written once at countersignature. Later edits or amendments never change it.
+    if (!k.executed_hash) {
+      const row = get(k.id); const { updated_at, executed_hash, executed_snapshot, ...signed } = row;
+      const canon = JSON.stringify(Object.keys(signed).sort().reduce((o, key) => { o[key] = signed[key]; return o; }, {}));
+      db.prepare('UPDATE contracts SET executed_snapshot=?, executed_hash=? WHERE id=?').run(canon, crypto.createHash('sha256').update(canon).digest('hex'), k.id);
+    }
     logAction(req, 'countersigned', 'contract', k.id, `${k.number} by ${name} — executed`);
     res.json({ contract: get(k.id) });
   });

@@ -138,6 +138,10 @@ async function waitHealthy() {
     const cs = await req('GET', '/api/admin/contracts2', owner);
     const row = (cs.body.contracts || []).find(x => x.id === con.id);
     assert(row && row.status === 'Active', 'contract status ' + (row && row.status));
+    // The executed copy is frozen: a SHA-256 of the signed content is kept, and countersigning again is refused.
+    assert(row && /^[0-9a-f]{64}$/.test(row.executed_hash || '') && typeof row.executed_snapshot === 'string' && row.executed_snapshot.includes('"value"'), 'executed snapshot and hash are kept');
+    const again = await req('POST', `/api/admin/contracts2/${con.id}/countersign`, owner, { name: 'Test Owner' });
+    assert(again.status === 409, 'second countersign refused ' + again.status);
     const ps = await req('GET', '/api/admin/pm/projects', owner);
     const p = (ps.body.projects || []).find(x => x.id === prj.id);
     assert(p && p.status === 'Contracted', 'project status ' + (p && p.status));

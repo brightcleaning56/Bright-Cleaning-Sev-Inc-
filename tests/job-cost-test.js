@@ -31,15 +31,15 @@ assert.strictEqual(r.projected.gross_profit, 31000, 'projected gross profit 31,0
 assert.strictEqual(r.projected.gross_margin_pct, 62, 'projected margin 62%');
 assert.strictEqual(r.actual.cost, 19200, 'actual cost = recorded 19,000 + unposted approved labor 200 (posted and unapproved time excluded)');
 assert.strictEqual(r.actual.unposted_labor, 200, 'unposted labor is 10 hours at $20');
-assert.strictEqual(r.actual.gross_profit, 30800, 'actual gross profit on the 50,000 contract');
-assert.strictEqual(r.actual.revenue_source, 'contract', 'revenue basis is the linked contract');
+assert.strictEqual(r.actual.contract_basis_profit, 30800, 'contract-basis profit on the 50,000 contract (not earned profit)');
+assert.strictEqual(r.actual.contract_basis_source, 'contract', 'revenue basis is the linked contract');
 const labor = r.cost_by_account.find(l => l.code === '5000');
 assert.strictEqual(labor.amount, 12200, 'labor = posted 12,000 + unposted 200');
 assert.strictEqual(r.actual.overhead_rate_pct, 10, 'overhead rate from the estimate');
 assert.strictEqual(r.actual.allocated_overhead, 1920, 'overhead = 10% of actual cost 19,200');
-assert.strictEqual(r.actual.profit_after_overhead, 28880, 'actual gross profit less allocated overhead');
+assert.strictEqual(r.actual.contract_basis_profit_after_overhead, 28880, 'actual gross profit less allocated overhead');
 assert.ok(r.gaps.length >= 3, 'known gaps are listed');
-console.log('ok - worked example: projected GP', r.projected.gross_profit, '| actual cost', r.actual.cost, '| actual GP', r.actual.gross_profit, '| labor', labor.amount);
+console.log('ok - worked example: projected GP', r.projected.gross_profit, '| actual cost', r.actual.cost, '| actual GP', r.actual.contract_basis_profit, '| labor', labor.amount);
 
 // Category words map to the ledger accounts; unknown words go to the unmapped operating line.
 assert.strictEqual(accountFor('Crew wages').code, '5000');
@@ -54,7 +54,7 @@ console.log('ok - category words map to ledger accounts');
 db.prepare('INSERT INTO projects VALUES(2,\'Loose job\',\'X\',\'Y\',NULL,NULL)').run();
 const bare = jobCostReport(db, 2);
 assert.strictEqual(bare.projected.cost, null);
-assert.strictEqual(bare.actual.gross_profit, null);
+assert.strictEqual(bare.actual.contract_basis_profit, null);
 assert.ok(/No estimate/.test(bare.projected.note));
 assert.strictEqual(jobCostReport(db, 999), null, 'unknown project returns nothing');
 console.log('ok - no contract or estimate gives no invented figures');

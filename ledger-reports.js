@@ -44,7 +44,7 @@ function profitAndLoss(db, { from, to } = {}) {
     gross_margin_pct: rev > 0 ? Math.round((rev - cos) / rev * 10000) / 100 : null,
     operating_expenses: operating, operating_expenses_total: opx,
     net_profit: Math.round((rev - cos - opx) * 100) / 100,
-    notes: ['Revenue is the invoice amount. Sales tax set on an invoice is kept out of revenue.', 'Labor burden is added only when the owner sets a burden rate. Overtime is not in the costs yet.']
+    notes: ['Revenue is the invoice amount. Sales tax set on an invoice is kept out of revenue.', 'Labor burden is added only when the owner sets a burden rate. Overtime is included: approved hours over the weekly threshold are costed at 1.5 times the rate.']
   };
 }
 
