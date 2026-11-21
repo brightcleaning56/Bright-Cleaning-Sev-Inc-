@@ -201,7 +201,7 @@ require('./complaints')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>ma
 require('./m365')(app,{db,auth,logAction,adminEmail,monitoring});require('./emailsuppress').mount(app,{db,auth,logAction,adminEmail});require('./leadclass').mount(app,{db,auth,getMailer:()=>mailer,logAction});
 require('./invoices2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./subscriptions')(app,{db,auth,logAction,clean,adminEmail});
-require('./workqueue')(app,{db,auth,logAction,clean});
+require('./workqueue')(app,{db,auth,logAction,clean});require('./work-engine').mount(app,{db,auth});
 // Owner or manager: record that the customer approved a proposal outside the portal (signed paper copy, email, phone).
 // The customer's online approval is the only other way to reach Approved, so this step needs a written reason, which is kept in the audit log.
 app.post('/api/admin/estimates/:id/record-approval',auth,(req,res)=>{

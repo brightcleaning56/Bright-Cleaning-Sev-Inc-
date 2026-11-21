@@ -44,3 +44,18 @@ Checks against the spec's rules:
 
 ## Decision needed before step 3
 A single work engine (one task table with the states above, used by every queue) touches email, calls, leads, project tasks, issues and QC. It is a multi-module change, so it needs your approval before I start. The smallest first repair inside the current code would be to require a reason on reopen and add a cancel action with a reason to the email queue. That needs a button on the screen as well.
+
+## Step 3 (in progress): unified work engine
+
+Built: `work-engine.js`. One lifecycle and one history for every kind of work (email, call, lead, project task, issue, inspection, estimate, invoice, maintenance, other).
+- Start, wait (with what it waits on and a follow-up date), complete (note required), cancel (reason required), reopen (reason required), reassign (both queues updated), edit (saved and recorded).
+- One active item per record: creating it again returns the same item.
+- Completed and cancelled items leave the queue and stay in history with who and when.
+- Overdue is flagged until the item is resolved.
+- API: `GET/POST /api/admin/work-items`, `GET /api/admin/work-items/:id`, `POST /api/admin/work-items/:id/:action`.
+- Tests: `tests/work-engine-test.js` (10 groups), `tests/work-api-test.js` (10 checks on a live server). Server suite 313/313, admin UI 94/94.
+
+Not yet done:
+- The existing queues (email, calls, leads, project tasks, issues, QC) still use their own states. Each must be moved onto the engine, one module at a time, with existing data carried over.
+- No screen buttons yet for the new actions. The Today's Work screen must show the engine's queue and the actions.
+- Other kinds of work (estimate approvals, invoice follow-up, maintenance requests) have no creators yet.
