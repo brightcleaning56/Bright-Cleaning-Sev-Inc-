@@ -304,6 +304,7 @@
     if (Date.now() < mfaRouteUntil) return;
     mfaRouteUntil = Date.now() + 4000;
     $$('#nav [data-view]').forEach(b => { b.hidden = b.dataset.view !== 'settings'; });
+    { const g = $('#navAccGroup'); if (g) g.hidden = true; }
     const nav = document.querySelector('#nav [data-view="settings"]');
     if (nav) nav.click();
     try { setSettingsTab('security'); } catch { /* settings not built yet */ }
@@ -356,7 +357,7 @@
   async function start() {
     try {
       const me = await api('/api/admin/me'); state.me = me;
-      { const ab = $('[data-view="accounting"]'); if (ab) ab.hidden = !['owner', 'manager'].includes(me.role); }
+      { const ag = $('#navAccGroup'); if (ag) ag.hidden = !['owner', 'manager'].includes(me.role); }
       loadMfa();
       if (me.mfa_setup_required) routeToMfaSetup();
       state.people = {}; try { for (const x of ((await api('/api/admin/people')).people || [])) state.people[String(x.email).toLowerCase()] = x; } catch { /* names fall back to email */ }
@@ -501,7 +502,9 @@
   }
 
   // ---------- Navigation ----------
-  const VIEWS = ['website', 'overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'accounting', 'scopes', 'activity', 'settings', 'insurance'];
+  // The Accounting page's current tab (set from the sidebar drop-down or the tab bar on the page).
+  let accTab = 'overview';
+  const VIEWS = ['website','overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'proposals', 'estimator', 'contracts', 'projects', 'invoices', 'subscriptions', 'clientmsgs', 'schedule', 'quality', 'documents', 'takeoffs', 'reports', 'accounting', 'scopes', 'activity', 'settings', 'insurance'];
   function go(view, replace) {
     view = String(view || '').split('/')[0];
     if (view === 'customer') view = 'customers';
@@ -511,7 +514,8 @@
     state.view = view;
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'v-' + view));
     const navView = view === 'estimator' ? 'proposals' : view === 'customer' ? 'customers' : view;
-    $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === navView));
+    $$('#nav button[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === navView && (!b.dataset.accTab || b.dataset.accTab === accTab)));
+    if (view === 'accounting') setAccExpanded(true);
     const cur = location.hash || '';
     const hash = view === 'contracts' && cur.startsWith('#contracts/') ? cur : '#' + view;
     if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash);
@@ -526,7 +530,7 @@
     if (cwDirty && cwData && cwData.contract.id !== toId && !leaveContract()) { history.pushState(null, '', '#contracts/' + cwData.contract.id); return; }
     go((location.hash || '#overview').slice(1));
   });
-  $$('#nav button').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'contracts') { if (!leaveContract()) return; history.replaceState(null, '', '#contracts'); } go(b.dataset.view); }));
+  $$('#nav button[data-view]').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'contracts') { if (!leaveContract()) return; history.replaceState(null, '', '#contracts'); } if (b.dataset.accTab) accTab = b.dataset.accTab; go(b.dataset.view); }));
   document.addEventListener('click', e => {
     const link = e.target.closest('[data-view-link]');
     if (link) go(link.dataset.viewLink);
@@ -2338,6 +2342,89 @@
     body.appendChild(el);
     el.querySelectorAll(".ratef").forEach(f => f.onsubmit = async ev => { ev.preventDefault(); try { await api("/api/admin/ledger/rates", { method: "POST", json: { key: f.dataset.rkey, value: f.elements.value.value } }); toast("Rate saved"); loadAccounting(); } catch (e) { toast(e.message, true); } });
   }
+  // ---- Accounting overview (the first tab): figures from the ledger and the reports API ----
+  const ACC_COLORS = ['#1f6fd1', '#2fb67c', '#f2a93b', '#e5534b', '#8b5cf6', '#14b8a6', '#94a3b8'];
+  const ACC_GOAL_MARGIN = 30;
+  const accMonthName = m => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(String(m).slice(5, 7)) - 1] || String(m);
+  const accTxType = e => ({ invoice: 'Invoice', payment: 'Payment', bill: 'Expense', refund: 'Refund', payroll: 'Payroll', adjustment: 'Adjustment' })[e.source] || 'Entry';
+  const accTxAmount = e => Math.round((e.lines || []).reduce((s, l) => s + (Number(l.debit) || 0), 0) * 100) / 100;
+  function accTxRowsHtml(entries, filter) {
+    const want = { invoices: 'Invoice', payments: 'Payment', expenses: 'Expense' }[filter];
+    const rows = entries.filter(e => !want || accTxType(e) === want).slice(0, 8);
+    return `<table class="t"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Memo</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${rows.map(e => `<tr><td>${esc(e.entry_date)}</td><td><span class="pill">${esc(accTxType(e))}</span></td><td>${esc(e.source_ref || ('#' + e.id))}</td><td>${esc(e.memo || '')}</td><td class="num">${money(accTxAmount(e))}</td><td>${e.reverses_id ? '<span class="pill st-Declined">Reversal</span>' : '<span class="pill st-Approved">Posted</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No entries yet.</td></tr>'}</tbody></table>`;
+  }
+  function accBarsSvg(months) {
+    if (!months.length) return '<p class="muted">No posted months yet.</p>';
+    const W = 600, H = 240, pad = 40, base = H - 26;
+    const max = Math.max(1, ...months.map(m => Math.max(Number(m.revenue) || 0, Number(m.costs) || 0)));
+    const step = (W - pad) / months.length, bw = Math.min(24, step * 0.32);
+    const y = v => base - (v / max) * (base - 12);
+    let s = '';
+    for (let i = 0; i <= 4; i++) { const v = max * i / 4, yy = y(v); s += `<line x1="${pad}" x2="${W}" y1="${yy}" y2="${yy}" stroke="#e2e8f0"/><text x="${pad - 6}" y="${yy + 4}" text-anchor="end" font-size="11" fill="#7b8794">${esc('$' + Math.round(v / 1000) + 'k')}</text>`; }
+    months.forEach((m, i) => {
+      const cx = pad + step * i + step / 2, rv = Number(m.revenue) || 0, cs = Number(m.costs) || 0;
+      s += `<rect x="${(cx - bw - 2).toFixed(1)}" y="${y(rv).toFixed(1)}" width="${bw.toFixed(1)}" height="${(base - y(rv)).toFixed(1)}" rx="3" fill="#1f6fd1"><title>Revenue ${esc(money(rv))}</title></rect>`;
+      s += `<rect x="${(cx + 2).toFixed(1)}" y="${y(cs).toFixed(1)}" width="${bw.toFixed(1)}" height="${(base - y(cs)).toFixed(1)}" rx="3" fill="#2fb67c"><title>Expenses ${esc(money(cs))}</title></rect>`;
+      s += `<text x="${cx.toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#7b8794">${esc(accMonthName(m.month))}</text>`;
+    });
+    return `<svg class="accchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Revenue and expenses by month">${s}</svg>`;
+  }
+  function accDonutSvg(rows, total) {
+    const R = 60, C = 2 * Math.PI * R; let off = 0, arcs = '';
+    rows.forEach((r, i) => { const len = total ? (r.amount / total) * C : 0; arcs += `<circle r="${R}" cx="80" cy="80" fill="none" stroke="${ACC_COLORS[i % ACC_COLORS.length]}" stroke-width="26" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 80 80)"/>`; off += len; });
+    return `<svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Expense breakdown">${arcs || `<circle r="${R}" cx="80" cy="80" fill="none" stroke="#e2e8f0" stroke-width="26"/>`}<text x="80" y="78" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">${esc(money(total))}</text><text x="80" y="96" text-anchor="middle" font-size="10" fill="#7b8794">Total expenses</text></svg>`;
+  }
+  function accOverviewHtml({ pl, tie, monthly, fin, entries }) {
+    const expTotal = (Number(pl.cost_of_services_total) || 0) + (Number(pl.operating_expenses_total) || 0);
+    const revenue = Number(pl.revenue_total) || 0;
+    const owed = Number(tie.invoices_owed) || 0;
+    const margin = pl.gross_margin_pct;
+    const met = margin != null && margin >= ACC_GOAL_MARGIN;
+    const kpis = [
+      kt('money', 'navy', 'Total revenue', money(revenue), 'posted to the ledger'),
+      kt('clock', 'amber', 'Invoices outstanding', money(owed), revenue ? Math.round(owed / revenue * 100) + '% of revenue' : 'no revenue yet'),
+      kt('money', 'blue', 'Total expenses', money(expTotal), 'job costs and operating expenses'),
+      kt('check', 'green', 'Contribution profit', money(pl.gross_profit), margin == null ? '' : margin + '% margin'),
+      kt('check', met ? 'green' : 'amber', 'Margin vs target', margin == null ? '—' : margin + '%', `Goal ${ACC_GOAL_MARGIN}% · ${met ? 'met' : 'not met'}`)
+    ].join('');
+    const exp = [...(pl.cost_of_services || []), ...(pl.operating_expenses || [])].map(x => ({ name: x.name, amount: Number(x.amount) || 0 })).filter(x => x.amount > 0).sort((a, b) => b.amount - a.amount);
+    const top = exp.slice(0, 6); const rest = exp.slice(6).reduce((s, x) => s + x.amount, 0);
+    if (rest > 0) top.push({ name: 'Other', amount: rest });
+    const legend = top.map((x, i) => `<div><i style="background:${ACC_COLORS[i % ACC_COLORS.length]}"></i><span style="flex:1">${esc(x.name)}</span><b>${expTotal ? Math.round(x.amount / expTotal * 1000) / 10 : 0}%</b></div>`).join('') || '<p class="muted">No expenses posted yet.</p>';
+    const jobRows = [...(fin.projects || [])].sort((a, b) => (Number(b.invoiced) || 0) - (Number(a.invoiced) || 0)).slice(0, 5)
+      .map(p => `<tr><td>${esc(p.name || '#' + p.id)}</td><td class="num">${money(p.invoiced)}</td><td class="num">${money(p.cost)}</td><td class="num">${p.margin == null ? '—' : esc(p.margin) + '%'}</td></tr>`).join('')
+      || '<tr><td colspan="4" class="muted">No invoiced projects in this year yet.</td></tr>';
+    return `
+      <div class="kpis5">${kpis}</div>
+      <div class="accov-row">
+        <div class="card"><h2 class="secth" style="margin-top:0">Revenue vs. expenses</h2><p class="muted" style="margin:0 0 6px"><span style="color:#1f6fd1">■ Revenue</span> &nbsp; <span style="color:#2fb67c">■ Expenses</span> · last six months, from the ledger</p>${accBarsSvg(monthly.months || [])}</div>
+        <div class="card"><h2 class="secth" style="margin-top:0">Expense breakdown</h2>
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center">${accDonutSvg(top, expTotal)}<div class="legend" style="flex:1;min-width:150px">${legend}</div></div></div>
+        <div class="card accov-actions"><h2 class="secth" style="margin-top:0">Quick actions</h2>
+          <button class="btn qbtn" type="button" data-accqa="invoice">+ Create invoice</button>
+          <button class="btn ghost qbtn" type="button" data-accqa="payment">Record payment</button>
+          <button class="btn ghost qbtn" type="button" data-accqa="expense">Add expense</button>
+          <button class="btn ghost qbtn" type="button" data-accqa="receipt">Attach a receipt</button>
+          <button class="btn ghost qbtn" type="button" data-accqa="jobs">Run profitability report</button></div>
+      </div>
+      <div class="accov-row2">
+        <div class="card"><h2 class="secth" style="margin-top:0">Recent transactions</h2>
+          <div class="seg"><button type="button" class="on" data-accseg="all">All</button><button type="button" data-accseg="invoices">Invoices</button><button type="button" data-accseg="payments">Payments</button><button type="button" data-accseg="expenses">Expenses</button></div>
+          <div class="tablewrap" id="accTxRows">${accTxRowsHtml(entries, 'all')}</div></div>
+        <div class="card"><h2 class="secth" style="margin-top:0">Job profitability (top projects, this year)</h2>
+          <div class="tablewrap"><table class="t"><thead><tr><th>Project</th><th class="num">Invoiced</th><th class="num">Cost</th><th class="num">Margin</th></tr></thead><tbody>${jobRows}</tbody></table></div>
+          <p class="muted" style="margin:8px 0 0"><button type="button" class="linklike" data-acctab-go="jobs">Open job profitability</button></p></div>
+      </div>`;
+  }
+  // Shows one tab of the Accounting page (cards carry data-accg) and marks the matching sidebar item.
+  function showAccTab(name) {
+    accTab = name;
+    const b = $('#accBody'); if (!b) return;
+    b.querySelectorAll('[data-accg]').forEach(el => { el.hidden = el.dataset.accg !== name; });
+    b.querySelectorAll('#accTabs button').forEach(t => t.classList.toggle('on', t.dataset.acctab === name));
+    $$('#navAccSub button').forEach(t => t.classList.toggle('active', t.dataset.accTab === name));
+  }
+
   async function loadAccounting() {
     const body = $('#accBody'); if (!body) return;
     body.innerHTML = '<p class="muted">Loading the books…</p>';
@@ -2355,41 +2442,52 @@
     const driftRows = (drift.drift || []).map(d => `<li>${esc(d.ref)}: ${esc(d.issue)}</li>`).join('') || '<li class="muted">No recorded costs changed after posting.</li>';
     const openRows = (tie.unposted || []).map(i => `<tr><td>${esc(i.invoice_number || i.id)}</td><td class="num">${money(i.amount)}</td><td class="num">${money(i.tax_amount)}</td><td><button class="btn small ghost" data-acctax="${i.id}" type="button">Set sales tax</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Every invoice is on the ledger.</td></tr>';
     const closedTo = periods.closed_through ? 'Closed through ' + esc(periods.closed_through) : 'Books are open (not closed yet)';
+    // Overview extras. Each one is optional: if it fails, that part of the overview is empty and the rest still shows.
+    const today = new Date().toISOString().slice(0, 10), yearStart = today.slice(0, 4) + '-01-01';
+    const sixAgo = (() => { const d = new Date(); d.setMonth(d.getMonth() - 5, 1); return d.toISOString().slice(0, 10); })();
+    const [monthlyR, finR, entR] = await Promise.allSettled([
+      api(`/api/admin/reports/monthly?from=${sixAgo}&to=${today}`), api(`/api/admin/reports/finance?from=${yearStart}&to=${today}`), api('/api/admin/ledger/entries')]);
+    const monthly = monthlyR.status === 'fulfilled' ? monthlyR.value : { months: [] };
+    const fin = finR.status === 'fulfilled' ? finR.value : { projects: [] };
+    const entries = entR.status === 'fulfilled' ? (entR.value.entries || []) : [];
+    const overviewHtml = accOverviewHtml({ pl, tie, monthly, fin, entries });
     body.innerHTML = `
-      <div class="kpis6">${kt('money', 'navy', 'Revenue (posted)', money(pl.revenue_total), 'from invoices')}${kt('check', 'green', 'Gross profit', money(pl.gross_profit), pl.gross_margin_pct == null ? '' : pl.gross_margin_pct + '% margin')}${kt('money', 'blue', 'Net profit', money(pl.net_profit), 'after operating costs')}${kt('clock', 'amber', 'Owed by customers', money(tie.invoices_owed), 'ledger receivable ' + money(tie.ledger_receivable))}</div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Receivables tie-out ${tieBadge}</h2>
+      <nav class="acctabs" id="accTabs" aria-label="Accounting pages">${[['overview', 'Overview'], ['invoices', 'Invoices'], ['payments', 'Payments'], ['expenses', 'Expenses'], ['payroll', 'Payroll'], ['jobs', 'Job profitability'], ['reconciliation', 'Reconciliation'], ['reports', 'Reports']].map(([k, l]) => `<button type="button" data-acctab="${k}">${l}</button>`).join('')}</nav>
+      <div class="accg accov" data-accg="overview">${overviewHtml}</div>
+      <div class="accg" data-accg="reports" id="accRatesHost" hidden></div>
+      <div class="card accg" data-accg="payments" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Receivables tie-out ${tieBadge}</h2>
         <p class="muted">Difference between what customers owe and the ledger's receivable: <b>${money(tie.difference)}</b>. Unposted invoices: ${tie.unposted_invoices}. Unposted payments: ${tie.unposted_payments}.</p>
         <p class="muted">${esc(tie.gap)}</p></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Profit and loss</h2>
+      <div class="card accg" data-accg="reports" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Profit and loss</h2>
         <div class="tablewrap"><table class="t"><thead><tr><th>Code</th><th>Account</th><th class="num">Amount</th></tr></thead><tbody>
           ${rowsOf(pl.revenue)}${total('Revenue', pl.revenue_total)}${rowsOf(pl.cost_of_services)}${total('Cost of services', pl.cost_of_services_total)}${total('Gross profit', pl.gross_profit)}${rowsOf(pl.operating_expenses)}${total('Operating expenses', pl.operating_expenses_total)}${total('Net profit', pl.net_profit)}
         </tbody></table></div>
         <p class="muted">${(pl.notes || []).map(esc).join(' ')}</p></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Balance sheet ${bs.balances ? '<span class="pill st-Approved">Balances</span>' : '<span class="pill st-Declined">Off by ' + money(bs.difference) + '</span>'}</h2>
+      <div class="card accg" data-accg="reports" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Balance sheet ${bs.balances ? '<span class="pill st-Approved">Balances</span>' : '<span class="pill st-Declined">Off by ' + money(bs.difference) + '</span>'}</h2>
         <div class="tablewrap"><table class="t"><tbody>
           ${rowsOf(bs.assets)}${total('Assets', bs.assets_total)}${rowsOf(bs.liabilities)}${total('Liabilities', bs.liabilities_total)}${rowsOf(bs.equity)}${total('Equity', bs.equity_total)}${total('Earnings to date', bs.earnings_to_date)}
         </tbody></table></div></div>
-      <div class="card" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bills and expenses</h2><button class="btn small" id="accNewBill" type="button">New bill</button></div>
+      <div class="card accg" data-accg="expenses" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bills and expenses</h2><button class="btn small" id="accNewBill" type="button">New bill</button></div>
         <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Periods</h2>
+      <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Periods</h2>
         <p class="muted">${closedTo}. Once closed, nothing can be posted on or before that date.</p>
         <button class="btn small" id="accClose" type="button">Close the books through a date</button></div>
-      <div class="card" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bank reconciliation</h2><button class="btn small" id="accRecon" type="button">Reconcile cash</button></div>
+      <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bank reconciliation</h2><button class="btn small" id="accRecon" type="button">Reconcile cash</button></div>
         <div class="tablewrap"><table class="t"><thead><tr><th>As of</th><th class="num">Bank</th><th class="num">Ledger</th><th class="num">Difference</th><th>Note</th></tr></thead><tbody>${reconRows}</tbody></table></div></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Bank statement</h2>
+      <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Bank statement</h2>
         <p class="muted">Paste the statement as CSV: date, description, amount (money in positive, money out negative). Lines already imported are skipped. Matching then links lines to ledger cash.</p>
         <textarea id="accBankCsv" rows="5" style="width:100%" placeholder="2026-11-21,ACH from customer,25000"></textarea>
         <div class="filt"><button class="btn small" id="accBankImport" type="button">Import and match</button></div>
         <div id="accBankOut"></div></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Task budgets and task cost</h2>
+      <div class="card accg" data-accg="jobs" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Task budgets and task cost</h2>
         <p class="muted">Enter a project number to see each task's budget, its actual cost, and what is not on a task yet.</p>
         <div class="filt"><input id="accTaskProject" type="number" min="1" placeholder="Project number"><button class="btn small" id="accTaskGo" type="button">Show tasks</button></div>
         <div id="accTaskOut"></div></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Earn advance billing</h2>
+      <div class="card accg" data-accg="payments" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Earn advance billing</h2>
         <p class="muted">For an invoice billed ahead (paid ahead), move the part of the deposit that is now earned into revenue, as the work is done. Work billed after it is done goes to revenue on issue and does not need this.</p>
         <div class="filt"><input id="accEarnId" type="number" min="1" placeholder="Invoice number"><input id="accEarnAmt" type="number" min="0" step="0.01" placeholder="Amount earned ($)"><input id="accEarnDate" type="date" aria-label="Date the work was done"><input id="accEarnNote" placeholder="Note" style="flex:1"><button class="btn small" id="accEarnGo" type="button">Earn</button></div>
         <div id="accEarnOut" class="muted"></div></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Adjustments</h2>
+      <div class="card accg" data-accg="reports" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Adjustments</h2>
         <p class="muted">The ledger posts on its own. Use an adjustment for a correction. One line per account: <code>account | debit | credit</code>. Debits must equal credits. Dates in a closed period are refused.</p>
         <div class="filt"><input id="accAdjDate" type="date" aria-label="Adjustment date"><input id="accAdjMemo" placeholder="Memo (why)" style="flex:1"></div>
         <textarea id="accAdjLines" rows="4" style="width:100%" placeholder="1000 | 500 | 0&#10;4000 | 0 | 500"></textarea>
@@ -2397,14 +2495,32 @@
         <p class="muted">Reverse an entry (the reversal is a new entry; the original stays):</p>
         <div class="filt"><input id="accRevId" type="number" min="1" placeholder="Entry number"><input id="accRevReason" placeholder="Reason" style="flex:1"><button class="btn small ghost" id="accRevGo" type="button">Reverse</button></div>
       </div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Trace a document</h2>
+      <div class="card accg" data-accg="reports" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Trace a document</h2>
         <p class="muted">Start from an estimate, contract, project, invoice or subscription number to see the whole chain, the money at each step, and where it sits on the ledger.</p>
         <div class="filt"><select id="accTKind"><option value="estimate">Estimate</option><option value="contract">Contract</option><option value="project">Project</option><option value="invoice">Invoice</option><option value="subscription">Subscription</option></select><input id="accTId" type="number" min="1" placeholder="Number"><button class="btn small" id="accTGo" type="button">Trace</button></div>
         <div id="accTOut"></div></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Invoices not yet on the ledger</h2><p class="muted">Set sales tax before the sync posts the invoice. Tax set after posting cannot be changed in place.</p>
+      <div class="card accg" data-accg="invoices" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Invoices not yet on the ledger</h2><p class="muted">Set sales tax before the sync posts the invoice. Tax set after posting cannot be changed in place.</p>
         <div class="tablewrap"><table class="t"><thead><tr><th>Invoice</th><th class="num">Amount</th><th class="num">Sales tax</th><th></th></tr></thead><tbody>${openRows}</tbody></table></div></div>
-      <div class="card" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Recorded costs changed after posting</h2><ul>${driftRows}</ul></div>`;
-    loadRatesCard(body);
+      <div class="card accg" data-accg="payroll" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Recorded costs changed after posting</h2><ul>${driftRows}</ul></div>`;
+    // Tab bar, overview quick actions and the transaction filter.
+    body.querySelectorAll('#accTabs button').forEach(t => t.onclick = () => showAccTab(t.dataset.acctab));
+    const accEl = body.querySelector('.accov');
+    if (accEl) accEl.addEventListener('click', e => {
+      const seg = e.target.closest('[data-accseg]'), go2 = e.target.closest('[data-acctab-go]');
+      if (go2) return showAccTab(go2.dataset.acctabGo);
+      if (!seg) return;
+      accEl.querySelectorAll('[data-accseg]').forEach(x => x.classList.toggle('on', x === seg));
+      const rows = accEl.querySelector('#accTxRows'); if (rows) rows.innerHTML = accTxRowsHtml(entries, seg.dataset.accseg);
+    });
+    body.querySelectorAll('[data-accqa]').forEach(b => b.onclick = () => {
+      const k = b.dataset.accqa;
+      if (k === 'invoice' || k === 'payment') return go('invoices');
+      if (k === 'expense') { showAccTab('expenses'); const nb = $('#accNewBill'); if (nb) nb.click(); return; }
+      if (k === 'receipt') return showAccTab('expenses');
+      if (k === 'jobs') return showAccTab('jobs');
+    });
+    showAccTab(accTab);
+    loadRatesCard(body.querySelector('#accRatesHost'));
     const traceTable = (heads, rows) => `<div class="tablewrap"><table class="t"><thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${heads.length}" class="muted">None in this chain.</td></tr>`}</tbody></table></div>`;
     const renderTrace = t => {
       const e = v => esc(v == null ? '' : v);
@@ -3400,7 +3516,10 @@
   };
   IC.estimator = IC.proposals; IC.customer = IC.customers; IC.website = IC.documents || IC.overview;
   const ic = (k, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.overview}</svg>`;
-  $$('#nav button').forEach(b => { if (!b.querySelector('.ic')) b.insertAdjacentHTML('afterbegin', ic(b.dataset.view)); });
+  $$('#nav button[data-view]').forEach(b => { if (!b.querySelector('.ic')) b.insertAdjacentHTML('afterbegin', ic(b.dataset.view)); });
+  // Accounting in the sidebar is a drop-down: the parent opens the list of accounting pages.
+  function setAccExpanded(open) { const t = $('#navAccToggle'), s = $('#navAccSub'); if (!t || !s) return; s.hidden = !open; t.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  $('#navAccToggle') && $('#navAccToggle').addEventListener('click', () => setAccExpanded($('#navAccSub').hidden));
   $$('.tbicons [data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
   const kt = (icon, tone, label, value, sub) => `<div class="ktile"><span class="chip ${tone}">${ic(icon)}</span><div style="min-width:0"><span>${esc(label)}</span><b>${esc(value)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div></div>`;
   // Makes KPI cards clickable. Each card's label (the text before its big number) picks what it opens.

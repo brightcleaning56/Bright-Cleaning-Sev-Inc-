@@ -248,6 +248,35 @@
   .flagl li { list-style: none; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 14px; } .flagl { padding: 0; margin: 0; } .flagl .block { background: #fde8e8; color: #a52a22; } .flagl .warn { background: #fff3dc; color: #8a5a00; } .flagl .info { background: #eef2f6; color: #4c637a; }
   @media (max-width: 1300px) { .propgrid { grid-template-columns: minmax(0, 1fr); } .propside { position: static; } .kpis6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 700px) { .kpis6, .sumbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* Sidebar drop-down for Accounting */
+  .side nav .navparent { justify-content: space-between; }
+  .side nav .navparent .caret { font-size: 12px; opacity: .8; transition: transform .2s; }
+  .side nav .navparent[aria-expanded="true"] .caret { transform: rotate(180deg); }
+  .side nav .navsub { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 6px 14px; padding-left: 8px; border-left: 1px solid #ffffff1f; }
+  .side nav .navsub button { padding: 8px 12px; font-size: 13px; font-weight: 500; }
+  .side nav .navsub button.active { background: #ffffff1f; color: #fff; }
+  .side nav .navgroup[hidden], .side nav .navsub[hidden], .accg[hidden] { display: none !important; }
+  /* Accounting page: tab bar, overview dashboard */
+  .acctabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
+  .acctabs button { border: 1px solid var(--line2); background: var(--card); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted, #4a5b6e); cursor: pointer; }
+  .acctabs button.on { background: #1f6fd1; border-color: #1f6fd1; color: #fff; }
+  .accov .kpis5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .accov .kpis5 .ktile { flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+  .accov .kpis5 .ktile b { font-size: 22px; }
+  .accov .kpis5 .chip { width: 34px; height: 34px; }
+  .accov-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+  .accov-row2 { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+  .accov .card { margin: 0; min-width: 0; }
+  .accov .qbtn { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 8px; text-align: left; justify-content: flex-start; }
+  .accov .seg { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; }
+  .accov .seg button { border: 1px solid var(--line2); background: var(--card); border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 12px; font-weight: 600; color: var(--muted, #4a5b6e); cursor: pointer; }
+  .accov .seg button.on { background: #e6f0fd; color: #1f6fd1; border-color: #bcd6f7; }
+  .accov svg.accchart { width: 100%; height: auto; display: block; }
+  .accov .legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .accov .legend div { display: flex; align-items: center; gap: 8px; }
+  .accov .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: 0 0 10px; }
+  @media (max-width: 1300px) { .accov .kpis5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } .accov-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .accov-row > .accov-actions { grid-column: 1 / -1; } }
+  @media (max-width: 900px) { .accov .kpis5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .accov-row, .accov-row2 { grid-template-columns: minmax(0, 1fr); } }
   .kpis4m { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) repeat(3, minmax(0, 1.1fr)); gap: 10px; margin-bottom: 12px; } .kpis4m .ktile { flex-direction: column; align-items: flex-start; gap: 6px; } .kpis4m .ktile b { font-size: 21px; } .kpis4m .chip { width: 34px; height: 34px; } .kpis4m .money { background: linear-gradient(180deg, #f3f8ff, #fff); }
   .bar2 { height: 8px; border-radius: 6px; background: #e6edf5; overflow: hidden; min-width: 70px; } .bar2 i { display: block; height: 100%; background: linear-gradient(90deg, #1f6fd1, #2a8bf0); } .bar2.done i { background: #17904c; }
   .hflow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .hflow span { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; color: #34506d; text-align: center; min-width: 84px; } .hflow span i { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: #eef4fb; color: #1f6fd1; } .hflow span.done i { background: #e3f6ea; color: #17904c; } .hflow b { color: #9fb3c8; }
@@ -785,7 +814,19 @@
       <button data-view="takeoffs">Takeoffs</button>
       <div class="sep"></div>
       <button data-view="reports">Reports</button>
-      <button data-view="accounting">Accounting</button>
+      <div class="navgroup" id="navAccGroup" hidden>
+        <button type="button" class="navparent" id="navAccToggle" aria-expanded="false" aria-controls="navAccSub">Accounting <span class="caret" aria-hidden="true">▾</span></button>
+        <div class="navsub" id="navAccSub" hidden>
+          <button type="button" data-view="accounting" data-acc-tab="overview">Overview</button>
+          <button type="button" data-view="accounting" data-acc-tab="invoices">Invoices</button>
+          <button type="button" data-view="accounting" data-acc-tab="payments">Payments</button>
+          <button type="button" data-view="accounting" data-acc-tab="expenses">Expenses</button>
+          <button type="button" data-view="accounting" data-acc-tab="payroll">Payroll</button>
+          <button type="button" data-view="accounting" data-acc-tab="jobs">Job profitability</button>
+          <button type="button" data-view="accounting" data-acc-tab="reconciliation">Reconciliation</button>
+          <button type="button" data-view="accounting" data-acc-tab="reports">Reports</button>
+        </div>
+      </div>
       <button data-view="scopes">Cleaning scopes <span class="count" id="navScopes" hidden></span></button>
       <button data-view="website">Website photos &amp; video</button>
       <button data-view="activity">Activity log</button>
