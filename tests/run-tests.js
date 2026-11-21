@@ -184,7 +184,7 @@ async function startServer(env, dataDir) {
   const pdf = Buffer.from('%PDF-1.4 test bid document ' + crypto.randomBytes(8).toString('hex'));
   await check('Forms', 'Bid request with 2 services and 2 files is stored; customer created', async () => {
     const fd = new FormData();
-    Object.entries({ contact_name: 'Dana Builder', company: 'Prairie Construction', email: 'dana@prairie.test', phone: '515-555-0100', project_name: 'Ankeny Medical Office', project_type: 'Medical office', address: '100 Main St, Ankeny, IA', square_footage: '24,000', bid_due_date: '2026-11-20', details: 'Final clean before turnover', consent: 'on' }).forEach(([k, v]) => fd.append(k, v));
+    Object.entries({ contact_name: 'Dana Builder', company: 'Prairie Construction', email: 'dana@prairie.test', phone: '515-555-0100', project_name: 'Ankeny Medical Office', project_type: 'Medical office', address: '100 Main St, Ankeny, IA', square_footage: '24,000', bid_due_date: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), details: 'Final clean before turnover', consent: 'on' }).forEach(([k, v]) => fd.append(k, v));
     fd.append('service', 'Post-construction final cleaning'); fd.append('service', 'Window cleaning');
     fd.append('documents', new Blob([pdf], { type: 'application/pdf' }), 'plans.pdf');
     fd.append('documents', new Blob([Buffer.from('%PDF-1.4\n% spec sheet')], { type: 'application/pdf' }), 'specs.pdf');
@@ -3955,6 +3955,20 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ sub: sub.data, row, run: run.status }));
     return 'three counted visits against an allowance of two: one extra visit billed at 50, total 250';
+  });
+
+  await check('Subscriptions', 'Extra visits with no extra-visit price: visits above the allowance add nothing; the bill stays at the monthly amount', async () => {
+    const cust = await req('POST', '/api/admin/customers', { token: T, json: { name: 'Blank Extra Co', company: 'Blank Extra Co', email: 'blank.extra@example.test', phone: '515-555-0198' } });
+    const cid = (cust.data && (cust.data.id || (cust.data.customer && cust.data.customer.id))) || null;
+    const sub = await req('POST', '/api/admin/subscriptions', { token: T, json: { customer_id: cid, customer_name: 'Blank Extra Co', email: 'blank.extra@example.test', service: 'Blank extra price test', frequency: 'Monthly', monthly_amount: 200, start_date: '2026-01-01', visits_per_month: 2 } });
+    const visit = (date) => req('POST', '/api/admin/visits', { token: T, json: { title: 'Blank extra ' + date, type: 'Cleaning phase', date, start_time: '09:00', end_time: '10:00', customer_id: cid, address: '2 Test St' } });
+    await visit('2026-11-04'); await visit('2026-11-11'); await visit('2026-11-18');
+    const run = await req('POST', '/api/admin/subscriptions/bill-run', { token: T, json: { period: '2026-11' } });
+    const row = ((run.data && run.data.created) || []).find(x => x.subscription_id === (sub.data && sub.data.id));
+    const chk = { subCreated: (sub.status === 200 || sub.status === 201) && !!(sub.data && sub.data.id), billRan: run.status === 200, rowFound: !!row, noExtraAmount: !!row && row.amount === 200 };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ sub: sub.data, row, run: run.status }));
+    return 'three visits against an allowance of two with no price set: nothing extra billed, amount stays at 200';
   });
 
   await check('Employees', 'Onboarding checklist: items tick and untick once each; the payroll item follows the employee record; unknown items refused; staff cannot see or change it', async () => {
