@@ -39,9 +39,18 @@ async function check(area, name, fn) {
   const errors = [];
   async function open(url, token) {
     const vc = new VirtualConsole(); vc.on('jsdomError', e => errors.push(url + ' ' + e.message));
+    // The admin session is an HttpOnly cookie. This page keeps its own cookie jar: it sends the cookie it has and
+    // stores any Set-Cookie the server returns, the way a browser would.
+    const jar = { c: token ? 'bc_admin=' + encodeURIComponent(token) : '' };
+    const pageFetch = async (u, o = {}) => {
+      const h = new Headers(o.headers || {}); if (jar.c) h.set('Cookie', jar.c);
+      const r = await fetch(new URL(u, B), { ...o, headers: h });
+      for (const s of (r.headers.getSetCookie ? r.headers.getSetCookie() : [])) { const m = s.match(/^bc_admin=([^;]*)/); if (m) jar.c = m[1] ? 'bc_admin=' + m[1] : ''; }
+      return r;
+    };
     const dom = await JSDOM.fromURL(B + url, {
       runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, virtualConsole: vc,
-      beforeParse(w) { if (token) w.localStorage.setItem('bc_admin_token', token); w.fetch = (u, o) => fetch(new URL(u, B), o); w.confirm = () => true; w.prompt = (m, d) => d; w.alert = m => { w.__alert = m; }; w.scrollTo = () => { }; w.open = () => ({ document: { write() { }, close() { } } }); w.addEventListener('error', e => errors.push(url + ' ' + e.message)); w.addEventListener('unhandledrejection', e => errors.push(url + ' ' + (e.reason && e.reason.message))); }
+      beforeParse(w) { if (token) w.localStorage.setItem('bc_admin_token', token); w.fetch = pageFetch; w.confirm = () => true; w.prompt = (m, d) => d; w.alert = m => { w.__alert = m; }; w.scrollTo = () => { }; w.open = () => ({ document: { write() { }, close() { } } }); w.addEventListener('error', e => errors.push(url + ' ' + e.message)); w.addEventListener('unhandledrejection', e => errors.push(url + ' ' + (e.reason && e.reason.message))); }
     });
     await sleep(1200); return dom.window;
   }
@@ -50,9 +59,9 @@ async function check(area, name, fn) {
   const $$rows = () => d.querySelectorAll('#slRows tr').length;
   const nav = async v => { d.querySelector(`#nav [data-view="${v}"]`).click(); await sleep(600); };
 
-  await check('Admin UI', 'Signed-in portal loads with all 24 sections', async () => {
+  await check('Admin UI', 'Signed-in portal loads with all 25 sections', async () => {
     const views = [...d.querySelectorAll('.view')].map(v => v.id);
-    assert(!$('#app').hidden && views.length === 24, views.join(',')); return views.join(', ');
+    assert(!$('#app').hidden && views.length === 25, views.join(',')); return views.join(', ');
   });
   for (const v of ['overview', 'workqueue', 'leads', 'customers', 'issues', 'calls', 'emails', 'takeoffs', 'schedule', 'quality', 'documents', 'website', 'reports', 'proposals', 'contracts', 'projects', 'invoices', 'scopes', 'activity', 'insurance', 'settings']) {
     await check('Admin UI', `Section "${v}" opens and renders`, async () => {
@@ -187,11 +196,11 @@ async function check(area, name, fn) {
     q('#le').value = em; q('#lp').value = pw; submit(); await sleep(900);
     const step = !q('#mfaField').hidden && q('#lpField').hidden;
     q('#mfaCode').value = '000000'; submit(); await sleep(700);
-    const wrongIn = !!w2.localStorage.getItem('bc_admin_token');
+    const wrongIn = !q('#app').hidden;
     const wrongMsg = /not right/.test(q('#loginStatus').textContent);
     // The enabling code is spent (F-14.3a), so sign-in uses the next 30-second code.
     q('#mfaCode').value = totp.codeAt(su.secret, Math.floor(Date.now() / 30000) + 1); submit(); await sleep(1200);
-    const rightIn = !!w2.localStorage.getItem('bc_admin_token');
+    const rightIn = !q('#app').hidden;
     assert(step && !wrongIn && wrongMsg && rightIn, JSON.stringify({ step, wrongIn, wrongMsg, rightIn, msg: q('#loginStatus').textContent }));
     return 'password step → code step; wrong code refused with message; right code signs in';
   });
