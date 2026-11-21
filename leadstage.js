@@ -9,6 +9,7 @@
 const FOLLOW_ROLES = ['owner', 'manager', 'staff', 'sales'];
 
 module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
+  const WE = require('./work-engine');
   const cols = db.prepare('PRAGMA table_info(leads)').all().map(c => c.name);
   for (const [c, t] of [['stage', "TEXT NOT NULL DEFAULT 'new'"], ['follow_up_date', 'TEXT'], ['follow_up_note', 'TEXT'], ['follow_up_issue_id', 'INTEGER'], ['customer_id', 'INTEGER'], ['intake', 'TEXT']]) {
     if (!cols.includes(c)) db.exec(`ALTER TABLE leads ADD COLUMN ${c} ${t}`);
@@ -62,6 +63,7 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
   // Any earlier follow-up task for this lead is closed, so there is never more than one.
   const scheduleFollowUp = (lead, date, note, who) => {
     const t = new Date().toISOString();
+    WE.leadSchedule(db, lead.id, date, who || 'admin'); // the work queue's next step follows the same date
     if (lead.follow_up_issue_id) db.prepare("UPDATE customer_issues SET status='Closed', resolved_at=?, updated_at=? WHERE id=?").run(t, t, lead.follow_up_issue_id);
     const title = `Follow up: ${lead.contact_name || lead.company || 'lead #' + lead.id}`.slice(0, 200);
     const issueId = db.prepare("INSERT INTO customer_issues(type,title,description,priority,status,due_date,customer_comms,created_by,created_at,updated_at) VALUES('follow_up',?,?,?,?,?,?,?,?,?)")
@@ -71,8 +73,9 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
     return issueId;
   };
   // One place that clears a follow-up: the lead returns to its normal stage and its task is closed.
-  const clearFollowUp = lead => {
+  const clearFollowUp = (lead, who) => {
     const t = new Date().toISOString();
+    WE.leadCancel(db, lead.id, 'Next step cleared', who || 'system');
     if (lead.follow_up_issue_id) db.prepare("UPDATE customer_issues SET status='Closed', resolved_at=?, updated_at=? WHERE id=?").run(t, t, lead.follow_up_issue_id);
     db.prepare('UPDATE leads SET follow_up_date=NULL, follow_up_note=NULL, follow_up_issue_id=NULL, updated_at=? WHERE id=?').run(t, lead.id);
     recompute(lead.id);
@@ -133,8 +136,31 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
     if (!FOLLOW_ROLES.includes(roleOf(req.user && req.user.email))) return res.status(403).json({ error: 'Your role cannot change follow-ups.' });
     const lead = db.prepare('SELECT * FROM leads WHERE id=?').get(Number(req.params.id));
     if (!lead) return res.status(404).json({ error: 'Lead not found.' });
-    clearFollowUp(lead);
+    clearFollowUp(lead, (req.user && req.user.email) || 'admin');
     logAction(req, 'cleared follow-up', 'lead', lead.id, '');
+    res.json({ ok: true });
+  });
+
+  // Next step from the work queue: complete it (note required), or put it on hold until a date (what for, and when).
+  app.post('/api/admin/leads/:id/work', auth, (req, res) => {
+    if (!FOLLOW_ROLES.includes(roleOf(req.user && req.user.email))) return res.status(403).json({ error: 'Your role cannot change follow-ups.' });
+    const lead = db.prepare('SELECT * FROM leads WHERE id=?').get(Number(req.params.id));
+    if (!lead) return res.status(404).json({ error: 'Lead not found.' });
+    const b = req.body || {}, action = clean(b.action, 30), who = (req.user && req.user.email) || 'admin';
+    try {
+      if (action === 'complete') {
+        if (!clean(b.note, 2000)) return res.status(400).json({ error: 'To complete this next step, add a completion note.' });
+        if (WE.activeLeadItem(db, lead.id)) WE.leadComplete(db, lead.id, clean(b.note, 2000), who);
+        clearFollowUp(lead, who);
+        logAction(req, 'completed next step', 'lead', lead.id, clean(b.note, 200));
+      } else if (action === 'wait' || action === 'waiting') {
+        const waitingOn = clean(b.waiting_on, 300);
+        WE.leadWait(db, lead.id, waitingOn, b.date, who);
+        setWaiting(lead.id);
+        scheduleFollowUp(lead, b.date, 'Waiting on: ' + waitingOn, who);
+        logAction(req, 'waiting on next step', 'lead', lead.id, `${waitingOn}, ${b.date}`);
+      } else return res.status(400).json({ error: 'Unknown lead action.' });
+    } catch (e) { return res.status(400).json({ error: e.message }); }
     res.json({ ok: true });
   });
 };

@@ -153,11 +153,21 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     }
     if (dept === 'leads') {
       return db.prepare(`SELECT id, kind, contact_name, company, email, phone, status, stage, follow_up_date, follow_up_note, customer_id, assigned_to, created_at
-          FROM leads WHERE status <> 'Archived' ORDER BY COALESCE(follow_up_date,'9999'), id DESC LIMIT 1000`).all().map(r => ({
-          dept, id: r.id, title: r.company || r.contact_name || `Lead #${r.id}`, who: r.contact_name || r.email || r.phone || '', when: r.created_at,
-          assigned_to: r.assigned_to, lead_id: r.id, customer_id: r.customer_id, due: r.follow_up_date || null,
-          bucket: leadBucket(r, t, bizDayOf), note: r.follow_up_note || '', needs_next_action: r.stage === 'worked' && !r.follow_up_date && !['converted', 'done'].includes(r.stage)
-        }));
+          FROM leads WHERE status <> 'Archived' ORDER BY COALESCE(follow_up_date,'9999'), id DESC LIMIT 1000`).all().map(r => {
+          // A lead's next step comes from the work engine when it has one. Converted and closed leads keep their own state.
+          const st = require('./work-engine').leadState(db, r.id);
+          let bucket = leadBucket(r, t, bizDayOf), due = r.follow_up_date || null;
+          if (st && !['converted', 'closed'].includes(bucket)) {
+            due = st.due;
+            if (st.item_status === 'waiting') bucket = 'waiting';
+            else if (validDate(st.due)) bucket = dateBucket(st.due, t);
+          }
+          return {
+            dept, id: r.id, title: r.company || r.contact_name || `Lead #${r.id}`, who: r.contact_name || r.email || r.phone || '', when: r.created_at,
+            assigned_to: r.assigned_to, lead_id: r.id, customer_id: r.customer_id, due: due || null,
+            bucket, note: r.follow_up_note || '', needs_next_action: r.stage === 'worked' && !r.follow_up_date && !['converted', 'done'].includes(r.stage)
+          };
+        });
     }
     if (dept === 'tasks') {
       // Follow-up tasks that belong to a lead or call are shown on that record, not twice.
@@ -343,8 +353,12 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const l = db.prepare('SELECT id FROM leads WHERE id=?').get(id);
     if (!l) return res.status(404).json({ error: 'Lead not found.' });
     const who = clean((req.body || {}).assigned_to, 120) || null;
+    const by = (req.user && req.user.email) || 'admin';
+    // The lead's next step moves with it. Checked first, so a refused change leaves the lead as it was.
+    try { require('./work-engine').leadReassign(db, id, who, by); }
+    catch (e) { return res.status(400).json({ error: 'This lead has an open next step, so it needs an owner. ' + e.message }); }
     db.prepare('UPDATE leads SET assigned_to=?, updated_at=? WHERE id=?').run(who, nowIso(), id);
-    require('./leadlog').record(db, id, 'assigned', 'Assigned to ' + (who || 'nobody'), (req.user && req.user.email) || 'admin');
+    require('./leadlog').record(db, id, 'assigned', 'Assigned to ' + (who || 'nobody'), by);
     logAction(req, 'assigned lead', 'lead', id, who || 'unassigned');
     res.json({ ok: true });
   });

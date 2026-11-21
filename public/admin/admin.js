@@ -4844,7 +4844,8 @@
       next = it.bucket === 'completed' ? btn('reopen', 'Reopen')
         : `${btn('handle', 'Complete', '')}${btn('waiting', 'Waiting')}${btn('cancel', 'Cancel')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Schedule callback')}</div>`;
     } else if (d === 'leads') {
-      next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
+      // A lead's next step is completed or put on hold from here; setting a new date starts a new step.
+      next = `${it.due ? btn('complete', 'Complete', '') + btn('waiting', 'Waiting') : ''}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
     } else if (d === 'sent') {
       next = '<span class="muted">Tracked automatically</span>';
     } else {
@@ -4927,6 +4928,13 @@
     if (act === 'link') return wqLink(id);
     if (act === 'thread') return wqThread(id);
     // Completing, waiting, cancelling and reopening need a note, a follow-up date or a reason. Collect it first, then send it.
+    if (d === 'leads' && (act === 'complete' || act === 'waiting')) {
+      const defs = act === 'complete' ? [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }]
+        : [{ name: 'waiting_on', label: 'Waiting on (what, or who)', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }];
+      return openForm({ title: act === 'complete' ? 'Complete this next step' : 'Waiting on this lead', sub: 'The note is kept with the lead and in the work history.', defs,
+        submit: f => api(`/api/admin/leads/${id}/work`, { method: 'POST', json: { action: act, ...f } }),
+        after: () => { toast(act === 'complete' ? 'Completed' : 'Waiting'); loadWorkQueue(); } });
+    }
     if ((d === 'emails' || d === 'calls') && ['handle', 'waiting', 'cancel', 'reopen'].includes(act)) {
       const noun = d === 'calls' ? 'call' : 'email';
       const defs = act === 'handle' ? [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }]

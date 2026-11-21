@@ -159,6 +159,7 @@ function mount(app, { db, auth }) {
   ensureSchema(db);
   try { migrateEmailState(db); } catch (e) { console.error('work engine: email queue carry-over failed:', e.message); }
   try { migrateCallState(db); } catch (e) { console.error('work engine: call queue carry-over failed:', e.message); }
+  try { migrateLeadState(db); } catch (e) { console.error('work engine: lead next-step carry-over failed:', e.message); }
   const who = req => (req.user && req.user.email) || 'admin';
   app.get('/api/admin/work-items', auth, (req, res) => {
     const assigned = r(req.query.assigned_to);
@@ -333,4 +334,80 @@ function migrateCallState(db) {
   return rows.length;
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem };
+// ---- Lead next steps, on the engine ----
+// A lead's next step is one work item (kind 'lead', ref_type 'lead', ref_id = the lead). Its due date is the follow-up date.
+// A finished step stays in history; the next step is a new item. The lead's own stage and status are not work items.
+const activeLeadItem = (db, leadId) => db.prepare(`SELECT * FROM work_items WHERE kind='lead' AND ref_type='lead' AND ref_id=? AND status IN ('open','in_progress','waiting') ORDER BY id DESC LIMIT 1`).get(Number(leadId));
+
+// The active next step, creating it when the lead has none.
+function leadNextStep(db, leadId, by) {
+  ensureSchema(db);
+  const cur = activeLeadItem(db, leadId);
+  if (cur) return cur.id;
+  const l = db.prepare('SELECT id, contact_name, company, assigned_to FROM leads WHERE id=?').get(Number(leadId));
+  if (!l) throw new Error('Lead not found.');
+  return create(db, { kind: 'lead', ref_type: 'lead', ref_id: l.id, title: `Next step: ${l.company || l.contact_name || 'lead #' + l.id}`.slice(0, 300), assigned_to: l.assigned_to || null, by }).id;
+}
+
+// Sets the next step's date (a new step if the last one is finished). Called by every follow-up setter on the lead.
+function leadSchedule(db, leadId, date, by) {
+  if (!isDate(date)) throw new Error('Choose a follow-up date.');
+  const id = leadNextStep(db, leadId, by);
+  const it = get(db, id);
+  if (it.due_date !== date) act(db, id, 'edit', { due_date: date }, by);
+  return get(db, id);
+}
+
+// Finishes the active next step with a note. Throws when the lead has no open step.
+function leadComplete(db, leadId, note, by) {
+  const cur = activeLeadItem(db, leadId);
+  if (!cur) throw new Error('This lead has no open next step.');
+  return act(db, cur.id, 'complete', { note }, by);
+}
+
+// Puts the active next step on hold until the customer answers, with its follow-up date.
+function leadWait(db, leadId, waitingOn, date, by) {
+  if (!r(waitingOn)) throw new Error('To put this on hold, add what it is waiting on.');
+  if (!isDate(date)) throw new Error('Choose the follow-up date for the wait (YYYY-MM-DD).');
+  const id = leadNextStep(db, leadId, by);
+  const it = get(db, id);
+  if (it.status === 'waiting') throw new Error('This next step is already waiting. Change its date instead.');
+  act(db, id, 'wait', { waiting_on: waitingOn, next_follow_up: date }, by);
+  return act(db, id, 'edit', { due_date: date }, by);
+}
+
+// Cancels the active next step (clearing a lead's follow-up). Quietly does nothing when there is none.
+function leadCancel(db, leadId, reason, by) {
+  const cur = activeLeadItem(db, leadId);
+  if (!cur) return null;
+  return act(db, cur.id, 'cancel', { reason: reason || 'Next step cleared' }, by);
+}
+
+// Moves the active next step to another owner, when there is one.
+function leadReassign(db, leadId, who, by) {
+  const cur = activeLeadItem(db, leadId);
+  if (!cur || (cur.assigned_to || null) === (who || null)) return null;
+  return act(db, cur.id, 'reassign', { assigned_to: who || '' }, by);
+}
+
+// The queue's view of a lead's next step, or null when it has none.
+function leadState(db, leadId) {
+  const it = activeLeadItem(db, leadId);
+  if (!it) return null;
+  return { item_id: it.id, item_status: it.status, due: it.due_date || null, assigned_to: it.assigned_to };
+}
+
+// Carries existing lead follow-ups onto the engine, once. Leads that already have an active step are skipped.
+function migrateLeadState(db) {
+  ensureSchema(db);
+  if (!hasTable(db, 'leads')) return 0;
+  const rows = db.prepare(`SELECT id, follow_up_date, stage, assigned_to FROM leads WHERE follow_up_date IS NOT NULL AND follow_up_date<>'' AND status NOT IN ('Won','Lost','Archived')
+    AND id NOT IN (SELECT ref_id FROM work_items WHERE kind='lead' AND ref_type='lead' AND ref_id IS NOT NULL AND status IN ('open','in_progress','waiting'))`).all();
+  for (const l of rows) {
+    if (!isDate(l.follow_up_date)) continue;
+    leadSchedule(db, l.id, l.follow_up_date, 'migration');
+  }
+  return rows.length;
+}
+
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState };
