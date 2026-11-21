@@ -78,3 +78,4 @@ This follows the first pass in `PRODUCTION_READINESS_AUDIT_2026-11-18.md`. That 
 - **Screens without actions:** the Activity log had no buttons. It now has Refresh and Export CSV. A walk of every admin view (`tests/walk-screens.js`) lists the buttons on each view and in each record panel with seeded records.
 - Server suite 313/313, admin UI suite 94/94.
 - Still open: restore drill (needs the owner's key), malware scanning decision, uptime monitor, end-to-end workflow test, owner-blocked items.
+- **Screen walk (`tests/walk-screens.js`, seeded records, local server):** every admin view has actions. Activity had none and now has Refresh and Export CSV. Record panels checked with seeded records: overview/leads, customers, issues, calls, emails, proposals, contracts, projects, invoices, schedule, quality, documents, scopes. Takeoffs has no list records until a takeoff is started from a document; only the empty-state "New takeoff" is visible there.
