@@ -78,3 +78,10 @@ Source: `docs/audit/13-15-portal-security-infra.md`. Items 1 to 4 need your acce
 3. **Proposal visibility (decision needed).** Proposals show on the queue to everyone who can open it, with names and projects but no prices. Invoices are owner and manager only. Reply "keep" or "restrict proposals too".
 4. **Live AI call-extract error (open).** `/api/admin/ai/calls/extract` returned HTTP 502 on the live site. It predates this work and has not been diagnosed. Check the Render logs for that route, or ask for it to be looked at.
 5. **Staff and inspector sign-in checks (done 2026-11-22, local).** Role refusals pass on the local test server. An inspector could not finish two-step sign-in; fixed in `ddf4215` (roles.js). Live was checked for build fingerprint only. Create one real inspector test account on live yourself, sign in once, and confirm it works.
+
+## Recheck, 2026-11-22 (after the last deploy, build 419607acf14a)
+
+1. **New proposal price options (deployed in c329e5b).** A new proposal now shows Price options and saves them with the proposal. Check on live: open New proposal, add an option with two lines, save, reopen the proposal and confirm the breakdown. The save path is checked on the server only, not clicked through in a browser yet.
+2. **Inspector account (not created).** Create ericd567@icloud.com with role Inspector in Settings → Users & Access. You type the password. Then tell me so I can confirm sign-in.
+3. **Still open decisions:** maintenance records (build or leave out), proposal visibility (keep or restrict), and whether to remove the "TEST - Waco Place" proposal on live.
+4. **Not clicked through in a browser yet:** estimate assign and follow-up buttons on the work queue, and conversation actions. Their rules are covered by the test suite, but not the buttons.
