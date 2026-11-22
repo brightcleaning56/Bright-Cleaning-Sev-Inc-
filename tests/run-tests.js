@@ -4482,6 +4482,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const s1 = (await get()).stage;
     const fu = await req('POST', `/api/admin/leads/${id}/follow-up`, { token: T, json: { date: '2099-01-15', note: 'Call back about the walkthrough' } });
     const s2 = (await get()).stage;
+    const qItem = ((await req('GET', '/api/admin/work-queue?dept=leads&bucket=scheduled', { token: T })).data.items || []).find(i => i.id === id);
     const issues = (await req('GET', '/api/admin/issues', { token: T })).data.issues || [];
     const task = issues.find(i => i.id === (fu.data && fu.data.issue_id));
     const clear = await req('DELETE', `/api/admin/leads/${id}/follow-up`, { token: T });
@@ -4491,10 +4492,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     await req('POST', '/api/admin/leads/bulk', { token: T, json: { ids: [id], action: 'restore' } });
     const s5 = (await get()).stage;
     const supFu = await req('POST', `/api/admin/leads/${id}/follow-up`, { token: mint('sup@roles.test'), json: { date: '2099-01-15' } });
+    // A follow-up lives on the lead and its next step on the work queue; it is not copied into Issues & tasks.
     const chk = {
       startsNew: s0 === 'new',
       noteWorked: s1 === 'worked',
-      followUpHides: fu.status === 200 && s2 === 'followup' && !!task && task.type === 'follow_up' && task.due_date === '2099-01-15',
+      followUpHides: fu.status === 200 && s2 === 'followup' && !task && !!qItem && qItem.due === '2099-01-15',
       cleared: clear.status === 200 && s3 === 'worked',
       archivedDone: s4 === 'done',
       restoredNew: s5 === 'new',

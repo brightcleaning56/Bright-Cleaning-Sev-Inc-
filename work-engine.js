@@ -25,7 +25,7 @@ const ACTIONS = {
   complete: { from: ['open', 'in_progress', 'waiting'], to: 'completed', needs: ['note'] },
   cancel:   { from: ['open', 'in_progress', 'waiting'], to: 'cancelled', needs: ['reason'] },
   reopen:   { from: ['completed', 'cancelled'], to: 'open', needs: ['reason'] },
-  reassign: { from: ['open', 'in_progress', 'waiting'], to: null, needs: ['assigned_to'] },
+  reassign: { from: ['open', 'in_progress', 'waiting'], to: null, needs: [] },
   edit:     { from: ['open', 'in_progress', 'waiting'], to: null, needs: [] }
 };
 
@@ -119,9 +119,9 @@ function act(db, itemId, action, body = {}, by = null) {
   }
   if (action === 'reassign') {
     const to = r(body.assigned_to);
-    if (to === it.assigned_to) throw new Error('This item is already assigned to that person.');
+    if (to === it.assigned_to) throw new Error(to ? 'This item is already assigned to that person.' : 'This item has no owner already.');
     next.assigned_to = to;
-    events.push(['reassigned', `${it.assigned_to || 'no one'} → ${to}`]);
+    events.push(['reassigned', `${it.assigned_to || 'no one'} → ${to || 'no one'}`]);
   }
   if (action === 'start') { next.status = 'in_progress'; events.push(['started', null]); }
   if (action === 'wait') { next.status = 'waiting'; next.waiting_on = r(body.waiting_on); next.next_follow_up = body.next_follow_up; next.due_date = it.due_date; events.push(['waiting', `${next.waiting_on}, follow up ${next.next_follow_up}`]); }
@@ -410,4 +410,99 @@ function migrateLeadState(db) {
   return rows.length;
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState };
+// ---- Tasks (issues) on the engine ----
+// Each task (a row in customer_issues) has one work item (kind 'issue', ref_type 'issue', ref_id = the task) for its queue state.
+// The task keeps its own status, resolution and verification. Queue actions update both; changes made on the Issues screen are
+// carried to the item by syncIssueFromScreen, so the two agree.
+const ISSUE_DONE = ['Resolved', 'Verified', 'Closed'];
+const issueActive = (db, id) => db.prepare(`SELECT * FROM work_items WHERE kind='issue' AND ref_type='issue' AND ref_id=? AND status IN ('open','in_progress','waiting') ORDER BY id DESC LIMIT 1`).get(Number(id));
+const issueLatest = (db, id) => db.prepare(`SELECT * FROM work_items WHERE kind='issue' AND ref_type='issue' AND ref_id=? ORDER BY id DESC LIMIT 1`).get(Number(id));
+const issueRow = (db, id) => db.prepare('SELECT * FROM customer_issues WHERE id=?').get(Number(id));
+
+function issueNextItem(db, x, by) {
+  const cur = issueActive(db, x.id);
+  if (cur) return cur.id;
+  return create(db, { kind: 'issue', ref_type: 'issue', ref_id: x.id, title: String(x.title || 'Task').slice(0, 300), assigned_to: x.assigned_to || null, due_date: isDate(x.due_date) ? x.due_date : null, by }).id;
+}
+
+// The queue's view of a task's work item, or null when it has none.
+function issueState(db, id) {
+  const it = issueActive(db, id);
+  if (!it) return null;
+  return { item_id: it.id, item_status: it.status, due: it.due_date || null, assigned_to: it.assigned_to };
+}
+
+// One queue action on a task. Required fields are checked before anything is written.
+function applyIssueAction(db, taskId, body = {}, by = null) {
+  ensureSchema(db);
+  const x = issueRow(db, taskId);
+  if (!x) throw new Error('Task not found.');
+  const action = String(body.action || '');
+  const done = ISSUE_DONE.includes(x.status);
+  const at = nowIso();
+  let itemId = null;
+  const needOpen = () => { if (done) throw new Error('This task is resolved. Reopen it first.'); };
+  if (action === 'complete') {
+    if (done) throw new Error('This task is already resolved.');
+    if (!r(body.note)) throw new Error('To complete this task, add a completion note.');
+    itemId = issueNextItem(db, x, by);
+    act(db, itemId, 'complete', { note: body.note }, by);
+    db.prepare("UPDATE customer_issues SET status='Resolved', resolution=?, resolved_at=?, updated_at=? WHERE id=?").run(r(body.note).slice(0, 4000), at, at, x.id);
+  } else if (action === 'cancel') {
+    if (done) throw new Error('This task is already resolved.');
+    if (!r(body.reason)) throw new Error('To cancel this task, add a reason.');
+    itemId = issueNextItem(db, x, by);
+    act(db, itemId, 'cancel', { reason: body.reason }, by);
+    db.prepare("UPDATE customer_issues SET status='Closed', resolution=?, resolved_at=?, updated_at=? WHERE id=?").run(('Cancelled: ' + r(body.reason)).slice(0, 4000), at, at, x.id);
+  } else if (action === 'reopen') {
+    if (!done) throw new Error('This task is not finished, so it cannot be reopened.');
+    if (!r(body.reason)) throw new Error('To reopen this task, add a reason.');
+    const last = issueLatest(db, x.id);
+    if (last && (last.status === 'completed' || last.status === 'cancelled')) { act(db, last.id, 'reopen', { reason: body.reason }, by); itemId = last.id; }
+    db.prepare("UPDATE customer_issues SET status='Open', resolved_at=NULL, verified_by=NULL, verified_at=NULL, updated_at=? WHERE id=?").run(at, x.id);
+  } else if (action === 'wait') {
+    needOpen();
+    if (!r(body.waiting_on)) throw new Error('To put this on hold, add what it is waiting on.');
+    if (!isDate(body.date)) throw new Error('Choose the follow-up date for the wait (YYYY-MM-DD).');
+    itemId = issueNextItem(db, x, by);
+    act(db, itemId, 'wait', { waiting_on: body.waiting_on, next_follow_up: body.date }, by);
+    act(db, itemId, 'edit', { due_date: body.date }, by);
+    db.prepare("UPDATE customer_issues SET status='Waiting on customer', due_date=?, updated_at=? WHERE id=?").run(body.date, at, x.id);
+  } else if (action === 'schedule') {
+    needOpen();
+    if (!isDate(body.date)) throw new Error('Choose a valid due date.');
+    itemId = issueNextItem(db, x, by);
+    act(db, itemId, 'edit', { due_date: body.date }, by);
+    db.prepare('UPDATE customer_issues SET due_date=?, updated_at=? WHERE id=?').run(body.date, at, x.id);
+  } else if (action === 'assign') {
+    needOpen();
+    const to = r(body.assigned_to) ? String(body.assigned_to).trim().toLowerCase() : null;
+    if (to === (x.assigned_to || null)) return get(db, issueNextItem(db, x, by));
+    itemId = issueNextItem(db, x, by);
+    act(db, itemId, 'reassign', { assigned_to: to }, by);
+    db.prepare('UPDATE customer_issues SET assigned_to=?, updated_at=? WHERE id=?').run(to, at, x.id);
+  } else throw new Error('Unknown task action.');
+  const latest = itemId ? itemId : (issueLatest(db, x.id) || {}).id;
+  return latest ? get(db, latest) : null;
+}
+
+// Carries a change made on the Issues screen to the task's work item. Called after the task is saved.
+function syncIssueFromScreen(db, taskId, by) {
+  ensureSchema(db);
+  const x = issueRow(db, taskId);
+  if (!x) return;
+  const cur = issueActive(db, x.id);
+  if (ISSUE_DONE.includes(x.status)) {
+    if (cur) act(db, cur.id, 'complete', { note: r(x.resolution) || 'Resolved on the Issues screen' }, by);
+    return;
+  }
+  const last = issueLatest(db, x.id);
+  if (last && (last.status === 'completed' || last.status === 'cancelled')) act(db, last.id, 'reopen', { reason: 'Reopened on the Issues screen' }, by);
+  const now = issueActive(db, x.id);
+  if (!now) return;
+  if ((now.assigned_to || null) !== (x.assigned_to || null)) act(db, now.id, 'reassign', { assigned_to: x.assigned_to || null }, by);
+  const due = isDate(x.due_date) ? x.due_date : null;
+  if ((now.due_date || null) !== due) act(db, now.id, 'edit', { due_date: due }, by);
+}
+
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen };

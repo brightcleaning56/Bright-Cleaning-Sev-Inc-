@@ -171,14 +171,23 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     }
     if (dept === 'tasks') {
       // Follow-up tasks that belong to a lead or call are shown on that record, not twice.
+      const WE = require('./work-engine');
       return db.prepare(`SELECT i.id, i.type, i.title, i.status, i.priority, i.assigned_to, i.due_date, i.customer_id, i.created_at
           FROM customer_issues i
           WHERE i.id NOT IN (SELECT follow_up_issue_id FROM leads WHERE follow_up_issue_id IS NOT NULL)
             AND i.id NOT IN (SELECT callback_issue_id FROM calls WHERE callback_issue_id IS NOT NULL)
-          ORDER BY COALESCE(NULLIF(i.due_date,''),'9999'), i.id DESC LIMIT 1000`).all().map(r => ({
-          dept, id: r.id, title: r.title, who: r.type, when: r.created_at, assigned_to: r.assigned_to, lead_id: null, customer_id: r.customer_id,
-          due: r.due_date || null, bucket: taskBucket(r, t), priority: r.priority
-        }));
+          ORDER BY COALESCE(NULLIF(i.due_date,''),'9999'), i.id DESC LIMIT 1000`).all().map(r => {
+          // A task's queue state comes from its work item when it has one; the task's own status still decides when it is finished.
+          const st = WE.issueState(db, r.id);
+          let bucket = taskBucket(r, t), due = r.due_date || null, owner = r.assigned_to;
+          if (st && !ISSUE_CLOSED.includes(r.status)) {
+            due = st.due || due; owner = st.assigned_to;
+            if (st.item_status === 'waiting') bucket = 'waiting';
+            else if (validDate(st.due)) bucket = dateBucket(st.due, t);
+          }
+          return { dept, id: r.id, title: r.title, who: r.type, when: r.created_at, assigned_to: owner, lead_id: null, customer_id: r.customer_id,
+            due: due || null, bucket, priority: r.priority };
+        });
     }
     if (dept === 'messages') {
       const inbox = require('./clientmsgs').inbox;
@@ -216,6 +225,8 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const out = {};
     for (const d of DEPTS) {
       const list = items(d), c = { all: list.length };
+      // open: what still needs doing (not completed or closed). The tab count shows this.
+      c.open = list.filter(x => !['completed', 'closed'].includes(x.bucket)).length;
       for (const x of list) c[x.bucket] = (c[x.bucket] || 0) + 1;
       c.unassigned = list.filter(x => !x.assigned_to && !['completed', 'closed'].includes(x.bucket)).length;
       out[d] = c;
@@ -368,24 +379,33 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const id = Number(req.params.id);
     const tk = db.prepare('SELECT id, title, assigned_to FROM customer_issues WHERE id=?').get(id);
     if (!tk) return res.status(404).json({ error: 'Task not found.' });
-    const b = req.body || {}, t = nowIso();
-    // Validate everything before writing anything. The assignee must be a person with access to Bright Clean (the same rule as issues).
+    const b = { ...(req.body || {}) };
+    // Old bulk shape: assigned_to and/or due_date in one request. Each part is one queue action; the date is checked first.
+    const steps = b.action ? [clean(b.action, 30)] : [];
+    if (!b.action) { if (b.assigned_to !== undefined) steps.push('assign'); if (b.due_date !== undefined) steps.push('schedule'); }
+    if (!steps.length) return res.status(400).json({ error: 'Nothing to change.' });
+    if (steps.includes('schedule') && !b.action && b.due_date && !validDate(b.due_date)) return res.status(400).json({ error: 'Choose a valid date.' });
+    // The assignee must be a person with access to Bright Clean (the same rule as issues).
     let assignee;
-    if (b.assigned_to !== undefined) {
+    if (steps.includes('assign') || b.action === 'assign') {
       assignee = clean(b.assigned_to, 254).toLowerCase();
       const known = typeof app.locals.issueUsers === 'function' ? app.locals.issueUsers() : [];
       if (assignee && !known.includes(assignee)) return res.status(400).json({ error: 'Assign to someone who has access to Bright Clean.' });
     }
-    if (b.due_date !== undefined && b.due_date && !validDate(b.due_date)) return res.status(400).json({ error: 'Choose a valid date.' });
-    if (assignee !== undefined) db.prepare('UPDATE customer_issues SET assigned_to=?, updated_at=? WHERE id=?').run(assignee || null, t, id);
-    if (b.due_date !== undefined) db.prepare('UPDATE customer_issues SET due_date=?, updated_at=? WHERE id=?').run(b.due_date || null, t, id);
-    logAction(req, 'updated task schedule', 'issue', id, `${b.due_date ? 'due ' + b.due_date : ''} ${b.assigned_to !== undefined ? 'assigned ' + (assignee || 'none') : ''}`.trim());
+    const who = (req.user && req.user.email) || 'admin', WE = require('./work-engine');
+    try {
+      for (const action of steps) {
+        const body = action === 'schedule' ? { action, date: b.date || b.due_date } : action === 'assign' ? { action, assigned_to: assignee } : { ...b, action };
+        res.locals.item = WE.applyIssueAction(db, id, body, who);
+        logAction(req, `task ${action}`, 'issue', id, action === 'schedule' ? 'due ' + (b.date || b.due_date) : action === 'assign' ? 'assigned ' + (assignee || 'none') : (b.note || b.reason || b.waiting_on || '').slice(0, 200));
+      }
+    } catch (e) { return res.status(400).json({ error: e.message }); }
     // Tell the new assignee, as the issue route does (not when unassigned, or when they assign it to themselves).
     const by = String((req.user && req.user.email) || '').toLowerCase();
     if (assignee && assignee !== String(tk.assigned_to || '').toLowerCase() && assignee !== by && typeof app.locals.issueNotify === 'function') {
       await app.locals.issueNotify(assignee, `Assigned to you: ${tk.title}`, `${by || 'Someone'} assigned you a task: ${tk.title}\n\nOpen Bright Clean: https://brightclean.net/admin/#issues`);
     }
-    res.json({ ok: true });
+    res.json({ ok: true, item: res.locals.item });
   });
 
   // Conversation with a set of addresses (a customer's contacts, or a lead's email): mail we sent, and replies we received.

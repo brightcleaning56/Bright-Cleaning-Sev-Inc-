@@ -606,6 +606,8 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
       const issueId = db.prepare("INSERT INTO customer_issues(type,title,description,priority,status,due_date,customer_comms,created_by,created_at,updated_at) VALUES('follow_up',?,?,?,?,?,?,?,?,?)")
         .run(title, `The caller asked for a call back and pressed 1, but nobody answered the team's phones (${status || 'no answer'}). Call them back.\nLead #${l.id}${l.phone ? ' · ' + l.phone : ''}`, 'High', 'Open', day, 'Not needed', 'automation', t, t).lastInsertRowid;
       db.prepare('UPDATE leads SET follow_up_date=?, follow_up_note=?, follow_up_issue_id=?, updated_at=? WHERE id=?').run(day, 'Callback: nobody answered', issueId, t, l.id);
+      // The lead's next step on the work queue follows the same date. The High-priority alert task above stays: it is an urgent call-back alert.
+      require('./work-engine').leadSchedule(db, l.id, day, 'automation');
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','callback not answered','lead',?,?,?)").run(l.id, status || 'no answer', t);
     } catch (e) { console.error('callback follow-up failed:', e.message); }
   }));

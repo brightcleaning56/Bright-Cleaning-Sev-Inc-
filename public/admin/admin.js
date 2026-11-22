@@ -4801,7 +4801,7 @@
 
   function wqTabs() {
     const c = wq.counts || {};
-    $('#wqDepts').innerHTML = WQ_DEPTS.map(([k, l]) => `<button type="button" role="tab" aria-selected="${wq.dept === k}" class="wqtab ${wq.dept === k ? 'on' : ''}" data-wq-dept="${k}">${l}${c[k] ? ` <span>${c[k].all || 0}</span>` : ''}</button>`).join('');
+    $('#wqDepts').innerHTML = WQ_DEPTS.map(([k, l]) => `<button type="button" role="tab" aria-selected="${wq.dept === k}" class="wqtab ${wq.dept === k ? 'on' : ''}" data-wq-dept="${k}">${l}${c[k] ? ` <span>${c[k].open || 0}</span>` : ''}</button>`).join('');
     $('#wqBuckets').innerHTML = WQ_BUCKETS[wq.dept].map(([k, l]) => `<button type="button" class="wqchip ${wq.bucket === k ? 'on' : ''}" data-wq-bucket="${k}">${l}${c[wq.dept] && c[wq.dept][k] !== undefined ? ` · ${c[wq.dept][k]}` : ''}</button>`).join('');
   }
 
@@ -4849,7 +4849,9 @@
     } else if (d === 'sent') {
       next = '<span class="muted">Tracked automatically</span>';
     } else {
-      next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div>`;
+      // A finished task can only be reopened here. Open tasks are completed, put on hold, cancelled or re-dated.
+      next = it.bucket === 'completed' ? btn('reopen', 'Reopen')
+        : `${btn('complete', 'Complete', '')}${btn('waiting', 'Waiting')}${btn('cancel', 'Cancel')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div>`;
     }
     const pickCell = d === 'tasks' ? `<td><input type="checkbox" class="wqpick" value="${id}" aria-label="Select this task"></td>` : '<td></td>';
     return `<tr>${pickCell}${itemCell}${typeCell}${relatedCell}${prioCell}${when}${d === 'sent' ? '<td>—</td>' : owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
@@ -4928,6 +4930,15 @@
     if (act === 'link') return wqLink(id);
     if (act === 'thread') return wqThread(id);
     // Completing, waiting, cancelling and reopening need a note, a follow-up date or a reason. Collect it first, then send it.
+    if (d === 'tasks' && ['complete', 'waiting', 'cancel', 'reopen'].includes(act)) {
+      const defs = act === 'complete' ? [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }]
+        : act === 'waiting' ? [{ name: 'waiting_on', label: 'Waiting on (what, or who)', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }]
+        : [{ name: 'reason', label: act === 'cancel' ? 'Reason for cancelling' : 'Reason for reopening', type: 'textarea', wide: true }];
+      const title = { complete: 'Complete this task', waiting: 'Waiting on this task', cancel: 'Cancel this task', reopen: 'Reopen this task' }[act];
+      return openForm({ title, sub: 'The reason or note is kept with the task and in its history.', defs,
+        submit: f => api(`/api/admin/tasks/${id}/work`, { method: 'POST', json: { action: act, ...f } }),
+        after: () => { toast(act === 'complete' ? 'Completed' : act === 'cancel' ? 'Cancelled' : act === 'reopen' ? 'Reopened' : 'Waiting'); loadWorkQueue(); } });
+    }
     if (d === 'leads' && (act === 'complete' || act === 'waiting')) {
       const defs = act === 'complete' ? [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }]
         : [{ name: 'waiting_on', label: 'Waiting on (what, or who)', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }];

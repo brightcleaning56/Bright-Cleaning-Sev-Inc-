@@ -242,6 +242,8 @@ module.exports = function mountIssues(app, ctx) {
     const c3 = Object.keys(out);
     db.prepare(`UPDATE customer_issues SET ${c3.map(c => c + '=?').join(',')}, updated_at=?${closing ? ', resolved_at=?' : reopening ? ', resolved_at=NULL' : ''} WHERE id=?`)
       .run(...c3.map(c => out[c]), now(), ...(closing ? [now()] : []), cur.id);
+    // Keep the work queue's item for this task in step with the change made here.
+    try { require('./work-engine').syncIssueFromScreen(db, cur.id, who(req)); } catch (e) { console.error('work queue sync failed for task', cur.id, e.message); }
     const label = TYPES[merged.type].toLowerCase(), after = getOne(cur.id);
     if (b.verify) logAction(req, 'verified', label, cur.id, `${after.number}${b.verification_note ? ': ' + clean(b.verification_note, 200) : ''}`);
     else if (closing) logAction(req, 'resolved', label, cur.id, `${after.number} ${merged.title}: ${clean(merged.resolution, 200)}`);

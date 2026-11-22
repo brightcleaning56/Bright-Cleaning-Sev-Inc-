@@ -64,14 +64,24 @@ module.exports = function (app, { db, auth, logAction, clean, roleOf, ops }) {
   const scheduleFollowUp = (lead, date, note, who) => {
     const t = new Date().toISOString();
     WE.leadSchedule(db, lead.id, date, who || 'admin'); // the work queue's next step follows the same date
+    // A lead's follow-up lives in the lead and its next step on the work queue. It is not copied into Issues & tasks.
     if (lead.follow_up_issue_id) db.prepare("UPDATE customer_issues SET status='Closed', resolved_at=?, updated_at=? WHERE id=?").run(t, t, lead.follow_up_issue_id);
-    const title = `Follow up: ${lead.contact_name || lead.company || 'lead #' + lead.id}`.slice(0, 200);
-    const issueId = db.prepare("INSERT INTO customer_issues(type,title,description,priority,status,due_date,customer_comms,created_by,created_at,updated_at) VALUES('follow_up',?,?,?,?,?,?,?,?,?)")
-      .run(title, `${note}\nLead #${lead.id}${lead.email ? ' · ' + lead.email : ''}${lead.phone ? ' · ' + lead.phone : ''}`, 'Normal', 'Open', date, 'Not needed', who || 'admin', t, t).lastInsertRowid;
-    db.prepare('UPDATE leads SET follow_up_date=?, follow_up_note=?, follow_up_issue_id=?, updated_at=? WHERE id=?').run(date, note, issueId, t, lead.id);
+    db.prepare('UPDATE leads SET follow_up_date=?, follow_up_note=?, follow_up_issue_id=NULL, updated_at=? WHERE id=?').run(date, note, t, lead.id);
     recompute(lead.id);
-    return issueId;
+    return null;
   };
+  // Once: lead follow-up tasks copied into Issues & tasks before this change are closed; the lead's queue carries them now.
+  try {
+    db.exec('CREATE TABLE IF NOT EXISTS app_migrations(name TEXT PRIMARY KEY, at TEXT NOT NULL)');
+    const done = db.prepare("SELECT 1 FROM app_migrations WHERE name='lead_follow_up_tasks_closed'").get();
+    if (!done && db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='customer_issues'").get()) {
+      const t = new Date().toISOString();
+      const n = db.prepare(`UPDATE customer_issues SET status='Closed', resolved_at=?, updated_at=?, resolution=? WHERE type='follow_up' AND title LIKE 'Follow up: %' AND status NOT IN ('Resolved','Verified','Closed')`)
+        .run(t, t, 'Moved to the lead next-step queue').changes;
+      db.prepare("INSERT INTO app_migrations(name,at) VALUES('lead_follow_up_tasks_closed',?)").run(t);
+      if (n) console.log(`Lead follow-up tasks moved to the lead queue: ${n} closed.`);
+    }
+  } catch (e) { console.error('lead follow-up task clean-up failed:', e.message); }
   // One place that clears a follow-up: the lead returns to its normal stage and its task is closed.
   const clearFollowUp = (lead, who) => {
     const t = new Date().toISOString();

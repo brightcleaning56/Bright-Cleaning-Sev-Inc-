@@ -57,6 +57,7 @@ assert.strictEqual(W.leadCancel(db, 2, 'again', 'ana@bc.test'), null, 'clearing 
 W.leadSchedule(db, 1, '2026-11-26', 'ana@bc.test');
 W.leadReassign(db, 1, 'ben@bc.test', 'ana@bc.test');
 assert.strictEqual(W.leadState(db, 1).assigned_to, 'ben@bc.test');
-assert.throws(() => W.leadReassign(db, 1, null, 'ana@bc.test'), /assigned to|who it is assigned to/i, 'a step cannot be left without an owner');
+W.leadReassign(db, 1, null, 'ana@bc.test');
+assert.strictEqual(W.leadState(db, 1).assigned_to, null, 'a step can be left with no owner');
 
 console.log('All lead next-step checks passed.');
