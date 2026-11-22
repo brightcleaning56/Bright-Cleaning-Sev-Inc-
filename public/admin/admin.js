@@ -4786,11 +4786,12 @@
 
   // ---------- Email Center ----------
   // ---------- Today's work: one daily queue across emails, calls, leads and tasks ----------
-  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks'], ['inspections', 'Inspections'], ['invoices', 'Invoices'], ['estimates', 'Proposals']];
+  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks'], ['inspections', 'Inspections'], ['invoices', 'Invoices'], ['estimates', 'Proposals'], ['maintenance', 'Maintenance']];
   const WQ_BUCKETS = {
     emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
     messages: [['new', 'Needs reply'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['completed', 'Done'], ['closed', 'Closed'], ['all', 'All conversations']],
     estimates: [['new', 'Send or finish'], ['waiting', 'Awaiting customer'], ['today', 'Follow up today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All open proposals']],
+    maintenance: [['new', 'No due date'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All equipment']],
     invoices: [['new', 'No follow-up date'], ['waiting', 'Promised to pay'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All unpaid']],
     inspections: [['new', 'Needs attention'], ['waiting', 'Corrective or customer'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Finished'], ['all', 'All inspections']],
     sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
@@ -4815,6 +4816,7 @@
     const c = wq.counts || {};
     $('#wqDepts').innerHTML = WQ_DEPTS.map(([k, l]) => `<button type="button" role="tab" aria-selected="${wq.dept === k}" class="wqtab ${wq.dept === k ? 'on' : ''}" data-wq-dept="${k}">${l}${c[k] ? ` <span>${c[k].open || 0}</span>` : ''}</button>`).join('');
     $('#wqBuckets').innerHTML = WQ_BUCKETS[wq.dept].map(([k, l]) => `<button type="button" class="wqchip ${wq.bucket === k ? 'on' : ''}" data-wq-bucket="${k}">${l}${c[wq.dept] && c[wq.dept][k] !== undefined ? ` · ${c[wq.dept][k]}` : ''}</button>`).join('');
+    if (wq.dept === 'maintenance') { const ab = document.createElement('button'); ab.type = 'button'; ab.className = 'btn small'; ab.id = 'mtAdd'; ab.textContent = '+ Add equipment'; ab.onclick = addMaintenance; $('#wqBuckets').appendChild(ab); }
   }
 
   function wqKpis(counts) {
@@ -4833,6 +4835,13 @@
     ].map(([l, v, t]) => '<div class="st" style="margin:4px 0"><span>' + esc(l) + '</span><b' + (t === 'red' ? ' style="color:#b42318"' : '') + '>' + v + '</b></div>').join('');
   }
 
+  // Equipment and facility records. The first due date comes from the last service plus the service interval.
+  function addMaintenance() {
+    return openForm({ title: 'Add equipment or facility item', sub: 'It joins the Maintenance queue. Due dates are worked there.',
+      defs: [{ name: 'name', label: 'Name', wide: true }, { name: 'category', label: 'Type', type: 'select', options: ['Van', 'Vacuum', 'Machine', 'Facility', 'Other'] }, { name: 'location', label: 'Location or van number' }, { name: 'interval_days', label: 'Service every (days)', type: 'number' }, { name: 'last_service_date', label: 'Last serviced', type: 'date' }, { name: 'notes', label: 'Notes', type: 'textarea', wide: true }],
+      submit: f => api('/api/admin/maintenance', { method: 'POST', json: f }),
+      after: () => { toast('Added'); loadWorkQueue(); } });
+  }
   function wqRow(it) {
     const id = it.id, d = it.dept;
     const dueText = it.due ? `<small>${wqIsDue(it.bucket) || it.bucket === 'scheduled' ? 'Due' : 'Date'} ${esc(it.due)}</small>` : '';
@@ -4868,6 +4877,9 @@
     } else if (d === 'invoices') {
       // Money: owner and manager only. The queue sets the owner, the follow-up date, or a promise to pay. Payments stay on the invoice.
       next = `${btn('waiting', 'Promise to pay')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div><a class="btn ghost" href="#invoices">Open invoice</a>`;
+    } else if (d === 'maintenance') {
+      // Service is recorded here; the next due date moves on by the service interval.
+      next = `${btn('serviced', 'Mark serviced')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div>`;
     } else if (d === 'inspections') {
       // Signing, corrective work, reinspection and acceptance are done on the inspection. The queue sets the owner and the date.
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div><a class="btn ghost" href="#quality">Open in Quality</a>`;
@@ -5027,6 +5039,9 @@
     } else if (d === 'invoices') {
       url = `/api/admin/work-queue/invoices/${id}/work`;
       json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
+    } else if (d === 'maintenance') {
+      url = `/api/admin/maintenance/${id}/work`;
+      json = act === 'schedule' ? { action: 'schedule', date } : act === 'serviced' ? { action: 'serviced' } : { action: 'assign', assigned_to: owner };
     } else if (d === 'estimates') {
       url = `/api/admin/work-queue/estimates/${id}/work`;
       json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };

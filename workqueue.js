@@ -13,7 +13,7 @@
 // Dates use the business time zone (BUSINESS_TZ), via bizdate.js.
 const { today: bizToday, TZ } = require('./bizdate');
 
-const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages', 'inspections', 'invoices', 'estimates'];
+const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages', 'inspections', 'invoices', 'estimates', 'maintenance'];
 const MISSED = ['Missed', 'Voicemail', 'No answer', 'No-answer'];
 const ISSUE_CLOSED = ['Resolved', 'Verified', 'Closed'];
 const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));
@@ -171,7 +171,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
           };
         });
     }
+    if (dept === 'maintenance') return require('./maintenance').queueRows(db, t);
     if (dept === 'estimates') {
+      // Proposals on the queue are owner and manager only, like invoices. Set by the route before this runs.
+      if (!viewerFinance) return [];
       // Open proposals: drafts to send, and sent ones waiting on the customer. Nothing here prices, sends or approves.
       const WE = require('./work-engine');
       const open = db.prepare("SELECT id, customer_name, company, project_name, status, created_at FROM estimates WHERE status IN ('Draft','Ready','Sent','Viewed') ORDER BY id DESC LIMIT 500").all();
@@ -280,6 +283,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const dept = String(req.query.dept || 'tasks');
     viewerFinance = financeViewer(req);
     if (dept === 'invoices' && !viewerFinance) return res.status(403).json({ error: 'Only an owner or manager can see invoices on the work queue.' });
+    if (dept === 'estimates' && !viewerFinance) return res.status(403).json({ error: 'Only an owner or manager can see proposals on the work queue.' });
     if (!DEPTS.includes(dept)) return res.status(400).json({ error: 'Unknown department.' });
     const bucket = req.query.bucket ? String(req.query.bucket) : null;
     const assignee = req.query.assigned_to ? String(req.query.assigned_to) : null;
@@ -296,7 +300,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   function summary() {
     const out = {};
     for (const d of DEPTS) {
-      if (d === 'invoices' && !viewerFinance) continue;
+      if ((d === 'invoices' || d === 'estimates') && !viewerFinance) continue;
       const list = items(d), c = { all: list.length };
       // open: what still needs doing (not completed or closed). The tab count shows this.
       c.open = list.filter(x => !['completed', 'closed'].includes(x.bucket)).length;
@@ -365,6 +369,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   });
   // One queue action on an estimate: assign, set the follow-up date, or wait on the customer until a date.
   app.post('/api/admin/work-queue/estimates/:id/work', auth, (req, res) => {
+    if (!financeViewer(req)) return res.status(403).json({ error: 'Only an owner or manager can work proposals on the queue.' });
     const b = req.body || {}, who = (req.user && req.user.email) || 'admin', id = Number(req.params.id);
     try {
       const item = require('./work-engine').applyEstimateAction(db, id, b, who);
