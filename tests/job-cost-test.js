@@ -47,7 +47,7 @@ assert.strictEqual(accountFor('Window squeegee supplies').code, '5100');
 assert.strictEqual(accountFor('Lift rental').code, '5200');
 assert.strictEqual(accountFor('Sub - glazing').code, '5300');
 assert.strictEqual(accountFor('Dumpster haul').code, '5400');
-assert.strictEqual(accountFor('Miscellaneous').code, '6000');
+assert.strictEqual(accountFor('Miscellaneous').code, '5900'); // a job cost with no matching word stays with the job, not overhead
 console.log('ok - category words map to ledger accounts');
 
 // No linked contract or estimate: say so, do not invent numbers.

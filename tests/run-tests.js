@@ -2268,6 +2268,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === h1.data.invoice_id);
     det = (await req('GET', '/api/admin/pm/projects/' + id, { token: T })).data;
     assert(bad.status === 400 && det.project.actual_cost === 1500.5 && det.project.cost_by.Labor === 1200.5 && blocked.status === 409 && /changes by itself/.test(blocked.data.error) && certEarly.status === 409 && compStatus === 'Completed' && det.project.actual_end && ctext.startsWith('%PDF') && ctext.includes('Pat Proj') && h1.status === 201 && h2.status === 409 && inv.status === 'Draft' && Math.abs(inv.amount - det.project.contract_value) < 0.01 && det.project.progress === 50, JSON.stringify({ cost: det.project.actual_cost, blocked: blocked.data, h1: h1.data, inv, prog: det.project.progress }));
+    // A project cost reaches the ledger P&L at once, not at the next scheduled sync. Runs after the cost assertions above.
+    { const before = (await req('GET', '/api/admin/ledger/pnl', { token: T })).data.cost_of_services_total;
+      await req('POST', `/api/admin/pm/projects/${id}/costs`, { token: T, json: { category: 'Other', amount: 77, description: 'Ledger timing check', cost_date: require('../bizdate').today() } });
+      const after = (await req('GET', '/api/admin/ledger/pnl', { token: T })).data.cost_of_services_total;
+      assert(Math.round((after - before) * 100) === 7700, `ledger cost moved ${before} -> ${after}, expected +77`); }
     return `costs $${det.project.actual_cost} (labor $1,200.50 + supplies $300) vs budget $5,000; completion blocked while tasks open; certificate only after completion (PDF names the signer); one draft invoice $${inv.amount} (second handoff 409); progress ${det.project.progress}% since tasks are done, not verified`;
   });
 

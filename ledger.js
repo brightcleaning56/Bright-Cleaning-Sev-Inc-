@@ -25,6 +25,7 @@ const STARTER_CHART = [
   ['5200', 'Equipment and rentals', 'expense'],
   ['5300', 'Subcontractors', 'expense'],
   ['5400', 'Travel and disposal', 'expense'],
+  ['5900', 'Other job costs', 'expense'],
   ['6000', 'Operating expenses', 'expense'],
   ['6100', 'Payroll not assigned to a job', 'expense']
 ];

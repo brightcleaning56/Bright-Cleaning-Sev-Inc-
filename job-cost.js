@@ -15,7 +15,8 @@ const CATEGORY_ACCOUNT = [
 ];
 function accountFor(category) {
   for (const [re, code, name] of CATEGORY_ACCOUNT) if (re.test(String(category || ''))) return { code, name };
-  return { code: '6000', name: 'Operating expenses (unmapped category)' };
+  // A cost on a project is a job cost even when its category is general (Other): it stays with the job, not in overhead.
+  return { code: '5900', name: 'Other job costs' };
 }
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const LB = require('./labor');
