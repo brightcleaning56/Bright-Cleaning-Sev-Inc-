@@ -43,7 +43,9 @@ const INSPECTOR_ALLOW = [
   [/^GET$/, /^\/api\/admin\/customers(\/\d+)?$/], [/^GET$/, /^\/api\/admin\/autopilot\/activity$/],
   [/^(POST|PATCH|PUT)$/, /^\/api\/admin\/(qc|inspections)(\/|$)/],
   [/^POST$/, /^\/api\/admin\/quality\/complaints\/\d+\/(reinspection|notes|customer-contact)$/],
-  [/^(PUT)$/, /^\/api\/admin\/prefs\/[a-z_]+$/], [/^POST$/, /^\/api\/admin\/(events\/ticket|account\/password|account\/sign-out-everywhere)$/]
+  [/^(PUT)$/, /^\/api\/admin\/prefs\/[a-z_]+$/], [/^POST$/, /^\/api\/admin\/(events\/ticket|account\/password|account\/sign-out-everywhere)$/],
+  // Sign-in itself: two-step set-up, confirmation, cancel and sign-out must work for every role, or an inspector can never get in.
+  [/^GET$/, /^\/api\/admin\/mfa$/], [/^POST$/, /^\/api\/admin\/(mfa\/setup|mfa\/enable|mfa\/cancel|logout)$/]
 ];
 function check(role, method, path) {
   // Deleting records is for owners and managers only, on every delete route.
