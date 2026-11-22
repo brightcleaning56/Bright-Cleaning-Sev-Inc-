@@ -96,6 +96,13 @@ module.exports = function mountApprovals(app, ctx) {
     if (v.approval && v.approval.valid) return res.json({ ok: true, approval: v.approval });
     const t = new Date().toISOString(), note = clean(req.body && req.body.note, 1000);
     db.prepare('INSERT INTO estimate_approvals(estimate_id,fingerprint,reasons,note,approved_by,created_at) VALUES(?,?,?,?,?,?)').run(e.id, fingerprint(e), JSON.stringify(v.reasons), note, (req.user && req.user.email) || null, t);
+    // The "approve this proposal" task that was raised for this proposal is done once the approval is recorded.
+    const who = (req.user && req.user.email) || 'admin';
+    const asks = db.prepare("SELECT id FROM customer_issues WHERE type='task' AND title LIKE ? AND status NOT IN ('Resolved','Verified','Closed')").all(`Approve proposal #${e.id} %`);
+    for (const a of asks) {
+      db.prepare("UPDATE customer_issues SET status='Resolved', resolution=?, resolved_at=?, updated_at=? WHERE id=?").run(`Approved for sending by ${who}`, t, t, a.id);
+      try { require('./work-engine').syncIssueFromScreen(db, a.id, who); } catch (err) { console.error('work queue sync failed for approval task', a.id, err.message); }
+    }
     logAction(req, 'approved for sending', 'estimate', e.id, v.reasons.join('; ') + (note ? ' — ' + note : ''));
     res.json({ ok: true, approval: evaluate(e).approval });
   });

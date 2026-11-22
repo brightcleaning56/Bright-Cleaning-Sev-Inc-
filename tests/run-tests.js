@@ -1971,6 +1971,9 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const mgrApprove = await req('POST', `/api/admin/estimates/${e1.id}/approve`, { token: mgrT });
     const after = (await req('GET', '/api/admin/users', { token: mgrT })).data;
     assert(byStaff.status === 403 && staffApprove.status === 403 && staffSees.can_approve === false && staffSees.role === 'staff' && reqApp.status === 200 && task && task.assigned_to === OWNER && mgrApprove.status === 200 && after.me.role === 'manager' && after.can_manage_roles === false, JSON.stringify({ byStaff: byStaff.status, staffApprove: staffApprove.status, task: !!task, mgr: mgrApprove.status }));
+    // Approving the proposal closes the "approve this proposal" task it raised.
+    const taskAfter = (await req('GET', '/api/admin/issues/' + task.id, { token: T })).data.issue;
+    assert(taskAfter && taskAfter.status === 'Resolved', 'approval task still open: ' + (taskAfter && taskAfter.status));
     return `staff role change 403; staff approve 403 -> request created task "${task.title}" for the owner; manager approved (200); manager cannot change roles`;
   });
   await check('Approvals', 'Marking a proposal Approved by hand is always blocked — even after internal owner approval, only the client can approve', async () => {
