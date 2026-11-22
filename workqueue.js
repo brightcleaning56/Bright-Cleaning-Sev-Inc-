@@ -258,7 +258,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
         let bucket = messageBucket(r, t), due = r.follow_up_date || null, owner = r.owner || null;
         if (st && r.status !== 'Closed') {
           due = st.due || due; owner = st.assigned_to || null;
-          if (!r.needs_reply) bucket = st.item_status === 'waiting' ? 'waiting' : validDate(st.due) ? dateBucket(st.due, t) : bucket;
+          // Waiting on the customer takes the conversation out of Needs reply. A message from the customer after the wait was set brings it back.
+          const waitingNow = st.item_status === 'waiting' && !(r.last_dir === 'in' && String(r.last_at) > String(st.updated_at));
+          if (waitingNow) bucket = 'waiting';
+          else if (!r.needs_reply) bucket = validDate(st.due) ? dateBucket(st.due, t) : bucket;
         }
         return {
           dept, id: r.key, title: r.company ? r.type + ' · ' + r.company : r.type, who: r.name, when: r.last_at,

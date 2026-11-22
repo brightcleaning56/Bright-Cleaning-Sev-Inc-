@@ -649,7 +649,7 @@ const convLatest = (db, key) => db.prepare("SELECT * FROM work_items WHERE kind=
 function convState(db, key) {
   const it = convActive(db, key);
   if (!it) return null;
-  return { item_id: it.id, item_status: it.status, due: it.due_date || null, assigned_to: it.assigned_to };
+  return { item_id: it.id, item_status: it.status, due: it.due_date || null, assigned_to: it.assigned_to, updated_at: it.updated_at };
 }
 
 function convEnsureItem(db, key, by) {
