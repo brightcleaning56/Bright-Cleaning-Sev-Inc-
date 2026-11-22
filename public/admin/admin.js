@@ -403,12 +403,15 @@
   // ---------- Proposal options: several choices, each with its own units and prices ----------
   // The price the options give (before tax), for the estimator's total box. Null when the estimate has no options.
   let estOptionsSubtotal = null, estOptionsFor = null;
+  // A proposal that is not saved yet keeps its price options here; they are saved with it (see the estimate save).
+  let pendingEstOptions = [];
   async function loadEstOptions(id, target) {
     const box = target || $('#estOpts'); if (!box) return;
     let d;
-    try { d = await api('/api/admin/estimates/' + id + '/options'); } catch (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; return; }
+    if (id == null) d = { options: pendingEstOptions.map(o => ({ ...o, lines: o.lines.map(l => ({ ...l })) })), selected_option_id: null, locked: false };
+    else { try { d = await api('/api/admin/estimates/' + id + '/options'); } catch (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; return; } }
     estOptionsFor = id;
-    if (d.options && d.options.length) { const chosen = d.options.find(o => o.id === d.selected_option_id); estOptionsSubtotal = (chosen || d.options.slice().sort((a, b) => a.total - b.total)[0]).total; } else estOptionsSubtotal = null;
+    if (id != null && d.options && d.options.length) { const chosen = d.options.find(o => o.id === d.selected_option_id); estOptionsSubtotal = (chosen || d.options.slice().sort((a, b) => a.total - b.total)[0]).total; } else estOptionsSubtotal = null;
     if (ef.elements.id.value === String(id)) calcEstimate();
     const SCOPE_CHOICES = ['Whole project', 'Per building'];
     const blankLine = () => ({ id: null, description: '', unit: '', quantity: 0, unit_price: 0 });
@@ -470,6 +473,7 @@
         capture();
         const payload = opts.map(o => ({ id: o.id || null, label: String(o.label || '').trim(), duration_weeks: o.duration_weeks === '' ? null : Number(o.duration_weeks), scope_kind: o.scope_kind, building: o.building || '', cost: o.cost === '' || o.cost == null ? null : Number(o.cost),
           lines: o.lines.map(l => ({ id: l.id || null, description: String(l.description || '').trim(), unit: l.unit || '', quantity: Number(l.quantity) || 0, unit_price: Number(l.unit_price) || 0 })) }));
+        if (id == null) { pendingEstOptions = payload; toast('Options added. They are saved with the proposal.'); draw(); return; }
         try {
           const r = await api('/api/admin/estimates/' + id + '/options', { method: 'PUT', json: { options: payload, reason: $('#optReason').value } });
           toast('Options saved');
@@ -2151,7 +2155,7 @@
     }
     if (!est && !(lead && lead.intake)) $('#slCat').dataset.want = '';
     syncScopeCat(); renderScopeLines();
-    { const ob = $('#estOptsForm'); if (ob) { ob.innerHTML = ''; estOptionsSubtotal = null; if (est) loadEstOptions(est.id, ob); } }
+    { const ob = $('#estOptsForm'); if (ob) { ob.innerHTML = ''; estOptionsSubtotal = null; if (est) loadEstOptions(est.id, ob); else { pendingEstOptions = []; loadEstOptions(null, ob); } } }
     $('#estTitle').textContent = est ? `Edit estimate — ${est.project_name || est.customer_name}` : 'New estimate';
     $('#estSave').textContent = est ? 'Save changes' : 'Save estimate';
     $('#estMsg').textContent = '';
@@ -2348,6 +2352,10 @@
         try { await api('/api/admin/leads/' + Number(b.lead_id), { method: 'PATCH', json: { status: 'Proposal in Progress' } }); } catch { /* lead may not exist */ }
       }
       toast(revisedFrom ? `Saved as a new draft #${saved.id}. The sent version #${revisedFrom} is kept as Superseded: send the new draft to the customer.` : (id ? 'Estimate updated' : 'Estimate saved'));
+      if (!id && pendingEstOptions.length) {
+        try { await api('/api/admin/estimates/' + saved.id + '/options', { method: 'PUT', json: { options: pendingEstOptions, reason: 'Options added with the new proposal' } }); pendingEstOptions = []; }
+        catch (err) { toast('Proposal saved, but its price options did not save: ' + err.message, true); }
+      }
       if (pendingNotice) toast(pendingNotice, true);
       go('proposals');
       openEstimate(saved.id);
