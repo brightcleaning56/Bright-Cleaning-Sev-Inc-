@@ -4884,7 +4884,7 @@
       // Signing, corrective work, reinspection and acceptance are done on the inspection. The queue sets the owner and the date.
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div><a class="btn ghost" href="#quality">Open in Quality</a>`;
     } else if (d === 'sent') {
-      next = '<span class="muted">Tracked automatically</span>';
+      next = it.bucket === 'completed' ? btn('reopen', 'Reopen') : btn('handle', 'Mark handled');
     } else {
       // A finished task can only be reopened here. Open tasks are completed, put on hold, cancelled or re-dated.
       next = it.bucket === 'completed' ? btn('reopen', 'Reopen')
@@ -5039,6 +5039,9 @@
     } else if (d === 'invoices') {
       url = `/api/admin/work-queue/invoices/${id}/work`;
       json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
+    } else if (d === 'sent') {
+      url = `/api/admin/work-queue/sent/${id}/work`;
+      json = { action: act };
     } else if (d === 'maintenance') {
       url = `/api/admin/maintenance/${id}/work`;
       json = act === 'schedule' ? { action: 'schedule', date } : act === 'serviced' ? { action: 'serviced' } : { action: 'assign', assigned_to: owner };

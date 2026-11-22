@@ -126,14 +126,18 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     }
     if (dept === 'sent') {
       // Outgoing emails. A reply from the same address after sending means the email is answered.
-      return db.prepare(`SELECT e.id, e.to_addr, e.subject, e.status, e.error, e.created_at,
+      // Handled by a person (Mark handled) or answered by the customer: both finish the item.
+      return db.prepare(`SELECT e.id, e.to_addr, e.subject, e.status, e.error, e.created_at, e.handled_at, e.handled_by,
           (SELECT MIN(m.received_at) FROM inbox_messages m WHERE LOWER(m.from_addr) = LOWER(e.to_addr) AND m.received_at > e.created_at) AS replied_at
-        FROM email_log e ORDER BY e.created_at DESC LIMIT 1000`).all().map(r => ({
-          dept, id: r.id, title: r.subject || '(no subject)', who: r.to_addr || '', when: r.created_at,
-          assigned_to: null, lead_id: null, customer_id: null, due: null,
-          bucket: r.status === 'failed' ? 'new' : r.replied_at ? 'completed' : 'waiting',
-          note: r.status === 'failed' ? (r.error || 'Not delivered') : r.replied_at ? 'Replied' : 'Awaiting reply'
-        }));
+        FROM email_log e ORDER BY e.created_at DESC LIMIT 1000`).all().map(r => {
+          const done = !!r.handled_at || !!r.replied_at;
+          return {
+            dept, id: r.id, title: r.subject || '(no subject)', who: r.to_addr || '', when: r.created_at,
+            assigned_to: null, lead_id: null, customer_id: null, due: null,
+            bucket: r.status === 'failed' && !r.handled_at ? 'new' : done ? 'completed' : 'waiting',
+            note: r.handled_at ? 'Handled' + (r.handled_by ? ' by ' + r.handled_by : '') : r.replied_at ? 'Replied' : r.status === 'failed' ? (r.error || 'Not delivered') : 'Awaiting reply'
+          };
+        });
     }
     if (dept === 'calls') {
       const WE = require('./work-engine');
@@ -281,6 +285,19 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const sortItems = list => list.sort((a, b) => (b.escalated ? 1 : 0) - (a.escalated ? 1 : 0) || (ORDER[a.bucket] ?? 99) - (ORDER[b.bucket] ?? 99) || String(a.due || '9999').localeCompare(String(b.due || '9999')));
 
   // Who may see money on the queue: the owner and managers. Set synchronously before the queue is built.
+  // Sent emails: a person can mark one handled (for example a test email or one that needs no reply), or reopen it.
+  try { db.exec('ALTER TABLE email_log ADD COLUMN handled_at TEXT'); } catch (e) { /* already there */ }
+  try { db.exec('ALTER TABLE email_log ADD COLUMN handled_by TEXT'); } catch (e) { /* already there */ }
+  app.post('/api/admin/work-queue/sent/:id/work', auth, (req, res) => {
+    const id = Number(req.params.id), action = String((req.body || {}).action || ''), who = (req.user && req.user.email) || 'admin';
+    const row = db.prepare('SELECT id FROM email_log WHERE id=?').get(id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (action === 'handle') db.prepare('UPDATE email_log SET handled_at=?, handled_by=? WHERE id=?').run(new Date().toISOString(), who, id);
+    else if (action === 'reopen') db.prepare('UPDATE email_log SET handled_at=NULL, handled_by=NULL WHERE id=?').run(id);
+    else return res.status(400).json({ error: 'Unknown sent action.' });
+    logAction(req, action === 'handle' ? 'marked handled' : 'reopened', 'sent email', id, '');
+    res.json({ ok: true });
+  });
   // Who is looking: owners and managers see everything; sales see their own proposals.
   const roleOfViewer = req => { const em = String((req.user && req.user.email) || '').toLowerCase(); if (process.env.ADMIN_EMAIL && em === String(process.env.ADMIN_EMAIL).toLowerCase()) return 'owner'; const row = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em); return (row && row.role) || 'staff'; };
   function setViewer(req) { viewerEmail = String((req.user && req.user.email) || '').toLowerCase(); const role = roleOfViewer(req); viewerFinance = ['owner', 'manager'].includes(role); viewerSales = role === 'sales'; }
