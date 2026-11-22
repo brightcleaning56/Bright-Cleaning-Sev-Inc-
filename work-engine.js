@@ -13,7 +13,7 @@
 //
 // This module owns the lifecycle. Each module keeps its own records and asks this module to move the work.
 
-const KINDS = ['email', 'call', 'lead', 'project_task', 'issue', 'inspection', 'estimate', 'invoice', 'maintenance', 'other'];
+const KINDS = ['email', 'call', 'lead', 'project_task', 'issue', 'inspection', 'estimate', 'invoice', 'maintenance', 'message', 'other'];
 const ACTIVE = ['open', 'in_progress', 'waiting'];
 const TERMINAL = ['completed', 'cancelled'];
 const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
@@ -636,4 +636,107 @@ function applyInvoiceAction(db, invoiceId, body = {}, by = null) {
   throw new Error('Unknown invoice action.');
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES };
+// ---- Client conversations on the engine ----
+// A conversation (texts, portal messages and emails with one customer or lead) has at most one open work item
+// (kind 'message', ref_type 'conversation', detail = the conversation key). The conversation keeps its own status, owner
+// and follow-up date in conversation_state; queue actions write both, and changes made on the conversation screen are
+// carried over by syncConversation.
+const CONV_STATES = ['Open', 'Waiting on customer', 'Closed'];
+const convActive = (db, key) => db.prepare("SELECT * FROM work_items WHERE kind='message' AND ref_type='conversation' AND detail=? AND status IN ('open','in_progress','waiting') ORDER BY id DESC LIMIT 1").get(String(key));
+const convLatest = (db, key) => db.prepare("SELECT * FROM work_items WHERE kind='message' AND ref_type='conversation' AND detail=? ORDER BY id DESC LIMIT 1").get(String(key));
+
+// The queue's view of a conversation's work item, or null when it has none.
+function convState(db, key) {
+  const it = convActive(db, key);
+  if (!it) return null;
+  return { item_id: it.id, item_status: it.status, due: it.due_date || null, assigned_to: it.assigned_to };
+}
+
+function convEnsureItem(db, key, by) {
+  const cur = convActive(db, key);
+  if (cur) return cur.id;
+  return create(db, { kind: 'message', ref_type: 'conversation', ref_id: null, title: ('Conversation: ' + String(key)).slice(0, 300), detail: String(key), by }).id;
+}
+
+function convRow(db, key) {
+  return db.prepare('SELECT * FROM conversation_state WHERE key=?').get(String(key));
+}
+
+function convSave(db, key, patch) {
+  const cur = convRow(db, key) || { status: 'Open', owner: null, follow_up_date: null, last_read_at: null };
+  const next = { ...cur, ...patch };
+  db.prepare('INSERT INTO conversation_state(key,status,owner,follow_up_date,last_read_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status, owner=excluded.owner, follow_up_date=excluded.follow_up_date, updated_at=excluded.updated_at')
+    .run(String(key), next.status, next.owner || null, next.follow_up_date || null, next.last_read_at || null, nowIso());
+}
+
+// One queue action on a conversation. Required details are checked before anything is written.
+function applyConversationAction(db, key, body = {}, by = null) {
+  ensureSchema(db);
+  const action = String(body.action || '');
+  const k = String(key);
+  if (!['assign', 'schedule', 'wait', 'close', 'reopen'].includes(action)) throw new Error('Unknown conversation action.');
+  if (action === 'schedule' && !isDate(body.date)) throw new Error('Choose a valid follow-up date.');
+  if (action === 'wait') {
+    if (!r(body.waiting_on)) throw new Error('To wait on the customer, say what they owe you.');
+    if (!isDate(body.date)) throw new Error('Choose the follow-up date (YYYY-MM-DD).');
+  }
+  if (action === 'close' && !r(body.note)) throw new Error('To close this conversation, add a note saying how it ended.');
+  if (action === 'reopen' && !r(body.reason)) throw new Error('To reopen this conversation, add a reason.');
+  if (action === 'assign' && body.assigned_to !== undefined && body.assigned_to !== null && body.assigned_to !== '' && !r(body.assigned_to)) throw new Error('Choose who to assign it to.');
+  const saved = convRow(db, k);
+  if (['assign', 'schedule', 'wait'].includes(action) && saved && saved.status === 'Closed') throw new Error('This conversation is closed. Reopen it first.');
+  if (action === 'wait') { const pre = convActive(db, k); if (pre && pre.status === 'waiting') throw new Error('This conversation is already waiting on the customer. Change its date instead.'); }
+  const finished = (convLatest(db, k) || {}).status;
+  if (action === 'reopen' && !['completed', 'cancelled'].includes(finished)) throw new Error('This conversation is not closed, so it cannot be reopened.');
+
+  if (action === 'assign') {
+    const to = r(body.assigned_to) ? String(body.assigned_to).trim().toLowerCase() : null;
+    const id = convEnsureItem(db, k, by);
+    convSave(db, k, { owner: to });
+    const it = get(db, id);
+    if ((it.assigned_to || null) !== to) act(db, id, 'reassign', { assigned_to: to }, by);
+  } else if (action === 'schedule') {
+    const id = convEnsureItem(db, k, by);
+    convSave(db, k, { follow_up_date: body.date });
+    act(db, id, 'edit', { due_date: body.date }, by);
+  } else if (action === 'wait') {
+    const id = convEnsureItem(db, k, by);
+    convSave(db, k, { status: 'Waiting on customer', follow_up_date: body.date });
+    act(db, id, 'wait', { waiting_on: body.waiting_on, next_follow_up: body.date }, by);
+    act(db, id, 'edit', { due_date: body.date }, by);
+  } else if (action === 'close') {
+    convSave(db, k, { status: 'Closed', follow_up_date: null });
+    const cur = convActive(db, k);
+    if (cur) act(db, cur.id, 'complete', { note: body.note }, by);
+  } else if (action === 'reopen') {
+    convSave(db, k, { status: 'Open' });
+    const last = convLatest(db, k);
+    if (last) act(db, last.id, 'reopen', { reason: body.reason }, by);
+  }
+  const latest = convLatest(db, k);
+  return latest ? get(db, latest.id) : null;
+}
+
+// Carries a change made on the conversation screen to its work item. Called after the conversation is saved.
+function syncConversation(db, key, by = null) {
+  ensureSchema(db);
+  const st = convRow(db, key);
+  if (!st) return null;
+  const cur = convActive(db, key);
+  const last = convLatest(db, key);
+  if (st.status === 'Closed') {
+    if (cur) return act(db, cur.id, 'complete', { note: 'Closed on the conversation screen' }, by);
+    return null;
+  }
+  if (last && (last.status === 'completed' || last.status === 'cancelled')) {
+    act(db, last.id, 'reopen', { reason: 'Reopened on the conversation screen' }, by);
+  }
+  const now = convActive(db, key);
+  if (!now) return null;
+  if ((now.assigned_to || null) !== (st.owner || null)) act(db, now.id, 'reassign', { assigned_to: st.owner || null }, by);
+  const due = isDate(st.follow_up_date) ? st.follow_up_date : null;
+  if ((now.due_date || null) !== due) act(db, now.id, 'edit', { due_date: due }, by);
+  return get(db, now.id);
+}
+
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, CONV_STATES };

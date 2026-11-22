@@ -229,12 +229,22 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     }
     if (dept === 'messages') {
       const inbox = require('./clientmsgs').inbox;
-      return inbox().map(r => ({
-        dept, id: r.key, title: r.company ? r.type + ' · ' + r.company : r.type, who: r.name, when: r.last_at,
-        assigned_to: r.owner || null, lead_id: r.key.startsWith('lead:') ? Number(r.key.slice(5)) : null,
-        customer_id: r.key.startsWith('cust:') ? Number(r.key.slice(5)) : null, due: r.follow_up_date || null,
-        bucket: messageBucket(r, t), note: (r.needs_reply ? 'Needs reply: ' : '') + (r.last_text || '')
-      }));
+      const WE = require('./work-engine');
+      return inbox().map(r => {
+        // A conversation's owner, date and waiting state come from its work item when it has one; a new message still needs a reply.
+        const st = WE.convState(db, r.key);
+        let bucket = messageBucket(r, t), due = r.follow_up_date || null, owner = r.owner || null;
+        if (st && r.status !== 'Closed') {
+          due = st.due || due; owner = st.assigned_to || null;
+          if (!r.needs_reply) bucket = st.item_status === 'waiting' ? 'waiting' : validDate(st.due) ? dateBucket(st.due, t) : bucket;
+        }
+        return {
+          dept, id: r.key, title: r.company ? r.type + ' · ' + r.company : r.type, who: r.name, when: r.last_at,
+          assigned_to: owner, lead_id: r.key.startsWith('lead:') ? Number(r.key.slice(5)) : null,
+          customer_id: r.key.startsWith('cust:') ? Number(r.key.slice(5)) : null, due,
+          bucket, note: (r.needs_reply ? 'Needs reply: ' : '') + (r.last_text || '')
+        };
+      });
     }
     throw new Error('unknown department');
   }
@@ -319,6 +329,19 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       const item = require('./work-engine').applyInvoiceAction(db, Number(req.params.id), b, who);
       logAction(req, `invoice ${String(b.action || '')}`, 'invoice', Number(req.params.id), b.action === 'assign' ? 'assigned ' + (b.assigned_to || 'none') : (b.date || '') + (b.waiting_on ? ' ' + b.waiting_on : ''));
       res.json({ ok: true, item });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  // One queue action on a client conversation: assign, follow-up date, waiting on the customer, close (with a note) or reopen (with a reason).
+  app.post('/api/admin/work-queue/conversations/:key/work', auth, (req, res) => {
+    const key = String(req.params.key), b = req.body || {}, who = (req.user && req.user.email) || 'admin';
+    if (!require('./clientmsgs').inbox().some(r => r.key === key)) return res.status(404).json({ error: 'That conversation was not found.' });
+    try {
+      const WE = require('./work-engine');
+      const item = WE.applyConversationAction(db, key, b, who);
+      // Conversation status and owner are saved on the conversation (the same record its screen uses).
+      const st = db.prepare('SELECT * FROM conversation_state WHERE key=?').get(key);
+      logAction(req, `conversation ${String(b.action || '')}`, 'conversation', null, key + (b.date ? ' follow-up ' + b.date : '') + (b.reason || b.note ? ' — ' + String(b.reason || b.note).slice(0, 150) : ''));
+      res.json({ ok: true, item, status: st ? st.status : null });
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
   app.get('/api/admin/work-queue/summary', auth, (req, res) => { viewerFinance = financeViewer(req); res.json({ today: today(), timezone: TZ, counts: summary() }); });

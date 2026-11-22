@@ -151,6 +151,8 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const readAt = b.mark_read ? now() : (db.prepare('SELECT last_read_at FROM conversation_state WHERE key=?').get(key) || {}).last_read_at || null;
     db.prepare('INSERT INTO conversation_state(key,status,owner,follow_up_date,last_read_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status, owner=excluded.owner, follow_up_date=excluded.follow_up_date, last_read_at=excluded.last_read_at, updated_at=excluded.updated_at')
       .run(key, status, owner, fu, readAt, now());
+    // Keep the work queue's item for this conversation in step with the change made here.
+    try { require('./work-engine').syncConversation(db, key, (req.user && req.user.email) || 'admin'); } catch (e) { console.error('work queue sync failed for conversation', key, e.message); }
     logAction(req, 'conversation ' + status.toLowerCase(), 'conversation', null, key + (fu ? ' follow-up ' + fu : ''));
     res.json({ ok: true, status, owner, follow_up_date: fu });
   });

@@ -4781,6 +4781,7 @@
   const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks'], ['inspections', 'Inspections'], ['invoices', 'Invoices']];
   const WQ_BUCKETS = {
     emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
+    messages: [['new', 'Needs reply'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['completed', 'Done'], ['closed', 'Closed'], ['all', 'All conversations']],
     invoices: [['new', 'No follow-up date'], ['waiting', 'Promised to pay'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All unpaid']],
     inspections: [['new', 'Needs attention'], ['waiting', 'Corrective or customer'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Finished'], ['all', 'All inspections']],
     sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
@@ -4848,6 +4849,10 @@
     } else if (d === 'leads') {
       // A lead's next step is completed or put on hold from here; setting a new date starts a new step.
       next = `${it.due ? btn('complete', 'Complete', '') + btn('waiting', 'Waiting') : ''}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
+    } else if (d === 'messages') {
+      // Closing needs a note, reopening needs a reason, waiting needs who and when. The conversation keeps its own record.
+      next = it.bucket === 'closed' ? btn('reopen', 'Reopen')
+        : `${btn('close', 'Close', '')}${btn('waiting', 'Waiting on customer')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div>`;
     } else if (d === 'invoices') {
       // Money: owner and manager only. The queue sets the owner, the follow-up date, or a promise to pay. Payments stay on the invoice.
       next = `${btn('waiting', 'Promise to pay')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div><a class="btn ghost" href="#invoices">Open invoice</a>`;
@@ -4947,6 +4952,15 @@
         submit: f => api(`/api/admin/tasks/${id}/work`, { method: 'POST', json: { action: act, ...f } }),
         after: () => { toast(act === 'complete' ? 'Completed' : act === 'cancel' ? 'Cancelled' : act === 'reopen' ? 'Reopened' : 'Waiting'); loadWorkQueue(); } });
     }
+    if (d === 'messages' && ['close', 'waiting', 'reopen'].includes(act)) {
+      const defs = act === 'close' ? [{ name: 'note', label: 'How it ended (note)', type: 'textarea', wide: true }]
+        : act === 'waiting' ? [{ name: 'waiting_on', label: 'What the customer owes us', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }]
+        : [{ name: 'reason', label: 'Reason for reopening', type: 'textarea', wide: true }];
+      const title = { close: 'Close this conversation', waiting: 'Waiting on the customer', reopen: 'Reopen this conversation' }[act];
+      return openForm({ title, sub: 'The note is kept with the conversation and in the work history.', defs,
+        submit: f => api(`/api/admin/work-queue/conversations/${encodeURIComponent(id)}/work`, { method: 'POST', json: { action: act === 'waiting' ? 'wait' : act, ...f } }),
+        after: () => { toast(act === 'close' ? 'Closed' : act === 'reopen' ? 'Reopened' : 'Waiting'); loadWorkQueue(); } });
+    }
     if (d === 'invoices' && act === 'waiting') {
       return openForm({ title: 'Promise to pay', sub: 'Who promised, and the date the payment is promised for. The invoice itself does not change.', defs: [{ name: 'waiting_on', label: 'Who promised and what', wide: true }, { name: 'date', label: 'Promised for', type: 'date' }],
         submit: f => api(`/api/admin/work-queue/invoices/${id}/work`, { method: 'POST', json: { action: 'wait', ...f } }),
@@ -4995,6 +5009,9 @@
       else { url = `/api/admin/leads/${id}/assign`; json = { assigned_to: owner }; }
     } else if (d === 'invoices') {
       url = `/api/admin/work-queue/invoices/${id}/work`;
+      json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
+    } else if (d === 'messages') {
+      url = `/api/admin/work-queue/conversations/${encodeURIComponent(id)}/work`;
       json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
     } else if (d === 'inspections') {
       url = `/api/admin/qc/inspections/${id}/work`;
