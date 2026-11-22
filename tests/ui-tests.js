@@ -31,6 +31,7 @@ async function check(area, name, fn) {
   const api = async (m, u, j, t) => (await fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: j ? JSON.stringify(j) : undefined })).json();
   const signIn = require('./mfa-helper')((p, b, t) => api('POST', p, b, t).then(res => ({ data: res })));
   const T = await signIn(OWNER, PW);
+    await fetch(B + '/api/admin/company/w9', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + T }, body: JSON.stringify({ file: 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test w-9').toString('base64') }) }); // the company W-9 goes with every invoice email
   await api('PUT', '/api/admin/approval-rules', { min_margin_pct: 0, max_total: 0, flag_pre_pricing: false, approve_all: false }, T); // approvals tested separately below
   // seed
   await fetch(B + '/api/inquiries', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ name: '<img src=x onerror=window.__xss=1>', email: 'xss@test.test', message: '<script>window.__xss=1</script>' }) });

@@ -257,6 +257,21 @@ async function startServer(env, dataDir) {
     assert(bad.status === 401 && ok.status === 200 && ok.data.token, `${bad.status} ${ok.status}`); T = await signIn(OWNER, OWNER_PW);
     return '401 then 200 with 8-hour token';
   });
+  await check('Invoices', 'Company W-9 is attached to every invoice email: sending waits until it is on file, and a non-PDF is refused', async () => {
+    const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 company w-9 test').toString('base64');
+    const notPdf = await req('POST', '/api/admin/company/w9', { token: T, json: { file: 'data:application/pdf;base64,' + Buffer.from('hello').toString('base64') } });
+    const up = await req('POST', '/api/admin/company/w9', { token: T, json: { file: pdf } });
+    const st = await req('GET', '/api/admin/company/w9', { token: T });
+    assert(notPdf.status === 400 && up.status === 200 && st.data.on_file === true, JSON.stringify({ notPdf: notPdf.status, up: up.status, st: st.data }));
+    // Without the W-9 on file, an invoice is not sent.
+    const w9Path = path.join(dataDir, 'company', 'w9.pdf'); const keep = fs.readFileSync(w9Path);
+    fs.unlinkSync(w9Path);
+    const inv = (await req('POST', '/api/admin/invoices', { token: T, json: { invoice_number: 'W9-GATE-1', customer_name: 'W9 Gate', email: 'gate@w9.test', amount: 100, due_date: '2026-12-31', status: 'Draft' } })).data;
+    const refused = await req('POST', `/api/admin/invoices/${inv.id}/send`, { token: T, json: { to: 'gate@w9.test' } });
+    fs.writeFileSync(w9Path, keep);
+    assert(refused.status === 409 && /W-9/.test(refused.data.error), `${refused.status} ${refused.data.error}`);
+    return 'W-9 uploads as a PDF only; sending without it is refused with the reason';
+  });
   await check('Security', 'Admin session cookie: set HttpOnly and SameSite on sign-in; reads work with the cookie; changes without the X-BC-CSRF header are refused', async () => {
     const out = []; require(path.join(ROOT, 'admin-session')).setCookie({ headers: {} }, { append: (k, v) => out.push(v) }, 'x');
     const sc = out.join(';');

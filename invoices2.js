@@ -3,6 +3,11 @@
 // records why (e.g. an approved change order). Sending never marks anything paid. Every attempt is logged,
 // and a failed send is reported as failed (the invoice stays Draft).
 const { Doc } = require('./pdf');
+const fs = require('fs'), path = require('path');
+// The company W-9 is attached to every invoice email. It is kept with the app's data, never in the public folder.
+const W9_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'company'), W9_FILE = path.join(W9_DIR, 'w9.pdf');
+const w9Bytes = () => { try { return fs.readFileSync(W9_FILE); } catch (e) { return null; } };
+const w9Info = () => { try { const st = fs.statSync(W9_FILE); return { on_file: true, bytes: st.size, uploaded_at: st.mtime.toISOString() }; } catch (e) { return { on_file: false }; } };
 module.exports = function mountInvoices(app, ctx) {
   const { db, auth, logAction, clean, adminEmail, getMailer } = ctx;
   const cols = db.prepare('PRAGMA table_info(invoices)').all().map(c => c.name);
@@ -48,6 +53,18 @@ module.exports = function mountInvoices(app, ctx) {
   });
   // Invoices with a send in flight. A double click must not email the customer twice.
   const sendingNow = new Set();
+  // Company W-9: owners and managers upload it (a PDF); every invoice email carries it, so sending waits until it is on file.
+  app.get('/api/admin/company/w9', auth, (req, res) => res.json(w9Info()));
+  app.post('/api/admin/company/w9', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can change the company W-9.' });
+    const b64 = String((req.body && req.body.file) || '').replace(/^data:application\/pdf;base64,/, '');
+    const buf = Buffer.from(b64, 'base64');
+    if (!buf.length || buf.subarray(0, 4).toString() !== '%PDF') return res.status(400).json({ error: 'Upload the W-9 as a PDF file.' });
+    if (buf.length > 5 * 1024 * 1024) return res.status(400).json({ error: 'The W-9 PDF must be under 5 MB.' });
+    fs.mkdirSync(W9_DIR, { recursive: true }); fs.writeFileSync(W9_FILE, buf);
+    logAction(req, 'uploaded company W-9', 'company', 0, `${buf.length} bytes`);
+    res.json(w9Info());
+  });
   app.post('/api/admin/invoices/:id/send', auth, async (req, res) => {
     const inv = get(req.params.id); if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
     if (sendingNow.has(inv.id)) return res.status(409).json({ error: 'This invoice is already being sent. Wait a moment, then check the invoice before sending again.' });
@@ -69,11 +86,12 @@ module.exports = function mountInvoices(app, ctx) {
       if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can bill above the contract value.' });
       db.prepare('UPDATE invoices SET over_contract_reason=? WHERE id=?').run(reason, inv.id);
     }
+    const w9 = w9Bytes(); if (!w9) return res.status(409).json({ error: 'Upload the company W-9 under Settings before sending invoices. It goes out with every invoice.' });
     const m = getMailer && getMailer(); if (!m) return res.status(503).json({ error: 'Email is not set up, so the invoice was not sent.' });
     try {
       await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || adminEmail, to, subject: `Invoice ${inv.invoice_number} from Bright Cleaning Sev Inc. — ${money(Math.max(0, inv.amount - (inv.paid_amount || 0)))} due ${inv.due_date}`,
         text: `Hello${inv.customer_name ? ' ' + inv.customer_name : ''},\n\nPlease find invoice ${inv.invoice_number} attached.\nAmount: ${money(inv.amount)}\nBalance due: ${money(Math.max(0, inv.amount - (inv.paid_amount || 0)))}\nDue date: ${inv.due_date}\n\nThank you for your business.\nBright Cleaning Sev Inc.\nOffice +1 (515) 303-3024 · Eric Moore (Owner) 469-267-8472`,
-        attachments: [{ filename: `${inv.invoice_number || 'invoice'}.pdf`, content: pdf(inv), contentType: 'application/pdf' }] });
+        attachments: [{ filename: `${inv.invoice_number || 'invoice'}.pdf`, content: pdf(inv), contentType: 'application/pdf' }, { filename: 'Bright Cleaning Sev Inc W-9.pdf', content: w9, contentType: 'application/pdf' }] });
     } catch (e) {
       logAction(req, 'invoice send FAILED', 'invoice', inv.id, `${inv.invoice_number} to ${to}: ${e.message}`);
       return res.status(502).json({ error: `The invoice email could not be sent (${e.message}). The invoice was not marked as sent.` });

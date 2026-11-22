@@ -29,6 +29,7 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
   const api = async (m, u, j, t) => { const r = await fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: j ? JSON.stringify(j) : undefined }); return { status: r.status, data: await r.json().catch(() => ({})) }; };
   const signIn = require('./mfa-helper')((p, b, t) => api('POST', p, b, t));
   const T = await signIn(OWNER, PW);
+    await fetch(B + '/api/admin/company/w9', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + T }, body: JSON.stringify({ file: 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test w-9').toString('base64') }) }); // the company W-9 goes with every invoice email
 
   await check('Settings and Command Center report email as set up via Postmark', async () => {
     const s = (await api('GET', '/api/admin/settings', null, T)).data;

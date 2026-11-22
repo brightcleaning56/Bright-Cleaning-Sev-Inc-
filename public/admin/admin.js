@@ -3668,6 +3668,18 @@
     $('#bizName').value = b.company_name || ''; $('#bizEmail').value = b.primary_email || ''; $('#bizPhone').value = b.main_phone || ''; $('#bizHours').value = b.business_hours || '';
   }
   function bindSettingsForms() {
+    // Company W-9: attached to every invoice email. Shown at the top of Settings, uploaded as a PDF.
+    if ($('#bizForm') && !$('#w9Card')) {
+      $('#bizForm').parentElement.insertAdjacentHTML('afterbegin', '<div class="card" id="w9Card" style="margin-bottom:12px"><h3 class="secth" style="margin-top:0">Company W-9</h3><p class="muted">Attached to every invoice that is emailed. Sending is refused until it is on file.</p><p id="w9Status" class="muted">Checking…</p><label class="btn ghost small" style="cursor:pointer">Upload W-9 (PDF)<input type="file" id="w9File" accept="application/pdf" hidden></label></div>');
+      const showW9 = async () => { try { const s = await api('/api/admin/company/w9'); $('#w9Status').textContent = s.on_file ? `On file (${Math.round(s.bytes / 1024)} KB, uploaded ${fmtWhen(s.uploaded_at)}). It is attached to every invoice.` : 'Not on file yet. Invoices cannot be sent until you upload it.'; } catch (e) { $('#w9Status').textContent = e.message; } };
+      showW9();
+      $('#w9File').onchange = ev => {
+        const f = ev.target.files && ev.target.files[0]; if (!f) return;
+        const reader = new FileReader();
+        reader.onload = async () => { try { await api('/api/admin/company/w9', { method: 'POST', json: { file: reader.result } }); toast('Company W-9 saved'); showW9(); } catch (e) { toast(e.message, true); } };
+        reader.readAsDataURL(f);
+      };
+    }
     const biz = $('#bizForm');
     if (biz) {
       watchForm(biz, $('#bizMsg'));

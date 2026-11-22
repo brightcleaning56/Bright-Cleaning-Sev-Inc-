@@ -55,6 +55,8 @@ async function waitHealthy() {
   };
   const mint = email => jwt.sign({ role: 'admin', email, tv: tvOf(email), mfa: true }, env.JWT_SECRET, { expiresIn: '1h' });
   const owner = mint(OWNER);
+  // The company W-9 goes with every invoice email; this flow sends invoices, so it is on file first.
+  await req('POST', '/api/admin/company/w9', owner, { file: 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test w-9').toString('base64') });
   const mk = await req('POST', '/api/admin/users', owner, { email: 'sales.chain@example.test', name: 'Sales Test', password: 'Sales-test-password-123', role: 'sales' });
   assert(mk.status === 201, 'create sales user ' + mk.status);
   const sales = mint('sales.chain@example.test');

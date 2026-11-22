@@ -23,6 +23,7 @@ const check = (area, what, ok, detail = '') => { results.push({ area, what, ok, 
     for (let i = 0; i < 60; i++) { try { if ((await fetch(B + '/health')).ok) break; } catch { } await sleep(150); }
     const api = async (m, u, j, t = T) => { const r = await fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: j ? JSON.stringify(j) : undefined }); return { s: r.status, d: await r.json().catch(() => ({})) }; };
     var T = await require('./mfa-helper')((p, b, t) => api('POST', p, b, t).then(res => ({ data: res.d })))(OWNER, PW);
+    await fetch(B + '/api/admin/company/w9', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + T }, body: JSON.stringify({ file: 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test w-9').toString('base64') }) }); // the company W-9 goes with every invoice email
 
     // Company profile (Settings > General)
     let r = await api('PUT', '/api/admin/business-profile', { company_name: 'Bright Clean Test', primary_email: 'office@brightclean.test', main_phone: '515-555-0199', business_hours: '8-5' });
