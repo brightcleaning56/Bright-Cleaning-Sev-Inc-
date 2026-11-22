@@ -437,7 +437,8 @@ function applyIssueAction(db, taskId, body = {}, by = null) {
   ensureSchema(db);
   const x = issueRow(db, taskId);
   if (!x) throw new Error('Task not found.');
-  const action = String(body.action || '');
+  const raw = String(body.action || '');
+  const action = raw === 'waiting' ? 'wait' : raw; // the screen's name for the same action
   const done = ISSUE_DONE.includes(x.status);
   const at = nowIso();
   let itemId = null;

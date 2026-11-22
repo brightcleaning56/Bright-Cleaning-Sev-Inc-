@@ -176,6 +176,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
           FROM customer_issues i
           WHERE i.id NOT IN (SELECT follow_up_issue_id FROM leads WHERE follow_up_issue_id IS NOT NULL)
             AND i.id NOT IN (SELECT callback_issue_id FROM calls WHERE callback_issue_id IS NOT NULL)
+            AND NOT (i.type='follow_up' AND i.title LIKE 'Follow up: %')
           ORDER BY COALESCE(NULLIF(i.due_date,''),'9999'), i.id DESC LIMIT 1000`).all().map(r => {
           // A task's queue state comes from its work item when it has one; the task's own status still decides when it is finished.
           const st = WE.issueState(db, r.id);
