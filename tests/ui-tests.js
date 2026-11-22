@@ -795,8 +795,10 @@ async function check(area, name, fn) {
     row.click(); await sleep(1500);
     const drawer = txt('#drawerRoot'), hasStages = !!d.querySelector('#drawerRoot [data-to="RESOLVED"]');
     d.querySelector('#drawerRoot [data-close]').click(); await sleep(300);
-    await nav('overview'); await sleep(2000);
-    const groups = [...d.querySelectorAll('#ccLive h3')].map(h => h.textContent);
+    await nav('overview');
+    // The Command Center fills in after it loads; wait for the Autopilot group (up to 8 seconds) rather than a fixed pause.
+    let groups = [];
+    for (let i = 0; i < 16; i++) { await sleep(500); groups = [...d.querySelectorAll('#ccLive h3')].map(h => h.textContent); if (groups.includes('Autopilot activity')) break; }
     assert(row && /QC-\d+/.test(drawer) && /Autopilot timeline/.test(drawer) && /Assigned to quality manager|Information needed/.test(drawer) && hasStages && groups.includes('Quality') && groups.includes('Autopilot activity'), JSON.stringify({ row: !!row, drawer: drawer.slice(0, 200), hasStages, groups }));
     return `case opened from Quality; timeline + stage actions present; Command Center groups: ${groups.join(', ')}`;
   });
