@@ -2267,7 +2267,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const h2 = await req('POST', `/api/admin/pm/projects/${id}/billing-handoff`, { token: T });
     const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.id === h1.data.invoice_id);
     det = (await req('GET', '/api/admin/pm/projects/' + id, { token: T })).data;
-    assert(bad.status === 400 && det.project.actual_cost === 1500.5 && det.project.cost_by.Labor === 1200.5 && blocked.status === 409 && /changes by itself/.test(blocked.data.error) && certEarly.status === 409 && compStatus === 'Completed' && det.project.actual_end && ctext.startsWith('%PDF') && ctext.includes('Pat Proj') && h1.status === 201 && h2.status === 409 && inv.status === 'Draft' && Math.abs(inv.amount - det.project.contract_value) < 0.01 && det.project.progress === 50, JSON.stringify({ cost: det.project.actual_cost, blocked: blocked.data, h1: h1.data, inv, prog: det.project.progress }));
+    assert(bad.status === 400 && det.project.actual_cost === 1500.5 && det.project.cost_by.Labor === 1200.5 && blocked.status === 409 && /changes by itself/.test(blocked.data.error) && certEarly.status === 409 && compStatus === 'Completed' && det.project.actual_end && ctext.startsWith('%PDF') && ctext.includes('Pat Proj') && h1.status === 409 && /already exists/.test(h1.data.error) && h2.status === 409 && inv.status === 'Draft' && Math.abs(inv.amount - det.project.contract_value) < 0.01 && det.project.progress === 50, JSON.stringify({ cost: det.project.actual_cost, blocked: blocked.data, h1: h1.data, inv, prog: det.project.progress }));
     // A project cost reaches the ledger P&L at once, not at the next scheduled sync. Runs after the cost assertions above.
     { const before = (await req('GET', '/api/admin/ledger/pnl', { token: T })).data.cost_of_services_total;
       await req('POST', `/api/admin/pm/projects/${id}/costs`, { token: T, json: { category: 'Other', amount: 77, description: 'Ledger timing check', cost_date: require('../bizdate').today() } });
@@ -2916,7 +2916,9 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const done = { status: doneStatus === 'Completed' ? 200 : 409, data: { error: doneStatus } };
     const bh = await req('POST', `/api/admin/pm/projects/${p0.id}/billing-handoff`, { token: T });
     const inv = (await req('GET', '/api/admin/invoices', { token: T })).data.invoices.find(i => i.project_id === p0.id);
-    ok('13 Project completed (customer sign-off) and billing hand-off creates ONE draft invoice for the contract value', done.status === 200 && [200, 201].includes(bh.status) && inv && inv.status === 'Draft' && Math.abs(inv.amount - 4815) < 0.01, JSON.stringify({ done: [done.status, done.data.error], bh: [bh.status, bh.data.error], inv: inv && [inv.status, inv.amount] }));
+    ok('13 Project completed (customer sign-off) and billing hand-off creates ONE draft invoice for the contract value', done.status === 200 && bh.status === 409 && bh.data.invoice_id && inv && inv.status === 'Draft' && Math.abs(inv.amount - 4815) < 0.01, JSON.stringify({ done: [done.status, done.data.error], bh: [bh.status, bh.data.error], inv: inv && [inv.status, inv.amount] }));
+    { const rq = await req('GET', '/api/admin/work-queue?dept=invoices&bucket=ready', { token: T });
+      ok('13b A completed project draft shows under Ready to bill on the invoice queue', rq.status === 200 && !!inv && rq.data.items.some(i => i.id === inv.id && i.bucket === 'ready'), JSON.stringify({ status: rq.status, n: (rq.data.items || []).length })); }
     // 14 invoice sent, partial then full payment
     const sendInv = await sendInvoice(T, inv.id);
     const pay1 = await req('POST', `/api/admin/invoices/${inv.id}/payment`, { token: T, json: { amount: 2000 } });

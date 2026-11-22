@@ -99,6 +99,10 @@ module.exports = function mountPM(app, ctx) {
       if (f.started && !p.actual_start) { sets.push('actual_start=?'); vals.push(today()); }
       if (status === 'Completed' && !p.actual_end) { sets.push('actual_end=?'); vals.push(today()); }
       if (sets.length) db.prepare(`UPDATE projects SET ${sets.join(', ')}, updated_at=? WHERE id=?`).run(...vals, now(), p.id);
+      // The first time a project completes, its unbilled balance goes to billing as one draft (nothing is sent). Idempotent.
+      if (status === 'Completed' && p.status !== 'Completed') {
+        try { billingDraftFor(get(p.id), { user: { email: 'system' } }); } catch (e) { console.error('Completion billing draft failed:', e.message); }
+      }
     }
     return { status, next: nextSteps({ ...f, status }) };
   }
@@ -361,22 +365,31 @@ module.exports = function mountPM(app, ctx) {
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Enter the name of the customer representative who accepted the work.' });
     db.prepare('UPDATE projects SET signoff_name=?, signoff_title=?, signoff_at=?, updated_at=? WHERE id=?').run(name, clean(req.body.title, 120), now(), now(), p.id);
     logAction(req, 'recorded customer sign-off', 'project', p.id, `${number(p)}: ${name}`);
+    // Sign-off can complete the project right now (and so raise its billing draft), without waiting for the next sweep.
+    syncStatus(get(p.id));
     res.json({ ok: true });
   });
-  app.post('/api/admin/pm/projects/:id/billing-handoff', auth, (req, res) => {
-    const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
-    if (p.status !== 'Completed') return res.status(409).json({ error: 'Complete the project before handing it to billing.' });
-    if (p.billing_invoice_id && db.prepare('SELECT 1 FROM invoices WHERE id=?').get(p.billing_invoice_id)) return res.status(409).json({ error: 'A billing draft already exists for this project.', invoice_id: p.billing_invoice_id });
+  // One billing draft for the unbilled contract balance. Made once per project (when it completes, or by the owner); nothing is sent.
+  function billingDraftFor(p, req) {
+    if (p.billing_invoice_id && db.prepare('SELECT 1 FROM invoices WHERE id=?').get(p.billing_invoice_id)) return { existed: true, id: p.billing_invoice_id };
     const k = contractOf(p), billed = db.prepare("SELECT COALESCE(SUM(amount),0) v FROM invoices WHERE project_id=? AND status<>'Void'").get(p.id).v;
     const due = Math.round(((k ? Number(k.value) : 0) - billed) * 100) / 100;
-    if (!(due > 0)) return res.status(409).json({ error: k ? 'The contract value is already fully invoiced.' : 'There is no contract value to bill. Create the invoice manually.' });
+    if (!(due > 0)) return { none: true, reason: k ? 'The contract value is already fully invoiced.' : 'There is no contract value to bill. Create the invoice manually.' };
     const y = new Date().getFullYear(), mx = db.prepare('SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?').all(`BC-${y}-%`).reduce((m, r) => Math.max(m, Number(String(r.invoice_number).split('-')[2]) || 0), 0);
     const cust = p.customer_id ? db.prepare('SELECT * FROM customers WHERE id=?').get(p.customer_id) : null;
     const id = db.prepare("INSERT INTO invoices(invoice_number,project_id,customer_name,company,email,amount,paid_amount,due_date,status,created_at) VALUES(?,?,?,?,?,?,0,?,'Draft',?)")
       .run(`BC-${y}-${String(mx + 1).padStart(4, '0')}`, p.id, p.customer_name || (cust && cust.name) || (k && k.customer_name) || '', p.company || (cust && cust.company) || (k && k.company) || '', (cust && cust.email) || (k && k.email) || '', due, new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), now()).lastInsertRowid;
     db.prepare('UPDATE projects SET billing_invoice_id=? WHERE id=?').run(id, p.id);
     logAction(req, 'handed off to billing', 'project', p.id, `${number(p)}: draft invoice #${id} for $${due.toFixed(2)} (not sent)`);
-    res.status(201).json({ invoice_id: id, amount: due });
+    return { id, amount: due };
+  }
+  app.post('/api/admin/pm/projects/:id/billing-handoff', auth, (req, res) => {
+    const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
+    if (p.status !== 'Completed') return res.status(409).json({ error: 'Complete the project before handing it to billing.' });
+    const r = billingDraftFor(p, req);
+    if (r.existed) return res.status(409).json({ error: 'A billing draft already exists for this project.', invoice_id: r.id });
+    if (r.none) return res.status(409).json({ error: r.reason });
+    res.status(201).json({ invoice_id: r.id, amount: r.amount });
   });
   // ---- Milestone billing: a share of the contract is billed when its milestone is done. Billing is for owners and managers.
   db.exec('CREATE TABLE IF NOT EXISTS project_milestones(id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, name TEXT NOT NULL, percent REAL NOT NULL, done_at TEXT, billed_invoice_id INTEGER, created_at TEXT NOT NULL)');

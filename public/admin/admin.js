@@ -4805,7 +4805,7 @@
     messages: [['new', 'Needs reply'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['completed', 'Done'], ['closed', 'Closed'], ['all', 'All conversations']],
     estimates: [['new', 'Send or finish'], ['waiting', 'Awaiting customer'], ['today', 'Follow up today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All open proposals']],
     maintenance: [['new', 'No due date'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All equipment']],
-    invoices: [['new', 'No follow-up date'], ['waiting', 'Promised to pay'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All unpaid']],
+    invoices: [['ready', 'Ready to bill'], ['new', 'No follow-up date'], ['waiting', 'Promised to pay'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All unpaid']],
     inspections: [['new', 'Needs attention'], ['waiting', 'Corrective or customer'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Finished'], ['all', 'All inspections']],
     sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
     calls: [['new', 'New calls'], ['missed', 'Missed calls'], ['today', 'Callbacks today'], ['overdue', 'Overdue'], ['waiting', 'Waiting'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All calls']],
@@ -4906,7 +4906,7 @@
     const pickCell = d === 'tasks' ? `<td><input type="checkbox" class="wqpick" value="${id}" aria-label="Select this task"></td>` : '<td></td>';
     return `<tr>${pickCell}${itemCell}${typeCell}${relatedCell}${prioCell}${when}${d === 'sent' ? '<td>—</td>' : owner}<td><div class="wqrow-act">${next}</div></td></tr>`;
   }
-  const WQ_LABEL_TEXT = { new: 'Needs attention', missed: 'Missed', contact_today: 'Contact today', today: 'Today', overdue: 'Overdue', waiting: 'Waiting', scheduled: 'Scheduled', qualified: 'Qualified', converted: 'Converted', completed: 'Completed', closed: 'Closed' };
+  const WQ_LABEL_TEXT = { ready: 'Ready to bill', new: 'Needs attention', missed: 'Missed', contact_today: 'Contact today', today: 'Today', overdue: 'Overdue', waiting: 'Waiting', scheduled: 'Scheduled', qualified: 'Qualified', converted: 'Converted', completed: 'Completed', closed: 'Closed' };
 
   // Bulk actions for tasks: assign an owner and/or set a due date on every selected task.
   function wqBulkSync() {

@@ -217,6 +217,12 @@ module.exports = function (app, { db, auth, logAction, clean }) {
           who: r.company || r.customer_name || '', when: r.created_at, assigned_to: st ? st.assigned_to : null, lead_id: null, customer_id: null,
           due: due || null, bucket, note: `Owed ${owed.toFixed(2)} · ${r.status || ''}`, status: r.status });
       }
+      // Drafts made when a project completed: ready to review and send (nothing is sent by the queue).
+      for (const r of db.prepare(`SELECT i.id, i.invoice_number, i.customer_name, i.company, i.amount, i.created_at, p.name AS project_name FROM invoices i JOIN projects p ON p.id = i.project_id WHERE i.status = 'Draft' AND p.status = 'Completed' ORDER BY i.id DESC`).all()) {
+        out.push({ dept, id: r.id, title: `${r.invoice_number || 'Invoice #' + r.id}${r.customer_name || r.company ? ' · ' + (r.customer_name || r.company) : ''}`,
+          who: r.project_name || r.company || '', when: r.created_at, assigned_to: null, lead_id: null, customer_id: null, due: null,
+          bucket: 'ready', note: `Ready to bill · $${Number(r.amount || 0).toFixed(2)} · open the invoice to review and send`, status: 'Draft' });
+      }
       return out;
     }
     if (dept === 'inspections') {
