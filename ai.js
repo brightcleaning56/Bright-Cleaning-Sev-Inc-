@@ -28,7 +28,12 @@ Never invent prices, rates, availability, insurance, licenses, certifications or
     const r = await fetch(apiUrl(), { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key(), 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({ model: model(), max_tokens: maxTokens, system, messages }) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`AI request failed (${r.status}): ${(j.error && j.error.message) || 'unknown error'}`);
+    if (!r.ok) {
+      // Out of credit is an account problem, not a fault in the app: say what to do.
+      const raw = (j.error && j.error.message) || 'unknown error';
+      if (/credit balance is too low|credit/i.test(raw)) { const e = new Error('AI is paused: the Anthropic account has no credit left. The owner adds credit under Plans & Billing in Anthropic, then AI works again.'); e.code = 'AI_CREDIT'; throw e; }
+      throw new Error(`AI request failed (${r.status}): ${raw}`);
+    }
     const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
     return text;
   }
