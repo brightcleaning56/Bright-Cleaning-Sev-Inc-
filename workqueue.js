@@ -104,6 +104,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
 
   // ---- Items, sorted into buckets ----
   let viewerFinance = false; // set by the queue routes before they build a list
+  let viewerSales = false, viewerEmail = ''; // sales see only the proposals they created or were assigned
 
   function items(dept) {
     const t = today(), now = nowIso();
@@ -173,11 +174,11 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     }
     if (dept === 'maintenance') return require('./maintenance').queueRows(db, t);
     if (dept === 'estimates') {
-      // Proposals on the queue are owner and manager only, like invoices. Set by the route before this runs.
-      if (!viewerFinance) return [];
+      // Proposals: owners and managers see every one; sales see the ones they created or were assigned. Set by the route before this runs.
+      if (!viewerFinance && !viewerSales) return [];
       // Open proposals: drafts to send, and sent ones waiting on the customer. Nothing here prices, sends or approves.
       const WE = require('./work-engine');
-      const open = db.prepare("SELECT id, customer_name, company, project_name, status, created_at FROM estimates WHERE status IN ('Draft','Ready','Sent','Viewed') ORDER BY id DESC LIMIT 500").all();
+      const open = db.prepare("SELECT id, customer_name, company, project_name, status, created_at, created_by FROM estimates WHERE status IN ('Draft','Ready','Sent','Viewed') ORDER BY id DESC LIMIT 500").all();
       // An item left on an estimate that is no longer open is finished (the estimate's own status is the source of truth).
       const openIds = new Set(open.map(x => x.id));
       for (const a of db.prepare("SELECT DISTINCT ref_id FROM work_items WHERE kind='estimate' AND ref_type='estimate' AND status IN ('open','in_progress','waiting')").all()) {
@@ -185,12 +186,12 @@ module.exports = function (app, { db, auth, logAction, clean }) {
         const e = db.prepare('SELECT status FROM estimates WHERE id=?').get(a.ref_id);
         if (!e || !WE.ESTIMATE_OPEN.includes(e.status)) WE.closeEstimateWork(db, a.ref_id, 'No longer open', 'system');
       }
-      return open.map(r => {
+      return open.filter(r => viewerFinance || r.created_by === viewerEmail || (WE.estState(db, r.id) || {}).assigned_to === viewerEmail).map(r => {
         const st = WE.estState(db, r.id);
         const due = (st && st.due) || null;
         const bucket = st && st.item_status === 'waiting' ? 'waiting' : validDate(due) ? dateBucket(due, t) : (r.status === 'Draft' || r.status === 'Ready') ? 'new' : 'waiting';
         return { dept, id: r.id, title: `Proposal #${r.id} · ${r.project_name || r.customer_name || r.company || ''}`, who: r.customer_name || r.company || '',
-          when: r.created_at, assigned_to: st ? st.assigned_to : null, lead_id: null, customer_id: null, due, bucket, note: r.status, status: r.status };
+          when: r.created_at, assigned_to: st ? st.assigned_to : null, lead_id: null, customer_id: null, due, bucket, note: r.created_by ? r.status + ' · by ' + r.created_by : r.status, status: r.status };
       });
     }
     if (dept === 'invoices') {
@@ -280,13 +281,16 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const sortItems = list => list.sort((a, b) => (b.escalated ? 1 : 0) - (a.escalated ? 1 : 0) || (ORDER[a.bucket] ?? 99) - (ORDER[b.bucket] ?? 99) || String(a.due || '9999').localeCompare(String(b.due || '9999')));
 
   // Who may see money on the queue: the owner and managers. Set synchronously before the queue is built.
+  // Who is looking: owners and managers see everything; sales see their own proposals.
+  const roleOfViewer = req => { const em = String((req.user && req.user.email) || '').toLowerCase(); if (process.env.ADMIN_EMAIL && em === String(process.env.ADMIN_EMAIL).toLowerCase()) return 'owner'; const row = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em); return (row && row.role) || 'staff'; };
+  function setViewer(req) { viewerEmail = String((req.user && req.user.email) || '').toLowerCase(); const role = roleOfViewer(req); viewerFinance = ['owner', 'manager'].includes(role); viewerSales = role === 'sales'; }
   const financeViewer = req => { const em = String((req.user && req.user.email) || '').toLowerCase(); if (process.env.ADMIN_EMAIL && em === String(process.env.ADMIN_EMAIL).toLowerCase()) return true; const row = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em); return !!row && ['owner', 'manager'].includes(row.role); };
 
   app.get('/api/admin/work-queue', auth, (req, res) => {
     const dept = String(req.query.dept || 'tasks');
-    viewerFinance = financeViewer(req);
+    setViewer(req);
     if (dept === 'invoices' && !viewerFinance) return res.status(403).json({ error: 'Only an owner or manager can see invoices on the work queue.' });
-    if (dept === 'estimates' && !viewerFinance) return res.status(403).json({ error: 'Only an owner or manager can see proposals on the work queue.' });
+    if (dept === 'estimates' && !viewerFinance && !viewerSales) return res.status(403).json({ error: 'Only owners, managers and sales can see proposals on the work queue.' });
     if (!DEPTS.includes(dept)) return res.status(400).json({ error: 'Unknown department.' });
     const bucket = req.query.bucket ? String(req.query.bucket) : null;
     const assignee = req.query.assigned_to ? String(req.query.assigned_to) : null;
@@ -303,7 +307,8 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   function summary() {
     const out = {};
     for (const d of DEPTS) {
-      if ((d === 'invoices' || d === 'estimates') && !viewerFinance) continue;
+      if (d === 'invoices' && !viewerFinance) continue;
+      if (d === 'estimates' && !viewerFinance && !viewerSales) continue;
       const list = items(d), c = { all: list.length };
       // open: what still needs doing (not completed or closed). The tab count shows this.
       c.open = list.filter(x => !['completed', 'closed'].includes(x.bucket)).length;
@@ -372,7 +377,13 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   });
   // One queue action on an estimate: assign, set the follow-up date, or wait on the customer until a date.
   app.post('/api/admin/work-queue/estimates/:id/work', auth, (req, res) => {
-    if (!financeViewer(req)) return res.status(403).json({ error: 'Only an owner or manager can work proposals on the queue.' });
+    setViewer(req);
+    if (!viewerFinance) {
+      // Sales work only the proposals they created or were assigned.
+      const pid = Number(req.params.id), row = db.prepare('SELECT created_by FROM estimates WHERE id=?').get(pid), st = require('./work-engine').estState(db, pid);
+      const mine = viewerSales && !!row && (row.created_by === viewerEmail || (st && st.assigned_to === viewerEmail));
+      if (!mine) return res.status(403).json({ error: 'You can only work proposals you created or were assigned.' });
+    }
     const b = req.body || {}, who = (req.user && req.user.email) || 'admin', id = Number(req.params.id);
     try {
       const item = require('./work-engine').applyEstimateAction(db, id, b, who);
@@ -380,7 +391,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       res.json({ ok: true, item });
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
-  app.get('/api/admin/work-queue/summary', auth, (req, res) => { viewerFinance = financeViewer(req); res.json({ today: today(), timezone: TZ, counts: summary() }); });
+  app.get('/api/admin/work-queue/summary', auth, (req, res) => { setViewer(req); res.json({ today: today(), timezone: TZ, counts: summary() }); });
 
   // ---- Actions (each one is audited) ----
   // Emails: handle, wait, schedule (follow-up date or snooze), or assign. Opening an email never changes its state.
