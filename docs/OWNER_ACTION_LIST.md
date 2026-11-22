@@ -100,3 +100,15 @@ Source: `docs/audit/13-15-portal-security-infra.md`. Items 1 to 4 need your acce
 
 - **Waiting on a customer text (decided: yes).** Waiting moves the conversation out of Needs reply, into Waiting. A new message from the customer after the wait was set brings it back to Needs reply.
 - **New estimate price options.** The Price options box now sits above "What the customer sees", so it is easy to find on a new proposal. If the page looks old, do a hard refresh (Ctrl+Shift+R).
+
+## Production readiness list, 2026-11-22 (build a2fb7f11c5ed live)
+
+Checked: full server test chain (passes), admin UI tests 94/94, undefined-name check on all backend and front-end scripts (clean), every admin screen loads on live with no script errors, live health shows no errors in the last hour, no TODO or FIXME markers in the code. Test calls (9) and test sent emails (26) are closed on live.
+
+Owner decisions and actions still needed:
+1. Inspector sign-in: sign in once with ericd567@icloud.com and confirm quality opens and invoices are refused.
+2. Anthropic credits: add credits under Plans & Billing. This clears the AI extract error and the "Bright Clean error: http 502" alert emails.
+3. Maintenance: send the real vans, vacuums and machines with service intervals, and they go on the list.
+4. Open real work (not closed, needs your decision): 168 overdue leads, 52 calls, 353 sent emails awaiting a reply (19 days old at most). Say which to close, and whether closing leads should mark them lost.
+5. Twilio support ticket #30436964 is open in the browser. Check whether it is still needed.
+6. From the security audit (see items above): the uptime monitor, the restore drill and the script policy stay as listed in this file.
