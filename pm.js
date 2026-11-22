@@ -267,6 +267,11 @@ module.exports = function mountPM(app, ctx) {
   });
 
   // Actual costs (recorded expenses, never estimates)
+  // Every change to a project cost (add, correct, remove) posts to the ledger as soon as it is saved, so the books match the project straight away.
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && /^\/api\/admin\/pm\/projects\/\d+\/costs/.test(req.path)) res.on('finish', () => { if (res.statusCode < 400) { try { require('./invoice-ledger').runSync(db, 'cost change'); } catch (e) { /* the scheduled sync picks it up */ } } });
+    next();
+  });
   app.post('/api/admin/pm/projects/:id/costs', auth, (req, res) => {
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
     const b = req.body || {}, amt = Number(String(b.amount ?? '').replace(/[$,]/g, ''));
