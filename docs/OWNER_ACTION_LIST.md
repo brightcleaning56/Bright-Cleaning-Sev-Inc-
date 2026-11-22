@@ -95,3 +95,8 @@ Source: `docs/audit/13-15-portal-security-infra.md`. Items 1 to 4 need your acce
 5. **Maintenance records built.** Add the first vans, vacuums and machines under Maintenance on the work queue (Add equipment). Mark each one serviced when done; the next due date moves on by its interval.
 6. **Decision for you:** a customer text that still needs a reply stays under "Needs reply" even after someone clicks Waiting. The follow-up date is kept. Say if Waiting should move it out of "Needs reply".
 7. **Browser-checked on the local test site:** proposal assign, follow-up date and waiting; conversation assign, follow-up date, waiting, close and reopen; maintenance add and mark serviced.
+
+## Update, 2026-11-22 (build 000715d0b2b7 live)
+
+- **Waiting on a customer text (decided: yes).** Waiting moves the conversation out of Needs reply, into Waiting. A new message from the customer after the wait was set brings it back to Needs reply.
+- **New estimate price options.** The Price options box now sits above "What the customer sees", so it is easy to find on a new proposal. If the page looks old, do a hard refresh (Ctrl+Shift+R).
