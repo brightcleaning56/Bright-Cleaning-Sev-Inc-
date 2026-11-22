@@ -739,4 +739,55 @@ function syncConversation(db, key, by = null) {
   return get(db, now.id);
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, CONV_STATES };
+// ---- Estimates (proposals) on the engine ----
+// An open estimate (Draft, Ready, Sent, Viewed) can have one open work item (kind 'estimate', ref_type 'estimate', ref_id).
+// The item holds who follows the estimate up and the follow-up date. The estimate keeps its own status: sending, the
+// customer's answer and archiving happen on the estimate. The queue never prices, sends or approves anything.
+const ESTIMATE_OPEN = ['Draft', 'Ready', 'Sent', 'Viewed'];
+const estActive = (db, id) => db.prepare("SELECT * FROM work_items WHERE kind='estimate' AND ref_type='estimate' AND ref_id=? AND status IN ('open','in_progress','waiting') ORDER BY id DESC LIMIT 1").get(Number(id));
+
+// The queue's view of an estimate's follow-up item, or null when it has none.
+function estState(db, id) {
+  const it = estActive(db, id);
+  if (!it) return null;
+  return { item_id: it.id, item_status: it.status, due: it.due_date || null, assigned_to: it.assigned_to };
+}
+
+// Finishes the item of an estimate that is no longer open (approved, declined, archived or superseded).
+function closeEstimateWork(db, id, reason, by = null) {
+  const cur = estActive(db, id);
+  if (!cur) return null;
+  return act(db, cur.id, 'complete', { note: reason || 'No longer open' }, by);
+}
+
+// One queue action on an estimate: assign, set the follow-up date, or record that we are waiting on the customer until a date.
+function applyEstimateAction(db, estimateId, body = {}, by = null) {
+  ensureSchema(db);
+  const e = db.prepare('SELECT id, status, customer_name, company, project_name FROM estimates WHERE id=?').get(Number(estimateId));
+  if (!e) throw new Error('Estimate not found.');
+  const action = String(body.action || '');
+  if (!['assign', 'schedule', 'wait'].includes(action)) throw new Error('Unknown estimate action.');
+  if (!ESTIMATE_OPEN.includes(e.status)) throw new Error('This estimate is ' + String(e.status).toLowerCase() + ', so there is nothing to follow up.');
+  if (action === 'schedule' && !isDate(body.date)) throw new Error('Choose a valid follow-up date.');
+  if (action === 'wait') {
+    if (!r(body.waiting_on)) throw new Error('To wait on the customer, say what they are deciding.');
+    if (!isDate(body.date)) throw new Error('Choose the follow-up date (YYYY-MM-DD).');
+  }
+  const pre = estActive(db, e.id);
+  if (action === 'wait' && pre && pre.status === 'waiting') throw new Error('This proposal is already waiting on the customer. Change its date instead.');
+  let cur = pre;
+  if (!cur) {
+    const id = create(db, { kind: 'estimate', ref_type: 'estimate', ref_id: e.id, title: `Proposal #${e.id} · ${e.project_name || e.customer_name || e.company || 'estimate'}`.slice(0, 300), by }).id;
+    cur = get(db, id);
+  }
+  if (action === 'assign') {
+    const to = r(body.assigned_to) ? String(body.assigned_to).trim().toLowerCase() : null;
+    if (to === (cur.assigned_to || null)) return get(db, cur.id);
+    return act(db, cur.id, 'reassign', { assigned_to: to }, by);
+  }
+  if (action === 'schedule') return act(db, cur.id, 'edit', { due_date: body.date }, by);
+  act(db, cur.id, 'wait', { waiting_on: body.waiting_on, next_follow_up: body.date }, by);
+  return act(db, cur.id, 'edit', { due_date: body.date }, by);
+}
+
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, CONV_STATES, estState, applyEstimateAction, closeEstimateWork, ESTIMATE_OPEN };

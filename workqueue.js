@@ -13,7 +13,7 @@
 // Dates use the business time zone (BUSINESS_TZ), via bizdate.js.
 const { today: bizToday, TZ } = require('./bizdate');
 
-const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages', 'inspections', 'invoices'];
+const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages', 'inspections', 'invoices', 'estimates'];
 const MISSED = ['Missed', 'Voicemail', 'No answer', 'No-answer'];
 const ISSUE_CLOSED = ['Resolved', 'Verified', 'Closed'];
 const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));
@@ -170,6 +170,25 @@ module.exports = function (app, { db, auth, logAction, clean }) {
             bucket, note: r.follow_up_note || '', needs_next_action: r.stage === 'worked' && !r.follow_up_date && !['converted', 'done'].includes(r.stage)
           };
         });
+    }
+    if (dept === 'estimates') {
+      // Open proposals: drafts to send, and sent ones waiting on the customer. Nothing here prices, sends or approves.
+      const WE = require('./work-engine');
+      const open = db.prepare("SELECT id, customer_name, company, project_name, status, created_at FROM estimates WHERE status IN ('Draft','Ready','Sent','Viewed') ORDER BY id DESC LIMIT 500").all();
+      // An item left on an estimate that is no longer open is finished (the estimate's own status is the source of truth).
+      const openIds = new Set(open.map(x => x.id));
+      for (const a of db.prepare("SELECT DISTINCT ref_id FROM work_items WHERE kind='estimate' AND ref_type='estimate' AND status IN ('open','in_progress','waiting')").all()) {
+        if (openIds.has(a.ref_id)) continue;
+        const e = db.prepare('SELECT status FROM estimates WHERE id=?').get(a.ref_id);
+        if (!e || !WE.ESTIMATE_OPEN.includes(e.status)) WE.closeEstimateWork(db, a.ref_id, 'No longer open', 'system');
+      }
+      return open.map(r => {
+        const st = WE.estState(db, r.id);
+        const due = (st && st.due) || null;
+        const bucket = st && st.item_status === 'waiting' ? 'waiting' : validDate(due) ? dateBucket(due, t) : (r.status === 'Draft' || r.status === 'Ready') ? 'new' : 'waiting';
+        return { dept, id: r.id, title: `Proposal #${r.id} · ${r.project_name || r.customer_name || r.company || ''}`, who: r.customer_name || r.company || '',
+          when: r.created_at, assigned_to: st ? st.assigned_to : null, lead_id: null, customer_id: null, due, bucket, note: r.status, status: r.status };
+      });
     }
     if (dept === 'invoices') {
       // Unpaid invoices and their follow-up. Owner and manager only (set by the route before this runs).
@@ -342,6 +361,15 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       const st = db.prepare('SELECT * FROM conversation_state WHERE key=?').get(key);
       logAction(req, `conversation ${String(b.action || '')}`, 'conversation', null, key + (b.date ? ' follow-up ' + b.date : '') + (b.reason || b.note ? ' — ' + String(b.reason || b.note).slice(0, 150) : ''));
       res.json({ ok: true, item, status: st ? st.status : null });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  // One queue action on an estimate: assign, set the follow-up date, or wait on the customer until a date.
+  app.post('/api/admin/work-queue/estimates/:id/work', auth, (req, res) => {
+    const b = req.body || {}, who = (req.user && req.user.email) || 'admin', id = Number(req.params.id);
+    try {
+      const item = require('./work-engine').applyEstimateAction(db, id, b, who);
+      logAction(req, `estimate ${String(b.action || '')}`, 'estimate', id, b.action === 'assign' ? 'assigned ' + (b.assigned_to || 'none') : (b.date || '') + (b.waiting_on ? ' ' + b.waiting_on : ''));
+      res.json({ ok: true, item });
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
   app.get('/api/admin/work-queue/summary', auth, (req, res) => { viewerFinance = financeViewer(req); res.json({ today: today(), timezone: TZ, counts: summary() }); });

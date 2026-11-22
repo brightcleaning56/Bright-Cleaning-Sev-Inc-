@@ -4778,10 +4778,11 @@
 
   // ---------- Email Center ----------
   // ---------- Today's work: one daily queue across emails, calls, leads and tasks ----------
-  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks'], ['inspections', 'Inspections'], ['invoices', 'Invoices']];
+  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks'], ['inspections', 'Inspections'], ['invoices', 'Invoices'], ['estimates', 'Proposals']];
   const WQ_BUCKETS = {
     emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
     messages: [['new', 'Needs reply'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['completed', 'Done'], ['closed', 'Closed'], ['all', 'All conversations']],
+    estimates: [['new', 'Send or finish'], ['waiting', 'Awaiting customer'], ['today', 'Follow up today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All open proposals']],
     invoices: [['new', 'No follow-up date'], ['waiting', 'Promised to pay'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All unpaid']],
     inspections: [['new', 'Needs attention'], ['waiting', 'Corrective or customer'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Finished'], ['all', 'All inspections']],
     sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
@@ -4853,6 +4854,9 @@
       // Closing needs a note, reopening needs a reason, waiting needs who and when. The conversation keeps its own record.
       next = it.bucket === 'closed' ? btn('reopen', 'Reopen')
         : `${btn('close', 'Close', '')}${btn('waiting', 'Waiting on customer')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div>`;
+    } else if (d === 'estimates') {
+      // The proposal is sent, changed and approved on its own screen. The queue sets the owner, the follow-up date or a wait.
+      next = `${btn('waiting', 'Waiting on customer')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div><a class="btn ghost" href="#proposals">Open proposal</a>`;
     } else if (d === 'invoices') {
       // Money: owner and manager only. The queue sets the owner, the follow-up date, or a promise to pay. Payments stay on the invoice.
       next = `${btn('waiting', 'Promise to pay')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div><a class="btn ghost" href="#invoices">Open invoice</a>`;
@@ -4952,6 +4956,11 @@
         submit: f => api(`/api/admin/tasks/${id}/work`, { method: 'POST', json: { action: act, ...f } }),
         after: () => { toast(act === 'complete' ? 'Completed' : act === 'cancel' ? 'Cancelled' : act === 'reopen' ? 'Reopened' : 'Waiting'); loadWorkQueue(); } });
     }
+    if (d === 'estimates' && act === 'waiting') {
+      return openForm({ title: 'Waiting on the customer', sub: 'What they are deciding, and when to follow up. The proposal itself does not change.', defs: [{ name: 'waiting_on', label: 'What they are deciding', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }],
+        submit: f => api(`/api/admin/work-queue/estimates/${id}/work`, { method: 'POST', json: { action: 'wait', ...f } }),
+        after: () => { toast('Waiting'); loadWorkQueue(); } });
+    }
     if (d === 'messages' && ['close', 'waiting', 'reopen'].includes(act)) {
       const defs = act === 'close' ? [{ name: 'note', label: 'How it ended (note)', type: 'textarea', wide: true }]
         : act === 'waiting' ? [{ name: 'waiting_on', label: 'What the customer owes us', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }]
@@ -5009,6 +5018,9 @@
       else { url = `/api/admin/leads/${id}/assign`; json = { assigned_to: owner }; }
     } else if (d === 'invoices') {
       url = `/api/admin/work-queue/invoices/${id}/work`;
+      json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
+    } else if (d === 'estimates') {
+      url = `/api/admin/work-queue/estimates/${id}/work`;
       json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
     } else if (d === 'messages') {
       url = `/api/admin/work-queue/conversations/${encodeURIComponent(id)}/work`;
