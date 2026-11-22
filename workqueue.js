@@ -13,7 +13,7 @@
 // Dates use the business time zone (BUSINESS_TZ), via bizdate.js.
 const { today: bizToday, TZ } = require('./bizdate');
 
-const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages'];
+const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages', 'inspections'];
 const MISSED = ['Missed', 'Voicemail', 'No answer', 'No-answer'];
 const ISSUE_CLOSED = ['Resolved', 'Verified', 'Closed'];
 const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));
@@ -167,6 +167,20 @@ module.exports = function (app, { db, auth, logAction, clean }) {
             assigned_to: r.assigned_to, lead_id: r.id, customer_id: r.customer_id, due: due || null,
             bucket, note: r.follow_up_note || '', needs_next_action: r.stage === 'worked' && !r.follow_up_date && !['converted', 'done'].includes(r.stage)
           };
+        });
+    }
+    if (dept === 'inspections') {
+      // Inspections with work left: signing, corrective work, reinspection or customer acceptance. Finished ones are Completed.
+      const WE = require('./work-engine');
+      return db.prepare(`SELECT id, area, status, date, inspector, itype, customer_id, project_id, score, passed, created_at FROM inspections
+          ORDER BY id DESC LIMIT 1000`).all().map(r => {
+          const open = WE.INSPECTION_OPEN.includes(r.status);
+          const st = open ? WE.inspState(db, r.id) : null;
+          const due = (st && st.due) || null, owner = st ? st.assigned_to : null;
+          let bucket = !open ? 'completed' : (r.status === 'Corrective action' || r.status === 'Awaiting customer') ? 'waiting'
+            : validDate(due) ? dateBucket(due, t) : 'new';
+          return { dept, id: r.id, title: r.area || `Inspection #${r.id}`, who: r.itype || '', when: r.created_at, assigned_to: owner,
+            lead_id: null, customer_id: r.customer_id || null, due, bucket, note: r.status || '', status: r.status };
         });
     }
     if (dept === 'tasks') {

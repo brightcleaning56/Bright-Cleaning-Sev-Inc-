@@ -160,6 +160,7 @@ function mount(app, { db, auth }) {
   try { migrateEmailState(db); } catch (e) { console.error('work engine: email queue carry-over failed:', e.message); }
   try { migrateCallState(db); } catch (e) { console.error('work engine: call queue carry-over failed:', e.message); }
   try { migrateLeadState(db); } catch (e) { console.error('work engine: lead next-step carry-over failed:', e.message); }
+  try { migrateInspectionState(db); } catch (e) { console.error('work engine: inspection carry-over failed:', e.message); }
   const who = req => (req.user && req.user.email) || 'admin';
   app.get('/api/admin/work-items', auth, (req, res) => {
     const assigned = r(req.query.assigned_to);
@@ -506,4 +507,73 @@ function syncIssueFromScreen(db, taskId, by) {
   if ((now.due_date || null) !== due) act(db, now.id, 'edit', { due_date: due }, by);
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen };
+// ---- Inspections (QC) on the engine ----
+// Each inspection with work left has one work item (kind 'inspection', ref_type 'inspection', ref_id = the inspection).
+// The inspection keeps its own status: signing, reinspection, acceptance and cancellation happen on the inspection, and the
+// item follows them (syncInspection). The queue can only assign an item and set its date, never sign or accept.
+const INSPECTION_OPEN = ['In progress', 'Corrective action', 'Reinspection due', 'Awaiting customer'];
+const inspActive = (db, id) => db.prepare("SELECT * FROM work_items WHERE kind='inspection' AND ref_type='inspection' AND ref_id=? AND status IN ('open','in_progress','waiting') ORDER BY id DESC LIMIT 1").get(Number(id));
+const inspLatest = (db, id) => db.prepare("SELECT * FROM work_items WHERE kind='inspection' AND ref_type='inspection' AND ref_id=? ORDER BY id DESC LIMIT 1").get(Number(id));
+
+// Brings the inspection's work item into step with the inspection's status. Returns the item, or null when there is none.
+function syncInspection(db, inspectionId, by = null) {
+  ensureSchema(db);
+  const x = db.prepare('SELECT * FROM inspections WHERE id=?').get(Number(inspectionId));
+  if (!x) return null;
+  const cur = inspActive(db, x.id);
+  if (INSPECTION_OPEN.includes(x.status)) {
+    if (cur) return get(db, cur.id);
+    const last = inspLatest(db, x.id);
+    if (last && (last.status === 'completed' || last.status === 'cancelled')) {
+      act(db, last.id, 'reopen', { reason: 'Status is now ' + x.status }, by);
+      return get(db, last.id);
+    }
+    const id = create(db, { kind: 'inspection', ref_type: 'inspection', ref_id: x.id, title: ('Inspection: ' + (x.area || 'area #' + x.id)).slice(0, 300), detail: x.status, by }).id;
+    return get(db, id);
+  }
+  if (!cur) return null;
+  if (x.status === 'Cancelled') return act(db, cur.id, 'cancel', { reason: 'Inspection cancelled' }, by);
+  return act(db, cur.id, 'complete', { note: 'Inspection ' + String(x.status).toLowerCase() }, by);
+}
+
+// The queue's view of an inspection's work item, or null when it has none.
+function inspState(db, id) {
+  const it = inspActive(db, id);
+  if (!it) return null;
+  return { item_id: it.id, item_status: it.status, due: it.due_date || null, assigned_to: it.assigned_to };
+}
+
+// A queue action on an inspection: assign it, or set when it should be done. Nothing else can be done from the queue.
+function applyInspectionAction(db, inspectionId, body = {}, by = null) {
+  ensureSchema(db);
+  const x = db.prepare('SELECT * FROM inspections WHERE id=?').get(Number(inspectionId));
+  if (!x) throw new Error('Inspection not found.');
+  if (!INSPECTION_OPEN.includes(x.status)) throw new Error('This inspection is ' + String(x.status).toLowerCase() + '. Its work is finished.');
+  const item = syncInspection(db, x.id, by);
+  const action = String(body.action || '');
+  if (action === 'assign') {
+    const to = r(body.assigned_to) ? String(body.assigned_to).trim().toLowerCase() : null;
+    if (to === (item.assigned_to || null)) return get(db, item.id);
+    return act(db, item.id, 'reassign', { assigned_to: to }, by);
+  }
+  if (action === 'schedule') {
+    if (!isDate(body.date)) throw new Error('Choose a valid date.');
+    return act(db, item.id, 'edit', { due_date: body.date }, by);
+  }
+  throw new Error('Unknown inspection action.');
+}
+
+// Carries open inspections onto the engine, once. Safe to run again: inspections that already have an open item are skipped.
+function migrateInspectionState(db) {
+  ensureSchema(db);
+  if (!hasTable(db, 'inspections')) return 0;
+  let n = 0;
+  for (const x of db.prepare('SELECT id, status FROM inspections').all()) {
+    if (!INSPECTION_OPEN.includes(x.status) || inspActive(db, x.id)) continue;
+    syncInspection(db, x.id, 'migration');
+    n++;
+  }
+  return n;
+}
+
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN };

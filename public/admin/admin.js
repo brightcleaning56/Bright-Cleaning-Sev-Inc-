@@ -4778,9 +4778,10 @@
 
   // ---------- Email Center ----------
   // ---------- Today's work: one daily queue across emails, calls, leads and tasks ----------
-  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks']];
+  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks'], ['inspections', 'Inspections']];
   const WQ_BUCKETS = {
     emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
+    inspections: [['new', 'Needs attention'], ['waiting', 'Corrective or customer'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Finished'], ['all', 'All inspections']],
     sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
     calls: [['new', 'New calls'], ['missed', 'Missed calls'], ['today', 'Callbacks today'], ['overdue', 'Overdue'], ['waiting', 'Waiting'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All calls']],
     leads: [['contact_today', 'Contact today'], ['overdue', 'Overdue'], ['today', 'Follow-ups today'], ['new', 'Needs next step'], ['waiting', 'Waiting on customer'], ['scheduled', 'Scheduled'], ['qualified', 'Qualified'], ['converted', 'Converted'], ['closed', 'Lost / closed'], ['all', 'All leads']],
@@ -4846,6 +4847,9 @@
     } else if (d === 'leads') {
       // A lead's next step is completed or put on hold from here; setting a new date starts a new step.
       next = `${it.due ? btn('complete', 'Complete', '') + btn('waiting', 'Waiting') : ''}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
+    } else if (d === 'inspections') {
+      // Signing, corrective work, reinspection and acceptance are done on the inspection. The queue sets the owner and the date.
+      next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div><a class="btn ghost" href="#quality">Open in Quality</a>`;
     } else if (d === 'sent') {
       next = '<span class="muted">Tracked automatically</span>';
     } else {
@@ -4980,6 +4984,9 @@
       if (act === 'clear') { method = 'DELETE'; url = `/api/admin/leads/${id}/follow-up`; }
       else if (act === 'schedule') { url = `/api/admin/leads/${id}/follow-up`; json = { date, note: 'Next step from Today’s work' }; }
       else { url = `/api/admin/leads/${id}/assign`; json = { assigned_to: owner }; }
+    } else if (d === 'inspections') {
+      url = `/api/admin/qc/inspections/${id}/work`;
+      json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
     } else {
       url = `/api/admin/tasks/${id}/work`;
       json = act === 'schedule' ? { due_date: date } : { assigned_to: owner };

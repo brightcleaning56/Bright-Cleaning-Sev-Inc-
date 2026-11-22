@@ -62,6 +62,9 @@ module.exports = function mountQC(app, ctx) {
     res.status(201).json({ template: tpl(id) });
   });
 
+  // Keeps the work queue item for an inspection in step with the inspection. A failure is logged; the inspection is already saved.
+  const syncWork = (id, req) => { try { require('./work-engine').syncInspection(db, id, who(req) || 'admin'); } catch (e) { console.error('inspection work queue sync failed', id, e.message); } };
+
   // ---------- Inspections ----------
   function validate(b, cur) {
     const out = {}, errs = [];
@@ -90,6 +93,7 @@ module.exports = function mountQC(app, ctx) {
     const c = Object.keys(out), t = now();
     const id = db.prepare(`INSERT INTO inspections(${c.join(',')},created_by,created_at,updated_at) VALUES(${c.map(() => '?').join(',')},?,?,?)`).run(...c.map(k => out[k]), who(req), t, t).lastInsertRowid;
     logAction(req, 'started', 'inspection', id, `${out.area}${out.template ? ' (' + out.template + ')' : ''}`);
+    syncWork(id, req);
     res.status(201).json({ inspection: get(id) });
   });
   app.patch('/api/admin/qc/inspections/:id', auth, (req, res) => {
@@ -103,6 +107,7 @@ module.exports = function mountQC(app, ctx) {
       if (req.body.status !== 'Cancelled') return res.status(400).json({ error: 'Only Cancelled can be set here.' });
       db.prepare("UPDATE inspections SET status='Cancelled', updated_at=? WHERE id=?").run(now(), cur.id);
       logAction(req, 'cancelled inspection', 'inspection', cur.id, cur.area || '');
+      syncWork(cur.id, req);
       return res.json({ inspection: get(cur.id) });
     }
     const { out, errs } = validate(req.body || {}, cur); if (errs.length) return res.status(400).json({ error: errs.join(' ') });
@@ -120,6 +125,7 @@ module.exports = function mountQC(app, ctx) {
     db.prepare('UPDATE inspections SET signed_by=?, signed_name=?, signed_at=?, status=?, updated_at=? WHERE id=?').run(who(req), name, now(), st, now(), cur.id);
     // A passing reinspection closes the original.
     if (cur.parent_id && !fails) db.prepare("UPDATE inspections SET status='Closed', updated_at=? WHERE id=?").run(now(), cur.parent_id);
+    syncWork(cur.id, req); if (cur.parent_id) syncWork(cur.parent_id, req);
     logAction(req, 'signed', 'inspection', cur.id, `${number(cur)} ${cur.area}: ${cur.score == null ? '—' : cur.score + '%'} ${cur.passed ? 'PASS' : 'FAIL'} (${name})`);
     res.json({ inspection: get(cur.id) });
   });
@@ -141,6 +147,7 @@ module.exports = function mountQC(app, ctx) {
       void key;
     }
     db.prepare("UPDATE inspections SET status='Corrective action', updated_at=? WHERE id=?").run(now(), cur.id);
+    syncWork(cur.id, req);
     logAction(req, 'created corrective work orders', 'inspection', cur.id, `${number(cur)}: ${ids.length}`);
     res.status(201).json({ created: ids.length, ids });
   });
@@ -153,6 +160,7 @@ module.exports = function mountQC(app, ctx) {
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,'Reinspection','In progress',?,?,?,?)`).run(cur.project_id, cur.customer_id, cur.property_id, cur.visit_id, cur.crew, cur.area, who(req), today(), cur.template, cur.template_id, cur.threshold,
       JSON.stringify(failed.map(i => ({ ...i, result: '', note: '', photo_ids: [] }))), cur.id, who(req), t, t).lastInsertRowid;
     db.prepare("UPDATE inspections SET status='Reinspection due', updated_at=? WHERE id=?").run(t, cur.id);
+    syncWork(id, req); syncWork(cur.id, req);
     logAction(req, 'started reinspection', 'inspection', id, `of ${number(cur)} (${failed.length} item(s))${open ? `; ${open} corrective task(s) still open` : ''}`);
     res.status(201).json({ inspection: get(id), open_corrective: open });
   });
@@ -171,6 +179,7 @@ module.exports = function mountQC(app, ctx) {
     // The project sign-off follows only a clean acceptance, and only once a visit on the project is complete.
     if (cur.project_id && !outstanding.length && db.prepare("SELECT 1 FROM visits WHERE project_id=? AND (status='Done' OR completed_at IS NOT NULL) LIMIT 1").get(cur.project_id)) { try { db.prepare('UPDATE projects SET signoff_name=COALESCE(signoff_name,?), signoff_title=COALESCE(signoff_title,?), signoff_at=COALESCE(signoff_at,?) WHERE id=?').run(name, clean(b.title, 120), now(), cur.project_id); } catch { /* */ } }
     logAction(req, 'recorded customer acceptance', 'inspection', cur.id, `${number(cur)}: ${name}${outstanding.length ? ' (with exceptions)' : ''}`);
+    syncWork(cur.id, req);
     res.json({ inspection: get(cur.id) });
   });
 
@@ -183,6 +192,19 @@ module.exports = function mountQC(app, ctx) {
     db.prepare('UPDATE inspections SET exception_waiver_by=?, exception_waiver_at=?, exception_waiver_reason=?, updated_at=? WHERE id=?').run(who(req), now(), reason, now(), cur.id);
     logAction(req, 'waived inspection exceptions', 'inspection', cur.id, `${number(cur)}: ${reason}`);
     res.json({ inspection: get(cur.id) });
+  });
+
+  // Queue actions on an inspection: assign it, or set when it should be done. Signing, reinspection and acceptance stay on the inspection.
+  app.post('/api/admin/qc/inspections/:id/work', auth, (req, res) => {
+    const b = req.body || {}, action = String(b.action || '');
+    const em = String((req.user && req.user.email) || '').toLowerCase();
+    const role = (adminEmail && em === String(adminEmail).toLowerCase()) ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
+    if (role === 'inspector') return res.status(403).json({ error: 'Inspectors do not assign or schedule work on the work queue.' });
+    try {
+      const item = require('./work-engine').applyInspectionAction(db, Number(req.params.id), b, who(req) || 'admin');
+      logAction(req, `inspection ${action}`, 'inspection', Number(req.params.id), action === 'assign' ? 'assigned ' + (b.assigned_to || 'none') : 'due ' + (b.date || ''));
+      res.json({ ok: true, item });
+    } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
   app.get('/api/admin/qc/inspections/:id', auth, (req, res) => {
