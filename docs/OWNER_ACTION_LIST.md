@@ -85,3 +85,13 @@ Source: `docs/audit/13-15-portal-security-infra.md`. Items 1 to 4 need your acce
 2. **Inspector account (not created).** Create ericd567@icloud.com with role Inspector in Settings → Users & Access. You type the password. Then tell me so I can confirm sign-in.
 3. **Still open decisions:** maintenance records (build or leave out), proposal visibility (keep or restrict), and whether to remove the "TEST - Waco Place" proposal on live.
 4. **Not clicked through in a browser yet:** estimate assign and follow-up buttons on the work queue, and conversation actions. Their rules are covered by the test suite, but not the buttons.
+
+## Status, 2026-11-22 (build f248a79be125 live)
+
+1. **Inspector account (created by owner).** ericd567@icloud.com, role Inspector, is on the live list. Owner to sign in once and confirm quality opens and invoices are refused.
+2. **AI extract error: cause found.** The Anthropic account has no credit left ("credit balance is too low"). Add credits under Plans & Billing in Anthropic. The app code is fine.
+3. **TEST - Waco Place proposal removed from live (id 17).** Hard delete, owner request.
+4. **Proposals on the work queue are owner and manager only**, like invoices. Sales staff no longer see the proposal queue. Say if sales should keep it.
+5. **Maintenance records built.** Add the first vans, vacuums and machines under Maintenance on the work queue (Add equipment). Mark each one serviced when done; the next due date moves on by its interval.
+6. **Decision for you:** a customer text that still needs a reply stays under "Needs reply" even after someone clicks Waiting. The follow-up date is kept. Say if Waiting should move it out of "Needs reply".
+7. **Browser-checked on the local test site:** proposal assign, follow-up date and waiting; conversation assign, follow-up date, waiting, close and reopen; maintenance add and mark serviced.
