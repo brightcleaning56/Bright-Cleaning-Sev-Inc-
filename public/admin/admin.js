@@ -464,6 +464,19 @@
         (locked ? '' : '<p><button class="btn ghost small" id="optAdd">Add option</button></p>' +
           '<div class="f"><label for="optReason">Why the prices changed (kept in the history)</label><input id="optReason" placeholder="e.g. walkthrough: more floor work"></div>' +
           '<button class="btn small" id="optSave">Save options</button>');
+      // Typing in units or prices updates the amounts and the option total at once; saving still uses the typed values.
+      const recalc = () => box.querySelectorAll('[data-opt]').forEach(card => {
+        let sum = 0;
+        card.querySelectorAll('[data-line]').forEach(row => {
+          const q = Number(row.querySelector('[data-l="quantity"]').value) || 0, p = Number(row.querySelector('[data-l="unit_price"]').value) || 0;
+          sum += q * p; const cell = row.querySelector('td.num'); if (cell) cell.textContent = money(q * p);
+        });
+        const cost = Number(card.querySelector('[data-f="cost"]').value) || 0;
+        const note = sum > 0 && cost > 0 ? ' · margin ' + ((sum - cost) / sum * 100).toFixed(1) + '%' : ' · no cost entered, so the margin is not checked';
+        const tot = [...card.querySelectorAll('p')].find(p => /^Option total/.test(p.textContent.trim()));
+        if (tot) tot.innerHTML = '<b>Option total: ' + money(sum) + '</b> before tax' + note;
+      });
+      box.oninput = recalc;
       if (locked) return;
       $('#optAdd').onclick = () => { capture(); opts.push({ id: null, label: 'New option', duration_weeks: null, scope_kind: 'Whole project', building: '', lines: [blankLine()] }); draw(); };
       box.querySelectorAll('[data-addline]').forEach(b => b.onclick = () => { capture(); opts[Number(b.dataset.addline)].lines.push(blankLine()); draw(); });
