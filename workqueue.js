@@ -13,7 +13,7 @@
 // Dates use the business time zone (BUSINESS_TZ), via bizdate.js.
 const { today: bizToday, TZ } = require('./bizdate');
 
-const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages', 'inspections'];
+const DEPTS = ['emails', 'calls', 'leads', 'tasks', 'sent', 'messages', 'inspections', 'invoices'];
 const MISSED = ['Missed', 'Voicemail', 'No answer', 'No-answer'];
 const ISSUE_CLOSED = ['Resolved', 'Verified', 'Closed'];
 const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !isNaN(Date.parse(s));
@@ -103,6 +103,8 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const today = () => bizToday();
 
   // ---- Items, sorted into buckets ----
+  let viewerFinance = false; // set by the queue routes before they build a list
+
   function items(dept) {
     const t = today(), now = nowIso();
     if (dept === 'emails') {
@@ -169,6 +171,27 @@ module.exports = function (app, { db, auth, logAction, clean }) {
           };
         });
     }
+    if (dept === 'invoices') {
+      // Unpaid invoices and their follow-up. Owner and manager only (set by the route before this runs).
+      if (!viewerFinance) return [];
+      const WE = require('./work-engine'), R = require('./receivables');
+      if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='invoices'").get()) return [];
+      const rows = db.prepare(`SELECT id, invoice_number, customer_name, company, status, due_date, issue_date, created_at FROM invoices WHERE status NOT IN ('Draft') ORDER BY id DESC LIMIT 1000`).all();
+      const out = [];
+      for (const r of rows) {
+        const owed = R.invoiceBalance(db, r.id).owed;
+        const finished = !(owed > 0.005) || r.status === 'Void';
+        const st = WE.invoiceState(db, r.id);
+        // Paid or void invoices need no follow-up: close any open item (the invoice's balance is the source of truth).
+        if (finished) { if (st) WE.closeInvoiceWork(db, r.id, finished && r.status === 'Void' ? 'Invoice void' : 'Paid in full', 'system'); continue; }
+        const due = (st && st.due) || r.due_date || null;
+        const bucket = st && st.item_status === 'waiting' ? 'waiting' : validDate(due) ? dateBucket(due, t) : 'new';
+        out.push({ dept, id: r.id, title: `${r.invoice_number || 'Invoice #' + r.id}${r.customer_name || r.company ? ' · ' + (r.customer_name || r.company) : ''}`,
+          who: r.company || r.customer_name || '', when: r.created_at, assigned_to: st ? st.assigned_to : null, lead_id: null, customer_id: null,
+          due: due || null, bucket, note: `Owed ${owed.toFixed(2)} · ${r.status || ''}`, status: r.status });
+      }
+      return out;
+    }
     if (dept === 'inspections') {
       // Inspections with work left: signing, corrective work, reinspection or customer acceptance. Finished ones are Completed.
       const WE = require('./work-engine');
@@ -221,8 +244,13 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   // Escalated missed calls first, then by bucket, then by due date.
   const sortItems = list => list.sort((a, b) => (b.escalated ? 1 : 0) - (a.escalated ? 1 : 0) || (ORDER[a.bucket] ?? 99) - (ORDER[b.bucket] ?? 99) || String(a.due || '9999').localeCompare(String(b.due || '9999')));
 
+  // Who may see money on the queue: the owner and managers. Set synchronously before the queue is built.
+  const financeViewer = req => { const em = String((req.user && req.user.email) || '').toLowerCase(); if (process.env.ADMIN_EMAIL && em === String(process.env.ADMIN_EMAIL).toLowerCase()) return true; const row = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em); return !!row && ['owner', 'manager'].includes(row.role); };
+
   app.get('/api/admin/work-queue', auth, (req, res) => {
     const dept = String(req.query.dept || 'tasks');
+    viewerFinance = financeViewer(req);
+    if (dept === 'invoices' && !viewerFinance) return res.status(403).json({ error: 'Only an owner or manager can see invoices on the work queue.' });
     if (!DEPTS.includes(dept)) return res.status(400).json({ error: 'Unknown department.' });
     const bucket = req.query.bucket ? String(req.query.bucket) : null;
     const assignee = req.query.assigned_to ? String(req.query.assigned_to) : null;
@@ -239,6 +267,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   function summary() {
     const out = {};
     for (const d of DEPTS) {
+      if (d === 'invoices' && !viewerFinance) continue;
       const list = items(d), c = { all: list.length };
       // open: what still needs doing (not completed or closed). The tab count shows this.
       c.open = list.filter(x => !['completed', 'closed'].includes(x.bucket)).length;
@@ -283,7 +312,16 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     res.json({ today: today(), suggestions: out, note: 'Suggestions only. Nothing is changed until a person acts on an item.' });
   });
 
-  app.get('/api/admin/work-queue/summary', auth, (req, res) => res.json({ today: today(), timezone: TZ, counts: summary() }));
+  app.post('/api/admin/work-queue/invoices/:id/work', auth, (req, res) => {
+    if (!financeViewer(req)) return res.status(403).json({ error: 'Only an owner or manager can work invoices on the queue.' });
+    const b = req.body || {}, who = (req.user && req.user.email) || 'admin';
+    try {
+      const item = require('./work-engine').applyInvoiceAction(db, Number(req.params.id), b, who);
+      logAction(req, `invoice ${String(b.action || '')}`, 'invoice', Number(req.params.id), b.action === 'assign' ? 'assigned ' + (b.assigned_to || 'none') : (b.date || '') + (b.waiting_on ? ' ' + b.waiting_on : ''));
+      res.json({ ok: true, item });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  app.get('/api/admin/work-queue/summary', auth, (req, res) => { viewerFinance = financeViewer(req); res.json({ today: today(), timezone: TZ, counts: summary() }); });
 
   // ---- Actions (each one is audited) ----
   // Emails: handle, wait, schedule (follow-up date or snooze), or assign. Opening an email never changes its state.

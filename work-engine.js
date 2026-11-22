@@ -576,4 +576,64 @@ function migrateInspectionState(db) {
   return n;
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN };
+// ---- Invoice follow-up on the engine ----
+// An unpaid invoice has at most one open work item (kind 'invoice', ref_type 'invoice', ref_id = the invoice). The item holds
+// who follows the invoice up, the follow-up date and any promise to pay. Money is never changed from the queue: payments,
+// refunds and credits stay on the invoice and its ledger. The invoice's balance decides whether it still needs work.
+const INVOICE_OPEN_STATUSES = ['Sent', 'Approved', 'Partial', 'Overdue', 'Past due', 'Unpaid', 'Pending'];
+const invActive = (db, id) => db.prepare("SELECT * FROM work_items WHERE kind='invoice' AND ref_type='invoice' AND ref_id=? AND status IN ('open','in_progress','waiting') ORDER BY id DESC LIMIT 1").get(Number(id));
+
+// The queue's view of an invoice's follow-up item, or null when it has none.
+function invoiceState(db, id) {
+  const it = invActive(db, id);
+  if (!it) return null;
+  return { item_id: it.id, item_status: it.status, due: it.due_date || null, assigned_to: it.assigned_to };
+}
+
+// Finishes the item of an invoice that no longer needs work (paid in full, or void). Returns the item or null.
+function closeInvoiceWork(db, invoiceId, reason, by = null) {
+  const cur = invActive(db, invoiceId);
+  if (!cur) return null;
+  return act(db, cur.id, 'complete', { note: reason || 'Nothing left to collect' }, by);
+}
+
+// A queue action on an invoice's follow-up: assign, set the follow-up date, or record a promise to pay with a date.
+function applyInvoiceAction(db, invoiceId, body = {}, by = null) {
+  ensureSchema(db);
+  const inv = db.prepare('SELECT id, status FROM invoices WHERE id=?').get(Number(invoiceId));
+  if (!inv) throw new Error('Invoice not found.');
+  const { owed } = require('./receivables').invoiceBalance(db, inv.id);
+  if (inv.status === 'Void' || inv.status === 'Draft' || !(owed > 0.005)) throw new Error('This invoice has nothing left to collect.');
+  const action = String(body.action || '');
+  // Check what was asked before anything is written.
+  if (action === 'schedule' && !isDate(body.date)) throw new Error('Choose a valid follow-up date.');
+  if (action === 'wait') {
+    if (!r(body.waiting_on)) throw new Error('To record a promise to pay, add who promised and what.');
+    if (!isDate(body.date)) throw new Error('Choose the date the payment is promised for (YYYY-MM-DD).');
+  }
+  if (!['assign', 'schedule', 'wait'].includes(action)) throw new Error('Unknown invoice action.');
+  let cur = invActive(db, inv.id);
+  if (!cur) {
+    const i2 = db.prepare('SELECT invoice_number, customer_name FROM invoices WHERE id=?').get(inv.id);
+    const id = create(db, { kind: 'invoice', ref_type: 'invoice', ref_id: inv.id, title: `Collect: invoice ${i2.invoice_number || '#' + inv.id}${i2.customer_name ? ' · ' + i2.customer_name : ''}`.slice(0, 300), by }).id;
+    cur = get(db, id);
+  }
+  if (action === 'assign') {
+    const to = r(body.assigned_to) ? String(body.assigned_to).trim().toLowerCase() : null;
+    if (to === (cur.assigned_to || null)) return get(db, cur.id);
+    return act(db, cur.id, 'reassign', { assigned_to: to }, by);
+  }
+  if (action === 'schedule') {
+    if (!isDate(body.date)) throw new Error('Choose a valid follow-up date.');
+    return act(db, cur.id, 'edit', { due_date: body.date }, by);
+  }
+  if (action === 'wait') {
+    if (!r(body.waiting_on)) throw new Error('To record a promise to pay, add who promised and what.');
+    if (!isDate(body.date)) throw new Error('Choose the date the payment is promised for (YYYY-MM-DD).');
+    act(db, cur.id, 'wait', { waiting_on: body.waiting_on, next_follow_up: body.date }, by);
+    return act(db, cur.id, 'edit', { due_date: body.date }, by);
+  }
+  throw new Error('Unknown invoice action.');
+}
+
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES };

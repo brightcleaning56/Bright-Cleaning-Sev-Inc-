@@ -4778,9 +4778,10 @@
 
   // ---------- Email Center ----------
   // ---------- Today's work: one daily queue across emails, calls, leads and tasks ----------
-  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks'], ['inspections', 'Inspections']];
+  const WQ_DEPTS = [['emails', 'Emails'], ['messages', 'Client messages'], ['sent', 'Sent'], ['calls', 'Calls'], ['leads', 'Leads'], ['tasks', 'Tasks'], ['inspections', 'Inspections'], ['invoices', 'Invoices']];
   const WQ_BUCKETS = {
     emails: [['new', 'Needs attention'], ['today', 'Today'], ['overdue', 'Overdue'], ['waiting', 'Waiting for reply'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All mail']],
+    invoices: [['new', 'No follow-up date'], ['waiting', 'Promised to pay'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['all', 'All unpaid']],
     inspections: [['new', 'Needs attention'], ['waiting', 'Corrective or customer'], ['today', 'Due today'], ['overdue', 'Overdue'], ['scheduled', 'Scheduled'], ['completed', 'Finished'], ['all', 'All inspections']],
     sent: [['waiting', 'Awaiting reply'], ['new', 'Not delivered'], ['completed', 'Replied'], ['all', 'All sent']],
     calls: [['new', 'New calls'], ['missed', 'Missed calls'], ['today', 'Callbacks today'], ['overdue', 'Overdue'], ['waiting', 'Waiting'], ['scheduled', 'Scheduled'], ['completed', 'Completed'], ['all', 'All calls']],
@@ -4847,6 +4848,9 @@
     } else if (d === 'leads') {
       // A lead's next step is completed or put on hold from here; setting a new date starts a new step.
       next = `${it.due ? btn('complete', 'Complete', '') + btn('waiting', 'Waiting') : ''}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set next step', '')}</div>${it.due ? btn('clear', 'Clear next step') : ''}<a class="btn ghost" href="#leads">Open lead</a>`;
+    } else if (d === 'invoices') {
+      // Money: owner and manager only. The queue sets the owner, the follow-up date, or a promise to pay. Payments stay on the invoice.
+      next = `${btn('waiting', 'Promise to pay')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div><a class="btn ghost" href="#invoices">Open invoice</a>`;
     } else if (d === 'inspections') {
       // Signing, corrective work, reinspection and acceptance are done on the inspection. The queue sets the owner and the date.
       next = `<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div><a class="btn ghost" href="#quality">Open in Quality</a>`;
@@ -4943,6 +4947,11 @@
         submit: f => api(`/api/admin/tasks/${id}/work`, { method: 'POST', json: { action: act, ...f } }),
         after: () => { toast(act === 'complete' ? 'Completed' : act === 'cancel' ? 'Cancelled' : act === 'reopen' ? 'Reopened' : 'Waiting'); loadWorkQueue(); } });
     }
+    if (d === 'invoices' && act === 'waiting') {
+      return openForm({ title: 'Promise to pay', sub: 'Who promised, and the date the payment is promised for. The invoice itself does not change.', defs: [{ name: 'waiting_on', label: 'Who promised and what', wide: true }, { name: 'date', label: 'Promised for', type: 'date' }],
+        submit: f => api(`/api/admin/work-queue/invoices/${id}/work`, { method: 'POST', json: { action: 'wait', ...f } }),
+        after: () => { toast('Promise recorded'); loadWorkQueue(); } });
+    }
     if (d === 'leads' && (act === 'complete' || act === 'waiting')) {
       const defs = act === 'complete' ? [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }]
         : [{ name: 'waiting_on', label: 'Waiting on (what, or who)', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }];
@@ -4984,6 +4993,9 @@
       if (act === 'clear') { method = 'DELETE'; url = `/api/admin/leads/${id}/follow-up`; }
       else if (act === 'schedule') { url = `/api/admin/leads/${id}/follow-up`; json = { date, note: 'Next step from Today’s work' }; }
       else { url = `/api/admin/leads/${id}/assign`; json = { assigned_to: owner }; }
+    } else if (d === 'invoices') {
+      url = `/api/admin/work-queue/invoices/${id}/work`;
+      json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
     } else if (d === 'inspections') {
       url = `/api/admin/qc/inspections/${id}/work`;
       json = act === 'schedule' ? { action: 'schedule', date } : { action: 'assign', assigned_to: owner };
