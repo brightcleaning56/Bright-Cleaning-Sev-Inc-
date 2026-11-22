@@ -4889,7 +4889,8 @@
       next = `${btn('waiting', 'Waiting on customer')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div><a class="btn ghost" href="#proposals">Open proposal</a>`;
     } else if (d === 'invoices') {
       // Money: owner and manager only. The queue sets the owner, the follow-up date, or a promise to pay. Payments stay on the invoice.
-      next = `${btn('waiting', 'Promise to pay')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div><a class="btn ghost" href="#invoices">Open invoice</a>`;
+      // A draft made at completion is not sent yet: its only action is to open it and send it.
+      next = it.bucket === 'ready' ? `<button class="btn" type="button" data-rec="invoices:${id}">Review and send</button>` : `${btn('waiting', 'Promise to pay')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set follow-up', '')}</div><a class="btn ghost" href="#invoices">Open invoice</a>`;
     } else if (d === 'maintenance') {
       // Service is recorded here; the next due date moves on by the service interval.
       next = `${btn('serviced', 'Mark serviced')}<div class="wqrow-act">${dateIn}${btn('schedule', 'Set due date', '')}</div>`;
@@ -4932,6 +4933,7 @@
     const j = await api('/api/admin/work-queue?' + qs);
     const shown = wqFilterText(j.items);
     $('#wqRows').innerHTML = shown.length ? shown.map(wqRow).join('') : '<tr><td colspan="8" class="muted">Nothing here right now.</td></tr>';
+    bindOpeners($('#wqRows')); // "Review and send" and similar buttons open their record
     $$('#wqRows .wqpick').forEach(x => x.onchange = wqBulkSync); wqBulkSync();
     $('#wqCount').textContent = `${shown.length} item${shown.length === 1 ? '' : 's'}${j.items.length === 500 ? ' (first 500 shown)' : ''}`;
   }
