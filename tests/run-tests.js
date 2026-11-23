@@ -1457,6 +1457,35 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(txt.status === 400 && /not set up/.test(txt.data.error || ''), 'text should be refused until set up, got ' + txt.status + ' ' + JSON.stringify(txt.data));
     return 'queues load (5); missed call gets a callback and sits in Missed / callbacks; unmatched call is Unknown caller; call links to a lead; caller context returns the lead; text refused until set up';
   });
+  await check('Call and callback work', 'A call can be put on hold, completed, reopened and cancelled from its drawer; completing it closes its callback task and closing the task completes the call; a text from a call is refused until texting is set up', async () => {
+    const made = await req('POST', '/api/admin/calls', { token: T, json: { phone: '5155550188', contact_name: 'Callback Caller', direction: 'Inbound', outcome: 'Missed', purpose: 'Other' } });
+    assert(made.status === 201, 'call should save, got ' + made.status);
+    const cid = made.data.call.id;
+    const d = new Database(path.join(dataDir, 'brightclean.db'));
+    const iid =d.prepare("INSERT INTO customer_issues(type,title,description,priority,status,created_by,created_at,updated_at) VALUES('follow_up','Call back Callback Caller','Test callback','High','Open','test',?,?)").run(new Date().toISOString(), new Date().toISOString()).lastInsertRowid;
+    d.prepare('UPDATE calls SET callback_issue_id=? WHERE id=?').run(iid, cid);
+    d.close();
+    const issueStatus = async () => { const x = await req('GET', '/api/admin/issues/' + iid, { token: T }); return (x.data.issue || x.data).status; };
+    const callDone = async () => (await req('GET', '/api/admin/calls/' + cid + '/detail', { token: T })).data.call.follow_up_done;
+    const wait = await req('POST', '/api/admin/calls/' + cid + '/work', { token: T, json: { action: 'wait', waiting_on: 'Customer to confirm', date: '2099-12-01' } });
+    assert(wait.status === 200 && (await callDone()) === 0, 'wait should keep the call open: ' + wait.status + ' ' + JSON.stringify(wait.data));
+    const done = await req('POST', '/api/admin/calls/' + cid + '/work', { token: T, json: { action: 'complete', note: 'Called back, booked' } });
+    assert(done.status === 200 && (await callDone()) === 1, 'complete should finish the call: ' + done.status + ' ' + JSON.stringify(done.data));
+    assert((await issueStatus()) === 'Resolved', 'completing the call should resolve its callback, got ' + (await issueStatus()));
+    const again = await req('POST', '/api/admin/calls/' + cid + '/work', { token: T, json: { action: 'reopen', reason: 'Customer called again' } });
+    assert(again.status === 200 && (await callDone()) === 0 && (await issueStatus()) === 'Open', 'reopening the call should reopen its callback');
+    const pat = await req('PATCH', '/api/admin/issues/' + iid, { token: T, json: { status: 'Resolved', resolution: 'Handled on the Issues screen' } });
+    assert(pat.status === 200 && (await callDone()) === 1, 'closing the callback on the Issues screen should complete the call: ' + pat.status + ' ' + JSON.stringify(pat.data));
+    const second = await req('POST', '/api/admin/calls', { token: T, json: { phone: '5155550199', contact_name: 'Cancel Caller', direction: 'Inbound', outcome: 'Missed', purpose: 'Other' } });
+    const c2 = second.data.call.id;
+    const cancelNoReason = await req('POST', '/api/admin/calls/' + c2 + '/work', { token: T, json: { action: 'cancel' } });
+    assert(cancelNoReason.status === 400, 'cancel without a reason should be refused, got ' + cancelNoReason.status);
+    const cancelled = await req('POST', '/api/admin/calls/' + c2 + '/work', { token: T, json: { action: 'cancel', reason: 'Wrong number' } });
+    assert(cancelled.status === 200, 'cancel with a reason should save, got ' + cancelled.status);
+    const txt = await req('POST', '/api/admin/messages/sms', { token: T, json: { call_id: cid, to: '5155550188', body: 'Thanks for calling back.' } });
+    assert(txt.status === 400 && /not set up/.test(txt.data.error || ''), 'text from a call should be refused until set up, got ' + txt.status);
+    return 'call waits, completes, reopens; completing resolves its callback, closing the callback completes the call; cancel needs a reason; text refused until set up';
+  });
   await check('Email Center', 'Mailboxes and counts load; each email is linked and categorised; a message opens with its summary; unknown emails are 404', async () => {
     const em = await req('GET', '/api/admin/email-center', { token: T });
     assert(em.status === 200 && Array.isArray(em.data.mailboxes) && em.data.mailboxes.length === 11, 'mailboxes should load: ' + em.status);

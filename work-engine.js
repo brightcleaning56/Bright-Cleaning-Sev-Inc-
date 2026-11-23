@@ -321,7 +321,35 @@ function applyCallAction(db, callId, body = {}, by = null) {
     if (r(body.assigned_to) && r(body.assigned_to) !== out.assigned_to) out = act(db, id, 'reassign', { assigned_to: body.assigned_to }, by);
   } else throw new Error('Unknown call action.');
   mirrorCall(db, callId, out, by, nowIso());
+  callbackToIssue(db, callId, out, by);
   return get(db, id);
+}
+
+// A callback task (customer_issues) and the call it came from stay one step. Finishing or cancelling the call closes its callback;
+// reopening the call reopens it. The other direction is issueCallSync, called when the callback is saved on the Issues screen.
+function callbackToIssue(db, callId, it, by) {
+  if (!hasTable(db, 'customer_issues')) return;
+  const c = db.prepare('SELECT callback_issue_id FROM calls WHERE id=?').get(Number(callId));
+  if (!c || !c.callback_issue_id) return;
+  const x = issueRow(db, c.callback_issue_id);
+  if (!x) return;
+  const at = nowIso(), done = ISSUE_DONE.includes(x.status);
+  if (it.status === 'completed' && !done) db.prepare("UPDATE customer_issues SET status='Resolved', resolution=?, resolved_at=?, updated_at=? WHERE id=?").run(r(it.completion_note) || 'Callback completed', at, at, x.id);
+  else if (it.status === 'cancelled' && !done) db.prepare("UPDATE customer_issues SET status='Closed', resolution=?, resolved_at=?, updated_at=? WHERE id=?").run('Cancelled: ' + (it.cancel_reason || 'no reason given'), at, at, x.id);
+  else if (ACTIVE.includes(it.status) && done) db.prepare("UPDATE customer_issues SET status='Open', resolved_at=NULL, verified_by=NULL, verified_at=NULL, updated_at=? WHERE id=?").run(at, x.id);
+  else return;
+  syncIssueFromScreen(db, x.id, by);
+}
+
+// The callback was resolved, closed or reopened on the Issues screen: the call's work item follows it.
+function issueCallSync(db, issueId, by) {
+  const c = db.prepare('SELECT id FROM calls WHERE callback_issue_id=?').get(Number(issueId));
+  if (!c) return;
+  const x = issueRow(db, issueId);
+  if (!x) return;
+  const id = ensureCallItem(db, c.id, by), cur = get(db, id);
+  if (ISSUE_DONE.includes(x.status) && ACTIVE.includes(cur.status)) mirrorCall(db, c.id, act(db, id, 'complete', { note: r(x.resolution) || 'Callback resolved on the Issues screen' }, by), by, nowIso());
+  else if (!ISSUE_DONE.includes(x.status) && TERMINAL.includes(cur.status)) mirrorCall(db, c.id, act(db, id, 'reopen', { reason: 'Callback reopened on the Issues screen' }, by), by, nowIso());
 }
 
 // Carries the existing call follow-ups onto the engine, once. Calls that already have an item are skipped.
@@ -450,18 +478,21 @@ function applyIssueAction(db, taskId, body = {}, by = null) {
     itemId = issueNextItem(db, x, by);
     act(db, itemId, 'complete', { note: body.note }, by);
     db.prepare("UPDATE customer_issues SET status='Resolved', resolution=?, resolved_at=?, updated_at=? WHERE id=?").run(r(body.note).slice(0, 4000), at, at, x.id);
+    issueCallSync(db, x.id, by);
   } else if (action === 'cancel') {
     if (done) throw new Error('This task is already resolved.');
     if (!r(body.reason)) throw new Error('To cancel this task, add a reason.');
     itemId = issueNextItem(db, x, by);
     act(db, itemId, 'cancel', { reason: body.reason }, by);
     db.prepare("UPDATE customer_issues SET status='Closed', resolution=?, resolved_at=?, updated_at=? WHERE id=?").run(('Cancelled: ' + r(body.reason)).slice(0, 4000), at, at, x.id);
+    issueCallSync(db, x.id, by);
   } else if (action === 'reopen') {
     if (!done) throw new Error('This task is not finished, so it cannot be reopened.');
     if (!r(body.reason)) throw new Error('To reopen this task, add a reason.');
     const last = issueLatest(db, x.id);
     if (last && (last.status === 'completed' || last.status === 'cancelled')) { act(db, last.id, 'reopen', { reason: body.reason }, by); itemId = last.id; }
     db.prepare("UPDATE customer_issues SET status='Open', resolved_at=NULL, verified_by=NULL, verified_at=NULL, updated_at=? WHERE id=?").run(at, x.id);
+    issueCallSync(db, x.id, by);
   } else if (action === 'wait') {
     needOpen();
     if (!r(body.waiting_on)) throw new Error('To put this on hold, add what it is waiting on.');
@@ -790,4 +821,4 @@ function applyEstimateAction(db, estimateId, body = {}, by = null) {
   return act(db, cur.id, 'edit', { due_date: body.date }, by);
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, CONV_STATES, estState, applyEstimateAction, closeEstimateWork, ESTIMATE_OPEN };
+module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, callbackToIssue, issueCallSync, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, CONV_STATES, estState, applyEstimateAction, closeEstimateWork, ESTIMATE_OPEN };

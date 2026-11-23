@@ -248,6 +248,13 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     try { sid = await sendSms(to, body); } catch (err) { status = 'Failed'; error = err.message; }
     db.prepare('INSERT INTO sms_messages(estimate_id,customer_id,lead_id,to_number,body,status,provider_sid,error,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
       .run(null, cust ? cust.id : null, lead ? lead.id : null, to, body, status, sid, error, me(req), now);
+    // A text sent from a call is also written to that call's history, and to its callback task when it has one.
+    const callRow = Number(b.call_id) ? db.prepare('SELECT id, callback_issue_id FROM calls WHERE id=?').get(Number(b.call_id)) : null;
+    if (callRow) {
+      const line = status === 'Sent' ? 'Text sent: ' + body.slice(0, 200) : 'Text not sent: ' + String(error || '').slice(0, 200);
+      try { logAction(req, status === 'Sent' ? 'texted customer' : 'text not sent', 'call', callRow.id, line); } catch { /* history is best effort */ }
+      if (callRow.callback_issue_id) { try { db.prepare('INSERT INTO issue_comments(issue_id,body,author,created_at) VALUES(?,?,?,?)').run(callRow.callback_issue_id, line, me(req), now); } catch { /* best effort */ } }
+    }
     if (lead) { try { require('./leadlog').record(db, lead.id, 'text_out', status === 'Sent' ? 'Text sent: ' + body.slice(0, 120) : 'Text not sent: ' + error, me(req), body, now); } catch { /* history is best effort */ } }
     logAction(req, 'texted ' + (cust ? 'customer' : lead ? 'lead' : 'number'), cust ? 'customer' : lead ? 'lead' : 'call', cust ? cust.id : lead ? lead.id : null, status === 'Sent' ? 'text sent' : 'text failed: ' + error);
     if (status === 'Failed') return res.status(502).json({ error });

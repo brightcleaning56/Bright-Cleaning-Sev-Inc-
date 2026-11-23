@@ -1475,7 +1475,7 @@
           <div class="f"><label for="lOrigin">Came from</label><select id="lOrigin">${[['website', 'Filled in our website form'], ['inbound_call', 'Called us'], ['portal', 'Client portal request'], ['manual', 'Added by our team (we are reaching out)'], ['import', 'Bulk list for staff to call'], ['api', 'Partner or API']].map(([v, t]) => `<option value="${v}"${(l.origin || 'website') === v ? ' selected' : ''}>${t}</option>`).join('')}</select><span class="hint">Decides how the AI writes to them: a thank-you for people who reached out, an introduction for people we added.</span></div>
           <div class="f wide"><label for="ln">Internal notes</label><textarea id="ln" placeholder="Calls, site walk notes, next steps. Only visible here.">${esc(l.notes || '')}</textarea></div>
           <div class="f wide"><label class="chk"><input type="checkbox" id="lCb" ${l.callback_requested ? 'checked' : ''}> Call back requested (automatic calls only go to leads marked this way)</label></div>
-          <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
+          <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}${l.follow_up_date ? '<button type="button" class="btn small" id="lFuDone">Complete next step</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
         </div></div></div>`,
       footer: `<button class="btn" id="lLog" type="button">Log activity</button><button class="btn ghost" id="lEdit" type="button">Edit details</button>${l.phone ? `<a class="btn ghost" href="tel:${esc(l.phone)}">Call</a>` : ''}${l.email ? `<a class="btn ghost" href="mailto:${esc(l.email)}">Email</a>` : ''}<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}${l.customer_id ? '<button class="btn ghost" id="lOpenCust">Open customer</button>' : '<button class="btn ghost" id="lConvert">Convert to customer</button>'}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
     });
@@ -1509,6 +1509,9 @@
       try { await api(`/api/admin/leads/${l.id}/follow-up`, { method: 'POST', json: { date: d, note: $('#lFuNote').value } }); toast('Follow-up saved'); closeDrawer(); load(state.view); }
       catch (err) { toast(err.message, true); }
     };
+    if ($('#lFuDone')) $('#lFuDone').onclick = () => openForm({ title: 'Complete this next step', sub: 'The note is kept with the lead and in its history.', defs: [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }],
+      submit: f => api(`/api/admin/leads/${l.id}/work`, { method: 'POST', json: { action: 'complete', ...f } }),
+      after: () => { toast('Next step completed'); closeDrawer(); load(state.view); } });
     if ($('#lFuClear')) $('#lFuClear').onclick = async () => {
       try { await api(`/api/admin/leads/${l.id}/follow-up`, { method: 'DELETE' }); toast('Follow-up cleared'); closeDrawer(); load(state.view); }
       catch (err) { toast(err.message, true); }
@@ -4256,7 +4259,7 @@
     if ($('#ccSend')) $('#ccSend').onclick = async () => {
       const body = $('#ccSms').value.trim(); if (body.length < 2) return toast('Write the text first.', true);
       if (!confirm('Send this text to ' + name + ' now?')) return;
-      try { await api('/api/admin/messages/sms', { method: 'POST', json: { customer_id: m && m.type === 'customer' ? m.id : undefined, lead_id: m && m.type === 'lead' ? m.id : undefined, to: c.phone, body } }); toast('Text sent'); renderCallPanel(c); }
+      try { await api('/api/admin/messages/sms', { method: 'POST', json: { customer_id: m && m.type === 'customer' ? m.id : undefined, lead_id: m && m.type === 'lead' ? m.id : undefined, call_id: c.id, to: c.phone, body } }); toast('Text sent'); renderCallPanel(c); }
       catch (err) { toast(err.message, true); }
     };
     $('#ccNoteSave').onclick = async () => {
@@ -4338,7 +4341,7 @@
         ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}${aiHtml}
         <label for="callTr"><b>Transcript or detailed notes</b></label><textarea id="callTr" rows="6" style="width:100%" placeholder="Paste the call transcript or write what was said…">${esc(c.transcript || '')}</textarea>
         <h3 class="secth">History</h3><div class="activity">${renderActivity(d.history) || '<p class="muted">No activity.</p>'}</div>`,
-      footer: `<button class="btn ghost" data-close>Close</button>${c.recording_url && !c.transcript ? '<button class="btn ghost" id="callTranscribe">Transcribe recording</button>' : ''}${!c.customer_id && c.phone ? '<button class="btn" id="callSaveCust">Save as customer</button>' : ''}${c.customer_id && !c.issue_id ? '<button class="btn ghost" id="callIssue">Create issue</button>' : ''}<button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_date && !c.follow_up_done ? '<button class="btn" id="callDone">Mark follow-up done</button>' : ''}` });
+      footer: `<button class="btn ghost" data-close>Close</button>${c.recording_url && !c.transcript ? '<button class="btn ghost" id="callTranscribe">Transcribe recording</button>' : ''}${!c.customer_id && c.phone ? '<button class="btn" id="callSaveCust">Save as customer</button>' : ''}${c.customer_id && !c.issue_id ? '<button class="btn ghost" id="callIssue">Create issue</button>' : ''}<button class="btn ghost" id="callAnalyze">${a ? 'Re-analyze' : 'Analyze with AI'}</button>${c.follow_up_done ? '<button class="btn ghost" id="callReopen">Reopen</button>' : '<button class="btn" id="callDone">Complete</button><button class="btn ghost" id="callWait">Wait</button><button class="btn ghost" id="callCancel">Cancel</button>'}` });
     const act = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
     act('#callLead', () => { closeDrawer(); go('leads'); openLead(c.lead_id); });
     act('#callSaveCust', () => openSaveCaller(c));
@@ -4358,6 +4361,15 @@
         submit: f => api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action: 'handle', ...f } }),
         after: () => { toast('Follow-up done'); closeDrawer(); loadCalls(); } });
     });
+    act('#callWait', () => openForm({ title: 'Wait on this call', sub: 'Say what it is waiting on and when to follow up. It stays on the list until then.', defs: [{ name: 'waiting_on', label: 'What it is waiting on', type: 'text', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }],
+      submit: f => api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action: 'wait', ...f } }),
+      after: () => { toast('Call on hold'); closeDrawer(); loadCalls(); } }));
+    act('#callCancel', () => openForm({ title: 'Cancel this call', sub: 'Say why. The call stays in its history.', defs: [{ name: 'reason', label: 'Reason', type: 'textarea', wide: true }],
+      submit: f => api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action: 'cancel', ...f } }),
+      after: () => { toast('Call cancelled'); closeDrawer(); loadCalls(); } }));
+    act('#callReopen', () => openForm({ title: 'Reopen this call', sub: 'Say why. It goes back to the open list.', defs: [{ name: 'reason', label: 'Reason', type: 'textarea', wide: true }],
+      submit: f => api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action: 'reopen', ...f } }),
+      after: () => { toast('Call reopened'); closeDrawer(); loadCalls(); } }));
     if ($('#callTranscribe')) $('#callTranscribe').onclick = async () => {
       const b = $('#callTranscribe'); b.disabled = true; b.textContent = 'Transcribing…';
       try {
