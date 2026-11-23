@@ -87,7 +87,9 @@ module.exports = function mountCalls(app, ctx) {
   // Inbound call handling (the number's "A call comes in" webhook): ring the office phone (TWILIO_FORWARD_TO) for 20 s,
   // recording answered calls; if nobody answers (or no forward number is set) take a transcribed voicemail.
   const esc = x => String(x).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
-  const greeting = () => esc(process.env.TWILIO_GREETING || 'Thanks for calling Bright Cleaning Sev Inc. We are with a customer right now. Please leave your name, number and how we can help, and we will call you back shortly.');
+  // Every inbound answer says the company name first, before anything else, so the caller knows who they reached.
+  const nameLine = () => esc(`Thank you for calling ${COMPANY_NAME}.`);
+  const greeting = () => nameLine() + ' ' + esc(process.env.TWILIO_GREETING || 'We are with a customer right now. Please leave your name, number and how we can help, and we will call you back shortly.');
   // Recording notice (readiness 5.10): callers hear it before they are connected or leave a message. Wording is set by TWILIO_RECORDING_NOTICE.
   const recordingNotice = () => esc(process.env.TWILIO_RECORDING_NOTICE || 'Calls and messages may be recorded for quality and training.');
   // Said to the customer before a call the team places is connected (approved wording; set by TWILIO_CALL_NOTICE).
@@ -127,7 +129,7 @@ module.exports = function mountCalls(app, ctx) {
     const cli = softphone() ? '<Client>office</Client>' : '';
     const num = ringPhones().filter(p => p !== caller).map(p => `<Number>${esc(p)}</Number>`).join('');
     if (!cli && !num) { const ai = ctx.aiTakeover && ctx.aiTakeover(req.body || {}); if (ai) return res.type('text/xml').send(ai); recordVoicemail(req.body || {}, 'no phone is set to ring'); return res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${voicemail()}</Response>`); }
-    const xml = `<Say voice="Polly.Joanna">${recordingNotice()}</Say>${liveTranscribe()}<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result">${cli}${num}</Dial>`;
+    const xml = `<Say voice="Polly.Joanna">${nameLine()} ${recordingNotice()}</Say>${liveTranscribe()}<Dial timeout="20" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/dial-result">${cli}${num}</Dial>`;
     res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${xml}</Response>`);
   }));
   // After the <Dial>: answered → done; otherwise record the outcome now and take a voicemail.

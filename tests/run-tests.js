@@ -3311,6 +3311,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const vin = { CallSid: 'CAin' + 'c'.repeat(28), From: '+15155550144', To: '+15153033024', Direction: 'inbound', AccountSid: 'AC' + 'a'.repeat(32) };
     const vx = await (await post('/api/webhooks/twilio/voice', vin)).text();
     assert(/<Say[^>]*>[^<]*may be recorded for quality[^<]*<\/Say>[\s\S]*<Dial/.test(vx), 'live call hears the recording notice before ringing: ' + vx);
+    assert(/<Say[^>]*>Thank you for calling Bright Cleaning Sev Inc\.[\s\S]*<Dial/.test(vx) && vx.indexOf('Thank you for calling') < vx.indexOf('<Dial'), 'live call says the company name before ringing: ' + vx);
     const cu = (await req('POST', '/api/admin/customers', { token: T, json: { company: 'Browser Co', name: 'Bea Rowser', phone: '515-555-0155' } })).data.id;
     const st = await req('POST', '/api/admin/calls/browser-start', { token: T, json: { to: '515-555-0155', customer_id: cu } });
     const cv = { CallSid: 'CAbr' + 'd'.repeat(28), From: 'client:office', To: '', call_id: String(st.data.call_id), AccountSid: 'AC' + 'a'.repeat(32) };
