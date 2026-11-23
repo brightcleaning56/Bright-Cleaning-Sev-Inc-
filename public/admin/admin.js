@@ -4261,6 +4261,11 @@
       const holder = document.createElement('div'); body.innerHTML = ''; body.appendChild(holder);
       await loadComms(q, holder.id || (holder.id = 'ccTabList'));
       if (kind) { const items = [...holder.querySelectorAll('li')]; items.forEach(li => { if (!li.textContent.includes(kind === 'sms' ? 'Text' : 'Note')) li.remove(); }); if (!items.some(li => li.isConnected && li.textContent.includes(kind === 'sms' ? 'Text' : 'Note'))) holder.insertAdjacentHTML('afterbegin', '<p class="muted">Nothing here yet.</p>'); }
+      else {
+        // Activity is only what happened (calls, texts, emails, follow-ups). Notes stay in the Notes tab so the two never mix.
+        [...holder.querySelectorAll('li')].forEach(li => { if (li.querySelector('b') && li.querySelector('b').textContent.trim() === 'Note') li.remove(); });
+        if (!holder.querySelector('li')) holder.insertAdjacentHTML('afterbegin', '<p class="muted">No calls, texts or emails yet. Notes are in the Notes tab.</p>');
+      }
     };
     const workCall = (action, title, sub, defs, done) => openForm({ title, sub, defs, submit: f => api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action, ...f } }), after: () => { toast(done); loadCalls(); } });
     if ($('#ccComplete')) $('#ccComplete').onclick = () => workCall('complete', 'Complete this call', 'The note is kept with the call and in its history.', [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }], 'Call completed');
