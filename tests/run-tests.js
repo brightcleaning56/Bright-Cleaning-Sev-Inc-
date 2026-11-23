@@ -1503,6 +1503,10 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const ccDnc = (await req('GET', '/api/admin/calls-center', { token: T })).data;
     const q4 = ccDnc.calls.find(x => x.id === c4), q5 = ccDnc.calls.find(x => x.id === c5);
     assert(q4 && q4.queue === 'Do not call' && q5 && q5.queue === 'Do not call' && !q5.callback_open, 'a blocked number should sit under Do not call, got ' + (q4 && q4.queue) + ' / ' + (q5 && q5.queue));
+    // Staff cannot dial a number on the Do not call list, from the phone or the browser.
+    const dialDnc = await req('POST', '/api/admin/calls/dial', { token: T, json: { to: dncPhone } });
+    const browserDnc = await req('POST', '/api/admin/calls/browser-start', { token: T, json: { to: dncPhone } });
+    assert(dialDnc.status === 409 && browserDnc.status === 409, 'click-to-call to a do-not-call number should be refused, got ' + dialDnc.status + ' / ' + browserDnc.status);
     const txt = await req('POST', '/api/admin/messages/sms', { token: T, json: { call_id: cid, to: '5155550188', body: 'Thanks for calling back.' } });
     assert(txt.status === 400 && /not set up/.test(txt.data.error || ''), 'text from a call should be refused until set up, got ' + txt.status);
     return 'call waits, completes, reopens; completing resolves its callback, closing the callback completes the call; cancel needs a reason; text refused until set up';

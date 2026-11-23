@@ -830,4 +830,12 @@ function applyEstimateAction(db, estimateId, body = {}, by = null) {
   return act(db, cur.id, 'edit', { due_date: body.date }, by);
 }
 
-module.exports = { KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, callbackToIssue, issueCallSync, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, CONV_STATES, estState, applyEstimateAction, closeEstimateWork, ESTIMATE_OPEN };
+// True when this number asked us not to call. Compares the last 10 digits, so +1, dashes and spaces all match.
+function isDoNotCall(db, phone) {
+  const dn = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (!dn) return false;
+  try { return !!db.prepare('SELECT 1 FROM do_not_call WHERE digits=?').get(dn); }
+  catch { return false; } // table not created yet: nothing is blocked, and nothing crashes the call path
+}
+
+module.exports = { isDoNotCall, KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, callbackToIssue, issueCallSync, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, CONV_STATES, estState, applyEstimateAction, closeEstimateWork, ESTIMATE_OPEN };

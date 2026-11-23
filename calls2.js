@@ -191,8 +191,9 @@ module.exports = function mountCalls(app, ctx) {
   });
   app.post('/api/admin/calls/dial', auth, async (req, res) => {
     const b = req.body || {}, to = e164(b.to), agent = (process.env.NODE_ENV !== 'production' && e164(b.agent)) || ringPhones()[0]; // production always rings the configured phone (no caller-chosen numbers)
-    if (!token() || !acctSid() || !twNumber()) return res.status(503).json({ error: 'Calling is not set up yet (needs the Twilio token, account SID and number).' });
     if (!to) return res.status(400).json({ error: 'Enter a valid 10-digit US phone number to call.' });
+    if (require('./work-engine').isDoNotCall(db, to)) return res.status(409).json({ error: 'This number asked us not to call. It is on the Do not call list.' });
+    if (!token() || !acctSid() || !twNumber()) return res.status(503).json({ error: 'Calling is not set up yet (needs the Twilio token, account SID and number).' });
     if (!agent) return res.status(400).json({ error: 'No phone to ring for you. Set the ring phone in Settings → Phone.' });
     if (to === agent) return res.status(400).json({ error: 'That is the same phone that would ring for you.' });
     const cu = b.customer_id ? db.prepare('SELECT id, name, company FROM customers WHERE id=?').get(Number(b.customer_id)) : matchCustomer(to);
@@ -254,6 +255,7 @@ module.exports = function mountCalls(app, ctx) {
   // Before a browser call: create the call record (so it is logged against the customer) and hand back its id.
   app.post('/api/admin/calls/browser-start', auth, (req, res) => {
     const b = req.body || {}, to = e164(b.to); if (!to) return res.status(400).json({ error: 'Enter a valid 10-digit US phone number to call.' });
+    if (require('./work-engine').isDoNotCall(db, to)) return res.status(409).json({ error: 'This number asked us not to call. It is on the Do not call list.' });
     if (twNumber() && to === e164(twNumber())) return res.status(400).json({ error: 'That is the business number itself.' });
     const cu = b.customer_id ? db.prepare('SELECT id, name, company FROM customers WHERE id=?').get(Number(b.customer_id)) : matchCustomer(to);
     const id = db.prepare(`INSERT INTO calls(direction,phone,contact_name,company,customer_id,lead_id,outcome,purpose,summary,created_by,created_at,source) VALUES('Outbound',?,?,?,?,?,'Dialing','Other','',?,?,'Browser')`)
@@ -559,6 +561,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
     const api = (process.env.TWILIO_API_BASE || 'https://api.twilio.com').replace(/\/$/, '');
     for (const l of leads) {
       const to = e164(l.phone); if (!to) continue;
+      if (require('./work-engine').isDoNotCall(db, to)) continue; // asked us not to call: the automatic sweep skips them
       try {
         const r = await fetch(`${api}/2010-04-01/Accounts/${acctSid()}/Calls.json`, { method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(acctSid() + ':' + token()).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ To: to, From: twNumber(), Url: `${base()}/api/webhooks/twilio/outbound?lead=${l.id}`, StatusCallback: `${base()}/api/webhooks/twilio/status`, Timeout: '25' }) });
