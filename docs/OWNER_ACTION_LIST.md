@@ -112,3 +112,12 @@ Owner decisions and actions still needed:
 4. Open real work (not closed, needs your decision): 168 overdue leads, 52 calls, 353 sent emails awaiting a reply (19 days old at most). Say which to close, and whether closing leads should mark them lost.
 5. Twilio support ticket #30436964 is open in the browser. Check whether it is still needed.
 6. From the security audit (see items above): the uptime monitor, the restore drill and the script policy stay as listed in this file.
+
+## Money and access fixes, 2026-11-23 (build 95f69a3761dd live)
+
+Fixed and live: card payments include sales tax; sales and supervisor no longer see invoice, payment, collected or outstanding figures, or project costs; only owner and manager can hand a project to billing; invoices with payments cannot be voided; one balance rule (tax and credit notes) across Command Center, reminders, overdue list and AI summary; drafts no longer block each other's send; a project bills only what is left on its contract; monthly repeats keep the day; a failed issue follow-up no longer hangs; a waiver is saved only after the email goes out; a bad invoice amount is refused. The admin page shows a Reload banner when a newer version is live (reload each open tab once after this update).
+
+Owner actions:
+1. Sign in as owner once, then try to save an invoice amount of "abc" or a negative number. It should be refused with a clear message.
+2. Confirm which account ericd567@icloud.com is. The owner list above names it as the inspector account, but it signs in with the sales role now. Say which role it should have.
+3. Remove the sales test account when the sales check is finished.
