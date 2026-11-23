@@ -1575,6 +1575,20 @@
   async function loadCustomerPage() {
     if (!cp.id) return;
     const seq = loadCustomerPage.seq = (loadCustomerPage.seq || 0) + 1, id = cp.id;
+    // Inspectors get the site details they need for a visit (contacts, properties, projects). Sales, money and notes stay with the office.
+    if (state.me && state.me.role === 'inspector') {
+      try {
+        const [lst, l] = await Promise.all([api('/api/admin/customers'), api(`/api/admin/customers/${id}/links`)]);
+        if (seq !== loadCustomerPage.seq || id !== cp.id) return;
+        const cust = (lst.customers || []).find(x => x.id === Number(id)) || {};
+        const rows = (xs, f) => xs.length ? xs.map(f).join('') : '<li class="muted">None on file</li>';
+        $('#custPage').innerHTML = `<div class="card"><h2 style="margin-top:0">${esc(cust.company || cust.name || 'Customer')}</h2><p class="muted">Site details for an inspection. Pricing, invoices and sales notes are not shown.</p>
+          <h3 class="secth">Contacts</h3><ul class="plain">${rows(l.contacts || [], k => `<li>${esc(k.name || '')}${k.is_primary ? ' <small class="muted">(primary)</small>' : ''} · ${esc(k.phone || '')} ${esc(k.email || '')}</li>`)}</ul>
+          <h3 class="secth">Properties</h3><ul class="plain">${rows(l.properties || [], x => `<li>${esc(x.name || '')} · ${esc(x.address || '')} <small class="muted">${esc(x.status || '')}</small></li>`)}</ul>
+          <h3 class="secth">Projects</h3><ul class="plain">${rows(l.projects || [], p => `<li>${esc(p.name || 'Project #' + p.id)} <small class="muted">${esc(p.status || '')}</small></li>`)}</ul></div>`;
+      } catch (e) { if (seq === loadCustomerPage.seq && id === cp.id) $('#custPage').innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+      return;
+    }
     let d; try { d = await api(`/api/admin/customers/${id}/profile`); } catch (e) { if (seq === loadCustomerPage.seq && id === cp.id) $('#custPage').innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
     // Ignore a slow reply for a customer the user has already left.
     if (seq !== loadCustomerPage.seq || id !== cp.id) return;

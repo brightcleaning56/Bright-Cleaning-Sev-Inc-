@@ -40,7 +40,7 @@ const STAFF_DENY = [
 // Inspector: an explicit allow-list; anything not listed is refused.
 const INSPECTOR_ALLOW = [
   [/^GET$/, /^\/api\/admin\/(me|prefs|qc|quality|inspections|visits|dispatch\/board|documents|docs|employees|holidays|scopes)(\/|$)/],
-  [/^GET$/, /^\/api\/admin\/customers(\/\d+)?$/], [/^GET$/, /^\/api\/admin\/autopilot\/activity$/],
+  [/^GET$/, /^\/api\/admin\/customers(\/\d+)?$/], [/^GET$/, /^\/api\/admin\/customers\/\d+\/links$/], [/^GET$/, /^\/api\/admin\/autopilot\/activity$/],
   [/^(POST|PATCH|PUT)$/, /^\/api\/admin\/(qc|inspections)(\/|$)/],
   [/^POST$/, /^\/api\/admin\/quality\/complaints\/\d+\/(reinspection|notes|customer-contact)$/],
   [/^(PUT)$/, /^\/api\/admin\/prefs\/[a-z_]+$/], [/^POST$/, /^\/api\/admin\/(events\/ticket|account\/password|account\/sign-out-everywhere)$/],

@@ -118,6 +118,10 @@ module.exports = function mountOps(app, ctx) {
 
   app.get('/api/admin/customers', auth, (req, res) => {
     const rows = db.prepare('SELECT * FROM customers ORDER BY updated_at DESC').all();
+    // Inspectors see customer basics only: no proposals, contracts, leads or sales history.
+    const em = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase();
+    const role = (!ow || em === ow) ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
+    if (role === 'inspector') return res.json({ customers: rows.map(c => ({ id: c.id, name: c.name, company: c.company, email: c.email, phone: c.phone, address: c.address, status: c.status })) });
     res.json({ customers: rows.map(c => ({ ...c, ...related(c) })) });
   });
   app.post('/api/admin/customers', auth, (req, res) => {
