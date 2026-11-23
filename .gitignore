@@ -4,3 +4,12 @@ node_modules/
 /uploads/
 *.log
 .DS_Store
+
+# Local test run outputs
+tests/*-results.json
+tests/*-inventory.json
+tests/*-probe.json
+tests/*-map.json
+tests/workflow*.json
+tests/walk-screens.json
+tests/ai-results.json
