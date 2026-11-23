@@ -128,3 +128,10 @@ Owner actions:
 - Overdue leads, calls and sent emails awaiting a reply: left open. Nothing closed without the owner.
 - Twilio support ticket #30436964: kept open.
 - Account ericd567@icloud.com: changed to Inspector on live, 2026-11-23, by the owner's yes (was Sales). The owner can check it by signing in as that user.
+
+## Status check, 2026-11-23
+
+- Off-site backup: verified. The app log shows a daily upload to the backup bucket after every local backup (status ok, latest 2026-11-23 04:33 UTC). The BACKUP_* settings are present in Render (values not read here).
+- Two-step sign-in on the owner account: on (verified from the account settings API).
+- Restore test: still open. It needs the BACKUP_KEY value from Render, which only the owner can supply or run. Steps: download the newest backup from Settings > Backups, decrypt it with that key into a temporary folder, open it, and confirm invoices and customers are there. Tell the assistant the result.
+- Two-step sign-in secrets are not encrypted at rest. Decision: not changed, because the backups are already encrypted and encrypting with the JWT secret would lock owners out if that secret is rotated.
