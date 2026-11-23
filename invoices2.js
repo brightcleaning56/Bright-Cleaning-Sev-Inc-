@@ -23,7 +23,8 @@ module.exports = function mountInvoices(app, ctx) {
   const contractFor = inv => { if (!inv.project_id) return null; const p = db.prepare('SELECT contract_id FROM projects WHERE id=?').get(inv.project_id); return p && p.contract_id ? db.prepare('SELECT id, title, value, signature_status FROM contracts WHERE id=?').get(p.contract_id) : null; };
   function contractCheck(inv) {
     const k = contractFor(inv); if (!k || !(k.value > 0)) return { contract: k, ok: true };
-    const billed = db.prepare("SELECT COALESCE(SUM(i.amount),0) v FROM invoices i JOIN projects p ON p.id=i.project_id WHERE p.contract_id=? AND i.status<>'Void' AND i.id<>?").get(k.id, inv.id).v;
+    // Only invoices that have gone out (or been paid) count against the contract. Drafts do not block each other; each send is checked against what is already sent.
+    const billed = db.prepare("SELECT COALESCE(SUM(i.amount),0) v FROM invoices i JOIN projects p ON p.id=i.project_id WHERE p.contract_id=? AND i.status NOT IN ('Void','Draft') AND i.id<>?").get(k.id, inv.id).v;
     const total = Math.round((billed + Number(inv.amount || 0)) * 100) / 100;
     return { contract: k, billed_other: billed, total, ok: total <= k.value + 0.005 };
   }

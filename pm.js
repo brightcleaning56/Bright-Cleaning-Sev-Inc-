@@ -37,10 +37,8 @@ module.exports = function mountPM(app, ctx) {
   // Project cost and billing figures are for owners, managers and office staff. Other roles still see the project, without them.
   const COST_KEYS = ['actual_cost', 'cost_by', 'budget', 'gross_profit', 'costs', 'invoices'];
   const stripCosts = v => Array.isArray(v) ? v.map(stripCosts) : (v && typeof v === 'object') ? Object.fromEntries(Object.entries(v).filter(([k]) => !COST_KEYS.includes(k)).map(([k, x]) => [k, stripCosts(x)])) : v;
-  app.use((req, res, next) => {
-    if (req.method !== 'GET' || !/^\/api\/admin\/pm\/projects(\/|$)/.test(req.path) || ['owner', 'manager', 'staff'].includes(roleOf(req))) return next();
-    const send = res.json.bind(res); res.json = body => send(stripCosts(body)); next();
-  });
+  // Runs inside each project GET, after sign-in has set the user, so the role is known.
+  const hideCosts = (req, res) => { if (['owner', 'manager', 'staff'].includes(roleOf(req))) return; const send = res.json.bind(res); res.json = body => send(stripCosts(body)); };
   const get = id => db.prepare('SELECT * FROM projects WHERE id=?').get(Number(id));
   const J = (s, d) => { try { return JSON.parse(s || '') || d; } catch { return d; } };
   const number = p => `PJT-${String(p.created_at || '').slice(0, 4) || '2026'}-${1000 + p.id}`;
@@ -127,6 +125,7 @@ module.exports = function mountPM(app, ctx) {
   }
 
   app.get('/api/admin/pm/projects', auth, (req, res) => {
+    hideCosts(req, res);
     // Link projects created from approved proposals to their estimate, customer and service (once).
     const SVC = { construction: 'construction', janitorial: 'janitorial', windows: 'windows' };
     for (const p of db.prepare('SELECT p.id, p.estimate_id, p.service, p.customer_id, p.company, c.estimate_id ce FROM projects p LEFT JOIN contracts c ON c.id=p.contract_id WHERE p.estimate_id IS NULL OR p.customer_id IS NULL').all()) {
@@ -147,6 +146,7 @@ module.exports = function mountPM(app, ctx) {
   });
 
   app.get('/api/admin/pm/projects/:id', auth, (req, res) => {
+    hideCosts(req, res);
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
     const s = summary(p), est = p.estimate_id ? db.prepare('SELECT id, project_name, scope, scope_category, proposal_total, labor_hours, total_cost, version, assumptions, exclusions, status, signer_name, signed_at FROM estimates WHERE id=?').get(p.estimate_id)
       : (s.contract && db.prepare('SELECT id, project_name, scope, scope_category, proposal_total, labor_hours, total_cost, version, assumptions, exclusions, status, signer_name, signed_at FROM estimates WHERE id=(SELECT estimate_id FROM contracts WHERE id=?)').get(s.contract.id));
@@ -379,7 +379,9 @@ module.exports = function mountPM(app, ctx) {
   // One billing draft for the unbilled contract balance. Made once per project (when it completes, or by the owner); nothing is sent.
   function billingDraftFor(p, req) {
     if (p.billing_invoice_id && db.prepare('SELECT 1 FROM invoices WHERE id=?').get(p.billing_invoice_id)) return { existed: true, id: p.billing_invoice_id };
-    const k = contractOf(p), billed = db.prepare("SELECT COALESCE(SUM(amount),0) v FROM invoices WHERE project_id=? AND status<>'Void'").get(p.id).v;
+    const k = contractOf(p);
+    // Everything billed against this contract across all its projects (drafts included), so two projects cannot each bill the full value.
+    const billed = k ? db.prepare("SELECT COALESCE(SUM(i.amount),0) v FROM invoices i JOIN projects pj ON pj.id=i.project_id WHERE pj.contract_id=? AND i.status<>'Void'").get(k.id).v : db.prepare("SELECT COALESCE(SUM(amount),0) v FROM invoices WHERE project_id=? AND status<>'Void'").get(p.id).v;
     const due = Math.round(((k ? Number(k.value) : 0) - billed) * 100) / 100;
     if (!(due > 0)) return { none: true, reason: k ? 'The contract value is already fully invoiced.' : 'There is no contract value to bill. Create the invoice manually.' };
     const y = new Date().getFullYear(), mx = db.prepare('SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?').all(`BC-${y}-%`).reduce((m, r) => Math.max(m, Number(String(r.invoice_number).split('-')[2]) || 0), 0);

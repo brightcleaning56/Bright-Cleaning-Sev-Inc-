@@ -280,7 +280,7 @@ Only report what you can read on a sheet, and always give the sheet. Never guess
     if (!question) return res.status(400).json({ error: 'Type a question.' });
     if (!app.locals.bcReport) return res.status(500).json({ error: 'Reports are not available.' });
     const r = app.locals.bcReport(req.body.months);
-    const owing = db.prepare(`SELECT invoice_number, COALESCE(NULLIF(company,''),customer_name) customer, amount, paid_amount, due_date, status FROM invoices WHERE status<>'Void' AND paid_amount<amount ORDER BY due_date LIMIT 25`).all();
+    const owing = db.prepare(`SELECT invoice_number, COALESCE(NULLIF(company,''),customer_name) customer, amount, paid_amount, due_date, status FROM invoices WHERE status NOT IN ('Void','Draft') ORDER BY due_date`).all().map(i => ({ invoice_number: i.invoice_number, customer: i.customer, due_date: i.due_date, status: i.status, owed: require('./receivables').invoiceBalance(db, i.id).owed })).filter(i => i.owed > 0.005).slice(0, 25);
     const openProps = db.prepare(`SELECT id, COALESCE(NULLIF(company,''),customer_name) customer, project_name, proposal_total, status, sent_at, viewed_at, expires_on FROM estimates WHERE status IN ('Draft','Ready','Sent','Viewed') ORDER BY id DESC LIMIT 25`).all();
     const facts = { period: r.period, executive: r.executive, win: r.win, flow: r.flow, operations: r.ops, receivables: r.receivables, by_service: r.by_service, pipeline: r.pipeline, top_customers: r.top_customers, unpaid_invoices: owing, open_proposals: openProps, data_notes: r.data_issues.map(x => x.text) };
     try {

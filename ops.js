@@ -307,7 +307,7 @@ module.exports = function mountOps(app, ctx) {
         }
       }
       if (isOn('auto_invoice_reminders')) {
-        const rows = db.prepare("SELECT * FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND amount>paid_amount AND due_date IS NOT NULL AND due_date<>'' AND email IS NOT NULL AND email<>''").all();
+        const rows = db.prepare("SELECT * FROM invoices WHERE status NOT IN ('Paid','Void','Draft') AND due_date IS NOT NULL AND due_date<>'' AND email IS NOT NULL AND email<>''").all();
         for (const i of rows) {
           if (!isEmail(i.email)) continue;
           if (!portalAllows(i.email, 'invoices')) continue;
@@ -316,7 +316,8 @@ module.exports = function mountOps(app, ctx) {
           if (!stage || sentAlready('invoice_reminder', i.id, stage)) continue;
           if (stage === 'due3' && (sentAlready('invoice_reminder', i.id, 'overdue1') || sentAlready('invoice_reminder', i.id, 'overdue7'))) continue;
           if (stage === 'overdue1' && sentAlready('invoice_reminder', i.id, 'overdue7')) continue;
-          const bal = Number(i.amount) - Number(i.paid_amount || 0);
+          const bal = Math.round(require('./receivables').invoiceBalance(db, i.id).owed * 100) / 100;
+          if (!(bal > 0.005)) continue;
           const subject = stage === 'due3' ? `Reminder: invoice ${i.invoice_number} is due ${i.due_date}` : `Past due: invoice ${i.invoice_number}`;
           const ok = await send('invoice_reminder', i.id, stage, i.email, subject,
             `Hello ${i.customer_name || i.company || ''},\n\nThis is a reminder that invoice ${i.invoice_number} has a balance of ${money(bal)}${stage === 'due3' ? `, due ${i.due_date}` : `, which was due ${i.due_date}`}.\n\nIf you have already sent payment, thank you, and please disregard this message. For questions, reply to this email or call +1 (515) 303-3024.\n\nBright Cleaning Sev Inc.`);

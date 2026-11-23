@@ -62,6 +62,9 @@ module.exports = function mountCRM(app, ctx) {
     const sum = (a, f) => Math.round(a.reduce((t, x) => t + Number(f(x) || 0), 0) * 100) / 100;
     const liveInv = invoices.filter(i => i.status !== 'Void');
     const owed = i => Math.round((Number(i.amount || 0) + Number(i.tax_amount || 0)) * 100) / 100;
+    // Open balance after payments and credit notes (the receivables rule). Drafts are not owed until sent.
+    const bal = i => i.status === 'Draft' ? 0 : require('./receivables').invoiceBalance(db, i.id).owed;
+    const sentInv = liveInv.filter(i => i.status !== 'Draft');
     const signed = contracts.filter(k => ['Signed', 'Executed', 'Fully signed'].includes(k.signature_status));
     const financials = {
       estimates: { value: sum(est.filter(e => ['Draft', 'Ready'].includes(e.status)), e => e.proposal_total), count: est.filter(e => ['Draft', 'Ready'].includes(e.status)).length },
@@ -69,10 +72,10 @@ module.exports = function mountCRM(app, ctx) {
       approved: { value: sum(est.filter(e => e.status === 'Approved'), e => e.proposal_total), count: est.filter(e => e.status === 'Approved').length },
       contracts_signed: { value: require('./contract-value').summary(signed).value, count: require('./contract-value').summary(signed).count },
       contracts_unsigned: { value: sum(contracts.filter(k => !signed.includes(k)), k => k.value), count: contracts.length - signed.length },
-      invoiced: { value: sum(liveInv, i => i.amount), count: liveInv.length },
+      invoiced: { value: sum(sentInv, i => i.amount), count: sentInv.length },
       collected: { value: sum(liveInv, i => i.paid_amount), count: payments.length },
       // Owed includes sales tax, the same as the Command Center and the receivables aging.
-      outstanding: { value: sum(liveInv.filter(i => owed(i) > Number(i.paid_amount || 0)), i => owed(i) - Number(i.paid_amount || 0)), count: liveInv.filter(i => owed(i) > Number(i.paid_amount || 0)).length }
+      outstanding: { value: sum(sentInv.filter(i => bal(i) > 0.005), bal), count: sentInv.filter(i => bal(i) > 0.005).length }
     };
     // Communication history: calls, emails and notes in one timeline.
     const notes = db.prepare('SELECT * FROM customer_notes WHERE customer_id=? ORDER BY pinned DESC, id DESC').all(c.id);
@@ -93,6 +96,8 @@ module.exports = function mountCRM(app, ctx) {
     const p = profile(c); p.role = roleOf(req); p.users = db.prepare('SELECT email FROM admin_users ORDER BY email').all().map(u => u.email).concat(adminEmail ? [adminEmail] : []).filter((v, i, a) => a.indexOf(v) === i);
     // The lead history of the leads this customer came from, so the history stays with the customer after conversion.
     p.lead_history = db.prepare('SELECT * FROM leads WHERE customer_id=? ORDER BY id').all(c.id).map(l => require('./leadlog').timeline(db, l, require('./bizdate').today()));
+    // Invoice and payment figures are for owners, managers and office staff. Sales and supervisors still see the customer's proposals and contracts.
+    if (!['owner', 'manager', 'staff'].includes(p.role)) { p.invoices = []; p.payments = []; if (p.financials) { delete p.financials.invoiced; delete p.financials.collected; delete p.financials.outstanding; } }
     res.json(p);
   });
   app.get('/api/admin/customers/:id/links', auth, (req, res) => {

@@ -264,8 +264,12 @@ module.exports = function mountSuite(app, ctx) {
       ['Invoices paid in full', one(`SELECT COUNT(*) n FROM invoices WHERE created_at>=? AND status='Paid'`, start).n]
     ].map(([k, n]) => ({ k, n: n || 0 }));
     const today = new Date().toISOString().slice(0, 10);
-    const recv = one(`SELECT COALESCE(SUM(amount),0) billed, COALESCE(SUM(paid_amount),0) paid, COALESCE(SUM(CASE WHEN paid_amount<amount THEN amount-paid_amount END),0) outstanding,
-      COALESCE(SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN amount-paid_amount END),0) overdue, SUM(CASE WHEN paid_amount<amount AND due_date<>'' AND due_date<? THEN 1 END) overdue_n FROM invoices WHERE status NOT IN ('Draft','Void')`, today, today);
+    // Same balance rule as receivables and the aging report: billed (with tax) less payments less credit notes.
+    const RV = require('./receivables');
+    const openInv = db.prepare("SELECT id, due_date FROM invoices WHERE status NOT IN ('Draft','Void')").all().map(r => ({ ...r, b: RV.invoiceBalance(db, r.id) }));
+    const cents = v => Math.round(v * 100) / 100;
+    const owing = openInv.filter(r => r.b.owed > 0.005), late = owing.filter(r => r.due_date && r.due_date < today);
+    const recv = { billed: cents(openInv.reduce((t, r) => t + r.b.billed, 0)), paid: cents(openInv.reduce((t, r) => t + r.b.paid, 0)), outstanding: cents(owing.reduce((t, r) => t + r.b.owed, 0)), overdue: cents(late.reduce((t, r) => t + r.b.owed, 0)), overdue_n: late.length };
     const ops = {
       projects_active: one(`SELECT COUNT(*) n FROM projects WHERE status NOT IN ('Completed','On Hold','Cancelled','Archived')`).n || 0,
       projects_completed: one(`SELECT COUNT(*) n FROM projects WHERE status='Completed'`).n || 0,
@@ -302,7 +306,7 @@ module.exports = function mountSuite(app, ctx) {
       unsigned_contracts: { value: unsigned.v, count: unsigned.n || 0 },
       invoiced: { value: invoiced.v, count: invoiced.n || 0 },
       collected: { value: cash.v, count: cash.n || 0 },
-      outstanding: { value: recv.outstanding, count: one(`SELECT COUNT(*) n FROM invoices WHERE status NOT IN ('Draft','Void') AND paid_amount<amount`).n || 0 },
+      outstanding: { value: recv.outstanding, count: owing.length },
       overdue: { value: recv.overdue, count: recv.overdue_n || 0 },
       active_projects: ops.projects_active, completed_projects: ops.projects_completed,
       est_gross_profit: { value: approved.gp == null ? null : Math.round(approved.gp * 100) / 100, based_on: approved.costed || 0, of: approved.n || 0, note: 'Estimate: approved proposal price minus estimated cost. Not recorded profit.' },

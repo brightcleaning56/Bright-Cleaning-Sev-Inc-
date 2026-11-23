@@ -4314,6 +4314,32 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'sales: sales pages allowed, invoices/finance/settings/users/audit refused, no finance groups';
   });
 
+  await check('Security', 'Sales and supervisor: the customer page and projects leave out invoice, payment, collected, outstanding and cost figures; sales keeps proposal figures; owners still see everything', async () => {
+    const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
+    await req('POST', '/api/admin/users', { token: T, json: { name: 'Sup Money', email: 'sup.money@roles.test', password: 'role-test-password-1', role: 'supervisor' } });
+    const SA = mint('sales@roles.test'), SU = mint('sup.money@roles.test');
+    const cust = ((await req('GET', '/api/admin/customers', { token: T })).data.customers || [])[0];
+    const id = cust && cust.id;
+    const prof = async tok => (await req('GET', '/api/admin/customers/' + id + '/profile', { token: tok })).data || {};
+    const pOwner = await prof(T), pSales = await prof(SA), pSup = await prof(SU);
+    const hidden = p => !!p.financials && !('invoiced' in p.financials) && !('collected' in p.financials) && !('outstanding' in p.financials) && Array.isArray(p.invoices) && p.invoices.length === 0 && Array.isArray(p.payments) && p.payments.length === 0;
+    const projOwner = (await req('GET', '/api/admin/pm/projects', { token: T })).data.projects || [];
+    const projSales = (await req('GET', '/api/admin/pm/projects', { token: SA })).data.projects || [];
+    const projSup = (await req('GET', '/api/admin/pm/projects', { token: SU })).data.projects || [];
+    const salesDet = projSales.length ? (await req('GET', '/api/admin/pm/projects/' + projSales[0].id, { token: SA })).data : {};
+    const chk = {
+      ownerSeesMoney: !!pOwner.financials && 'invoiced' in pOwner.financials,
+      salesHidden: hidden(pSales), supervisorHidden: hidden(pSup),
+      salesKeepsProposals: !!pSales.financials && !!pSales.financials.estimates && !!pSales.financials.proposals_out,
+      ownerProjectCost: projOwner.length > 0 && 'actual_cost' in projOwner[0],
+      salesProjectNoCost: projSales.length > 0 && !('actual_cost' in projSales[0]) && !('budget' in projSales[0]) && !('costs' in salesDet) && !('invoices' in salesDet),
+      supervisorProjectNoCost: projSup.length > 0 && !('actual_cost' in projSup[0])
+    };
+    const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
+    assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify(chk));
+    return 'sales and supervisor: no invoice or cost figures on the customer page or projects; owner unchanged';
+  });
+
   await check('Website', 'Website photos & video: the public gallery shows the shipped photos and page video; admin uploads, hide/show, reorder, replace and delete work; only registered files are served; upload content is checked; only owner, manager and office staff can change it', async () => {
     const jwt = require('../node_modules/jsonwebtoken'), mint = em => jwt.sign({ role: 'admin', email: em, tv: 0, mfa: true }, globalThis.__jwtSecret, { expiresIn: '1h' });
     const up = async (tok, method, path, parts) => { const fd = new FormData(); for (const [k, v] of Object.entries(parts || {})) { if (v && v.blob) fd.append(k, new Blob([v.bytes], { type: v.type || 'application/octet-stream' }), v.name); else fd.append(k, v); } const r = await fetch(B + path, { method, headers: tok ? { Authorization: 'Bearer ' + tok } : {}, body: fd }); let j = {}; try { j = await r.json(); } catch { /* none */ } return { status: r.status, data: j }; };
