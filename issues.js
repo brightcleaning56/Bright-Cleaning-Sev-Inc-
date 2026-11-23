@@ -140,7 +140,7 @@ module.exports = function mountIssues(app, ctx) {
     // Recurring task: when completed, create the next occurrence
     if (before && isOpen(before.status) && !isOpen(after.status) && after.recurrence && !after.recurred_to) {
       const d = new Date((after.due_date || today()) + 'T12:00:00Z');
-      ({ daily: () => d.setUTCDate(d.getUTCDate() + 1), weekly: () => d.setUTCDate(d.getUTCDate() + 7), biweekly: () => d.setUTCDate(d.getUTCDate() + 14), monthly: () => d.setUTCMonth(d.getUTCMonth() + 1) })[after.recurrence]();
+      ({ daily: () => d.setUTCDate(d.getUTCDate() + 1), weekly: () => d.setUTCDate(d.getUTCDate() + 7), biweekly: () => d.setUTCDate(d.getUTCDate() + 14), monthly: () => { const day = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate())); } })[after.recurrence]();
       const t = now(), copy = ['customer_id', 'contact_id', 'property_id', 'project_id', 'type', 'category', 'title', 'description', 'property', 'priority', 'assigned_to', 'required_action', 'source', 'work_order', 'recurrence'];
       const nid = db.prepare(`INSERT INTO customer_issues(${copy.join(',')},status,due_date,parent_id,customer_comms,created_by,created_at,updated_at) VALUES(${copy.map(() => '?').join(',')},'Open',?,?,'Not needed',?,?,?)`)
         .run(...copy.map(c => after[c] ?? null), d.toISOString().slice(0, 10), after.id, 'system (repeat)', t, t).lastInsertRowid;
@@ -249,7 +249,8 @@ module.exports = function mountIssues(app, ctx) {
     else if (closing) logAction(req, 'resolved', label, cur.id, `${after.number} ${merged.title}: ${clean(merged.resolution, 200)}`);
     else if (reopening) logAction(req, 'reopened', label, cur.id, `${after.number} ${merged.title}`);
     else { const ch = c3.filter(c => !['assigned_to', 'escalated', 'reminded_at'].includes(c) && String(out[c] ?? '') !== String(cur[c] ?? '')); if (ch.length) logAction(req, 'updated', label, cur.id, ch.map(c => `${c}: "${String(cur[c] ?? '').slice(0, 60)}" → "${String(out[c] ?? '').slice(0, 60)}"`).join('; ').slice(0, 1500)); }
-    await afterChange(req, cur, after);
+    // The change is already saved, so a failure in the follow-up steps (notices, repeats) must not leave the request hanging.
+    try { await afterChange(req, cur, after); } catch (e) { console.error('issue follow-up failed for', cur.id, e.message); }
     res.json({ issue: getOne(cur.id) });
   });
 

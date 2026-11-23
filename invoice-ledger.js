@@ -194,7 +194,18 @@ function mount(app, ctx) {
     }
     const reason = String((req.body && req.body.reason) || '').trim();
     if (!reason) return res.status(400).json({ error: 'Give the reason for removing this payment.' });
-    db.prepare('DELETE FROM payments WHERE id=?').run(p.id);
+    // Take the payment back off the invoice too, so its paid amount and status match the payments that remain.
+    db.transaction(() => {
+      db.prepare('DELETE FROM payments WHERE id=?').run(p.id);
+      const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(p.invoice_id);
+      if (!inv) return;
+      const paid = Math.max(0, Math.round((Number(inv.paid_amount || 0) - Number(p.amount || 0)) * 100) / 100);
+      const billed = Math.round((Number(inv.amount || 0) + Number(inv.tax_amount || 0)) * 100) / 100;
+      let status = inv.status;
+      if (paid <= 0.005 && ['Paid', 'Partially Paid'].includes(status)) status = 'Sent';
+      else if (status === 'Paid' && paid < billed - 0.005) status = 'Partially Paid';
+      db.prepare('UPDATE invoices SET paid_amount=?, status=? WHERE id=?').run(paid, status, inv.id);
+    })();
     require('./audit').record(db, { actor: req.user && req.user.email, action: 'deleted unposted payment', entity: 'payment', entityId: p.id, detail: `${Number(p.amount).toFixed(2)} for invoice ${p.invoice_id}: ${reason}` });
     res.json({ ok: true });
   });

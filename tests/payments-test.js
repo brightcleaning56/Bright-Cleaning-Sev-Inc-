@@ -97,6 +97,20 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
   const overLedger = db.prepare("SELECT COUNT(*) n FROM payments WHERE invoice_id=? AND note LIKE '%cs_test_3%'").get(inv).n;
   check('webhook: overpayment is not written to the payments ledger', overLedger === 0, overLedger);
 
+  // Sales tax: a card payment must clear amount + tax, not the amount alone
+  db.exec('ALTER TABLE invoices ADD COLUMN tax_amount REAL DEFAULT 0');
+  db.prepare("INSERT INTO invoices(email,invoice_number,amount,tax_amount,paid_amount,status,created_at) VALUES(?,?,?,?,?,?,?)").run(EMAIL, 'BC-2026-0400', 100, 10, 0, 'Sent', '2026-11-01T00:00:00Z');
+  const taxInv = db.prepare("SELECT id FROM invoices WHERE invoice_number='BC-2026-0400'").get().id;
+  const taxEvent = (id, cents) => ({ type: 'checkout.session.completed', data: { object: { id, payment_status: 'paid', amount_total: cents, customer_email: EMAIL, metadata: { invoice_id: String(taxInv) } } } });
+  const t1 = Buffer.from(JSON.stringify(taxEvent('cs_tax_1', 10000)));
+  const r1 = await hook(stripeSig(t1), t1);
+  const tRow1 = db.prepare('SELECT paid_amount, status FROM invoices WHERE id=?').get(taxInv);
+  check('tax: paying the amount alone leaves the tax owed', r1.code === 200 && tRow1.status === 'Partially Paid' && tRow1.paid_amount === 100, { r1, tRow1 });
+  const t2 = Buffer.from(JSON.stringify(taxEvent('cs_tax_2', 1000)));
+  const r2 = await hook(stripeSig(t2), t2);
+  const tRow2 = db.prepare('SELECT paid_amount, status FROM invoices WHERE id=?').get(taxInv);
+  check('tax: paying the tax clears the invoice', r2.code === 200 && tRow2.status === 'Paid' && tRow2.paid_amount === 110, { r2, tRow2 });
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

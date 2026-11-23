@@ -34,6 +34,13 @@ module.exports = function mountPM(app, ctx) {
   const now = () => new Date().toISOString(), today = () => require('./bizdate').today();
   const who = req => (req.user && req.user.email) || null;
   const roleOf = req => { const e = String(who(req) || '').toLowerCase(); if (!adminEmail || e === adminEmail.toLowerCase()) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
+  // Project cost and billing figures are for owners, managers and office staff. Other roles still see the project, without them.
+  const COST_KEYS = ['actual_cost', 'cost_by', 'budget', 'gross_profit', 'costs', 'invoices'];
+  const stripCosts = v => Array.isArray(v) ? v.map(stripCosts) : (v && typeof v === 'object') ? Object.fromEntries(Object.entries(v).filter(([k]) => !COST_KEYS.includes(k)).map(([k, x]) => [k, stripCosts(x)])) : v;
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || !/^\/api\/admin\/pm\/projects(\/|$)/.test(req.path) || ['owner', 'manager', 'staff'].includes(roleOf(req))) return next();
+    const send = res.json.bind(res); res.json = body => send(stripCosts(body)); next();
+  });
   const get = id => db.prepare('SELECT * FROM projects WHERE id=?').get(Number(id));
   const J = (s, d) => { try { return JSON.parse(s || '') || d; } catch { return d; } };
   const number = p => `PJT-${String(p.created_at || '').slice(0, 4) || '2026'}-${1000 + p.id}`;
@@ -384,6 +391,7 @@ module.exports = function mountPM(app, ctx) {
     return { id, amount: due };
   }
   app.post('/api/admin/pm/projects/:id/billing-handoff', auth, (req, res) => {
+    if (!moneyRole(req)) return res.status(403).json({ error: 'Only an owner or manager can hand a project to billing.' });
     const p = get(req.params.id); if (!p) return res.status(404).json({ error: 'Project not found.' });
     if (p.status !== 'Completed') return res.status(409).json({ error: 'Complete the project before handing it to billing.' });
     const r = billingDraftFor(p, req);
