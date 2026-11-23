@@ -4740,7 +4740,7 @@
     // Started from a customer: the inspector sees only that customer's projects.
     if (state.me && state.me.role === 'inspector' && pre.customer_id) { try { const mine = new Set(((await api(`/api/admin/customers/${pre.customer_id}/links`)).projects || []).map(p => Number(p.id))); projects = projects.filter(p => mine.has(Number(p.id))); } catch { projects = []; } }
     openForm({ title: 'New inspection', defs: [{ name: 'itype', label: 'Type', type: 'select', options: ['Internal', 'Customer walkthrough'] }, { name: 'template_id', label: 'Template', type: 'select', options: qState.templates.filter(t => t.active).map(t => [t.id, t.name]) }, { name: 'area', label: 'Site / area' }, { name: 'date', label: 'Date', type: 'date' },
-      { name: 'customer_id', label: 'Customer', type: 'select', options: [['', '—'], ...state.customers.map(c => [c.id, c.company || c.name || c.email])] }, { name: 'project_id', label: 'Project', type: 'select', options: [['', '—'], ...projects.map(p => [p.id, `${p.number} ${p.name || ''}`])] }, { name: 'crew', label: 'Crew inspected' }],
+      { name: 'customer_id', label: 'Customer', type: 'select', options: [['', '—'], ...state.customers.map(c => [c.id, c.company || c.name || c.email])] }, { name: 'project_id', label: 'Project', type: 'select', options: [['', '—'], ...projects.map(p => [p.id, `${p.number || '#' + p.id} ${p.name || ''}`])] }, { name: 'crew', label: 'Crew inspected' }],
       values: { date: todayISO(), itype: 'Internal', ...pre }, submit: b => api('/api/admin/qc/inspections', { method: 'POST', json: b }), after: async x => { await loadQuality(); inspectEditor(x.inspection); } });
   }
   function inspectEditor(r) {
