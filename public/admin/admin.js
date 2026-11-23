@@ -4197,10 +4197,25 @@
       + '<td>' + (c.recording_url ? '<span class="badge blue">Recording</span>' : '—') + '</td>'
       + '<td>' + (c.follow_up_date ? esc(fmtDate(c.follow_up_date)) + (c.follow_up_done ? ' <small class="muted">done</small>' : '') : '—') + '</td></tr>').join('')
       : '<tr><td class="emptyrow" colspan="7">No calls in this queue' + (q || due || vm ? ' match' : ' yet') + '.</td></tr>';
-    $$('#callsRows [data-call]').forEach(r => r.onclick = () => { callState.selId = Number(r.dataset.call); renderCalls(); });
+    $$('#callsRows [data-call]').forEach(r => r.onclick = () => { callState.selId = Number(r.dataset.call); openCallPopup(); renderCalls(); });
     $$('#callsRows [data-cc-lead]').forEach(b => b.onclick = () => openLead(Number(b.dataset.ccLead)));
     const picked = cc.calls.find(c => c.id === callState.selId);
-    if (picked) renderCallPanel(picked); else if ($('#callPanel')) $('#callPanel').innerHTML = '<p class="muted">Select a call to see who called and what is open for them.</p>';
+    if (picked && callPopupOpen()) renderCallPanel(picked);
+  }
+  // The call panel opens in a popup over the list, not beside it. Escape or the background closes it.
+  const callPopupOpen = () => { const p = document.getElementById('callPopup'); return !!p && !p.hidden; };
+  function closeCallPopup() { const p = document.getElementById('callPopup'); if (p) p.hidden = true; }
+  function openCallPopup() {
+    let p = document.getElementById('callPopup');
+    if (!p) {
+      p = document.createElement('div'); p.id = 'callPopup'; p.className = 'callPopup'; p.hidden = true;
+      p.innerHTML = '<div class="callPopupCard" role="dialog" aria-modal="true" aria-label="Caller"><div class="callPopupHead"><button type="button" class="btn small ghost" id="callPopupClose">Close</button></div><div id="callPanel"></div></div>';
+      document.body.appendChild(p);
+      p.addEventListener('click', e => { if (e.target === p) closeCallPopup(); });
+      p.querySelector('#callPopupClose').onclick = closeCallPopup;
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && callPopupOpen()) closeCallPopup(); });
+    }
+    p.hidden = false;
   }
   async function renderCallPanel(c) {
     const box = $('#callPanel'); if (!box) return;
