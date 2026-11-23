@@ -151,12 +151,19 @@ function autoIntroAllowed(l) {
   return AUTO_INTRO_ORIGINS.includes(l.origin) && !NO_AUTO_INTRO.test(text);
 }
 
+// A reading is only usable when it has a real reply body (not an empty or placeholder text).
+const reply_body_ok = b => typeof b === 'string' && b.trim().length >= 40;
+
 async function sendIntro(db, mailer, l) {
   const c = contactCheck(l);
   if (!c.complete || c.recipient_type !== 'person') return { sent: false, reason: 'contact incomplete' };
   if (!autoIntroAllowed(l)) return { sent: false, reason: 'not an eligible source' };
   if (db.prepare("SELECT COUNT(*) n FROM email_log WHERE lower(to_addr)=lower(?) AND status='sent'").get(l.email).n > 0 || introAlready(db, l.id)) return { sent: false, reason: 'already contacted' };
-  const draft = draftFor(l, segmentOf(l), intentOf(l), 'intro');
+  // The first email answers what THIS lead wrote: the AI's reading of their message (ai.js triage). No template is used
+  // for an automatic send, so a lead is never sent a pitch that does not match their request. No reading yet means wait.
+  let reading = {}; try { reading = JSON.parse(l.ai || '{}') || {}; } catch { reading = {}; }
+  if (reading.error || !reading.reply_subject || !reply_body_ok(reading.reply_body)) return { sent: false, reason: 'waiting for a reading of their message' };
+  const draft = { subject: String(reading.reply_subject).slice(0, 200), body: String(reading.reply_body).trim() + '\n\n' + COMPANY.name };
   if (!introIsSafe(draft)) return { sent: false, reason: 'price guard' };
   try {
     const r = await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: l.email, subject: draft.subject, text: draft.body, automated: true });
