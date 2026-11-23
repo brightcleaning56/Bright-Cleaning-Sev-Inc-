@@ -5,7 +5,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const digits = s => String(s || '').replace(/\D/g, '').slice(-10);
   const who = req => String((req.user && req.user.email) || '');
   const OUTCOMES = ['Answered', 'Missed', 'Voicemail', 'Transferred', 'Completed', 'Callback requested'];
-  const QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks'];
+  const QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks', 'Completed'];
   const DAY = 86400000;
 
   // Callbacks: a missed call stays in Missed / callbacks until someone marks its follow-up done.
@@ -42,7 +42,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       else if (d && dir.custByPhone.has(d)) { const x = dir.custByPhone.get(d); match = { type: 'customer', id: x.id, name: x.name, company: x.company, suggested: true }; }
       else if (d && dir.leadByPhone.has(d)) { const x = dir.leadByPhone.get(d); match = { type: 'lead', id: x.id, name: x.contact_name, company: x.company, status: x.status, suggested: true }; }
       let queue;
+      // A callback or missed call that has been completed or cancelled leaves the active queues: it sits under Completed.
+      const finished = !!c.follow_up_done && (c.outcome === 'Missed' || !!c.callback_issue_id || c.handling === 'Callback' || c.handling === 'Waiting');
       if (c.outcome === 'Missed' && !c.follow_up_done) queue = 'Missed / callbacks';
+      else if (finished) queue = 'Completed';
       else if (match && match.type === 'customer') queue = 'Existing customer';
       else if (match && match.type === 'lead') {
         const leadRow = match.suggested ? dir.leadByPhone.get(d) : lead;

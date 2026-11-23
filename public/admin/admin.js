@@ -4171,7 +4171,7 @@
         ${x.receptionist ? `<div class="st" style="cursor:pointer" data-go-settings title="Change in Settings → Phone"><span>AI receptionist</span><b style="font-size:15px;color:${x.receptionist.answering_now ? '#17904c' : '#a06a00'}">${x.receptionist.mode === 'off' ? 'Off' : !x.receptionist.key ? 'Needs AI key' : x.receptionist.answering_now ? 'On' : 'Waiting (business hours)'}</b><small>${esc({ off: 'people and voicemail only', no_answer: 'answers when no one picks up', after_hours: 'answers after hours', always: 'answers every call first' }[x.receptionist.mode] || '')}</small></div>` : ''}        <div class="st"><span>Last 30 days</span><b>${x.total_30}</b><small>${x.missed_30} missed</small></div>${x.by_intent.slice(0, 3).map(i => `<div class="st"><span>${esc(i.k)}</span><b>${i.n}</b><small>calls (AI)</small></div>`).join('')}
         <div class="st"><span>Hot leads (score 70+)</span><b>${x.hot_leads.length}</b><small>${x.hot_leads.slice(0, 2).map(h => esc(h.company || h.contact_name || '')).join(', ')}</small></div>`; el.querySelectorAll('[data-go-settings]').forEach(b => b.onclick = () => { location.hash = '#settings'; }); }).catch(() => {});
   }
-  const CC_QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks'];
+  const CC_QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks', 'Completed'];
   const outcomeBadge = o => '<span class="badge ' + (o === 'Missed' ? 'red' : o === 'Voicemail' ? 'amber' : o === 'Answered' ? 'green' : '') + '">' + esc(o || '—') + '</span>';
   function callerLabel(c) {
     const m = c.match;
