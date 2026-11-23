@@ -78,9 +78,9 @@ module.exports = function mountReports2(app, ctx) {
   }
   function aging() {
     const t = today();
-    const open = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void','Paid') AND i.amount - COALESCE(i.paid_amount,0) > 0.005`).all()
-      .map(i => { const bal = r2(i.amount - (i.paid_amount || 0)), late = i.due_date ? daysBetween(i.due_date, t) : 0; return { id: i.id, number: i.invoice_number, customer: i.company || i.customer_name || '—', project: i.project_name, due_date: i.due_date, balance: bal, days_late: Math.max(0, late),
-        bucket: !i.due_date || late <= 0 ? 'Current' : late <= 30 ? '1–30' : late <= 60 ? '31–60' : late <= 90 ? '61–90' : '90+' }; });
+    const open = db.prepare(`SELECT i.*, p.name project_name FROM invoices i LEFT JOIN projects p ON p.id=i.project_id WHERE i.status NOT IN ('Draft','Void','Paid')`).all()
+      .map(i => { const bal = r2(require('./receivables').invoiceBalance(db, i.id).owed), late = i.due_date ? daysBetween(i.due_date, t) : 0; return { id: i.id, number: i.invoice_number, customer: i.company || i.customer_name || '—', project: i.project_name, due_date: i.due_date, balance: bal, days_late: Math.max(0, late),
+        bucket: !i.due_date || late <= 0 ? 'Current' : late <= 30 ? '1–30' : late <= 60 ? '31–60' : late <= 90 ? '61–90' : '90+' }; }).filter(i => i.balance > 0.005);
     const B = ['Current', '1–30', '31–60', '61–90', '90+'], buckets = Object.fromEntries(B.map(b => [b, r2(open.filter(i => i.bucket === b).reduce((s, i) => s + i.balance, 0))]));
     const byCust = {}; for (const i of open) { const c = byCust[i.customer] = byCust[i.customer] || { customer: i.customer, total: 0, ...Object.fromEntries(B.map(b => [b, 0])) }; c.total = r2(c.total + i.balance); c[i.bucket] = r2(c[i.bucket] + i.balance); }
     return { as_of: t, total: r2(open.reduce((s, i) => s + i.balance, 0)), buckets, customers: Object.values(byCust).sort((a, b) => b.total - a.total), invoices: open.sort((a, b) => b.days_late - a.days_late) };
