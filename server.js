@@ -260,6 +260,15 @@ require('./portal')(app,{db,getMailer:()=>mailer,auth,syncLead,ops,afterDecision
 require('./payments')(app,{db,logAction});
 require('./reports2')(app,{db,auth,logAction,clean,adminEmail,getMailer:()=>mailer});
 require('./insights')(app,{db,auth,adminEmail});
+// The admin script carries the build it was shipped in, so an open admin page can tell when a newer version is live.
+let ADMIN_BUILD = null;
+app.get('/admin/admin.js', (req, res) => {
+  let src;
+  try { src = fs.readFileSync(path.join(ROOT, 'public', 'admin', 'admin.js'), 'utf8'); } catch (e) { return res.status(404).end(); }
+  if (ADMIN_BUILD === null) { try { ADMIN_BUILD = require('./buildinfo').compute().fingerprint.slice(0, 12); } catch (e) { ADMIN_BUILD = 'unknown'; } }
+  res.type('application/javascript'); res.setHeader('Cache-Control', 'no-cache');
+  res.send(src.split("'__BUILD__'").join(JSON.stringify(ADMIN_BUILD)));
+});
 app.use(express.static(path.join(ROOT,'public'),{setHeaders:(res,fp)=>{if(/\.(html|js|css|json)$/i.test(fp))res.setHeader('Cache-Control','no-cache')}}));
 app.use((req,res)=>res.status(404).sendFile(path.join(ROOT,'public','404.html')));
 app.use((err,req,res,next)=>{if(err.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'A record with that value already exists.'});const code=err.status||err.statusCode||((err.name==='MulterError'||/Unsupported file type/.test(err.message))?400:500);if(code>=500)console.error(err);res.status(code).json({error:code<500?(err.message||'Request failed'):'Something went wrong. Please try again.'})});

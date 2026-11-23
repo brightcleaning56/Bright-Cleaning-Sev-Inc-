@@ -195,6 +195,23 @@
     setTimeout(() => t.remove(), isErr ? 5000 : 2600);
   }
 
+  // Tells an open admin page when a newer version is live, so it never runs old code against new data.
+  const LOADED_BUILD = '__BUILD__';
+  async function checkBuild() {
+    if (LOADED_BUILD === '__BUILD__' || document.getElementById('bcNewVersion')) return;
+    try {
+      const j = await (await fetch('/api/health', { cache: 'no-store' })).json();
+      if (!j || !j.build || j.build === 'unknown' || j.build === LOADED_BUILD) return;
+      const b = document.createElement('div');
+      b.id = 'bcNewVersion'; b.setAttribute('role', 'status');
+      b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;background:#1f6fd1;color:#fff;padding:10px 14px;border-radius:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+      const s = document.createElement('span'); s.textContent = 'A newer version of Bright Clean is available. Reload this page to use it.';
+      const r = document.createElement('button'); r.type = 'button'; r.textContent = 'Reload'; r.className = 'btn small'; r.onclick = () => location.reload();
+      b.append(s, r); document.body.appendChild(b);
+    } catch (e) { /* offline: check again later */ }
+  }
+  checkBuild(); setInterval(checkBuild, 5 * 60 * 1000);
+
   async function api(url, opts = {}) {
     if (signedOut && !url.startsWith('/api/admin/login')) throw new Error('Signed out');
     opts.headers = { ...(opts.headers || {}), 'X-BC-CSRF': '1' };
