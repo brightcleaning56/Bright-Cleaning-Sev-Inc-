@@ -55,7 +55,8 @@ function ensureSchema(db) {
     at TEXT NOT NULL, by TEXT,
     action TEXT NOT NULL, from_status TEXT, to_status TEXT,
     detail TEXT);
-  CREATE INDEX IF NOT EXISTS work_item_events_item ON work_item_events(item_id);`);
+  CREATE INDEX IF NOT EXISTS work_item_events_item ON work_item_events(item_id);
+  CREATE TABLE IF NOT EXISTS do_not_call(digits TEXT PRIMARY KEY, reason TEXT, by TEXT, at TEXT);`);
 }
 
 function history(db, itemId, { action, from, to, by, detail }) {
@@ -311,6 +312,14 @@ function applyCallAction(db, callId, body = {}, by = null) {
   else if (action === 'waiting' || action === 'wait') out = act(db, id, 'wait', { waiting_on: body.waiting_on || body.note, next_follow_up: body.date }, by);
   else if (action === 'cancel') out = act(db, id, 'cancel', { reason: body.reason }, by);
   else if (action === 'reopen') out = act(db, id, 'reopen', { reason: body.reason || body.note }, by);
+  else if (action === 'do_not_call') {
+    // Finishes the call and blocks its number: later calls from it go to the Do not call list, not the queue.
+    if (!r(body.reason)) throw new Error('To mark do not call, add the reason.');
+    out = act(db, id, 'complete', { note: 'Do not call: ' + r(body.reason) }, by);
+    const row = db.prepare('SELECT phone FROM calls WHERE id=?').get(Number(callId));
+    const dn = String((row && row.phone) || '').replace(/\D/g, '').slice(-10);
+    if (dn) db.prepare('INSERT INTO do_not_call(digits,reason,by,at) VALUES(?,?,?,?) ON CONFLICT(digits) DO UPDATE SET reason=excluded.reason, by=excluded.by, at=excluded.at').run(dn, r(body.reason).slice(0, 500), by, nowIso());
+  }
   else if (action === 'assign') {
     if (!r(body.assigned_to)) throw new Error('Choose who to assign it to.');
     out = act(db, id, 'reassign', { assigned_to: body.assigned_to }, by);

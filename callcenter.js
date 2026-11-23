@@ -5,7 +5,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const digits = s => String(s || '').replace(/\D/g, '').slice(-10);
   const who = req => String((req.user && req.user.email) || '');
   const OUTCOMES = ['Answered', 'Missed', 'Voicemail', 'Transferred', 'Completed', 'Callback requested'];
-  const QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks', 'Scheduled', 'Completed'];
+  const QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks', 'Scheduled', 'Do not call', 'Completed'];
   const DAY = 86400000;
 
   // Callbacks: a missed call stays in Missed / callbacks until someone marks its follow-up done.
@@ -28,6 +28,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   // Each call gets a queue and a match: the customer or lead it belongs to, or the one its phone number suggests.
   function enrich(calls, dir) {
     const all = db.prepare('SELECT id, phone, created_at FROM calls ORDER BY id').all();
+    const dnc = new Set(db.prepare('SELECT digits FROM do_not_call').all().map(x => x.digits));
     const priorByDigits = new Map(); // number of earlier calls from the same phone
     const seen = new Map();
     for (const c of all) { const d = digits(c.phone); if (!d) continue; priorByDigits.set(c.id, seen.get(d) || 0); seen.set(d, (seen.get(d) || 0) + 1); }
@@ -46,7 +47,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       const finished = !!c.follow_up_done && (c.outcome === 'Missed' || !!c.callback_issue_id || c.handling === 'Callback' || c.handling === 'Waiting');
       // A call with a follow-up date later than today waits under Scheduled and comes back to the queue on that day.
       const later = !c.follow_up_done && !!c.follow_up_date && c.follow_up_date > bizdate.today();
-      if (later) queue = 'Scheduled';
+      // A number marked do not call never comes back into the queue; its calls stay in history under Do not call.
+      const dn = String(c.phone || '').replace(/\D/g, '').slice(-10);
+      if (dn && dnc.has(dn)) queue = 'Do not call';
+      else if (later) queue = 'Scheduled';
       else if (c.outcome === 'Missed' && !c.follow_up_done) queue = 'Missed / callbacks';
       else if (finished) queue = 'Completed';
       else if (match && match.type === 'customer') queue = 'Existing customer';
@@ -55,7 +59,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
         const earlier = (priorByDigits.get(c.id) || 0) > 0 || (leadRow && leadRow.created_at && Date.parse(leadRow.created_at) < Date.parse(c.created_at) - DAY);
         queue = earlier ? 'Returning lead' : 'New lead';
       } else queue = 'Unknown caller';
-      const callbackOpen = !!(c.outcome === 'Missed' && !c.follow_up_done && !later);
+      const callbackOpen = !!(c.outcome === 'Missed' && !c.follow_up_done && !later && queue !== 'Do not call');
       return { ...c, match, queue, callback_open: callbackOpen };
     });
   }
