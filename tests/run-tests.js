@@ -1507,6 +1507,24 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(txt.status === 400 && /not set up/.test(txt.data.error || ''), 'text from a call should be refused until set up, got ' + txt.status);
     return 'call waits, completes, reopens; completing resolves its callback, closing the callback completes the call; cancel needs a reason; text refused until set up';
   });
+  await check('Multiple emails', 'A lead can hold more addresses; duplicates and a bad CC are refused; the lead can only be emailed at its own addresses', async () => {
+    const lead = await req('POST', '/api/admin/leads', { token: T, json: { contact_name: 'Two Emails', kind: 'inquiry', email: 'two.emails@example.com', details: 'Test' } });
+    const lid = lead.data.id || (lead.data.lead && lead.data.lead.id);
+    assert(lid, 'lead should be created: ' + JSON.stringify(lead.data));
+    const add = await req('POST', '/api/admin/leads/' + lid + '/emails', { token: T, json: { email: 'second.person@example.com', label: 'Office' } });
+    assert(add.status === 200, 'extra email should save, got ' + add.status);
+    const dup = await req('POST', '/api/admin/leads/' + lid + '/emails', { token: T, json: { email: 'TWO.EMAILS@example.com' } });
+    assert(dup.status === 400, 'a duplicate should be refused, got ' + dup.status);
+    const list = await req('GET', '/api/admin/leads/' + lid + '/emails', { token: T });
+    assert(list.status === 200 && list.data.emails.length === 1 && list.data.primary === 'two.emails@example.com', 'list should show the main and the extra address: ' + JSON.stringify(list.data));
+    const badCc = await req('POST', '/api/admin/leads/' + lid + '/email', { token: T, json: { to: 'two.emails@example.com', cc: 'not-an-email', subject: 'Hi', body: 'Hello there' } });
+    assert(badCc.status === 400, 'a bad CC should be refused, got ' + badCc.status);
+    const stranger = await req('POST', '/api/admin/leads/' + lid + '/email', { token: T, json: { to: 'stranger@example.com', subject: 'Hi', body: 'Hello there' } });
+    assert(stranger.status === 400, 'an address not on the lead should be refused, got ' + stranger.status);
+    const good = await req('POST', '/api/admin/leads/' + lid + '/email', { token: T, json: { to: 'second.person@example.com', cc: 'boss@example.com', subject: 'Hi', body: 'Hello there' } });
+    assert(good.status !== 400, 'a valid email should not be refused by validation, got ' + good.status + ' ' + JSON.stringify(good.data));
+    return 'lead keeps its main and extra addresses; duplicates and a bad CC are refused; only the lead\'s own addresses can be emailed';
+  });
   await check('Email Center', 'Mailboxes and counts load; each email is linked and categorised; a message opens with its summary; unknown emails are 404', async () => {
     const em = await req('GET', '/api/admin/email-center', { token: T });
     assert(em.status === 200 && Array.isArray(em.data.mailboxes) && em.data.mailboxes.length === 11, 'mailboxes should load: ' + em.status);

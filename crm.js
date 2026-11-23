@@ -5,7 +5,9 @@ module.exports = function mountCRM(app, ctx) {
   const { db, auth, logAction, clean, isEmail, adminEmail } = ctx;
   const now = () => new Date().toISOString();
   const who = req => (req.user && req.user.email) || null;
-  const cols = db.prepare('PRAGMA table_info(customers)').all().map(c => c.name);
+  // Addresses typed in one box, separated by commas, semicolons or spaces.
+  const splitAddrs = v => String(v || '').split(/[,;\s]+/).map(x => x.trim()).filter(Boolean);
+  const cols =db.prepare('PRAGMA table_info(customers)').all().map(c => c.name);
   for (const [c, t] of [['status', "TEXT NOT NULL DEFAULT 'Active'"], ['account_owner', 'TEXT'], ['customer_type', 'TEXT'], ['industry', 'TEXT'], ['tax_id', 'TEXT']])
     if (!cols.includes(c)) db.exec(`ALTER TABLE customers ADD COLUMN ${c} ${t}`);
   db.exec(`
@@ -17,7 +19,9 @@ module.exports = function mountCRM(app, ctx) {
   CREATE INDEX IF NOT EXISTS props_cust ON customer_properties(customer_id);
   CREATE TABLE IF NOT EXISTS customer_notes(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL, category TEXT NOT NULL DEFAULT 'General', body TEXT NOT NULL,
     pinned INTEGER NOT NULL DEFAULT 0, author TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-  CREATE INDEX IF NOT EXISTS notes_cust ON customer_notes(customer_id);`);
+  CREATE INDEX IF NOT EXISTS notes_cust ON customer_notes(customer_id);
+  CREATE TABLE IF NOT EXISTS lead_emails(id INTEGER PRIMARY KEY AUTOINCREMENT, lead_id INTEGER NOT NULL, email TEXT NOT NULL, label TEXT, created_at TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS lead_emails_lead ON lead_emails(lead_id);`);
   // Every customer's stored person becomes its primary contact (existing customers now, new ones on first open).
   const ensureContact = c => { if ((c.name || c.email) && !db.prepare('SELECT 1 FROM customer_contacts WHERE customer_id=?').get(c.id))
     db.prepare('INSERT INTO customer_contacts(customer_id,name,email,phone,is_primary,created_at,updated_at) VALUES(?,?,?,?,1,?,?)').run(c.id, c.name || c.email, c.email || '', c.phone || '', now(), now()); };
@@ -217,12 +221,55 @@ module.exports = function mountCRM(app, ctx) {
     const c = getCust(req.params.id); if (!c) return res.status(404).json({ error: 'Customer not found.' });
     const b = req.body || {}, to = clean(b.to, 254), subject = clean(b.subject, 200), body = clean(b.body, 10000);
     const allowed = new Set([c.email, ...db.prepare('SELECT email FROM customer_contacts WHERE customer_id=?').all(c.id).map(x => x.email)].filter(Boolean).map(e => e.toLowerCase()));
-    if (!to || !allowed.has(to.toLowerCase())) return res.status(400).json({ error: 'Choose one of this customer\'s contacts.' });
+    const ccList = splitAddrs(b.cc);
+    if (ccList.some(x => !isEmail(x))) return res.status(400).json({ error: 'Check the CC address: it needs to look like name@example.com.' });
+    // Send to every address on the customer when asked; otherwise to the one chosen. CC goes to the extra addresses.
+    const toList = b.to_all ? [...allowed] : [String(to || '').toLowerCase()];
+    if (!toList.length || !toList.every(x => allowed.has(x))) return res.status(400).json({ error: 'Choose one of this customer\'s contacts.' });
     if (!subject || !body) return res.status(400).json({ error: 'Write a subject and a message.' });
     const m = ctx.getMailer(); if (!m) return res.status(503).json({ error: 'Email is not set up yet.' });
-    try { await m.sendMail({ from: process.env.FROM_EMAIL || 'info@brightclean.net', to, subject, text: body }); }
+    try { await m.sendMail({ from: process.env.FROM_EMAIL || 'info@brightclean.net', to: toList.join(', '), cc: ccList.length ? ccList.join(', ') : undefined, subject, text: body }); }
     catch (e) { return res.status(502).json({ error: 'Email could not be sent: ' + e.message }); }
-    logAction(req, 'emailed', 'customer', c.id, `${to}: ${subject}`);
+    logAction(req, 'emailed', 'customer', c.id, `${toList.join(', ')}${ccList.length ? ' cc ' + ccList.join(', ') : ''}: ${subject}`);
+    res.json({ ok: true });
+  });
+  // ---------- More email addresses on a lead, and email the lead with CC ----------
+  const leadOf = id => db.prepare('SELECT * FROM leads WHERE id=?').get(Number(id));
+  const leadAddrs = l => [l.email, ...db.prepare('SELECT email FROM lead_emails WHERE lead_id=? ORDER BY id').all(l.id).map(x => x.email)].filter(Boolean);
+  app.get('/api/admin/leads/:id/emails', auth, (req, res) => {
+    const l = leadOf(req.params.id); if (!l) return res.status(404).json({ error: 'Lead not found.' });
+    res.json({ primary: l.email || '', emails: db.prepare('SELECT id, email, label FROM lead_emails WHERE lead_id=? ORDER BY id').all(l.id) });
+  });
+  app.post('/api/admin/leads/:id/emails', auth, (req, res) => {
+    const l = leadOf(req.params.id); if (!l) return res.status(404).json({ error: 'Lead not found.' });
+    const email = clean((req.body || {}).email, 254).toLowerCase();
+    if (!isEmail(email)) return res.status(400).json({ error: 'Enter a full email address, like name@example.com.' });
+    if (leadAddrs(l).some(x => x.toLowerCase() === email)) return res.status(400).json({ error: 'That address is already on this lead.' });
+    db.prepare('INSERT INTO lead_emails(lead_id,email,label,created_at) VALUES(?,?,?,?)').run(l.id, email, clean((req.body || {}).label, 60) || null, now());
+    logAction(req, 'added email', 'lead', l.id, email);
+    res.json({ ok: true });
+  });
+  app.delete('/api/admin/leads/:id/emails/:eid', auth, (req, res) => {
+    const l = leadOf(req.params.id); if (!l) return res.status(404).json({ error: 'Lead not found.' });
+    const r = db.prepare('DELETE FROM lead_emails WHERE id=? AND lead_id=?').run(Number(req.params.eid), l.id);
+    if (!r.changes) return res.status(404).json({ error: 'Address not found.' });
+    logAction(req, 'removed email', 'lead', l.id, '');
+    res.json({ ok: true });
+  });
+  app.post('/api/admin/leads/:id/email', auth, async (req, res) => {
+    const l = leadOf(req.params.id); if (!l) return res.status(404).json({ error: 'Lead not found.' });
+    const b = req.body || {}, subject = clean(b.subject, 200), body = clean(b.body, 10000);
+    const allowed = leadAddrs(l).map(x => x.toLowerCase());
+    const ccList = splitAddrs(b.cc);
+    if (ccList.some(x => !isEmail(x))) return res.status(400).json({ error: 'Check the CC address: it needs to look like name@example.com.' });
+    const toList = b.to_all ? allowed : splitAddrs(b.to).map(x => x.toLowerCase());
+    if (!toList.length || !toList.every(x => allowed.includes(x))) return res.status(400).json({ error: 'Choose an address on this lead.' });
+    if (!subject || !body) return res.status(400).json({ error: 'Write a subject and a message.' });
+    const m = ctx.getMailer(); if (!m) return res.status(503).json({ error: 'Email is not set up yet.' });
+    try { await m.sendMail({ from: process.env.FROM_EMAIL || 'info@brightclean.net', to: toList.join(', '), cc: ccList.length ? ccList.join(', ') : undefined, subject, text: body }); }
+    catch (e) { return res.status(502).json({ error: 'Email could not be sent: ' + e.message }); }
+    logAction(req, 'emailed', 'lead', l.id, `${toList.join(', ')}${ccList.length ? ' cc ' + ccList.join(', ') : ''}: ${subject}`);
+    try { require('./leadlog').record(db, l.id, 'email_out', 'Email sent to ' + toList.join(', ') + (ccList.length ? ' (cc ' + ccList.join(', ') + ')' : '') + ': ' + subject, who(req) || 'admin', body, now()); } catch { /* history is best effort */ }
     res.json({ ok: true });
   });
   return { profile };

@@ -1475,7 +1475,7 @@
           <div class="f"><label for="lOrigin">Came from</label><select id="lOrigin">${[['website', 'Filled in our website form'], ['inbound_call', 'Called us'], ['portal', 'Client portal request'], ['manual', 'Added by our team (we are reaching out)'], ['import', 'Bulk list for staff to call'], ['api', 'Partner or API']].map(([v, t]) => `<option value="${v}"${(l.origin || 'website') === v ? ' selected' : ''}>${t}</option>`).join('')}</select><span class="hint">Decides how the AI writes to them: a thank-you for people who reached out, an introduction for people we added.</span></div>
           <div class="f wide"><label for="ln">Internal notes</label><textarea id="ln" placeholder="Calls, site walk notes, next steps. Only visible here.">${esc(l.notes || '')}</textarea></div>
           <div class="f wide"><label class="chk"><input type="checkbox" id="lCb" ${l.callback_requested ? 'checked' : ''}> Call back requested (automatic calls only go to leads marked this way)</label></div>
-          <div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}${l.follow_up_date ? '<button type="button" class="btn small" id="lFuDone">Complete next step</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
+          <div class="f wide" id="lEmails"></div><div class="f wide"><label for="lFu">Follow-up</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="date" id="lFu" value="${esc(l.follow_up_date || '')}" aria-label="Follow-up date"><input id="lFuNote" placeholder="What to do" value="${esc(l.follow_up_note || '')}" aria-label="Follow-up note" style="flex:1;min-width:160px"><button type="button" class="btn small ghost" id="lFuSave">Save follow-up</button>${l.follow_up_date ? '<button type="button" class="btn small ghost" id="lFuClear">Clear</button>' : ''}${l.follow_up_date ? '<button type="button" class="btn small" id="lFuDone">Complete next step</button>' : ''}</div><span class="hint">${l.follow_up_date ? 'Hidden from the open list until this date. A task is in Issues &amp; tasks.' : 'Set a date to hide this lead until then and create a task in Issues &amp; tasks.'}</span></div>
         </div></div></div>`,
       footer: `<button class="btn" id="lLog" type="button">Log activity</button><button class="btn ghost" id="lEdit" type="button">Edit details</button>${l.phone ? `<a class="btn ghost" href="tel:${esc(l.phone)}">Call</a>` : ''}${l.email ? `<a class="btn ghost" href="mailto:${esc(l.email)}">Email</a>` : ''}<button class="btn" id="lSave">Save</button>${l.kind !== 'career' ? '<button class="btn ghost" id="lQuote">Build estimate</button>' : ''}${l.customer_id ? '<button class="btn ghost" id="lOpenCust">Open customer</button>' : '<button class="btn ghost" id="lConvert">Convert to customer</button>'}<span class="grow"></span><button class="btn danger" id="lDel">Delete</button>`
     });
@@ -1503,6 +1503,7 @@
       catch (err) { toast(err.message, true); }
     };
     if ($('#lOpenCust')) $('#lOpenCust').onclick = () => { closeDrawer(); go('customers'); setTimeout(() => openCustomerPage(l.customer_id), 350); };
+    loadLeadEmails(l.id);
     $('#lFuSave').onclick = async () => {
       const d = $('#lFu').value;
       if (!d) { toast('Choose a follow-up date', true); return; }
@@ -5383,11 +5384,47 @@
     $('#dfDiscard').onclick = async () => { if (!confirm('Discard this draft? It cannot be recovered.')) return; try { await api('/api/admin/email-center/drafts/' + m.draft_id, { method: 'DELETE' }); toast('Draft discarded'); mailState.selKey = null; mailState.center = await api('/api/admin/email-center').catch(() => null); renderEmails(); } catch (err) { toast(err.message, true); } };
   }
   // Compose: a new email to a customer on file (sent only when you press Send).
+  // A lead can have more than one address. Shows them on the lead, and lets staff add or remove them.
+  async function loadLeadEmails(id) {
+    const box = document.getElementById('lEmails'); if (!box) return;
+    let d; try { d = await api('/api/admin/leads/' + id + '/emails'); } catch (e) { box.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; return; }
+    const addrs = [d.primary, ...d.emails.map(x => x.email)].filter(Boolean);
+    box.innerHTML = '<label>Email addresses</label>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">'
+      + (d.primary ? '<span class="pill">' + esc(d.primary) + ' <small class="muted">main</small></span>' : '<span class="muted">No main email on this lead.</span>')
+      + d.emails.map(x => '<span class="pill">' + esc(x.email) + ' <button type="button" class="linklike" data-rm-email="' + x.id + '">remove</button></span>').join('')
+      + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="lEmailNew" type="email" placeholder="Add another email" style="flex:1;min-width:180px"><button type="button" class="btn small ghost" id="lEmailAdd">Add address</button>'
+      + (addrs.length ? '<button type="button" class="btn small" id="lEmailCompose">Email this lead</button>' : '') + '</div>';
+    box.querySelectorAll('[data-rm-email]').forEach(b => b.onclick = async () => { try { await api('/api/admin/leads/' + id + '/emails/' + b.dataset.rmEmail, { method: 'DELETE' }); loadLeadEmails(id); } catch (e) { toast(e.message, true); } });
+    box.querySelector('#lEmailAdd').onclick = async () => { const v = box.querySelector('#lEmailNew').value.trim(); if (!v) return; try { await api('/api/admin/leads/' + id + '/emails', { method: 'POST', json: { email: v } }); loadLeadEmails(id); } catch (e) { toast(e.message, true); } };
+    if (box.querySelector('#lEmailCompose')) box.querySelector('#lEmailCompose').onclick = () => openLeadEmail(id, addrs);
+  }
+  // Email a lead to one or more of its addresses, with optional CC. Nothing is sent until Send is pressed.
+  function openLeadEmail(id, addrs) {
+    openDrawer({ title: 'Email this lead', sub: 'Tick every address to reach, then add CC if needed. Nothing is sent until you press Send.', body:
+      '<div class="f wide"><label>To</label>' + addrs.map((a, i) => '<label style="display:block;font-weight:400"><input type="checkbox" class="leTo" value="' + esc(a) + '"' + (i === 0 ? ' checked' : '') + '> ' + esc(a) + '</label>').join('') + '</div>' +
+      '<div class="f wide"><label for="leCc">CC (optional, separate with commas)</label><input id="leCc" placeholder="manager@example.com"></div>' +
+      '<div class="f wide"><label for="leSub">Subject</label><input id="leSub"></div>' +
+      '<div class="f wide"><label for="leBody">Message</label><textarea id="leBody" rows="8"></textarea></div>',
+      footer: '<button class="btn ghost" data-close>Cancel</button><button class="btn" id="leSend">Send</button>' });
+    $('#leSend').onclick = async () => {
+      const to = [...document.querySelectorAll('.leTo:checked')].map(x => x.value);
+      const subject = $('#leSub').value.trim(), body = $('#leBody').value.trim(), cc = $('#leCc').value.trim();
+      if (!to.length) return toast('Choose at least one address.', true);
+      if (!subject || body.length < 2) return toast('Add a subject and a message.', true);
+      if (!confirm('Send this email to ' + to.join(', ') + (cc ? ' with CC to ' + cc : '') + ' now?')) return;
+      try { await api('/api/admin/leads/' + id + '/email', { method: 'POST', json: { to: to.join(','), cc, subject, body } }); closeDrawer(); toast('Sent'); }
+      catch (e) { toast(e.message, true); }
+    };
+  }
   async function openEmailCompose(pre) {
     let custs = []; try { custs = (await api('/api/admin/customers')).customers || []; } catch { custs = []; }
     const withEmail = custs.filter(c => c.email);
     openDrawer({ title: 'New email', sub: 'Choose a customer. Nothing is sent until you press Send.', body:
       '<div class="f wide"><label for="cpTo">To</label><select id="cpTo"><option value="">Choose a customer…</option>' + withEmail.map(c => '<option value="' + c.id + '"' + (pre.customer_id === c.id ? ' selected' : '') + '>' + esc((c.company || c.name || 'Customer') + ' · ' + c.email) + '</option>').join('') + '</select></div>' +
+      '<div class="f wide"><label for="cpCc">CC (optional, separate with commas)</label><input id="cpCc" placeholder="manager@example.com, bookkeeper@example.com"></div>' +
+      '<div class="f wide"><label style="font-weight:400"><input type="checkbox" id="cpAll"> Send to every address on this customer</label></div>' +
       '<div class="f wide"><label for="cpSub">Subject</label><input id="cpSub" value="' + esc(pre.subject || '') + '"></div>' +
       '<div class="f wide"><label for="cpBody">Message</label><textarea id="cpBody" rows="8">' + esc(pre.body || '') + '</textarea></div>',
       footer: '<button class="btn ghost" data-close>Cancel</button><button class="btn" id="cpSend">Send</button>' });
@@ -5395,8 +5432,9 @@
       const id = $('#cpTo').value, subject = $('#cpSub').value.trim(), body = $('#cpBody').value.trim();
       if (!id) return toast('Choose a customer.', true); if (!subject || body.length < 2) return toast('Add a subject and a message.', true);
       const c = withEmail.find(x => String(x.id) === id);
-      if (!confirm('Send this email to ' + c.email + ' now?')) return;
-      try { await api('/api/admin/customers/' + id + '/email', { method: 'POST', json: { to: c.email, subject, body } }); closeDrawer(); toast('Sent'); mailState.center = await api('/api/admin/email-center').catch(() => null); renderEmails(); }
+      const cc = $('#cpCc').value.trim(), all = $('#cpAll').checked;
+      if (!confirm('Send this email to ' + (all ? 'every address on this customer' : c.email) + (cc ? ' with CC to ' + cc : '') + ' now?')) return;
+      try { await api('/api/admin/customers/' + id + '/email', { method: 'POST', json: { to: c.email, to_all: all, cc, subject, body } }); closeDrawer(); toast('Sent'); mailState.center = await api('/api/admin/email-center').catch(() => null); renderEmails(); }
       catch (err) { toast(err.message, true); }
     };
   }

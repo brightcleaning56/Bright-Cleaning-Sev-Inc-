@@ -11,12 +11,12 @@ module.exports = function createPostmarkMailer(token, opts = {}) {
   const base = (opts.apiUrl || 'https://api.postmarkapp.com').replace(/\/$/, '');
   return {
     provider: 'postmark',
-    async sendMail({ from, to, subject, text, replyTo, attachments }) {
+    async sendMail({ from, to, cc, subject, text, replyTo, attachments }) {
       const atts = toPostmarkAttachments(attachments);
       const r = await fetch(base + '/email', {
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Postmark-Server-Token': token },
-        body: JSON.stringify({ From: from, To: Array.isArray(to) ? to.join(',') : to, Subject: subject, TextBody: text, ReplyTo: replyTo || undefined, MessageStream: opts.stream || 'outbound', Attachments: atts.length ? atts : undefined })
+        body: JSON.stringify({ From: from, To: Array.isArray(to) ? to.join(',') : to, Cc: cc ? (Array.isArray(cc) ? cc.join(',') : cc) : undefined, Subject: subject, TextBody: text, ReplyTo: replyTo || undefined, MessageStream: opts.stream || 'outbound', Attachments: atts.length ? atts : undefined })
       });
       let j = {};
       try { j = await r.json(); } catch { /* non-JSON error */ }
