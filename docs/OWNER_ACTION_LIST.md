@@ -121,3 +121,10 @@ Owner actions:
 1. Sign in as owner once, then try to save an invoice amount of "abc" or a negative number. It should be refused with a clear message.
 2. Confirm which account ericd567@icloud.com is. The owner list above names it as the inspector account, but it signs in with the sales role now. Say which role it should have.
 3. The sales test account (ericd567@icloud.com, sales role) stays as it is for now. Say when you want it removed.
+
+## Decisions taken (best option), 2026-11-23
+
+- Major dependency upgrades (Express 5, multer 2, better-sqlite3 13, jsdom 31, dotenv 18, bcryptjs 3, express-rate-limit 8): stay on current versions for now. Planned separately with a full test pass.
+- Overdue leads, calls and sent emails awaiting a reply: left open. Nothing closed without the owner.
+- Twilio support ticket #30436964: kept open.
+- Account ericd567@icloud.com: recommended role is Inspector. Waiting for the owner to confirm before the live role is changed.
