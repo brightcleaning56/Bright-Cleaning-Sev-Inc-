@@ -4157,10 +4157,10 @@
     let cs = {}; try { cs = await api('/api/admin/communications-summary?days=1'); } catch { cs = {}; }
     kpiTiles('#callsKpis', [{ label: 'Live queue', value: qc['Missed / callbacks'] || 0, alert: (qc['Missed / callbacks'] || 0) > 0 }, { label: "Today's calls", value: r.today.total }, { label: 'Customer calls', value: qc['Existing customer'] || 0 }, { label: 'Lead calls', value: (qc['New lead'] || 0) + (qc['Returning lead'] || 0) }, { label: 'New texts', value: cs.texts_in || 0 }, { label: 'Voicemails', value: cs.voicemails || 0, alert: (cs.voicemails || 0) > 0 }]);
     const callFilter = (follow, vm) => { $('#callFollow').checked = follow; $('#callVm').checked = vm; renderCalls(); };
-    wireTiles('#callsKpis', { 'Live queue': () => { callState.queue = 'Missed / callbacks'; renderCalls(); }, "Today's calls": () => { callState.queue = 'All'; renderCalls(); }, 'Customer calls': () => { callState.queue = 'Existing customer'; renderCalls(); }, 'Lead calls': () => { callState.queue = 'New lead'; renderCalls(); }, 'New texts': () => go('clientmsgs'), 'Voicemails': () => { callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = true; renderCalls(); } });
+    wireTiles('#callsKpis', { 'Live queue': () => { callState.queue = 'Missed / callbacks'; renderCalls(); }, "Today's calls": () => { callState.tab = 'all'; callState.queue = 'All'; renderCalls(); }, 'Customer calls': () => { callState.queue = 'Existing customer'; renderCalls(); }, 'Lead calls': () => { callState.queue = 'New lead'; renderCalls(); }, 'New texts': () => go('clientmsgs'), 'Voicemails': () => { callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = true; renderCalls(); } });
     const setTab = id => ['ccTabQueue', 'ccTabAll', 'ccTabVm', 'ccTabHist'].forEach(k => { const b = $('#' + k); if (b) b.classList.toggle('on', k === id); });
-    $('#ccTabQueue').onclick = () => { setTab('ccTabQueue'); callState.queue = 'All'; $('#callFollow').checked = true; $('#callVm').checked = false; renderCalls(); };
-    $('#ccTabAll').onclick = () => { setTab('ccTabAll'); callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = false; renderCalls(); };
+    $('#ccTabQueue').onclick = () => { setTab('ccTabQueue'); callState.tab = 'queue'; callState.queue = 'All';$('#callFollow').checked = true; $('#callVm').checked = false; renderCalls(); };
+    $('#ccTabAll').onclick = () => { setTab('ccTabAll'); callState.tab = 'all'; callState.queue = 'All';$('#callFollow').checked = false; $('#callVm').checked = false; renderCalls(); };
     $('#ccTabSms').onclick = () => go('clientmsgs');
     $('#ccTabVm').onclick = () => { setTab('ccTabVm'); callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = true; renderCalls(); };
     $('#ccTabHist').onclick = () => { setTab('ccTabHist'); callState.queue = 'All'; $('#callFollow').checked = false; $('#callVm').checked = false; renderCalls(); };
@@ -4184,7 +4184,8 @@
     const qbtn = (label, n, key) => '<button type="button" class="ccq' + (sel === key ? ' on' : '') + '" data-cq="' + esc(key) + '"><span>' + esc(label) + '</span><b>' + n + '</b></button>';
     $('#ccQueues').innerHTML = qbtn('All calls', cc.calls.length, 'All') + CC_QUEUES.map(name => qbtn(name, cc.queue_counts[name] || 0, name)).join('');
     $$('#ccQueues [data-cq]').forEach(b => b.onclick = () => { callState.queue = b.dataset.cq; renderCalls(); });
-    const rows = cc.calls.filter(c => (sel === 'All' || c.queue === sel)
+    // The Call Queue tab shows open work only; finished calls stay under All Calls and the Completed queue.
+    const rows = cc.calls.filter(c => (sel === 'All' ? (callState.tab === 'all' || c.queue !== 'Completed') : c.queue === sel)
       && (!q || [c.contact_name, c.company, c.phone, c.summary, c.customer_company, c.match && c.match.name].join(' ').toLowerCase().includes(q))
       && (!due || (!c.follow_up_done && c.follow_up_date && c.follow_up_date <= t))
       && (!vm || c.outcome === 'Voicemail'));
