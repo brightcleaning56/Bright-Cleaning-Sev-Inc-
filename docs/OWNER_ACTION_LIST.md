@@ -120,4 +120,4 @@ Fixed and live: card payments include sales tax; sales and supervisor no longer 
 Owner actions:
 1. Sign in as owner once, then try to save an invoice amount of "abc" or a negative number. It should be refused with a clear message.
 2. Confirm which account ericd567@icloud.com is. The owner list above names it as the inspector account, but it signs in with the sales role now. Say which role it should have.
-3. Remove the sales test account when the sales check is finished.
+3. The sales test account (ericd567@icloud.com, sales role) stays as it is for now. Say when you want it removed.
