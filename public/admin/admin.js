@@ -4735,6 +4735,8 @@
     if (!qState.templates.length) qState.templates = (await api('/api/admin/qc/templates')).templates;
     if (!state.customers || !state.customers.length) { try { state.customers = (await api('/api/admin/customers')).customers; } catch { state.customers = []; } }
     let projects = []; try { projects = (await api(state.me && state.me.role === 'inspector' ? '/api/admin/qc/projects' : '/api/admin/pm/projects')).projects; } catch { /* */ }
+    // Started from a customer: the inspector sees only that customer's projects.
+    if (state.me && state.me.role === 'inspector' && pre.customer_id) projects = projects.filter(p => Number(p.customer_id) === Number(pre.customer_id));
     openForm({ title: 'New inspection', defs: [{ name: 'itype', label: 'Type', type: 'select', options: ['Internal', 'Customer walkthrough'] }, { name: 'template_id', label: 'Template', type: 'select', options: qState.templates.filter(t => t.active).map(t => [t.id, t.name]) }, { name: 'area', label: 'Site / area' }, { name: 'date', label: 'Date', type: 'date' },
       { name: 'customer_id', label: 'Customer', type: 'select', options: [['', '—'], ...state.customers.map(c => [c.id, c.company || c.name || c.email])] }, { name: 'project_id', label: 'Project', type: 'select', options: [['', '—'], ...projects.map(p => [p.id, `${p.number} ${p.name || ''}`])] }, { name: 'crew', label: 'Crew inspected' }],
       values: { date: todayISO(), itype: 'Internal', ...pre }, submit: b => api('/api/admin/qc/inspections', { method: 'POST', json: b }), after: async x => { await loadQuality(); inspectEditor(x.inspection); } });
