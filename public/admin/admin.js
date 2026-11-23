@@ -1383,7 +1383,9 @@
       <div class="f"><label for="lhSummary">What happened</label><input id="lhSummary" placeholder="For example: Left a voicemail; sent walkthrough times"></div>
       <div class="f"><label for="lhNext">Next follow-up (optional)</label><input id="lhNext" type="date"></div>
       <button class="btn small" id="lhSave">Save to lead history</button> <span class="muted">Opening a lead does not count as work. Each entry is saved with your name and the time.</span>`;
-    $('#lhSave').onclick = async () => {
+    // The lead drawer may have closed while the history loaded; then there is nothing to wire.
+    const lhSave = $('#lhSave'); if (!lhSave) return;
+    lhSave.onclick = async () => {
       const summary = $('#lhSummary').value.trim();
       if (summary.length < 3) return toast('Describe what happened.', true);
       try { await api('/api/admin/leads/' + id + '/activity', { method: 'POST', json: { kind: $('#lhKind').value, summary, follow_up_date: $('#lhNext').value || undefined } }); toast('Saved to lead history'); loadLeadHistory(id); loadLeads(); }
@@ -4736,7 +4738,7 @@
     if (!state.customers || !state.customers.length) { try { state.customers = (await api('/api/admin/customers')).customers; } catch { state.customers = []; } }
     let projects = []; try { projects = (await api(state.me && state.me.role === 'inspector' ? '/api/admin/qc/projects' : '/api/admin/pm/projects')).projects; } catch { /* */ }
     // Started from a customer: the inspector sees only that customer's projects.
-    if (state.me && state.me.role === 'inspector' && pre.customer_id) projects = projects.filter(p => Number(p.customer_id) === Number(pre.customer_id));
+    if (state.me && state.me.role === 'inspector' && pre.customer_id) { try { const mine = new Set(((await api(`/api/admin/customers/${pre.customer_id}/links`)).projects || []).map(p => Number(p.id))); projects = projects.filter(p => mine.has(Number(p.id))); } catch { projects = []; } }
     openForm({ title: 'New inspection', defs: [{ name: 'itype', label: 'Type', type: 'select', options: ['Internal', 'Customer walkthrough'] }, { name: 'template_id', label: 'Template', type: 'select', options: qState.templates.filter(t => t.active).map(t => [t.id, t.name]) }, { name: 'area', label: 'Site / area' }, { name: 'date', label: 'Date', type: 'date' },
       { name: 'customer_id', label: 'Customer', type: 'select', options: [['', '—'], ...state.customers.map(c => [c.id, c.company || c.name || c.email])] }, { name: 'project_id', label: 'Project', type: 'select', options: [['', '—'], ...projects.map(p => [p.id, `${p.number} ${p.name || ''}`])] }, { name: 'crew', label: 'Crew inspected' }],
       values: { date: todayISO(), itype: 'Internal', ...pre }, submit: b => api('/api/admin/qc/inspections', { method: 'POST', json: b }), after: async x => { await loadQuality(); inspectEditor(x.inspection); } });
