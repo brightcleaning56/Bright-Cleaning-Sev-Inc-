@@ -5,7 +5,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
   const digits = s => String(s || '').replace(/\D/g, '').slice(-10);
   const who = req => String((req.user && req.user.email) || '');
   const OUTCOMES = ['Answered', 'Missed', 'Voicemail', 'Transferred', 'Completed', 'Callback requested'];
-  const QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks', 'Completed'];
+  const QUEUES = ['Existing customer', 'New lead', 'Returning lead', 'Unknown caller', 'Missed / callbacks', 'Scheduled', 'Completed'];
   const DAY = 86400000;
 
   // Callbacks: a missed call stays in Missed / callbacks until someone marks its follow-up done.
@@ -44,7 +44,10 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       let queue;
       // A callback or missed call that has been completed or cancelled leaves the active queues: it sits under Completed.
       const finished = !!c.follow_up_done && (c.outcome === 'Missed' || !!c.callback_issue_id || c.handling === 'Callback' || c.handling === 'Waiting');
-      if (c.outcome === 'Missed' && !c.follow_up_done) queue = 'Missed / callbacks';
+      // A call with a follow-up date later than today waits under Scheduled and comes back to the queue on that day.
+      const later = !c.follow_up_done && !!c.follow_up_date && c.follow_up_date > bizdate.today();
+      if (later) queue = 'Scheduled';
+      else if (c.outcome === 'Missed' && !c.follow_up_done) queue = 'Missed / callbacks';
       else if (finished) queue = 'Completed';
       else if (match && match.type === 'customer') queue = 'Existing customer';
       else if (match && match.type === 'lead') {
@@ -52,7 +55,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
         const earlier = (priorByDigits.get(c.id) || 0) > 0 || (leadRow && leadRow.created_at && Date.parse(leadRow.created_at) < Date.parse(c.created_at) - DAY);
         queue = earlier ? 'Returning lead' : 'New lead';
       } else queue = 'Unknown caller';
-      const callbackOpen = !!(c.outcome === 'Missed' && !c.follow_up_done);
+      const callbackOpen = !!(c.outcome === 'Missed' && !c.follow_up_done && !later);
       return { ...c, match, queue, callback_open: callbackOpen };
     });
   }

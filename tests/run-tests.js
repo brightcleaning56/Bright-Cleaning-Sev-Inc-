@@ -1440,7 +1440,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const missed = await req('POST', '/api/admin/calls', { token: T, json: { phone, contact_name: 'Missed Caller', direction: 'Inbound', outcome: 'Missed', purpose: 'Other' } });
     assert(missed.status === 201, 'missed call should save, got ' + missed.status);
     const cc = await req('GET', '/api/admin/calls-center', { token: T });
-    assert(cc.status === 200 && Array.isArray(cc.data.queues) && cc.data.queues.length === 6, 'queues should load');
+    assert(cc.status === 200 && Array.isArray(cc.data.queues) && cc.data.queues.length === 7, 'queues should load');
     assert((cc.data.outcomes || []).includes('Transferred') && (cc.data.outcomes || []).includes('Completed'), 'outcomes should include Transferred and Completed');
     const mrow = cc.data.calls.find(c => c.id === missed.data.call.id);
     assert(mrow && mrow.queue === 'Missed / callbacks' && mrow.callback_open, 'missed call should be in Missed / callbacks: ' + JSON.stringify(mrow));
@@ -1455,7 +1455,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(ctx.status === 200 && ctx.data.lead && ctx.data.lead.id === lid && ctx.data.match && ctx.data.match.type === 'lead', 'context should show the linked lead: ' + ctx.status);
     const txt = await req('POST', '/api/admin/messages/sms', { token: T, json: { lead_id: lid, body: 'Hi, checking in.' } });
     assert(txt.status === 400 && /not set up/.test(txt.data.error || ''), 'text should be refused until set up, got ' + txt.status + ' ' + JSON.stringify(txt.data));
-    return 'queues load (6); missed call gets a callback and sits in Missed / callbacks; unmatched call is Unknown caller; call links to a lead; caller context returns the lead; text refused until set up';
+    return 'queues load (7); missed call gets a callback and sits in Missed / callbacks; unmatched call is Unknown caller; call links to a lead; caller context returns the lead; text refused until set up';
   });
   await check('Call and callback work', 'A call can be put on hold, completed, reopened and cancelled from its drawer; completing it closes its callback task and closing the task completes the call; a text from a call is refused until texting is set up', async () => {
     const made = await req('POST', '/api/admin/calls', { token: T, json: { phone: '5155550188', contact_name: 'Callback Caller', direction: 'Inbound', outcome: 'Missed', purpose: 'Other' } });
@@ -1485,6 +1485,13 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(cancelNoReason.status === 400, 'cancel without a reason should be refused, got ' + cancelNoReason.status);
     const cancelled = await req('POST', '/api/admin/calls/' + c2 + '/work', { token: T, json: { action: 'cancel', reason: 'Wrong number' } });
     assert(cancelled.status === 200, 'cancel with a reason should save, got ' + cancelled.status);
+    // A scheduled call leaves the Call Queue and waits under Scheduled until its day.
+    const c3 = (await req('POST', '/api/admin/calls', { token: T, json: { phone: '5155550123', contact_name: 'Later Caller', direction: 'Inbound', outcome: 'Missed', purpose: 'Other' } })).data.call.id;
+    const sched = await req('POST', '/api/admin/calls/' + c3 + '/work', { token: T, json: { action: 'schedule', date: '2099-12-01' } });
+    assert(sched.status === 200, 'schedule should save, got ' + sched.status + ' ' + JSON.stringify(sched.data));
+    const ccNow = (await req('GET', '/api/admin/calls-center', { token: T })).data;
+    const later = ccNow.calls.find(x => x.id === c3);
+    assert(later && later.queue === 'Scheduled' && !later.callback_open, 'a call scheduled for a later day should sit under Scheduled, got ' + (later && later.queue));
     const txt = await req('POST', '/api/admin/messages/sms', { token: T, json: { call_id: cid, to: '5155550188', body: 'Thanks for calling back.' } });
     assert(txt.status === 400 && /not set up/.test(txt.data.error || ''), 'text from a call should be refused until set up, got ' + txt.status);
     return 'call waits, completes, reopens; completing resolves its callback, closing the callback completes the call; cancel needs a reason; text refused until set up';
