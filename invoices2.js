@@ -81,11 +81,12 @@ module.exports = function mountInvoices(app, ctx) {
     const to = clean(b.to, 254) || inv.email || (inv.customer_id && (db.prepare('SELECT email FROM customers WHERE id=?').get(inv.customer_id) || {}).email) || '';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: 'Add the customer’s billing email before sending.' });
     const chk = contractCheck(inv);
+    let overReason = null; // saved only after the email has gone out
     if (!chk.ok) {
       const reason = clean(b.over_contract_reason, 500);
       if (!reason) return res.status(409).json({ error: `Total billed on this contract would be ${money(chk.total)}, above the contract value of ${money(chk.contract.value)}. Bill an approved change order, or (owner/manager) give the reason to send anyway.`, check: chk });
       if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can bill above the contract value.' });
-      db.prepare('UPDATE invoices SET over_contract_reason=? WHERE id=?').run(reason, inv.id);
+      overReason = reason;
     }
     const w9 = w9Bytes(); if (!w9) return res.status(409).json({ error: 'Upload the company W-9 under Settings before sending invoices. It goes out with every invoice.' });
     const m = getMailer && getMailer(); if (!m) return res.status(503).json({ error: 'Email is not set up, so the invoice was not sent.' });
@@ -97,6 +98,7 @@ module.exports = function mountInvoices(app, ctx) {
       logAction(req, 'invoice send FAILED', 'invoice', inv.id, `${inv.invoice_number} to ${to}: ${e.message}`);
       return res.status(502).json({ error: `The invoice email could not be sent (${e.message}). The invoice was not marked as sent.` });
     }
+    if (overReason) db.prepare('UPDATE invoices SET over_contract_reason=? WHERE id=?').run(overReason, inv.id);
     const t = now(), resend = !!inv.sent_at;
     db.prepare("UPDATE invoices SET status=CASE WHEN status IN ('Draft') THEN 'Sent' ELSE status END, sent_at=COALESCE(sent_at,?), sent_to=?, send_count=COALESCE(send_count,0)+1, email=COALESCE(NULLIF(email,''),?), issue_date=COALESCE(issue_date,?) WHERE id=?").run(t, to, to, today(), inv.id);
     logAction(req, resend ? 'resent invoice' : 'sent invoice', 'invoice', inv.id, `${inv.invoice_number} ${money(inv.amount)} to ${to}${chk.ok ? '' : ' (above contract value — reason recorded)'}`);
