@@ -4224,6 +4224,7 @@
       ${c.phone ? `<label for="ccSms">Text ${esc(c.phone)}</label><textarea id="ccSms" rows="2" placeholder="Short, clear message"></textarea><button type="button" class="btn small" id="ccSend" style="margin:6px 0">Send SMS</button>` : ''}
       <label for="ccNote">Add note</label><textarea id="ccNote" rows="2" placeholder="Internal note"></textarea><button type="button" class="btn small ghost" id="ccNoteSave" style="margin:6px 0">Save note</button>
       <label for="ccTask">Callback task (due)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="date" id="ccTask" value="${esc(c.follow_up_date || tomorrow)}"><button type="button" class="btn small ghost" id="ccTaskSave">Create task</button></div>
+      <div class="formsection">Work this call</div><div style="display:flex;gap:8px;flex-wrap:wrap">${c.follow_up_done ? '<button type="button" class="btn small ghost" id="ccReopen">Reopen</button>' : '<button type="button" class="btn small" id="ccComplete">Complete</button><button type="button" class="btn small ghost" id="ccWait">Wait</button><button type="button" class="btn small ghost" id="ccCancel">Cancel</button>'}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${m ? '<button type="button" class="btn small ghost" id="ccEst">New estimate</button>' : ''}<button type="button" class="btn small ghost" id="ccDetails">More</button></div>
       <div class="formsection">${c.recording_url ? '<button type="button" class="btn small ghost" id="ccPlay">Play recording</button> ' : ''}</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0" role="tablist">${[['activity', 'Activity'], ['sms', 'SMS'], ['notes', 'Notes'], ['files', 'Files']].map(([k, l]) => '<button type="button" class="btn small' + ((callState.panelTab || 'activity') === k ? '' : ' ghost') + '" data-cctab="' + k + '">' + l + '</button>').join('')}</div>
@@ -4245,6 +4246,11 @@
       await loadComms(q, holder.id || (holder.id = 'ccTabList'));
       if (kind) { const items = [...holder.querySelectorAll('li')]; items.forEach(li => { if (!li.textContent.includes(kind === 'sms' ? 'Text' : 'Note')) li.remove(); }); if (!items.some(li => li.isConnected && li.textContent.includes(kind === 'sms' ? 'Text' : 'Note'))) holder.insertAdjacentHTML('afterbegin', '<p class="muted">Nothing here yet.</p>'); }
     };
+    const workCall = (action, title, sub, defs, done) => openForm({ title, sub, defs, submit: f => api('/api/admin/calls/' + c.id + '/work', { method: 'POST', json: { action, ...f } }), after: () => { toast(done); loadCalls(); } });
+    if ($('#ccComplete')) $('#ccComplete').onclick = () => workCall('complete', 'Complete this call', 'The note is kept with the call and in its history.', [{ name: 'note', label: 'Completion note (what was done)', type: 'textarea', wide: true }], 'Call completed');
+    if ($('#ccWait')) $('#ccWait').onclick = () => workCall('wait', 'Put this call on hold', 'Say what it is waiting on and when to follow up.', [{ name: 'waiting_on', label: 'What it is waiting on', type: 'text', wide: true }, { name: 'date', label: 'Follow up on', type: 'date' }], 'Call on hold');
+    if ($('#ccCancel')) $('#ccCancel').onclick = () => workCall('cancel', 'Cancel this call', 'Say why. The call stays in its history.', [{ name: 'reason', label: 'Reason', type: 'textarea', wide: true }], 'Call cancelled');
+    if ($('#ccReopen')) $('#ccReopen').onclick = () => workCall('reopen', 'Reopen this call', 'Say why. It goes back to the open list.', [{ name: 'reason', label: 'Reason', type: 'textarea', wide: true }], 'Call reopened');
     box.querySelectorAll('[data-cctab]').forEach(b => b.onclick = () => { callState.panelTab = b.dataset.cctab; renderCallPanel(c); });
     if ($('#ccPlay')) $('#ccPlay').onclick = async () => {
       try {
