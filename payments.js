@@ -36,7 +36,7 @@ module.exports = function mountPayments(app, ctx) {
     if (!inv) return res.status(404).json({ error: 'That invoice was not found on your account.' });
     if (['Draft', 'Void', 'Paid'].includes(inv.status)) return res.status(409).json({ error: 'This invoice cannot be paid online right now. Call (515) 303-3024 for help.' });
     // The balance includes sales tax, the same figure the manual payment and receivables use.
-    const balance = money2(Number(inv.amount || 0) + Number(inv.tax_amount || 0) - Number(inv.paid_amount || 0));
+    const balance = money2(require('./receivables').invoiceBalance(db, inv.id).owed);
     if (!(balance > 0)) return res.status(409).json({ error: 'This invoice is already paid in full.' });
     const openPage = db.prepare("SELECT id FROM online_payments WHERE invoice_id=? AND status='Pending' AND created_at>=?").get(inv.id, new Date(Date.now() - 30 * 60000).toISOString());
     if (openPage) return res.status(409).json({ error: 'A payment page for this invoice is already open. Finish that payment, or wait 30 minutes and try again.' });
@@ -83,8 +83,8 @@ module.exports = function mountPayments(app, ctx) {
       const prev = db.prepare('SELECT status FROM online_payments WHERE stripe_session_id=?').get(s.id);
       if (prev && prev.status === 'Paid') return 'duplicate';
       const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(invId);
-      if (!inv) return 'no-invoice';
-      const balanceNow = money2(Number(inv.amount || 0) + Number(inv.tax_amount || 0) - Number(inv.paid_amount || 0));
+      if (!inv) { try { logAction({ user: { email: 'stripe' } }, 'online payment for no invoice', 'payment', null, `session ${s.id}: ${amount.toFixed(2)} for invoice id ${invId || 'missing'}`); } catch { /* */ } return 'no-invoice'; }
+      const balanceNow = money2(require('./receivables').invoiceBalance(db, inv.id).owed);
       if (amount > balanceNow + 0.005 || ['Void', 'Draft'].includes(inv.status)) {
         // Two payment pages were paid, or the invoice was paid another way first. Do not apply it; the owner refunds the extra.
         if (prev) db.prepare("UPDATE online_payments SET status='Needs refund', paid_at=? WHERE stripe_session_id=?").run(now(), s.id);
@@ -93,7 +93,7 @@ module.exports = function mountPayments(app, ctx) {
         return 'needs-refund';
       }
       const paid = money2(Number(inv.paid_amount || 0) + amount);
-      const status = paid >= money2(Number(inv.amount || 0) + Number(inv.tax_amount || 0)) ? 'Paid' : 'Partially Paid';
+      const status = money2(balanceNow - amount) <= 0.005 ? 'Paid' : 'Partially Paid';
       db.prepare('UPDATE invoices SET paid_amount=?, status=? WHERE id=?').run(paid, status, inv.id);
       // Every received payment also goes on the payments ledger, so reports and the customer ledger include card payments.
       db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)').run(inv.id, amount, 'Online card payment (Stripe ' + s.id + ')', now(), 'stripe', now());

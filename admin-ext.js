@@ -188,12 +188,12 @@ module.exports = function mountAdminExt(app, ctx) {
     if (inv.status === 'Void') return res.status(409).json({ error: 'This invoice is void. Payments cannot be recorded on it.' });
     if (inv.status === 'Draft') return res.status(409).json({ error: 'Send this invoice before recording a payment on it.' });
     // The balance includes sales tax: the invoice is owed amount + tax, the same figure the tie-out and receivables aging use.
-    const billed = Math.round((Number(inv.amount || 0) + Number(inv.tax_amount || 0)) * 100) / 100;
-    const balance = Math.round((billed - Number(inv.paid_amount || 0)) * 100) / 100;
+    // What is still owed: amount + sales tax, less payments, less credit notes (the receivables rule).
+    const balance = Math.round(require('./receivables').invoiceBalance(db, inv.id).owed * 100) / 100;
     if (balance <= 0) return res.status(409).json({ error: 'This invoice is already paid in full.' });
     if (amt > balance + 0.005) return res.status(400).json({ error: `That is more than the balance due ($${balance.toFixed(2)}). Record only the balance. This app does not hold customer credits yet, so return the extra to the customer outside the app.` });
     const paid = Math.round((Number(inv.paid_amount || 0) + amt) * 100) / 100;
-    const status = paid >= billed - 0.005 ? 'Paid' : 'Partially Paid';
+    const status = Math.round((balance - amt) * 100) / 100 <= 0.005 ? 'Paid' : 'Partially Paid';
     // Dated payment record (feeds "collected this month" on the Command Center).
     // Without a date, the payment is dated on the business day, not the UTC day: a payment taken in the evening must not land on tomorrow's report.
     const bizToday = require('./bizdate').today();

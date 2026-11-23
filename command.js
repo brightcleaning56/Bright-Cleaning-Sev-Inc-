@@ -14,6 +14,8 @@ module.exports = function mountCommand(app, ctx) {
   const one = (sql, ...a) => db.prepare(sql).get(...a);
 
   app.get('/api/admin/command-center', auth, (req, res) => {
+    // Collected and invoice money are for owners, managers and office staff. Other roles keep the proposal, pipeline and work figures.
+    if (!require('./roles').seesMoney(roleOfReq(req))) { const send = res.json.bind(res); res.json = body => { if (body && body.kpis) { delete body.kpis.collected_month; delete body.kpis.collected_period; delete body.kpis.invoice_tiles; if (body.kpis.attention && body.kpis.attention.parts) delete body.kpis.attention.parts.overdue_invoices; } return send(body); }; }
     const days = [7, 30, 90, 365].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
     const now = new Date();
     const from = iso(new Date(now - days * 864e5)), prevFrom = iso(new Date(now - 2 * days * 864e5));
@@ -148,6 +150,7 @@ module.exports = function mountCommand(app, ctx) {
   };
   // Monthly trend: collected money, proposal value sent and win rate, for the Command Center chart.
   app.get('/api/admin/command-center/trend', auth, (req, res) => {
+    if (!require('./roles').seesMoney(roleOfReq(req))) return res.status(403).json({ error: 'Only owners, managers and office staff see revenue trends.' });
     const months = Math.min(12, Math.max(3, Number(req.query.months) || 6));
     const now = new Date(), out = [];
     for (let i = months - 1; i >= 0; i--) {
@@ -176,6 +179,7 @@ module.exports = function mountCommand(app, ctx) {
   });
   // Collected by service line (period): each bar drills into the matching payments.
   app.get('/api/admin/command-center/divisions', auth, (req, res) => {
+    if (!require('./roles').seesMoney(roleOfReq(req))) return res.status(403).json({ error: 'Only owners, managers and office staff see collections by service.' });
     const d = daysOf(req.query);
     try { res.json({ days: d, rows: db.prepare(`SELECT COALESCE(NULLIF(pr.service,''),'Unassigned') service, COUNT(*) n, ROUND(SUM(p.amount),2) collected FROM payments p JOIN invoices i ON i.id=p.invoice_id LEFT JOIN projects pr ON pr.id=i.project_id WHERE p.received_at>=? GROUP BY 1 ORDER BY 3 DESC`).all(since(d).slice(0, 10)) }); }
     catch (e) { res.status(500).json({ error: e.message }); }

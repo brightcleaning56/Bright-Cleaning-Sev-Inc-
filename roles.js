@@ -29,7 +29,7 @@ const SUPERVISOR_DENY = [
 const SALES_DENY = [
   /^\/api\/admin\/(invoices|next-invoice-number|financial-summary|reports|audit-log|backups|users|system-health|automation|ai-receptionist|approval-rules|dashboard)(\/|$)/,
   /^\/api\/admin\/pm\/.*cost/, /^\/api\/admin\/customers\/\d+\/(invoices|billing|statement)/,
-  /^\/api\/admin\/settings(\/|$)/, /^\/api\/admin\/(ai\/settings|automation\/ai-settings)(\/|$)/,
+  /^\/api\/admin\/settings(\/|$)/, /^\/api\/admin\/ai\/reports(\/|$)/, /^\/api\/admin\/(ai\/settings|automation\/ai-settings)(\/|$)/,
   [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(phone\/settings|phone\/callback-owner|issues\/config|quality\/settings)(\/|$)/]
 ];
 // Office staff: settings, people, backups, approval rules and automation stay with managers. Their own password and name stay available.

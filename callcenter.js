@@ -70,6 +70,9 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const dir = directory();
     const row = enrich([c], dir)[0];
     const out = { call: row, match: row.match, customer: null, lead: null };
+    // Balances are for owners, managers and office staff. Other roles see the caller's projects and open work, not money.
+    const roleCC = (() => { const e = who(req).toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; })();
+    const seeMoney = require('./roles').seesMoney(roleCC);
     const custId = row.match && row.match.type === 'customer' ? row.match.id : null;
     if (custId) {
       const cu = dir.custById.get(custId);
@@ -78,7 +81,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       const issues = db.prepare("SELECT COUNT(*) n FROM customer_issues WHERE customer_id=? AND status NOT IN ('Resolved','Verified','Closed')").get(custId).n;
       const callbacks = db.prepare("SELECT COUNT(*) n FROM calls WHERE customer_id=? AND follow_up_done=0 AND follow_up_date IS NOT NULL AND follow_up_date<>''").get(custId).n;
       const lastProject = db.prepare('SELECT name FROM projects WHERE customer_id=? ORDER BY id DESC LIMIT 1').get(custId);
-      out.customer = { id: cu.id, name: cu.name, company: cu.company, phone: cu.phone, email: cu.email, active_projects: projects, open_invoices: inv.n, open_balance: Math.round(inv.balance * 100) / 100, open_tasks: issues + callbacks, open_issues: issues, open_callbacks: callbacks, last_project: lastProject ? lastProject.name : null };
+      out.customer = { id: cu.id, name: cu.name, company: cu.company, phone: cu.phone, email: cu.email, active_projects: projects, open_invoices: seeMoney ? inv.n : null, open_balance: seeMoney ? Math.round(db.prepare("SELECT id FROM invoices WHERE customer_id=? AND status NOT IN ('Paid','Void','Draft')").all(custId).reduce((s, r) => s + require('./receivables').invoiceBalance(db, r.id).owed, 0) * 100) / 100 : null, open_tasks: issues + callbacks, open_issues: issues, open_callbacks: callbacks, last_project: lastProject ? lastProject.name : null };
     }
     const leadRef = row.match && row.match.type === 'lead' ? row.match.id : null;
     if (leadRef) {
