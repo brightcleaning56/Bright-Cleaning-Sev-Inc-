@@ -13,3 +13,4 @@ tests/*-map.json
 tests/workflow*.json
 tests/walk-screens.json
 tests/ai-results.json
+tests/results.json

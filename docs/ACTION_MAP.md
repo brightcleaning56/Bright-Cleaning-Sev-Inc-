@@ -2,7 +2,7 @@
 
 Generated from the code by `node tools/action-map.js` (2026-11-23). Do not edit by hand.
 
-**338** button/form handlers that call the server or move the user somewhere · **463** server calls · **0** dangling (no matching route) · 437 admin API routes exist.
+**350** button/form handlers that call the server or move the user somewhere · **474** server calls · **0** dangling (no matching route) · 441 admin API routes exist.
 
 | Control (label) | Event | Server call(s) → module · permission | Goes to / result | Confirms | Observed in click audit |
 |---|---|---|---|---|---|
@@ -15,7 +15,10 @@ Generated from the code by `node tools/action-map.js` (2026-11-23). Do not edit 
 | Open lead # | act | — | page: leads<br>opens: Lead |  |  |
 | Save as customer | act | — | opens: SaveCaller |  |  |
 | Create issue | act | POST `/api/admin/calls/:p/issue` → issues.js · any signed-in user | page: issues<br>opens: Issue |  |  |
-| Mark follow-up done | act | POST `/api/admin/calls/:p/work` → workqueue.js · any signed-in user | opens: Form<br>refreshes list |  |  |
+| Complete | act | POST `/api/admin/calls/:p/work` → workqueue.js · any signed-in user | opens: Form<br>refreshes list |  |  |
+| Wait | act | POST `/api/admin/calls/:p/work` → workqueue.js · any signed-in user | opens: Form<br>refreshes list |  |  |
+| Cancel | act | POST `/api/admin/calls/:p/work` → workqueue.js · any signed-in user | opens: Form<br>refreshes list |  |  |
+| Reopen | act | POST `/api/admin/calls/:p/work` → workqueue.js · any signed-in user | opens: Form<br>refreshes list |  |  |
 | Re-analyze / Analyze with AI | act | POST `/api/admin/ai/calls/:p/analyze` → ai.js · any signed-in user | opens: Call<br>refreshes list |  |  |
 | Set as follow-up | act | POST `/api/admin/calls/:p/work` → workqueue.js · any signed-in user | opens: Call<br>refreshes list |  |  |
 | Continue inspection | act | PATCH `/api/admin/qc/inspections/:p` (via inspectEditor) → qc.js · module check (owner/manager)<br>POST `/api/admin/qc/inspections/:p/sign` (via inspectEditor) → qc.js · any signed-in user | stays on page (message) |  |  |
@@ -66,6 +69,7 @@ Generated from the code by `node tools/action-map.js` (2026-11-23). Do not edit 
 | Convert to customer | onclick | GET `/api/admin/leads` (via refreshNewCount) → server.js · any signed-in user<br>POST `/api/admin/leads/:p/convert` → leadstage.js · module check (owner/manager) | page: customers<br>opens: CustomerPage | yes |  |
 | Open customer | onclick | — | page: customers<br>opens: CustomerPage |  |  |
 | Save follow-up | onclick | POST `/api/admin/leads/:p/follow-up` → leadstage.js · module check (owner/manager) | stays on page (message) |  |  |
+| Complete next step | onclick | POST `/api/admin/leads/:p/work` → leadstage.js · module check (owner/manager) | opens: Form |  |  |
 | Clear | onclick | DELETE `/api/admin/leads/:p/follow-up` → leadstage.js · module check (owner/manager) | stays on page (message) |  |  |
 | Delete | onclick | DELETE `/api/admin/leads/:p` → admin-ext.js · any signed-in user | stays on page (message) | yes |  |
 | Start inspection | onclick | GET `/api/admin/qc/templates` (via newInspection) → qc.js · any signed-in user<br>GET `/api/admin/customers` (via newInspection) → ops.js · any signed-in user<br>GET `/api/admin/customers/:p/links` (via newInspection) → crm.js · any signed-in user<br>POST `/api/admin/qc/inspections` (via newInspection) → qc.js · any signed-in user | stays on page (message) |  |  |
@@ -128,6 +132,12 @@ Generated from the code by `node tools/action-map.js` (2026-11-23). Do not edit 
 | ' + (ai && !ai.error ? 'Re-run AI' : 'Run AI triage') + ' | onclick | POST `/api/admin/ai/leads/:p/triage` → ai.js · any signed-in user | stays on page (message) |  |  |
 | Send reply to | onclick | POST `/api/admin/leads/:p/reply` → ai.js · any signed-in user | stays on page (message) | yes |  |
 | Text Messages | onclick | — | page: clientmsgs |  |  |
+| Complete | onclick | POST `/api/admin/calls/:p/work` (via workCall) → workqueue.js · any signed-in user | stays on page (message) |  |  |
+| Wait | onclick | POST `/api/admin/calls/:p/work` (via workCall) → workqueue.js · any signed-in user | stays on page (message) |  |  |
+| Do not call | onclick | POST `/api/admin/calls/:p/work` (via workCall) → workqueue.js · any signed-in user | stays on page (message) |  |  |
+| Schedule | onclick | POST `/api/admin/calls/:p/work` (via workCall) → workqueue.js · any signed-in user | stays on page (message) |  |  |
+| Cancel | onclick | POST `/api/admin/calls/:p/work` (via workCall) → workqueue.js · any signed-in user | stays on page (message) |  |  |
+| Reopen | onclick | POST `/api/admin/calls/:p/work` (via workCall) → workqueue.js · any signed-in user | stays on page (message) |  |  |
 | Play recording | onclick | GET `/api/admin/calls/:p/recording` → calls2.js · any signed-in user | stays on page (message) |  |  |
 | ${outcomes.map(o => ` | onchange | PATCH `/api/admin/calls/:p` → suite.js · any signed-in user | refreshes list |  |  |
 | Send SMS | onclick | POST `/api/admin/messages/sms` → followups.js · any signed-in user | stays on page (message) | yes |  |
@@ -172,6 +182,7 @@ Generated from the code by `node tools/action-map.js` (2026-11-23). Do not edit 
 | Save draft | onclick | POST `/api/admin/email-center/drafts/:p` → emailcenter.js · any signed-in user<br>GET `/api/admin/email-center` → emailcenter.js · any signed-in user | stays on page (message) |  |  |
 | Send | onclick | POST `/api/admin/customers/:p/email` → crm.js · any signed-in user<br>DELETE `/api/admin/email-center/drafts/:p` → emailcenter.js · any signed-in user<br>GET `/api/admin/email-center` → emailcenter.js · any signed-in user | stays on page (message) | yes |  |
 | Discard | onclick | DELETE `/api/admin/email-center/drafts/:p` → emailcenter.js · any signed-in user<br>GET `/api/admin/email-center` → emailcenter.js · any signed-in user | stays on page (message) | yes |  |
+| Send | onclick | POST `/api/admin/leads/:p/email` → crm.js · any signed-in user | stays on page (message) | yes |  |
 | Send | onclick | POST `/api/admin/customers/:p/email` → crm.js · any signed-in user<br>GET `/api/admin/email-center` → emailcenter.js · any signed-in user | stays on page (message) | yes |  |
 | Send reply | onclick | POST `/api/admin/customers/:p/email` → crm.js · any signed-in user<br>GET `/api/admin/email-center` → emailcenter.js · any signed-in user | stays on page (message) | yes |  |
 | Mark unread / Mark read | onclick | POST `/api/admin/email-center/:p/flags` (via flagAndRedraw) → emailcenter.js · any signed-in user<br>GET `/api/admin/email-center` (via flagAndRedraw) → emailcenter.js · any signed-in user | stays on page (message) |  |  |
@@ -247,6 +258,8 @@ Generated from the code by `node tools/action-map.js` (2026-11-23). Do not edit 
 | ${['owner', 'manager', 'supervisor', 'inspector', 'sales', ' [data-role] | each-onchange | PATCH `/api/admin/users/:p/role` → admin-ext.js · module check (owner/manager) | refreshes list | yes |  |
 | Remove [data-deluser] | each-onclick | DELETE `/api/admin/users/:p` → admin-ext.js · central gate: owner | refreshes list | yes |  |
 | Search result (open) [data-g] | each-onclick | — | page: leads<br>page: proposals<br>page: projects<br>page: invoices<br>page: issues<br>page: documents<br>page: calls<br>opens: Lead<br>opens: CustomerPage<br>opens: Estimate<br>opens: Record<br>opens: Issue |  |  |
+| '
+      + ' [data-call] | each-onclick | — | opens: CallPopup |  |  |
 | ' + esc(m.company // m.name // 'Lead') + ' [data-cc-lead] | each-onclick | — | opens: Lead |  |  |
 | Done [data-visit] | each-onclick | — | opens: Job |  |  |
 | Done [data-due] | each-onclick | — | page: projects<br>opens: Record |  |  |
