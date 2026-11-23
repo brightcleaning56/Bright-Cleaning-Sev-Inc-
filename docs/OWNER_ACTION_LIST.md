@@ -135,3 +135,9 @@ Owner actions:
 - Two-step sign-in on the owner account: on (verified from the account settings API).
 - Restore test: still open. It needs the BACKUP_KEY value from Render, which only the owner can supply or run. Steps: download the newest backup from Settings > Backups, decrypt it with that key into a temporary folder, open it, and confirm invoices and customers are there. Tell the assistant the result.
 - Two-step sign-in secrets are not encrypted at rest. Decision: not changed, because the backups are already encrypted and encrypting with the JWT secret would lock owners out if that secret is rotated.
+
+## Status check, 2026-11-23 (later)
+
+- Inbound phone greeting: verified by the owner on a live call. Callers hear "Thank you for calling Bright Cleaning Sev Inc." before the office phone rings or a voicemail is taken (build 7984f0c77823).
+- Restarts: the two short restarts came from Render auto-deploys of this branch, not crashes. Memory on the service stayed around 10-20% of the 512 MB limit over 12 hours (Render Metrics).
+- Open for the owner: the restore test (needs BACKUP_KEY), and a check that TWILIO_GREETING on Render does not repeat the company name (the code now says it first).
