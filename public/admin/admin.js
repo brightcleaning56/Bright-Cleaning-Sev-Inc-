@@ -1585,7 +1585,14 @@
         $('#custPage').innerHTML = `<div class="card"><h2 style="margin-top:0">${esc(cust.company || cust.name || 'Customer')}</h2><p class="muted">Site details for an inspection. Pricing, invoices and sales notes are not shown.</p>
           <h3 class="secth">Contacts</h3><ul class="plain">${rows(l.contacts || [], k => `<li>${esc(k.name || '')}${k.is_primary ? ' <small class="muted">(primary)</small>' : ''} · ${esc(k.phone || '')} ${esc(k.email || '')}</li>`)}</ul>
           <h3 class="secth">Properties</h3><ul class="plain">${rows(l.properties || [], x => `<li>${esc(x.name || '')} · ${esc(x.address || '')} <small class="muted">${esc(x.status || '')}</small></li>`)}</ul>
-          <h3 class="secth">Projects</h3><ul class="plain">${rows(l.projects || [], p => `<li>${esc(p.name || 'Project #' + p.id)} <small class="muted">${esc(p.status || '')}</small></li>`)}</ul></div>`;
+          <h3 class="secth">Projects</h3><ul class="plain">${rows(l.projects || [], p => `<li>${esc(p.name || 'Project #' + p.id)} <small class="muted">${esc(p.status || '')}</small></li>`)}</ul><div id="inspSiteQc"></div></div>`;
+        // This customer's inspections, and a way to start a new one with the customer already chosen.
+        const dash = await api('/api/admin/qc/dashboard?from=2000-01-01&to=2100-01-01');
+        if (seq !== loadCustomerPage.seq || id !== cp.id) return;
+        const mine = (dash.inspections || []).filter(x => Number(x.customer_id) === Number(id));
+        $('#inspSiteQc').innerHTML = `<h3 class="secth">Inspections</h3><p><button class="btn" type="button" id="inspStart">Start inspection</button></p><ul class="plain">${rows(mine, x => `<li><button class="linklike" type="button" data-insp="${x.id}">${esc(x.area || 'Inspection')} · ${esc(x.date || '')}</button> <small class="muted">${esc(x.status || '')}${x.score != null ? ' · ' + x.score + '%' : ''}</small></li>`)}</ul>`;
+        $('#inspStart').onclick = () => newInspection({ customer_id: Number(id) });
+        $$('#inspSiteQc [data-insp]').forEach(b => b.onclick = () => showInspection(Number(b.dataset.insp)));
       } catch (e) { if (seq === loadCustomerPage.seq && id === cp.id) $('#custPage').innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
       return;
     }
@@ -4724,13 +4731,13 @@
     $$('#qSide [data-ri]').forEach(b => b.onclick = () => showInspection(Number(b.dataset.ri)));
     $$('#qSide [data-ph]').forEach(b => b.onclick = () => { const p = d.photos.find(x => x.id === Number(b.dataset.ph)); downloadFile({ name: p.file_name || p.title, url: p.file_url }); });
   }
-  async function newInspection() {
+  async function newInspection(pre = {}) {
     if (!qState.templates.length) qState.templates = (await api('/api/admin/qc/templates')).templates;
     if (!state.customers || !state.customers.length) { try { state.customers = (await api('/api/admin/customers')).customers; } catch { state.customers = []; } }
-    let projects = []; try { projects = (await api('/api/admin/pm/projects')).projects; } catch { /* */ }
+    let projects = []; try { projects = (await api(state.me && state.me.role === 'inspector' ? '/api/admin/qc/projects' : '/api/admin/pm/projects')).projects; } catch { /* */ }
     openForm({ title: 'New inspection', defs: [{ name: 'itype', label: 'Type', type: 'select', options: ['Internal', 'Customer walkthrough'] }, { name: 'template_id', label: 'Template', type: 'select', options: qState.templates.filter(t => t.active).map(t => [t.id, t.name]) }, { name: 'area', label: 'Site / area' }, { name: 'date', label: 'Date', type: 'date' },
       { name: 'customer_id', label: 'Customer', type: 'select', options: [['', '—'], ...state.customers.map(c => [c.id, c.company || c.name || c.email])] }, { name: 'project_id', label: 'Project', type: 'select', options: [['', '—'], ...projects.map(p => [p.id, `${p.number} ${p.name || ''}`])] }, { name: 'crew', label: 'Crew inspected' }],
-      values: { date: todayISO(), itype: 'Internal' }, submit: b => api('/api/admin/qc/inspections', { method: 'POST', json: b }), after: async x => { await loadQuality(); inspectEditor(x.inspection); } });
+      values: { date: todayISO(), itype: 'Internal', ...pre }, submit: b => api('/api/admin/qc/inspections', { method: 'POST', json: b }), after: async x => { await loadQuality(); inspectEditor(x.inspection); } });
   }
   function inspectEditor(r) {
     const items = r.items.map(x => ({ ...x }));

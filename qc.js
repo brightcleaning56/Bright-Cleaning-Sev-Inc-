@@ -228,6 +228,8 @@ module.exports = function mountQC(app, ctx) {
   });
 
   // ---------- Dashboard & reports ----------
+  // Projects an inspector can choose for an inspection: name, status and customer only (no pricing or costs).
+  app.get('/api/admin/qc/projects', auth, (req, res) => res.json({ projects: db.prepare("SELECT id, name, status, customer_id FROM projects WHERE status <> 'Archived' ORDER BY id DESC LIMIT 500").all() }));
   app.get('/api/admin/qc/dashboard', auth, (req, res) => {
     const from = clean(req.query.from, 10) || new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10), to = clean(req.query.to, 10) || today();
     const rows = db.prepare(`SELECT i.*, p.name project_name, c.company customer_company, c.name customer_name, pr.name property_name FROM inspections i LEFT JOIN projects p ON p.id=i.project_id LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN customer_properties pr ON pr.id=i.property_id WHERE i.date BETWEEN ? AND ? ORDER BY i.date DESC, i.id DESC`).all(from, to).map(r => ({ ...r, items: J(r.items, []), number: number(r) }));
