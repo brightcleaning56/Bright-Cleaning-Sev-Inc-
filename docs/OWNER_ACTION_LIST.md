@@ -127,4 +127,4 @@ Owner actions:
 - Major dependency upgrades (Express 5, multer 2, better-sqlite3 13, jsdom 31, dotenv 18, bcryptjs 3, express-rate-limit 8): stay on current versions for now. Planned separately with a full test pass.
 - Overdue leads, calls and sent emails awaiting a reply: left open. Nothing closed without the owner.
 - Twilio support ticket #30436964: kept open.
-- Account ericd567@icloud.com: recommended role is Inspector. Waiting for the owner to confirm before the live role is changed.
+- Account ericd567@icloud.com: changed to Inspector on live, 2026-11-23, by the owner's yes (was Sales). The owner can check it by signing in as that user.
