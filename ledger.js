@@ -164,6 +164,9 @@ function mount(app, ctx) {
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
   app.post('/api/admin/ledger/entries/:id/reverse', auth, (req, res) => {
+    // Invoice, payment and earned entries follow their invoice. Reversing one by hand would leave the invoice and the ledger apart.
+    const src = db.prepare('SELECT source FROM ledger_entries WHERE id=?').get(Number(req.params.id));
+    if (src && ['invoice', 'payment', 'earned'].includes(src.source)) return res.status(409).json({ error: 'Invoice and payment entries are reversed through the invoice: void the invoice, or remove the payment.' });
     try { const r = reverseEntry(db, Number(req.params.id), { reason: (req.body || {}).reason, by: req.user && req.user.email }); res.status(201).json({ ok: true, entry: r }); }
     catch (e) { res.status(400).json({ error: e.message }); }
   });

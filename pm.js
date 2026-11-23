@@ -443,6 +443,8 @@ module.exports = function mountPM(app, ctx) {
     if (!m.done_at) return res.status(409).json({ error: 'Mark the milestone done before billing it.' });
     const p = get(m.project_id), k = contractOf(p), amount = milestoneAmount(k, m.percent);
     if (!(amount > 0)) return res.status(409).json({ error: 'There is no contract value to bill. Check the contract first.' });
+    // The milestone may not bill more than the contract still has left (across all its projects, drafts included).
+    if (k) { const billedSoFar = db.prepare("SELECT COALESCE(SUM(i.amount),0) v FROM invoices i JOIN projects pj ON pj.id=i.project_id WHERE pj.contract_id=? AND i.status<>'Void'").get(k.id).v; const left = Math.round((Number(k.value || 0) - billedSoFar) * 100) / 100; if (amount > left + 0.005) return res.status(409).json({ error: `This milestone is $${amount.toFixed(2)}, but the contract has only $${Math.max(0, left).toFixed(2)} left to bill. Bill an approved change order first.` }); }
     const y = new Date().getFullYear(), mx = db.prepare('SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?').all(`BC-${y}-%`).reduce((acc, r) => Math.max(acc, Number(String(r.invoice_number).split('-')[2]) || 0), 0);
     const cust = p.customer_id ? db.prepare('SELECT * FROM customers WHERE id=?').get(p.customer_id) : null;
     const invId = db.prepare("INSERT INTO invoices(invoice_number,project_id,customer_name,company,email,amount,paid_amount,due_date,status,created_at,terms) VALUES(?,?,?,?,?,?,0,?,'Draft',?,?)")

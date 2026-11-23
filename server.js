@@ -73,7 +73,7 @@ const ROLE_RULES=[
   {m:/^GET$/,p:/^\/api\/admin\/users$/,roles:['owner','manager'],why:'Only an owner or manager can view the user list.'},
   {m:/^(GET|POST|DELETE)$/,p:/^\/api\/admin\/insurance(\/\d+|\/check-expiry)?$/,roles:['owner','manager'],why:'Insurance certificates are limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/invoices\/\d+\/payment$/,roles:['owner','manager'],why:'Only an owner or manager can record payments.'},
-  {m:/^GET$/,p:/^\/api\/admin\/reports\/(finance|aging|labor|pdf)$/,roles:['owner','manager'],why:'Financial reports are limited to owners and managers.'},
+  {m:/^GET$/,p:/^\/api\/admin\/reports\/(finance|aging|labor|pdf|tax|monthly)$/,roles:['owner','manager'],why:'Financial reports are limited to owners and managers.'},
   {m:/^(GET|POST)$/,p:/^\/api\/admin\/reports\/schedules(\/.*)?$/,roles:['owner','manager'],why:'Report schedules are limited to owners and managers.'},
   {m:/^GET$/,p:/^\/api\/admin\/audit-log$/,roles:['owner','manager'],why:'The full activity log is limited to owners and managers.'},
   {m:/^GET$/,p:/^\/api\/admin\/financial-summary$/,roles:['owner','manager'],why:'Financial totals are limited to owners and managers.'},

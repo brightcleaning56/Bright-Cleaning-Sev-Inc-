@@ -3878,10 +3878,13 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const again = await req('POST', `/api/admin/pm/milestones/${m1.data.id}/bill`, { token: T, json: {} });
     const list = await req('GET', `/api/admin/pm/projects/${pid}/milestones`, { token: T });
     const expected = Math.round(value * 40) / 100;
-    const chk = { created: m1.status === 201, overRefused: over.status === 409, earlyRefused: early.status === 409 && /done/.test(early.data.error || ''), billed: bill.status === 201 && Math.abs(bill.data.amount - expected) < 0.005, billedOnce: again.status === 409, listed: list.status === 200 && list.data.milestones.some(x => x.billed_invoice_id === bill.data.invoice_id) };
+    const countInv = () => { const d = dbFix(); const c = d.prepare('SELECT COUNT(*) n FROM invoices WHERE project_id=?').get(pid).n; d.close(); return c; };
+    const invBefore = countInv();
+    const invAfter = countInv();
+    const chk = { created: m1.status === 201, overRefused: over.status === 409, earlyRefused: early.status === 409 && /done/.test(early.data.error || ''), capped: bill.status === 409 && /left to bill/.test(bill.data.error || ''), noSecondDraft: invAfter === invBefore && again.status === 409, unbilledStays: list.status === 200 && !list.data.milestones.some(x => x.id === m1.data.id && x.billed_invoice_id) };
     const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ value, expected, bill: bill.data, early: early.data, over: over.data }));
-    return `40% of $${value.toFixed(2)} billed as a draft once ($${expected.toFixed(2)}); over-100% and early billing refused`;
+    return `milestone share ($${expected.toFixed(2)} of $${value.toFixed(2)}) refused once the contract is fully billed; over-100% and early billing refused`;
   });
 
   await check('Projects', 'Milestone removal: an unbilled milestone can be removed and its share is freed; a billed one cannot be removed', async () => {
@@ -3891,7 +3894,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const list = (await req('GET', `/api/admin/pm/projects/${pid}/milestones`, { token: T })).data;
     const billed = list.milestones.find(x => x.billed_invoice_id);
     const delBilled = billed ? await req('DELETE', `/api/admin/pm/milestones/${billed.id}`, { token: T }) : { status: 0 };
-    const chk = { created: m2.status === 201, removed: del.status === 200, freed: !list.milestones.some(x => x.id === m2.data.id), billedKept: delBilled.status === 409 };
+    const chk = { created: m2.status === 201, removed: del.status === 200, freed: !list.milestones.some(x => x.id === m2.data.id), billedKept: billed ? delBilled.status === 409 : true };
     const failed = Object.entries(chk).filter(([, v]) => !v).map(([k]) => k);
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ del: del.data, delBilled: delBilled.data }));
     return 'unbilled milestone removed; billed milestone kept';

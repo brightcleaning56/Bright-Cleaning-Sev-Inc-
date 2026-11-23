@@ -70,7 +70,10 @@ module.exports = function mountInvoices(app, ctx) {
     logAction(req, 'uploaded company W-9', 'company', 0, `${buf.length} bytes`);
     res.json(w9Info());
   });
-  app.post('/api/admin/invoices/:id/send', auth, async (req, res) => {
+  // Sends run one at a time, so two invoices on one contract cannot both pass the cap before either one is marked sent.
+  let sendQueue = Promise.resolve();
+  const serialSend = fn => (req, res) => { const run = sendQueue.then(() => fn(req, res)); sendQueue = run.catch(() => {}); return run; };
+  app.post('/api/admin/invoices/:id/send', auth, serialSend(async (req, res) => {
     const inv = get(req.params.id); if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
     if (sendingNow.has(inv.id)) return res.status(409).json({ error: 'This invoice is already being sent. Wait a moment, then check the invoice before sending again.' });
     sendingNow.add(inv.id); res.on('close', () => sendingNow.delete(inv.id));
@@ -107,7 +110,7 @@ module.exports = function mountInvoices(app, ctx) {
     db.prepare("UPDATE invoices SET status=CASE WHEN status IN ('Draft') THEN 'Sent' ELSE status END, sent_at=COALESCE(sent_at,?), sent_to=?, send_count=COALESCE(send_count,0)+1, email=COALESCE(NULLIF(email,''),?), issue_date=COALESCE(issue_date,?) WHERE id=?").run(t, to, to, today(), inv.id);
     logAction(req, resend ? 'resent invoice' : 'sent invoice', 'invoice', inv.id, `${inv.invoice_number} ${money(inv.amount)} to ${to}${chk.ok ? '' : ' (above contract value — reason recorded)'}`);
     res.json({ ok: true, to, resend, invoice: get(inv.id) });
-  });
+  }));
   // Online card payments held for the owner (audit MF-5): money received that was not applied, because the payment was more than
   // the balance or the invoice was Draft or Void. The owner refunds these at Stripe. Owner or manager only.
   app.get('/api/admin/invoices/needs-refund', auth, (req, res) => {
