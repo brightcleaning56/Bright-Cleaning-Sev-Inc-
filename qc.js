@@ -122,6 +122,7 @@ module.exports = function mountQC(app, ctx) {
     const name = clean((req.body || {}).name, 120); if (name.length < 2) return res.status(400).json({ error: 'Type your full name to sign the inspection.' });
     const open = cur.items.filter(i => !i.result).length; if (open) return res.status(400).json({ error: `${open} item(s) have no result. Mark each item Pass, Fail or N/A before signing.` });
     if (cur.items.some(i => i.result === 'Fail' && !i.note)) return res.status(400).json({ error: 'Every failed item needs a comment.' });
+    if (cur.items.length && cur.items.every(i => i.result === 'N/A')) return res.status(400).json({ error: 'At least one item must be marked Pass or Fail. Every item marked N/A is not an inspection.' });
     const fails = cur.items.filter(i => i.result === 'Fail').length, st = fails ? 'Corrective action' : (cur.itype === 'Customer walkthrough' ? 'Awaiting customer' : 'Completed');
     db.prepare('UPDATE inspections SET signed_by=?, signed_name=?, signed_at=?, status=?, updated_at=? WHERE id=?').run(who(req), name, now(), st, now(), cur.id);
     // A passing reinspection closes the original.

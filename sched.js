@@ -259,9 +259,9 @@ module.exports = function mountSched(app, ctx) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: 'Enter a valid date.' });
     if (db.prepare('SELECT 1 FROM company_holidays WHERE date=?').get(d) && !b.allow_holiday) return res.status(409).json({ error: `${d} is a company holiday. Confirm to schedule anyway.`, holiday: true });
     const nv = { ...v, date: d, start_time: clean(b.start_time, 5) || v.start_time, end_time: clean(b.end_time, 5) || v.end_time };
-    const problems = crewOf(v.id).map(x => ({ name: x.name, ...check(getEmp(x.id), nv) })).filter(x => x.block.length);
+    const problems = crewOf(v.id).map(x => ({ id: x.id, name: x.name, ...check(getEmp(x.id), nv) })).filter(x => x.block.length);
     if (problems.length && !b.drop_conflicting) return res.status(409).json({ error: 'Crew conflicts at the new time: ' + problems.map(p => p.block.join('; ')).join('; ') + '.', conflicts: problems });
-    for (const p of problems) db.prepare('DELETE FROM visit_crew c WHERE visit_id=? AND employee_id=(SELECT id FROM employees WHERE name=?)').run(v.id, p.name);
+    for (const p of problems) db.prepare('DELETE FROM visit_crew WHERE visit_id=? AND employee_id=?').run(v.id, p.id);
     db.prepare('UPDATE visits SET date=?, start_time=?, end_time=?, moved_from=COALESCE(moved_from,?), updated_at=? WHERE id=?').run(nv.date, nv.start_time, nv.end_time, `${v.date} ${v.start_time || ''}`, now(), v.id);
     logAction(req, 'rescheduled', 'visit', v.id, `${v.title}: ${v.date} ${v.start_time || ''} → ${nv.date} ${nv.start_time || ''}`);
     res.json({ ok: true, dropped: problems.map(p => p.name) });
@@ -468,6 +468,7 @@ module.exports = function mountSched(app, ctx) {
       return { m, when };
     };
     if (a === 'checkin') {
+      if (['Tentative', 'Cancelled', 'Skipped'].includes(v.status)) return res.status(409).json({ error: v.status === 'Tentative' ? 'This job is still tentative. Dispatch has to confirm it before you check in.' : `This job is ${v.status.toLowerCase()}. Check in is not available.` });
       if (db.prepare('SELECT 1 FROM time_entries WHERE employee_id=? AND clock_out IS NULL').get(e.id)) return res.status(409).json({ error: 'You are already checked in. Check out of the other job first.' });
       db.prepare('INSERT INTO time_entries(employee_id,visit_id,project_id,clock_in,source,created_at,device_clock_in,synced_at,time_flag) VALUES(?,?,?,?,?,?,?,?,?)').run(e.id, v.id, v.project_id, et, 'crew', t, ev.device, t, ev.flag);
       db.prepare("UPDATE visits SET arrived_at=COALESCE(arrived_at,?), status=CASE WHEN status IN ('Scheduled','Tentative') THEN 'In progress' ELSE status END, updated_at=? WHERE id=?").run(et, t, v.id);
@@ -482,6 +483,8 @@ module.exports = function mountSched(app, ctx) {
       if (!open) return res.status(409).json({ error: 'You are not checked in to this job.' });
       const { m, when } = closeAt(open);
       db.prepare('UPDATE visits SET departed_at=?, updated_at=? WHERE id=?').run(when, t, v.id);
+      // A break still running at check-out ends now, so it does not count past the time on site.
+      db.prepare('UPDATE visit_breaks SET end_at=? WHERE visit_id=? AND employee_id=? AND end_at IS NULL').run(when, v.id, e.id);
       db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(e.name, 'checked out', 'visit', v.id, `${v.title}: ${(m / 60).toFixed(2)} h${ev.flag ? ` (${ev.flag})` : ''}`, t);
       return res.json({ ok: true, minutes: m });
     }
