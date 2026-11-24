@@ -7,6 +7,8 @@
 
 const REASONS = ['opted_out', 'declined', 'replied', 'bounced'];
 const OPT_OUT = /\b(unsubscribe|remove me|take me off|take me off (the|your) list|stop (emailing|email|contacting|calling|messaging|sending)|do not (email|contact|message)|don'?t (email|contact|message)|leave me alone|no more (emails|email|messages))\b/i;
+// Words that make an opt-out temporary: the reply pauses automation (reason 'replied') instead of ending it.
+const TEMPORARY = /\b(until|till|for now|for a while|for the (next|few)|next (week|month|year)|in (a|one|two|three|\d+) (week|weeks|month|months)|after (the )?(holiday|holidays|christmas|new year))\b/i;
 const DECLINE = /\b(not interested|no thanks|no,? thank you|we('re| are) (all set|good|covered)|we decline|decline(d)?|went with (another|someone else)|not (a )?fit for us|pass on this)\b/i;
 const OWN_DOMAIN = /@brightclean\.net$/i;
 
@@ -20,7 +22,7 @@ const norm = a => String(a || '').trim().toLowerCase().slice(0, 254);
 
 function classify(text) {
   const t = String(text || '');
-  if (OPT_OUT.test(t)) return 'opted_out';
+  if (OPT_OUT.test(t)) return TEMPORARY.test(t) ? 'replied' : 'opted_out';
   if (DECLINE.test(t)) return 'declined';
   return 'replied';
 }
