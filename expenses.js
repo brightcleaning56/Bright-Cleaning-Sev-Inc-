@@ -212,7 +212,7 @@ function syncRecorded(db) {
 }
 
 // Labor burden (payroll taxes, insurance, benefits) is optional. The rate is the setting ledger_burden_pct (a percentage), zero by default.
-// When set, burden posts once for each posted labor line: job labor (Dr 5000) and unassigned payroll (Dr 6100), both credit accrued payroll.
+// When set, burden posts once for each posted labor line: job labor (Dr 5000) or unassigned payroll (Dr 6100), credit payroll taxes payable (2400), the account a remittance debits.
 function burdenPct(db) {
   try { const r = db.prepare("SELECT value FROM settings WHERE key='ledger_burden_pct'").get(); const v = Number(r && r.value); return v > 0 && v <= 100 ? v : 0; }
   catch { return 0; }
@@ -225,7 +225,7 @@ function syncBurden(db) {
   const post = (ref, base, date, memo, account) => {
     const amt = r2(base * pct / 100);
     if (!(amt > 0) || postedEntry(db, 'burden', ref)) return;
-    L.postEntry(db, { date, memo, source: 'burden', sourceRef: ref, by: 'expense-sync', lines: [{ account, debit: amt }, { account: '2300', credit: amt }] });
+    L.postEntry(db, { date, memo, source: 'burden', sourceRef: ref, by: 'expense-sync', lines: [{ account, debit: amt }, { account: '2400', credit: amt }] });
     n++;
   };
   if (hasTable(db, 'project_costs')) {
