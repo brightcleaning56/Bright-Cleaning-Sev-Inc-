@@ -44,6 +44,9 @@ async function req(method, url, { token, json, form, body, headers = {} } = {}) 
   const data = ct.includes('json') ? await r.json() : Buffer.from(await r.arrayBuffer());
   return { status: r.status, data, headers: r.headers };
 }
+// Crew sign-in puts the session in an HttpOnly cookie, not the response body.
+const cookieOf = r => { const m = /bc_crew=[^;]*/.exec(r.headers.get('set-cookie') || ''); return m ? m[0] : ''; };
+const cookieVal = r => decodeURIComponent(cookieOf(r).slice('bc_crew='.length));
 const mailsTo = (to, since = 0) => mail.slice(since).filter(m => m.to.includes(to));
 // Invoices reach Sent only through the send route (send checks, then the PDF is emailed to the SMTP mock). Fixtures are created as
 // Draft and moved to Sent here; payments are then recorded through POST /api/admin/invoices/:id/payment as before.
@@ -1709,14 +1712,14 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const set = await req('POST', '/api/admin/employees/' + eid + '/crew-pin', { token: T, json: { pin: '482159' } });
     assert(set.status === 200, 'PIN should be set, got ' + set.status);
     const byEmail = await req('POST', '/api/crew/login', { json: { login: 'crewlogin@t.test', pin: '482159' } });
-    assert(byEmail.status === 200 && byEmail.data.token, 'sign in by email should work: ' + byEmail.status);
+    assert(byEmail.status === 200 && cookieOf(byEmail), 'sign in by email should work: ' + byEmail.status);
     const byPhone = await req('POST', '/api/crew/login', { json: { login: '(515) 555-0133', pin: '482159' } });
-    assert(byPhone.status === 200 && byPhone.data.token, 'sign in by phone should work: ' + byPhone.status);
+    assert(byPhone.status === 200 && cookieOf(byPhone), 'sign in by phone should work: ' + byPhone.status);
     const bad = await req('POST', '/api/crew/login', { json: { login: 'crewlogin@t.test', pin: '0000' } });
     assert(bad.status === 401, 'a wrong PIN should be refused, got ' + bad.status);
     const none = await req('GET', '/api/crew/me');
     assert(none.status === 401, 'jobs without signing in should be refused, got ' + none.status);
-    const mine = await req('GET', '/api/crew/me', { headers: { Authorization: 'Bearer ' + byEmail.data.token } });
+    const mine = await req('GET', '/api/crew/me', { headers: { Cookie: cookieOf(byEmail) } });
     assert(mine.status === 200 && mine.data.employee && mine.data.employee.name === 'Crew Login Test', 'signed-in crew should see their jobs: ' + mine.status);
     const list = await req('GET', '/api/admin/employees', { token: T });
     const row = (list.data.employees || []).find(x => x.id === eid);
@@ -1743,8 +1746,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const onLink = await req('GET', crewRow.crew_link.replace('/crew/', '/api/crew/'));
     assert(onLink.status === 200 && (onLink.data.jobs || []).some(j => j.id === vid), 'the job should be on the personal link');
     const si = await req('POST', '/api/crew/login', { json: { login: 'dispatch.crew@t.test', pin: '735142' } });
-    assert(si.status === 200 && si.data.token, 'crew should sign in: ' + si.status);
-    const mine = await req('GET', '/api/crew/me', { headers: { Authorization: 'Bearer ' + si.data.token } });
+    assert(si.status === 200 && cookieOf(si), 'crew should sign in: ' + si.status);
+    const mine = await req('GET', '/api/crew/me', { headers: { Cookie: cookieOf(si) } });
     assert(mine.status === 200 && (mine.data.jobs || []).some(j => j.id === vid), 'the signed-in crew should see the dispatched job');
     await req('PATCH', '/api/admin/employees/' + eid, { token: T, json: { active: false } });
     return 'dispatched job shows on the personal link and to the signed-in crew member (reached: ' + disp.data.notified + ', not reached: ' + disp.data.not_reached.length + ')';
@@ -3861,21 +3864,21 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const sid = await mkEmp('Session Test', '5155550198', 'session.test@t.test');
     await req('POST', `/api/admin/employees/${sid}/crew-pin`, { token: T, json: { pin: '246813' } });
     const s1 = await req('POST', '/api/crew/login', { json: { login: 'session.test@t.test', pin: '246813' } });
-    assert(s1.status === 200 && s1.data.token, 'sign in should work, got ' + s1.status);
-    const jwtLib = require('../node_modules/jsonwebtoken'), dec = jwtLib.decode(s1.data.token);
+    assert(s1.status === 200 && cookieOf(s1) && s1.data.token === undefined, 'sign in should set the session cookie and return no token, got ' + s1.status);
+    const jwtLib = require('../node_modules/jsonwebtoken'), dec = jwtLib.decode(cookieVal(s1));
     assert(dec.exp - dec.iat <= 7 * 86400 && dec.exp - dec.iat >= 6 * 86400, 'session should last about 7 days, got ' + (dec.exp - dec.iat) + ' s');
-    const me = tok => req('GET', '/api/crew/me', { headers: { Authorization: 'Bearer ' + tok } });
-    assert((await me(s1.data.token)).status === 200, 'fresh session should work');
+    const me = s => req('GET', '/api/crew/me', { headers: { Cookie: cookieOf(s) } });
+    assert((await me(s1)).status === 200, 'fresh session should work');
     await req('POST', `/api/admin/employees/${sid}/crew-pin`, { token: T, json: { pin: '135790' } });
-    const afterPin = (await me(s1.data.token)).status;
+    const afterPin = (await me(s1)).status;
     const s2 = await req('POST', '/api/crew/login', { json: { login: 'session.test@t.test', pin: '135790' } });
     await req('PATCH', `/api/admin/employees/${sid}`, { token: T, json: { new_link: true } });
-    const afterLink = (await me(s2.data.token)).status;
+    const afterLink = (await me(s2)).status;
     const s3 = await req('POST', '/api/crew/login', { json: { login: 'session.test@t.test', pin: '135790' } });
     await req('PATCH', `/api/admin/employees/${sid}`, { token: T, json: { active: false } });
-    const afterDeact = (await me(s3.data.token)).status;
+    const afterDeact = (await me(s3)).status;
     await req('PATCH', `/api/admin/employees/${sid}`, { token: T, json: { active: true } });
-    const afterReactivate = (await me(s3.data.token)).status;
+    const afterReactivate = (await me(s3)).status;
     assert(afterPin === 401 && afterLink === 401 && afterDeact === 401 && afterReactivate === 401, `old sessions must end: pin ${afterPin}, link ${afterLink}, deactivated ${afterDeact}, reactivated ${afterReactivate}`);
     return 'PIN under 6 refused; 5 tries lock all four spellings (429); session 7 days; PIN reset, link reset and deactivation each end the session';
   });
@@ -4804,8 +4807,8 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const asg = await req('POST', '/api/admin/dispatch/visits/' + vid + '/crew', { token: T, json: { employee_id: eid } });
     assert(asg.status === 200, 'assign should work, got ' + asg.status);
     const si = await req('POST', '/api/crew/login', { json: { login: 'session.crew@t.test', pin: '660457' } });
-    assert(si.status === 200 && si.data.token, 'sign in should work');
-    const auth = { Authorization: 'Bearer ' + si.data.token };
+    assert(si.status === 200 && cookieOf(si), 'sign in should work');
+    const auth = { Cookie: cookieOf(si) };
     const mine = await req('GET', '/api/crew/me', { headers: auth });
     const job = (mine.data.jobs || []).find(j => j.id === vid);
     assert(job && job.dispatched === false, 'an assigned, undispatched job should show as upcoming: ' + JSON.stringify(mine.data.jobs));

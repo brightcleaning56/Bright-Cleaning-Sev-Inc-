@@ -5,7 +5,10 @@
   const token = SIGNIN ? 'me' : rawToken;
   const SESSION_KEY = 'bc_crew_session';
   const session = () => { try { return localStorage.getItem(SESSION_KEY) || ''; } catch { return ''; } };
-  const authHdr = () => (token === 'me' && session()) ? { Authorization: 'Bearer ' + session() } : {};
+  // The sign-in is an HttpOnly cookie the server sets, so this page never holds the session token; requests send it by themselves.
+  const authHdr = () => ({});
+  // A token an older version stored in this browser is removed; only a marker is kept now.
+  if (session() && session() !== '1') { try { localStorage.removeItem(SESSION_KEY); } catch { /* storage blocked */ } }
   const KEY_DAY = 'bc_crew_day_' + token, KEY_Q = 'bc_crew_queue_' + token, KEY_OV = 'bc_crew_overlay_' + token;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const say = (t, good) => { $('#msg').innerHTML = t ? `<div class="msg ${good ? 'good' : 'err'}">${esc(t)}</div>` : ''; if (t) scrollTo(0, 0); };
@@ -50,7 +53,7 @@
         const r = await fetch('/api/crew/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login, pin }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || 'Sign-in failed');
-        localStorage.setItem(SESSION_KEY, j.token);
+        try { localStorage.setItem(SESSION_KEY, '1'); } catch { /* storage blocked: the cookie still signs in */ }
         location.reload();
       } catch (e) { say(e.message); }
     };
@@ -60,7 +63,7 @@
     const out = document.createElement('button');
     out.type = 'button'; out.className = 'btn ghost'; out.textContent = 'Sign out'; out.style.cssText = 'margin-left:12px;flex:0 0 auto;min-height:40px';
     // Unsent changes stay with the person who made them: sign out only once they are sent. Then nothing is left for the next person on this phone.
-    out.onclick = () => { if (queue().length) { say('Some changes are not sent yet. Connect to send them, then sign out.'); return; } try { localStorage.removeItem(SESSION_KEY); localStorage.removeItem(KEY_DAY); localStorage.removeItem(KEY_OV); } catch { /* storage blocked */ } location.reload(); };
+    out.onclick = () => { if (queue().length) { say('Some changes are not sent yet. Connect to send them, then sign out.'); return; } try { localStorage.removeItem(SESSION_KEY); localStorage.removeItem(KEY_DAY); localStorage.removeItem(KEY_OV); } catch { /* storage blocked */ } fetch('/api/crew/logout', { method: 'POST' }).catch(() => {}).finally(() => location.reload()); };
     document.querySelector('header .who').appendChild(out);
   }
 

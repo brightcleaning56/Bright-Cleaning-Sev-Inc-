@@ -386,8 +386,9 @@ module.exports = function mountSched(app, ctx) {
   app.get('/api/crew/me', crewGet);
   // ---- Crew sign-in: phone or email plus a PIN, so crew can see their jobs at any time, not only through the link ----
   const crewSecret = () => (process.env.JWT_SECRET || 'bright-clean-dev') + ':crew';
+  const crewCookie = req => { const m = /(?:^|;\s*)bc_crew=([^;]*)/.exec(String(req.headers.cookie || '')); if (!m) return ''; try { return decodeURIComponent(m[1]); } catch { return ''; } };
   const crewBearer = req => {
-    const h = String(req.headers.authorization || '').replace(/^Bearer /, '');
+    const h = String(req.headers.authorization || '').replace(/^Bearer /, '') || crewCookie(req);
     if (!h) return null;
     let p; try { p = jwt.verify(h, crewSecret()); } catch { return null; }
     if (!p || p.kind !== 'crew') return null;
@@ -420,8 +421,13 @@ module.exports = function mountSched(app, ctx) {
     }
     failClear(key);
     db.prepare('UPDATE employees SET last_login_at=? WHERE id=?').run(now(), e.id);
-    res.json({ token: jwt.sign({ kind: 'crew', emp: e.id, v: e.crew_session_v || 0 }, crewSecret(), { expiresIn: CREW_SESSION }), employee: { name: e.name } });
+    const sess = jwt.sign({ kind: 'crew', emp: e.id, v: e.crew_session_v || 0 }, crewSecret(), { expiresIn: CREW_SESSION });
+    const secure = req.secure || String(req.headers['x-forwarded-proto'] || '').includes('https');
+    res.append('Set-Cookie', `bc_crew=${encodeURIComponent(sess)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${(Number(process.env.CREW_SESSION_DAYS) || 7) * 86400}${secure ? '; Secure' : ''}`);
+    res.json({ ok: true, employee: { name: e.name } });
   });
+  // Signing out clears the sign-in cookie on this phone.
+  app.post('/api/crew/logout', (req, res) => { res.append('Set-Cookie', 'bc_crew=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'); res.json({ ok: true }); });
   // Owner or manager sets (or resets) a crew member's PIN. The PIN itself is never shown again.
   // A reset ends every signed-in crew session for that person.
   app.post('/api/admin/employees/:id/crew-pin', auth, (req, res) => {
