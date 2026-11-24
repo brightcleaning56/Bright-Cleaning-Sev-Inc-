@@ -405,6 +405,12 @@ async function startServer(env, dataDir) {
     assert(autoLead.status === 201 && autoLead.data.estimate && autoLead.data.estimate.lead_id, 'a proposal saved without a lead should get one, got ' + autoLead.status);
     const autoLead2 = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Auto Lead Person', company: 'Auto Lead Co', email: 'autolead@test.test', scope: 'Final clean', labor_hours: 1, labor_rate: 10 } });
     assert(autoLead2.data.estimate && autoLead2.data.estimate.lead_id === autoLead.data.estimate.lead_id, 'a second proposal for the same email should reuse the same lead');
+    // The form asks for the lead as soon as the customer is named, so the number is there before the first save.
+    const early = await req('POST', '/api/admin/proposal-lead', { token: T, json: { customer_name: 'Early Lead Person', company: 'Early Lead Co', email: 'earlylead@test.test' } });
+    const early2 = await req('POST', '/api/admin/proposal-lead', { token: T, json: { customer_name: 'Early Lead Person', company: 'Early Lead Co', email: 'earlylead@test.test' } });
+    assert(early.status === 200 && early.data.lead_id && early2.data.lead_id === early.data.lead_id, 'the form lead should be created once and reused, got ' + early.status);
+    const noName = await req('POST', '/api/admin/proposal-lead', { token: T, json: { company: 'No Name Co' } });
+    assert(noName.status === 400, 'a lead needs a customer name, got ' + noName.status);
     const c = (await req('GET', '/api/admin/customers', { token: T })).data.customers.filter(x => (x.company || '').toLowerCase() === 'prairie construction');
     assert(r.status === 201 && c.length === 1, 'entries ' + c.length); return '1 Prairie Construction entry after a no-email estimate';
   });

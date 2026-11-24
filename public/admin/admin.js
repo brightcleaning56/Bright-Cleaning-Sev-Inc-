@@ -2217,6 +2217,7 @@
     $('#estSave').textContent = est ? 'Save changes' : 'Save estimate';
     $('#estMsg').textContent = '';
     calcEstimate();
+    ensureProposalLead();
     go('estimator');
   }
   async function editEstimate(id) {
@@ -2387,6 +2388,19 @@
     } else fix.hidden = true;
   }
   ef.addEventListener('input', e => { if (e.target && e.target.name === 'labor_rate') repriceHourly(); calcEstimate(); });
+  // "From lead #" fills in as soon as the customer is named (not only at save): one lead per proposal, found or created by the server.
+  let leadPending = null;
+  async function ensureProposalLead() {
+    if (leadPending) return leadPending;
+    const f = ef.elements;
+    if (!f.customer_name || f.lead_id.value || !f.customer_name.value.trim()) return null;
+    leadPending = api('/api/admin/proposal-lead', { method: 'POST', json: { customer_name: f.customer_name.value, company: f.company.value, email: f.email.value, site_address: f.site_address.value, project_name: f.project_name.value } })
+      .then(r => { if (r && r.lead_id && !f.lead_id.value) f.lead_id.value = r.lead_id; return r; })
+      .catch(() => null)
+      .finally(() => { leadPending = null; });
+    return leadPending;
+  }
+  ef.addEventListener('focusout', e => { if (e.target && (e.target.name === 'customer_name' || e.target.name === 'email')) ensureProposalLead(); });
 
   ef.addEventListener('submit', async e => {
     e.preventDefault();
