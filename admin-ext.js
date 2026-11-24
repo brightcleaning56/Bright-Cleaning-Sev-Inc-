@@ -89,6 +89,10 @@ module.exports = function mountAdminExt(app, ctx) {
     if (!e) return res.status(404).json({ error: 'Not found' });
     if (['Approved'].includes(e.status)) return res.status(409).json({ error: 'This proposal was approved by the customer. Duplicate it to make changes.' });
     if (e.status === 'Superseded') return res.status(409).json({ error: 'This version was replaced by a newer one. Open the newest version to make changes.' });
+    // Checked before any sent version is superseded: a save that fails these must not leave a new draft behind.
+    if (!required(b.customer_name) || !required(b.scope)) return res.status(400).json({ error: 'Customer and scope are required.' });
+    if (b.email && !require('./ops').isEmail(b.email)) return res.status(400).json({ error: 'Enter a valid customer email address.' });
+    { const preErr = require('./scopes').resolveLines(db, { ...b }); if (preErr) return res.status(400).json({ error: preErr }); }
     let revisedFrom = null;
     const FROZEN = ['Sent', 'Viewed', 'Declined', 'Expired', 'Withdrawn', 'Superseded'];
     if (FROZEN.includes(e.status)) {
