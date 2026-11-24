@@ -757,6 +757,26 @@ function applyConversationAction(db, key, body = {}, by = null) {
   return latest ? get(db, latest.id) : null;
 }
 
+// A new customer text or email, or a text that did not arrive: the conversation needs attention now. A closed or waiting
+// conversation opens again, and its item is due today, not on the date it was waiting for. A reply never stays hidden.
+function conversationNeedsAttention(db, key, by = null) {
+  ensureSchema(db);
+  const k = String(key);
+  const st = convRow(db, k);
+  if (st && st.status !== 'Open') convSave(db, k, { status: 'Open', follow_up_date: null });
+  let cur = convActive(db, k);
+  if (!cur) {
+    const last = convLatest(db, k);
+    if (last && ['completed', 'cancelled'].includes(last.status)) act(db, last.id, 'reopen', { reason: 'New message on the conversation' }, by);
+    else if (!last) convEnsureItem(db, k, by);
+    cur = convActive(db, k);
+  }
+  if (!cur) return null;
+  if (cur.due_date) act(db, cur.id, 'edit', { due_date: null }, by);
+  if (cur.status === 'waiting') act(db, cur.id, 'start', {}, by);
+  return get(db, cur.id);
+}
+
 // Carries a change made on the conversation screen to its work item. Called after the conversation is saved.
 function syncConversation(db, key, by = null) {
   ensureSchema(db);
@@ -838,4 +858,4 @@ function isDoNotCall(db, phone) {
   catch { return false; } // table not created yet: nothing is blocked, and nothing crashes the call path
 }
 
-module.exports = { isDoNotCall, KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, callbackToIssue, issueCallSync, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, CONV_STATES, estState, applyEstimateAction, closeEstimateWork, ESTIMATE_OPEN };
+module.exports = { isDoNotCall, KINDS, ACTIVE, TERMINAL, ACTIONS, ensureSchema, create, act, get, queue, mount, callbackToIssue, issueCallSync, emailItemOf, ensureEmailItem, emailState, applyEmailAction, migrateEmailState, callItemOf, ensureCallItem, callState, applyCallAction, migrateCallState, seedCallItem, activeLeadItem, leadNextStep, leadSchedule, leadComplete, leadWait, leadCancel, leadReassign, leadState, migrateLeadState, issueState, applyIssueAction, syncIssueFromScreen, syncInspection, inspState, applyInspectionAction, migrateInspectionState, INSPECTION_OPEN, invoiceState, closeInvoiceWork, applyInvoiceAction, INVOICE_OPEN_STATUSES, convState, applyConversationAction, syncConversation, conversationNeedsAttention, CONV_STATES, estState, applyEstimateAction, closeEstimateWork, ESTIMATE_OPEN };

@@ -100,7 +100,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     const r = await fetch(`${c.base}/2010-04-01/Accounts/${encodeURIComponent(c.sid)}/Messages.json`, {
       method: 'POST',
       headers: { Authorization: 'Basic ' + Buffer.from(c.sid + ':' + c.token).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ To: dest, From: c.from, Body: body }).toString()
+      body: new URLSearchParams({ To: dest, From: c.from, Body: body, StatusCallback: (process.env.PUBLIC_BASE_URL || 'https://brightclean.net').replace(/\/$/, '') + '/api/webhooks/twilio/sms-status' }).toString()
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.message || ('Text not sent (provider status ' + r.status + ')'));

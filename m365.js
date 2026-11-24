@@ -55,6 +55,9 @@ module.exports = function mountM365(app, ctx) {
         const r = db.prepare('INSERT OR IGNORE INTO inbox_messages(graph_id,from_addr,from_name,subject,preview,received_at,conversation_id,web_link,lead_id,customer_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
           .run(String(m.id).slice(0, 300), String(from.address || '').toLowerCase().slice(0, 254), String(from.name || '').slice(0, 150), String(m.subject || '').slice(0, 300), String(m.bodyPreview || '').slice(0, 1000), m.receivedDateTime, m.conversationId || null, /^https:\/\//.test(m.webLink || '') ? m.webLink : null, mm.lead_id, mm.customer_id, now());
         if (r.changes) { added++; try { require('./emailsuppress').onInbound(db, from.address, m.subject, m.bodyPreview); } catch (e) { console.error('reply tracking failed', e.message); } db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('Outlook inbox', 'email received', mm.lead_id ? 'lead' : mm.customer_id ? 'customer' : 'email', mm.lead_id || mm.customer_id || 0, `${from.address || ''}: ${String(m.subject || '').slice(0, 120)}`, now()); }
+        // A new reply on the conversation needs attention now, even if the thread was closed or waiting.
+        if (r.changes) { try { const leadCust = mm.lead_id ? (db.prepare('SELECT customer_id FROM leads WHERE id=?').get(mm.lead_id) || {}).customer_id : null;
+          const key = mm.customer_id || leadCust ? 'cust:' + (mm.customer_id || leadCust) : mm.lead_id ? 'lead:' + mm.lead_id : ('mail:' + String(from.address || '').toLowerCase()); if (from.address) require('./work-engine').conversationNeedsAttention(db, key, 'Outlook inbox'); } catch (e) { console.error('work queue sync failed for email', e.message); } }
         if (m.receivedDateTime > last) last = m.receivedDateTime;
       }
       setS('m365_last_received', last); setS('m365_last_sync', now()); setS('m365_last_error', '');

@@ -193,7 +193,21 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       .run(null, cust ? cust.id : null, lead ? lead.id : null, from, text, 'Received', String(b.MessageSid || ''), null, 'customer', t, 'in', from);
     if (lead) { try { require('./leadlog').record(db, lead.id, 'text_in', 'Text received: ' + text.slice(0, 120), 'Customer', text, t); } catch { /* best effort */ } }
     const key = keyFor(dir, { phone: from, customer_id: cust ? cust.id : null, lead_id: lead ? lead.id : null });
-    if (key) db.prepare("UPDATE conversation_state SET status='Open', updated_at=? WHERE key=? AND status='Closed'").run(t, key);
+    if (key) { try { require('./work-engine').conversationNeedsAttention(db, key, 'Customer text'); } catch (e) { console.error('work queue sync failed for text', key, e.message); } }
+    res.type('text/xml').send('<Response/>');
+  });
+  // Twilio reports each text's delivery. A text that did not arrive makes its conversation need attention now.
+  app.post('/api/webhooks/twilio/sms-status', (req, res) => {
+    if (!validTwilio(req)) return res.status(403).type('text/plain').send('Invalid signature.');
+    const b = req.body || {}, sid = clean(b.MessageSid, 64), st = clean(b.MessageStatus, 20);
+    const row = sid ? db.prepare('SELECT * FROM sms_messages WHERE provider_sid=?').get(sid) : null;
+    if (!row || !st) return res.type('text/xml').send('<Response/>');
+    const failed = st === 'failed' || st === 'undelivered';
+    db.prepare('UPDATE sms_messages SET status=?, error=? WHERE id=?').run(st, failed ? 'Not delivered' + (b.ErrorCode ? ' (code ' + clean(b.ErrorCode, 10) + ')' : '') : row.error, row.id);
+    if (failed) {
+      const key = keyFor(directory(), { phone: row.to_number, customer_id: row.customer_id, lead_id: row.lead_id });
+      if (key) { try { require('./work-engine').conversationNeedsAttention(db, key, 'Text not delivered'); } catch (e) { console.error('work queue sync failed for undelivered text', key, e.message); } }
+    }
     res.type('text/xml').send('<Response/>');
   });
 
