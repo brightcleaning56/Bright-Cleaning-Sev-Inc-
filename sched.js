@@ -689,9 +689,9 @@ module.exports = function mountSched(app, ctx) {
   };
   // Labor cost of a job from the same time entries and hourly rates payroll uses, plus what the project has invoiced.
   const jobMoney = v => {
-    const rows = db.prepare('SELECT t.clock_in, t.clock_out, t.minutes, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.visit_id=?').all(v.id);
+    const rows = db.prepare('SELECT t.id, t.employee_id, t.clock_in, t.clock_out, t.minutes, t.labor_cost, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.visit_id=?').all(v.id);
     let mins = 0, cost = 0;
-    for (const r of rows) { const m = r.clock_out ? minutesBetween(r.clock_in, r.clock_out) : Number(r.minutes || 0); mins += m; cost += (m / 60) * Number(r.hourly_rate || 0); }
+    for (const r of rows) { const m = r.clock_out ? minutesBetween(r.clock_in, r.clock_out) : Number(r.minutes || 0); mins += m; cost += r.labor_cost != null ? Number(r.labor_cost) : require('./labor').costOf(db, { id: r.id, employee_id: r.employee_id, clock_in: r.clock_in, minutes: m, rate: r.hourly_rate }).cost; }
     let invoiced = 0;
     if (v.project_id) { try { invoiced = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM invoices WHERE project_id=? AND status NOT IN ('Draft','Void')").get(v.project_id).s || 0; } catch { invoiced = 0; } }
     return { hours: Math.round(mins / 6) / 10, labor_cost: Math.round(cost * 100) / 100, project_invoiced: Math.round(invoiced * 100) / 100, has_project: !!v.project_id };
