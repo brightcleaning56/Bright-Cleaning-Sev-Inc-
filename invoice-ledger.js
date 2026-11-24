@@ -43,6 +43,17 @@ function postInvoice(db, inv) {
   const posted = postedEntry(db, 'invoice', ref);
   if (inv.status === 'Void') {
     if (posted && !reversed(db, posted.id)) return { action: 'reversed', entry: L.reverseEntry(db, posted.id, { reason: 'Invoice ' + (inv.invoice_number || inv.id) + ' voided', by: 'invoice-sync' }) };
+    // A voided invoice takes its credit notes, refunds and earned deposit with it: each of their entries is reversed too.
+    const linkedRefs = [
+      ...db.prepare('SELECT id FROM credit_notes WHERE invoice_id=?').all(inv.id).map(r => 'credit-note:' + r.id),
+      ...db.prepare('SELECT id FROM refunds WHERE invoice_id=?').all(inv.id).map(r => 'refund:' + r.id),
+    ];
+    const earnedRows = db.prepare("SELECT id FROM ledger_entries WHERE source='earned' AND source_ref LIKE ?").all('earned:' + inv.id + ':%').map(r => r.id);
+    for (const ref2 of linkedRefs) {
+      const e2 = db.prepare('SELECT id FROM ledger_entries WHERE source_ref=? AND reverses_id IS NULL ORDER BY id DESC LIMIT 1').get(ref2);
+      if (e2 && !reversed(db, e2.id)) L.reverseEntry(db, e2.id, { reason: 'Invoice ' + (inv.invoice_number || inv.id) + ' voided', by: 'invoice-sync' });
+    }
+    for (const eid of earnedRows) if (!reversed(db, eid)) L.reverseEntry(db, eid, { reason: 'Invoice ' + (inv.invoice_number || inv.id) + ' voided', by: 'invoice-sync' });
     return { action: 'none' };
   }
   if (ISSUED_SKIP.includes(inv.status) || posted) return { action: 'none' };
@@ -118,6 +129,7 @@ function earnDeposit(db, { invoiceId, amount, date, note, by }) {
   const d = depositOf(db, invoiceId);
   const amt = r2(amount);
   if (d.billing_kind !== 'advance') throw new Error('Only an advance invoice has a deposit to earn.');
+  if (String(db.prepare('SELECT status FROM invoices WHERE id=?').get(d.invoice_id).status) === 'Void') throw new Error('This invoice is void, so no deposit can be earned.');
   if (!d.posted) throw new Error('The invoice is not on the ledger yet, so there is no deposit to earn.');
   if (!(amt > 0)) throw new Error('Enter the amount earned, above zero.');
   if (amt > d.remaining + 0.005) throw new Error(`Only ${d.remaining.toFixed(2)} of the deposit is left to earn.`);

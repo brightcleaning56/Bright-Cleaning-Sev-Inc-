@@ -135,7 +135,7 @@ module.exports = function mountAdminExt(app, ctx) {
     // A copy starts clean: nothing the customer accepted, signed or chose carries over to the new offer.
     for (const k of ['signed_at', 'signer_name', 'signer_title', 'approved_at', 'approval_fingerprint', 'withdrawn_at', 'withdrawn_by', 'superseded_by', 'decision_ip', 'decision_agent', 'decline_reason', 'selected_option_id']) if (k in copy) copy[k] = null;
     const cols = Object.keys(copy);
-    const r = db.prepare(`INSERT INTO estimates(${cols.join(',')}) VALUES(${cols.map(c => '@' + c).join(',')})`).run(copy);
+    const r = { lastInsertRowid: copyEstimate({ ...e, project_name: copy.project_name }) }; // options and their lines come with the copy
     logAction(req, 'duplicated', 'estimate', r.lastInsertRowid, 'from #' + e.id);
     res.status(201).json({ id: r.lastInsertRowid });
   });

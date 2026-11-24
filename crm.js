@@ -88,7 +88,7 @@ module.exports = function mountCRM(app, ctx) {
       ...replies.map(x => ({ type: 'reply', at: x.received_at, title: `Reply: ${x.subject || '(no subject)'}`, text: x.preview || '', by: x.from_name || x.from_addr })),
       ...notes.map(x => ({ type: 'note', at: x.created_at, title: `Note · ${x.category}`, text: x.body, by: x.author }))].sort((a, b) => String(b.at).localeCompare(String(a.at)));
     const ids = { lead: leads.map(x => x.id), estimate: [...eids], contract: [...kids], project: [...pids], invoice: [...iids] };
-    const act = db.prepare(`SELECT * FROM audit_log WHERE (entity='customer' AND entity_id=?) OR (entity IN ('contact','property','customer note') AND details LIKE ?) ORDER BY id DESC LIMIT 200`).all(c.id, `%customer #${c.id}%`)
+    const act = db.prepare(`SELECT * FROM audit_log WHERE (entity='customer' AND entity_id=?) OR (entity IN ('contact','property','customer note') AND details LIKE ?) ORDER BY id DESC LIMIT 200`).all(c.id, `%customer #${c.id}%`).filter(x => (x.entity === 'customer' && x.entity_id === c.id) || new RegExp('customer #' + c.id + '(?!d)').test(x.details || ''))
       .concat(...Object.entries(ids).map(([k, v]) => v.length ? db.prepare(`SELECT * FROM audit_log WHERE entity=? AND entity_id IN (${v.join(',')}) ORDER BY id DESC LIMIT 100`).all(k) : []))
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 200);
     return { customer: c, complaints, contacts, properties: db.prepare('SELECT * FROM customer_properties WHERE customer_id=? ORDER BY status, name').all(c.id), notes, calls, emails: mail, replies, issues,

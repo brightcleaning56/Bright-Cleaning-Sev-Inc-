@@ -221,6 +221,7 @@ module.exports = function mountCalls(app, ctx) {
     const c = db.prepare('SELECT * FROM calls WHERE id=?').get(Number(req.query.call));
     if (!c || c.direction !== 'Outbound' || !e164(c.phone)) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Sorry, this call could not be connected.</Say><Hangup/></Response>');
     db.prepare("UPDATE calls SET outcome=CASE WHEN outcome='Dialing' THEN 'Connecting' ELSE outcome END WHERE id=?").run(c.id);
+    if (require('./work-engine').isDoNotCall(db, c.phone)) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">This number asked us not to call.</Say><Hangup/></Response>');
     const name = c.company || c.contact_name;
     res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">Connecting your call${name ? ' to ' + esc(name) : ''}.</Say>${liveTranscribe()}<Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording" action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}"><Number url="${base()}/api/webhooks/twilio/call-notice">${esc(e164(c.phone))}</Number></Dial></Response>`);
   }));
@@ -268,6 +269,7 @@ module.exports = function mountCalls(app, ctx) {
   app.post('/api/webhooks/twilio/client-voice', hook((req, res) => {
     const b = req.body || {}, c = b.call_id ? db.prepare('SELECT * FROM calls WHERE id=?').get(Number(b.call_id)) : null;
     const to = e164(c ? c.phone : b.To);
+    if (to && require('./work-engine').isDoNotCall(db, to)) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">This number asked us not to call.</Say><Hangup/></Response>');
     if (!to || !String(b.From || '').startsWith('client:')) return res.type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Joanna">This call could not be placed.</Say></Response>');
     if (c && b.CallSid) db.prepare('UPDATE calls SET provider_sid=COALESCE(provider_sid,?) WHERE id=?').run(clean(b.CallSid, 64), c.id);
     res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${liveTranscribe()}<Dial callerId="${esc(twNumber())}" timeout="30" record="record-from-answer" recordingStatusCallback="${base()}/api/webhooks/twilio/recording"${c ? ` action="${base()}/api/webhooks/twilio/bridge-result?call=${c.id}"` : ''}><Number url="${base()}/api/webhooks/twilio/call-notice">${esc(to)}</Number></Dial></Response>`);

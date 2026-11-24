@@ -75,13 +75,15 @@ module.exports = function mountSched(app, ctx) {
   // ---------- Employees ----------
   app.get('/api/admin/employees', auth, (req, res) => {
     const canLink = require('./roles').canRunOperations(roleOf(req));
+    const money = require('./roles').seesMoney(roleOf(req));
     const d = clean(req.query.date, 10) || today();
     const list = db.prepare('SELECT * FROM employees ORDER BY active DESC, name').all().map(e => {
       const off = db.prepare('SELECT * FROM employee_timeoff WHERE employee_id=? AND start_date<=? AND end_date>=?').get(e.id, d, d);
       const jobs = db.prepare("SELECT COUNT(*) n FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date=? AND v.status NOT IN ('Cancelled','Skipped')").get(e.id, d).n;
       const ws = weekStart(d), hrs = db.prepare("SELECT v.start_time, v.end_time FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date BETWEEN ? AND ? AND v.status NOT IN ('Cancelled','Skipped')").all(e.id, ws, addDays(ws, 6)).reduce((t, x) => t + visitMins(x), 0) / 60;
       const dow = new Date(d + 'T12:00:00Z').getUTCDay() || 7;
-      return { ...empPublic(e, canLink), off: off ? off.reason || 'Time off' : null, jobs_on_date: jobs, week_hours: Math.round(hrs * 10) / 10, available: !!e.active && !off && String(e.work_days || '').split(',').map(Number).includes(dow) };
+      const pub = { ...empPublic(e, canLink) }; if (!money) for (const k of Object.keys(PAY_DEFAULTS)) delete pub[k];
+      return { ...pub, off: off ? off.reason || 'Time off' : null, jobs_on_date: jobs, week_hours: Math.round(hrs * 10) / 10, available: !!e.active && !off && String(e.work_days || '').split(',').map(Number).includes(dow) };
     });
     res.json({ employees: list, roles: ROLES, timeoff: db.prepare('SELECT t.*, e.name FROM employee_timeoff t JOIN employees e ON e.id=t.employee_id WHERE t.end_date>=? ORDER BY t.start_date').all(addDays(d, -30)), holidays: db.prepare('SELECT * FROM company_holidays WHERE date>=? ORDER BY date').all(addDays(d, -30)) });
   });
@@ -126,6 +128,8 @@ module.exports = function mountSched(app, ctx) {
   app.patch('/api/admin/employees/:id', auth, (req, res) => {
     const e = getEmp(req.params.id); if (!e) return res.status(404).json({ error: 'Employee not found.' });
     const { out, errs } = empValidate(req.body || {}, e); if (errs.length) return res.status(400).json({ error: errs.join(' ') });
+    // Crew access (a new link, or taking someone off the crew) is for operations managers only.
+    if (((req.body || {}).new_link || 'active' in out) && !require('./roles').canRunOperations(roleOf(req))) return res.status(403).json({ error: 'Only an operations manager can change crew access.' });
     const refused = payRefusal(req, out, e); if (refused) return res.status(403).json({ error: refused });
     if ((req.body || {}).new_link) out.token = crypto.randomBytes(18).toString('hex');
     // A new link, or taking the person off the crew, ends their signed-in crew sessions.
@@ -363,7 +367,7 @@ module.exports = function mountSched(app, ctx) {
   const crewGet = (req, res) => {
     const e = crewAuth(req, res); if (!e) return;
     const d = clean(req.query.date, 10) || today();
-    const jobs = db.prepare("SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND v.date BETWEEN ? AND ? AND v.status NOT IN ('Cancelled','Skipped','Tentative') ORDER BY v.date, v.start_time").all(e.id, d, addDays(d, 30));
+    const jobs = db.prepare("SELECT v.* FROM visit_crew c JOIN visits v ON v.id=c.visit_id WHERE c.employee_id=? AND (v.date BETWEEN ? AND ? OR v.id IN (SELECT visit_id FROM time_entries WHERE employee_id=? AND clock_out IS NULL)) AND v.status NOT IN ('Cancelled','Skipped','Tentative') ORDER BY v.date, v.start_time").all(e.id, d, addDays(d, 30), e.id);
     const open = db.prepare('SELECT * FROM time_entries WHERE employee_id=? AND clock_out IS NULL ORDER BY id DESC').get(e.id);
     res.json({ employee: { name: e.name, role: e.role, crew: e.crew }, date: d, clocked_in: open ? { visit_id: open.visit_id, since: open.clock_in } : null,
       jobs: jobs.map(v => {

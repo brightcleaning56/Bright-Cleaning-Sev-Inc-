@@ -141,6 +141,8 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     if (f.channel === 'sms' && f.auto === 1 && by === 'system' && !smsAutoOn()) return done('Cancelled', 'Automatic texts are off (owner setting sms_auto_followups)');
     // An automatic text needs proof the customer opted in to texts. Without it, the text is not sent.
     if (f.channel === 'sms' && f.auto === 1 && by === 'system' && !hasSmsConsent(phoneOf(e))) return done('Cancelled', 'No text consent on file for this phone number');
+    // Claim the follow-up before anything is sent, so two sends at once (a double click, or the scheduler and a click) cannot both send it.
+    if (!db.prepare("UPDATE proposal_followups SET status='Sending' WHERE id=? AND status IN ('Scheduled','Failed')").run(f.id).changes) return;
     try {
       if (f.channel === 'email') {
         if (!isEmail(e.email)) throw new Error('No email address on the proposal');

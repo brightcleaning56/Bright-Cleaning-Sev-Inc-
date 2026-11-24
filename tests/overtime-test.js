@@ -7,15 +7,15 @@ const LB = require('../labor');
 const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE employees(id INTEGER PRIMARY KEY, name TEXT, hourly_rate REAL);
-  CREATE TABLE time_entries(id INTEGER PRIMARY KEY, employee_id INTEGER, project_id INTEGER, clock_in TEXT, minutes INTEGER, approved_by TEXT, cost_id INTEGER, labor_rate REAL);
+  CREATE TABLE time_entries(id INTEGER PRIMARY KEY, employee_id INTEGER, project_id INTEGER, clock_in TEXT, minutes INTEGER, approved_by TEXT, cost_id INTEGER, labor_rate REAL, clock_out TEXT);
   CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
 `);
 LB.ensureColumns(db);
 db.prepare("INSERT INTO employees VALUES(1,'Pat',20)").run();
 
 // Week of Monday 2026-11-16 to Sunday 2026-11-22. Monday 30 h, then Wednesday 15 h: 45 h in total, so 5 h are overtime.
-const add = (id, clockIn, hours, approved = true) => db.prepare('INSERT INTO time_entries(id,employee_id,project_id,clock_in,minutes,approved_by,labor_rate) VALUES(?,?,?,?,?,?,20)')
-  .run(id, 1, 1, clockIn, Math.round(hours * 60), approved ? 'owner' : null);
+const add = (id, clockIn, hours, approved = true) => db.prepare('INSERT INTO time_entries(id,employee_id,project_id,clock_in,minutes,approved_by,labor_rate,clock_out) VALUES(?,?,?,?,?,?,20,?)')
+  .run(id, 1, 1, clockIn, Math.round(hours * 60), approved ? 'owner' : null, clockIn);
 
 add(1, '2026-11-16T08:00:00Z', 30);
 const mon = LB.costOf(db, { id: 1, employee_id: 1, clock_in: '2026-11-16T08:00:00Z', minutes: 1800, rate: 20 });
@@ -27,6 +27,10 @@ assert.strictEqual(wed.regular_minutes, 600, '10 h regular to reach 40 h');
 assert.strictEqual(wed.overtime_minutes, 300, '5 h overtime');
 assert.strictEqual(wed.cost, 350, '10 h at $20 (200) plus 5 h at $30 (150)');
 console.log('ok - 45 h week: 30 h regular (600), then 10 h regular (200) and 5 h overtime at 1.5x (150)');
+// The split does not depend on approval: with Monday not yet approved, Wednesday costs the same.
+db.prepare('UPDATE time_entries SET approved_by=NULL WHERE id=1').run();
+assert.strictEqual(LB.costOf(db, { id: 2, employee_id: 1, clock_in: '2026-11-18T08:00:00Z', minutes: 900, rate: 20 }).cost, 350, 'approval order does not change the split');
+console.log('ok - approval order does not change the overtime split');
 
 // Total for the week equals 40 h at the normal rate plus 5 h at the overtime rate.
 assert.strictEqual(mon.cost + wed.cost, 800 + 5 * 20 * 1.5, 'week total = 40 h at $20 plus 5 h at $30');

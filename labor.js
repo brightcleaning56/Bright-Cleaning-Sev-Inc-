@@ -31,7 +31,8 @@ function weekStart(date) {
 
 // Splits one entry's minutes into regular and overtime, and returns its cost.
 // entry: { id, employee_id, clock_in, minutes, rate }. The entries counted before it are approved entries for the same employee
-// in the same week, clocked in earlier (or the same time with a lower id).
+// in the same week, clocked in earlier (or the same time with a lower id). Every finished entry counts, approved or not,
+// so the split is the same whichever order the entries are approved in.
 function costOf(db, entry) {
   ensureColumns(db);
   const minutes = Number(entry.minutes) || 0;
@@ -46,7 +47,7 @@ function costOf(db, entry) {
     const end = new Date(start + 'T00:00:00Z'); end.setUTCDate(end.getUTCDate() + 7);
     const next = end.toISOString().slice(0, 10);
     const prior = db.prepare(`SELECT COALESCE(SUM(minutes),0) m FROM time_entries
-      WHERE employee_id=? AND approved_by IS NOT NULL AND id<>?
+      WHERE employee_id=? AND clock_out IS NOT NULL AND id<>?
         AND clock_in >= ? AND clock_in < ?
         AND (clock_in < ? OR (clock_in = ? AND id < ?))`).get(entry.employee_id, entry.id || 0, bizdate.startUTC(start), bizdate.startUTC(next), entry.clock_in, entry.clock_in, entry.id || 0);
     before = Number(prior.m) || 0;

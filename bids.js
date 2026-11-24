@@ -15,6 +15,8 @@ module.exports = function mountBids(app, ctx) {
   const gate = e => { try { return require('./approvals').gate(e); } catch { return null; } };
 
   // Financial safety flags: things a manager should look at before relying on or sending the number.
+  // Margin is worked on the price before sales tax: tax is collected for the state, not earned.
+  const pretax = e => (Number(e.proposal_total) || 0) / (1 + (Number(e.tax_pct) || 0) / 100);
   function flags(e) {
     const f = [], area = Number(e.area_sqft) || 0, total = Number(e.proposal_total) || 0, cost = Number(e.total_cost) || 0;
     if (total <= 0) f.push({ level: 'block', text: 'Total is $0. A proposal cannot be sent at $0.' });
@@ -23,7 +25,7 @@ module.exports = function mountBids(app, ctx) {
     if (area > 0 && total > 0 && total / area < 0.05) f.push({ level: 'warn', text: `Below the typical cleaning price of $0.05 per sq ft ($${(total / area).toFixed(3)} now). Check the production rate, labor hours and costs before sending.` });
     if (Number(e.labor_hours) > 3000 * (Number(e.visits) || 1)) f.push({ level: 'block', text: `${Math.round(e.labor_hours).toLocaleString()} labor hours looks too high. Check the production rate (sq ft per labor hour), not price per sq ft.` });
     if (!area && !(Number(e.use_line_items) && Number(e.line_items_total) > 0) && !String(e.line_items || '').includes('qty')) f.push({ level: 'warn', text: 'Missing quantities: no square footage or line items.' });
-    if (cost > 0 && total > 0) { const m = (total - cost) / total * 100; if (m < 15) f.push({ level: 'warn', text: `Low margin: ${m.toFixed(1)}% (below 15%).` }); }
+    if (cost > 0 && total > 0) { const pre = pretax(e); const m = (pre - cost) / pre * 100; if (m < 15) f.push({ level: 'warn', text: `Low margin: ${m.toFixed(1)}% (below 15%).` }); }
     if (Number(e.use_line_items) && Number(e.line_items_total) > 0 && total > 0 && Math.abs(Number(e.line_items_total) - total) / total > 0.5) f.push({ level: 'warn', text: `Totals don't line up: line items $${Number(e.line_items_total).toFixed(2)} vs proposal $${total.toFixed(2)}.` });
     if (['Sent', 'Viewed'].includes(e.status) && e.expires_on && e.expires_on < today()) f.push({ level: 'info', text: `Expired on ${e.expires_on}.` });
     if (!e.scope_category) f.push({ level: 'info', text: 'No service category set (reports will show "Not categorized").' });
@@ -71,7 +73,7 @@ module.exports = function mountBids(app, ctx) {
       expiring: { n: expiring.length, v: sum(expiring, e => e.proposal_total) },
       proposed_value: sum(live.filter(e => ['Sent', 'Viewed', 'Approved', 'Declined'].includes(e.status)), e => e.proposal_total),
       contracted_value: signed.v, contracted_n: signed.n,
-      projected_gp: { v: sum(costed, e => e.proposal_total - e.total_cost), of: approved.length, costed: costed.length, pct: costed.length ? Math.round(sum(costed, e => e.proposal_total - e.total_cost) / sum(costed, e => e.proposal_total) * 1000) / 10 : null },
+      projected_gp: { v: sum(costed, e => pretax(e) - e.total_cost), of: approved.length, costed: costed.length, pct: costed.length ? Math.round(sum(costed, e => pretax(e) - e.total_cost) / sum(costed, e => pretax(e)) * 1000) / 10 : null },
       win: { rate: decided >= 5 ? Math.round(approved.length / decided * 1000) / 10 : null, won: approved.length, decided, needed: 5 }, // a rate from fewer than five decisions says little
       note: 'Approved proposals are not revenue. Revenue is recorded when invoices are paid.'
     });
