@@ -333,6 +333,10 @@ module.exports = function mountSched(app, ctx) {
     const b = req.body || {}, e = getEmp(b.employee_id); if (!e) return res.status(400).json({ error: 'Choose an employee.' });
     if (isNaN(Date.parse(b.clock_in)) || isNaN(Date.parse(b.clock_out)) || Date.parse(b.clock_out) <= Date.parse(b.clock_in)) return res.status(400).json({ error: 'Enter a start and an end time (end after start).' });
     if ((Date.parse(b.clock_out) - Date.parse(b.clock_in)) > 16 * 3600000) return res.status(400).json({ error: 'A single entry cannot be longer than 16 hours.' });
+    // One person cannot be on two entries at once: an entry that overlaps an existing one (or a running clock) is refused.
+    { const sIso = new Date(b.clock_in).toISOString(), eIso = new Date(b.clock_out).toISOString();
+      const clash = db.prepare('SELECT id, clock_in, clock_out FROM time_entries WHERE employee_id=? AND clock_in < ? AND (clock_out IS NULL OR clock_out > ?) LIMIT 1').get(e.id, eIso, sIso);
+      if (clash) return res.status(409).json({ error: `${e.name} already has time from ${clash.clock_in.slice(0, 16).replace('T', ' ')}${clash.clock_out ? ' to ' + clash.clock_out.slice(0, 16).replace('T', ' ') : ' (still clocked in)'}. Change the times so they do not overlap.` }); }
     const v = b.visit_id ? getVisit(b.visit_id) : null;
     const id = db.prepare('INSERT INTO time_entries(employee_id,visit_id,project_id,clock_in,clock_out,minutes,source,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
       .run(e.id, v ? v.id : null, v ? v.project_id : (b.project_id || null), new Date(b.clock_in).toISOString(), new Date(b.clock_out).toISOString(), Math.round((Date.parse(b.clock_out) - Date.parse(b.clock_in)) / 60000), 'manager', clean(b.note, 300), now()).lastInsertRowid;
