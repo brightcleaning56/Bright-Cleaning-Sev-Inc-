@@ -34,7 +34,7 @@ const SALES_DENY = [
 ];
 // Office staff: settings, people, backups, approval rules and automation stay with managers. Their own password and name stay available.
 const STAFF_DENY = [
-  /^\/api\/admin\/(settings|backups|audit-log|system-health)(\/|$)/,
+  /^\/api\/admin\/(settings|backups|audit-log|system-health|reports)(\/|$)/,
   [/^(PUT|PATCH|POST|DELETE)$/, /^\/api\/admin\/(business-profile|phone\/settings|phone\/callback-owner|issues\/config|quality\/settings|outbound-callbacks|api-keys|users|approval-rules|ai\/settings|automation\/ai-settings|automation|ai-receptionist)(\/|$)/]
 ];
 // Inspector: an explicit allow-list; anything not listed is refused.

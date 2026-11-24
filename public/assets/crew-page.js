@@ -59,7 +59,8 @@
   if (token === 'me') {
     const out = document.createElement('button');
     out.type = 'button'; out.className = 'btn ghost'; out.textContent = 'Sign out'; out.style.cssText = 'margin-left:12px;flex:0 0 auto;min-height:40px';
-    out.onclick = () => { try { localStorage.removeItem(SESSION_KEY); } catch { /* storage blocked */ } location.reload(); };
+    // Unsent changes stay with the person who made them: sign out only once they are sent. Then nothing is left for the next person on this phone.
+    out.onclick = () => { if (queue().length) { say('Some changes are not sent yet. Connect to send them, then sign out.'); return; } try { localStorage.removeItem(SESSION_KEY); localStorage.removeItem(KEY_DAY); localStorage.removeItem(KEY_OV); } catch { /* storage blocked */ } location.reload(); };
     document.querySelector('header .who').appendChild(out);
   }
 
@@ -134,7 +135,8 @@
         const item = queue()[0];
         try { await post(item.url, item.body); }
         catch (e) {
-          if (isOffline(e)) break; // still no signal: keep the queue and try again later
+          // No signal, a server error, or a sign-in or link that is not valid right now: keep the change and try again later.
+          if (isOffline(e) || !e.status || e.status >= 500 || [401, 403, 404].includes(e.status)) { say('Some changes are waiting to be sent. They will send when the connection is back.'); break; }
           lastRefusal = e.message;
           say(`Could not send one change: ${e.message}`);
         }

@@ -82,7 +82,7 @@ module.exports = function mountAutobid(app, ctx) {
   // Asks the contact (GC, GM or property contact) the open questions, once per question set. Never prices with a guess.
   function askContact(l, missing) {
     const questions = (missing || []).filter(q => /\?\s*$/.test(q));
-    if (!questions.length || !on('auto_ask_contact', true)) return false;
+    if (!questions.length || !on('auto_request_info', false)) return false; // the owner's Settings switch, off by default
     if (!l.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email)) return false;
     if (/\btest\b/i.test(`${l.contact_name || ''} ${l.company || ''}`)) return false; // never email test submissions
     const m = ctx.getMailer && ctx.getMailer(); if (!m) return false;
@@ -144,11 +144,11 @@ module.exports = function mountAutobid(app, ctx) {
     logAction(req, 'drafted', 'estimate', r.estimate_id, `from lead #${l.id}`);
     res.status(201).json(r);
   });
-  app.get('/api/admin/automation/ai-settings', auth, (req, res) => res.json({ auto_draft_estimates: on('auto_draft_estimates', true), auto_request_info: on('auto_request_info', true) }));
+  app.get('/api/admin/automation/ai-settings', auth, (req, res) => res.json({ auto_draft_estimates: on('auto_draft_estimates', true), auto_request_info: on('auto_request_info', false) }));
   app.put('/api/admin/automation/ai-settings', auth, (req, res) => {
     for (const k of ['auto_draft_estimates', 'auto_request_info']) if (k in (req.body || {})) db.prepare('INSERT INTO ai_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, req.body[k] ? '1' : '0');
     logAction(req, 'changed', 'automation settings', 0, JSON.stringify(req.body || {}).slice(0, 200));
-    res.json({ auto_draft_estimates: on('auto_draft_estimates', true), auto_request_info: on('auto_request_info', true) });
+    res.json({ auto_draft_estimates: on('auto_draft_estimates', true), auto_request_info: on('auto_request_info', false) });
   });
   return { sweep, draftFromLead };
 };

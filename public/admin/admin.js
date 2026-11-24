@@ -3880,7 +3880,7 @@
   async function loadAISettings() {
     const r = await api('/api/admin/ai/status'); aiStatus = r;
     $('#aiState').innerHTML = r.enabled ? `<span class="badge green">On</span> Model: ${esc(r.model)}` : '<span class="badge amber">Off</span> Add ANTHROPIC_API_KEY in Render (Environment) to turn it on.';
-    $('#aiAuto').checked = r.auto_triage; $('#aiInfo').checked = r.auto_request_info !== false; $('#aiDraft').checked = r.auto_draft_estimates !== false;
+    $('#aiAuto').checked = r.auto_triage; $('#aiInfo').checked = r.auto_request_info === true; $('#aiDraft').checked = r.auto_draft_estimates !== false;
   }
   [['#aiAuto', 'auto_triage'], ['#aiInfo', 'auto_request_info'], ['#aiDraft', 'auto_draft_estimates']].forEach(([sel, k]) => $(sel).addEventListener('change', async e => { try { await api('/api/admin/ai/settings', { method: 'PUT', json: { [k]: e.target.checked } }); toast('Saved'); } catch (err) { toast(err.message, true); } }));
   async function loadApprovalRules() {

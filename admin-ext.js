@@ -61,6 +61,8 @@ module.exports = function mountAdminExt(app, ctx) {
     const now = new Date().toISOString();
     const copy = { ...src, status: 'Draft', public_token: crypto.randomBytes(24).toString('hex'), created_at: now, updated_at: now, sent_at: null, viewed_at: null, last_viewed_at: null, view_count: 0, decided_at: null, decision_ip: null, decision_agent: null };
     delete copy.id;
+    // A copy starts clean: nothing the customer accepted, signed or chose carries over to the new offer.
+    for (const k of ['signed_at', 'signer_name', 'signer_title', 'approved_at', 'approval_fingerprint', 'withdrawn_at', 'withdrawn_by', 'superseded_by', 'decision_ip', 'decision_agent', 'decline_reason', 'selected_option_id']) if (k in copy) copy[k] = null;
     const cols = Object.keys(copy);
     const newId = db.prepare(`INSERT INTO estimates(${cols.join(',')}) VALUES(${cols.map(c => '@' + c).join(',')})`).run(copy).lastInsertRowid;
     // Proposal options (and their lines) come with the copy, with the selected option pointed at its new id.
@@ -130,6 +132,8 @@ module.exports = function mountAdminExt(app, ctx) {
     const now = new Date().toISOString();
     const copy = { ...e, id: undefined, status: 'Draft', public_token: crypto.randomBytes(24).toString('hex'), project_name: (e.project_name || 'Proposal') + ' (copy)', created_at: now, updated_at: now, sent_at: null, viewed_at: null, last_viewed_at: null, view_count: 0, decided_at: null, decision_ip: null, decision_agent: null };
     delete copy.id;
+    // A copy starts clean: nothing the customer accepted, signed or chose carries over to the new offer.
+    for (const k of ['signed_at', 'signer_name', 'signer_title', 'approved_at', 'approval_fingerprint', 'withdrawn_at', 'withdrawn_by', 'superseded_by', 'decision_ip', 'decision_agent', 'decline_reason', 'selected_option_id']) if (k in copy) copy[k] = null;
     const cols = Object.keys(copy);
     const r = db.prepare(`INSERT INTO estimates(${cols.join(',')}) VALUES(${cols.map(c => '@' + c).join(',')})`).run(copy);
     logAction(req, 'duplicated', 'estimate', r.lastInsertRowid, 'from #' + e.id);

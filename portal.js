@@ -251,6 +251,9 @@ module.exports = function mountPortal(app, ctx) {
     if (decision === 'approve') {
       const signer = clip(b.signer_name, 120);
       if (signer.length < 2 || !b.agree) return res.status(400).json({ error: 'To approve, type your full name and confirm you are authorized to approve this proposal.' });
+      // A proposal with options is approved only after one is chosen (the public proposal page records the choice).
+      const hasOptions = require('./proposal-options').optionsFor(db, e.id).length > 0;
+      if (hasOptions && !e.selected_option_id) return res.status(409).json({ error: 'Your proposal has options. Open your proposal link and choose one before you approve.' });
       db.prepare('UPDATE estimates SET signer_name=?, signer_title=?, signed_at=? WHERE id=?').run(signer, clip(b.signer_title, 120), dt, e.id);
     } else if (clip(b.reason, 1000)) {
       db.prepare('UPDATE estimates SET decline_reason=? WHERE id=?').run(clip(b.reason, 1000), e.id);

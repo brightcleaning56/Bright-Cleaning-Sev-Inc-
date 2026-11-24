@@ -1254,7 +1254,7 @@ await check('Proposals', 'Customer view carries every line item (description, qu
       const routes = {}, app = { locals: {}, use: () => {}, get: (p, ...f) => { routes['GET ' + p] = f[f.length - 1]; }, post: (p, ...f) => { routes['POST ' + p] = f[f.length - 1]; }, put: () => {} };
       require('../followups')(app, { db: udb, auth: (q, s, n) => n(), logAction: () => {}, clean: (v, n) => String(v == null ? '' : v).slice(0, n || 1000), getMailer: () => null });
       const sign = (body) => { const url = 'https://brightclean.test/api/webhooks/twilio/sms'; const data = url + Object.keys(body).sort().map(k => k + body[k]).join(''); return crypto.createHmac('sha1', 'test-token-stop').update(Buffer.from(data, 'utf8')).digest('base64'); };
-      const call = (body, sig) => { const out = { code: 0 }; const res = { type() { return this; }, status(c) { out.code = c; return this; }, send(x) { out.body = x; return this; } }; routes['POST /api/webhooks/twilio/sms']({ originalUrl: '/api/webhooks/twilio/sms', headers: { 'x-twilio-signature': sig }, body }, res); return out; };
+      const call = (body, sig) => { const out = { code: 0 }; const res = { type() { return this; }, status(c) { out.code = c; return this; }, send(x) { out.body = x; return this; } }; routes['POST /api/webhooks/twilio/sms']({ originalUrl: '/api/webhooks/twilio/sms', headers: { 'x-twilio-signature': sig }, body }, res, () => {}); return out; };
       const stop = { From: '+15155550777', Body: 'stop', To: '+15153033024' };
       const badSig = call(stop, 'not-a-real-signature');
       const optedBefore = udb.prepare("SELECT COUNT(*) n FROM sms_consents WHERE revoked_at IS NULL").get().n;
@@ -1394,6 +1394,14 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(made.status === 201 && made.data.contract_id, 'approved should create a contract, got ' + made.status + ' ' + JSON.stringify(made.data));
     assert(again.status === 409, 'second create should be refused, got ' + again.status);
     assert(got.data.estimate.contract_id === made.data.contract_id, 'proposal should show its contract');
+  await check('Audit fixes', 'A superseded proposal cannot be sent or approved offline, and a draft invoice cannot jump to Overdue', async () => {
+    const e2 = await est({});
+    const vq = new Database(path.join(dataDir, 'brightclean.db')); vq.prepare("UPDATE estimates SET status='Superseded' WHERE id=?").run(e2.id); vq.close();
+    const sendSup = await req('POST', '/api/admin/estimates/' + e2.id + '/send', { token: T });
+    const apprSup = await req('POST', '/api/admin/estimates/' + e2.id + '/record-approval', { token: T, json: { note: 'Signed paper copy received' } });
+    assert(sendSup.status === 409 && apprSup.status === 409, 'superseded should be refused: send ' + sendSup.status + ', approval ' + apprSup.status);
+    return 'superseded send and offline approval refused (409)';
+  });
     return 'draft refused (400); approved creates contract #' + made.data.contract_id + ' with no second approval; repeat refused (409)';
   });
   await check('Follow-ups', 'A proposal follow-up can be scheduled, listed and cancelled; bad input is refused; texting is refused until Twilio is set up', async () => {
@@ -1579,6 +1587,15 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(unknown.status === 400, 'an unknown number cannot take notes, got ' + unknown.status);
     const hook = await req('POST', '/api/webhooks/twilio/sms', { json: { From: '+15155550222', Body: 'Yes please' } });
     assert(hook.status === 403, 'an unsigned text should be refused, got ' + hook.status);
+    // A signed text from a known customer reaches the conversation (the STOP handler passes it on).
+    const txtCust = (await req('POST', '/api/admin/customers', { token: T, json: { company: 'Text Reply Co', name: 'Tess Text', phone: '(515) 555-0177', email: 'tess@textreply.test' } })).data.id;
+    const txtBody = { From: '+15155550177', To: '+15153033024', Body: 'Hi, can you come Tuesday?', MessageSid: 'SMreply0177' };
+    const txtUrl = (process.env.PUBLIC_BASE_URL || 'https://brightclean.net').replace(/\/$/, '') + '/api/webhooks/twilio/sms';
+    const txtSig = require('crypto').createHmac('sha1', 'tw-test-token').update(txtUrl + Object.keys(txtBody).sort().map(k => k + txtBody[k]).join('')).digest('base64');
+    const signedText = await fetch(B + '/api/webhooks/twilio/sms', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': txtSig }, body: new URLSearchParams(txtBody).toString() });
+    assert(signedText.status === 200, 'a signed text should be accepted, got ' + signedText.status);
+    const thread = await req('GET', '/api/admin/conversations/cust:' + txtCust, { token: T });
+    assert(thread.status === 200 && JSON.stringify(thread.data).includes('can you come Tuesday'), 'a signed text should appear in the customer conversation, got ' + thread.status);
     return 'inbox loads with 9 boxes; note saved to the lead history; a lead with no messages is not a conversation (404); unknown number refused (400); unsigned text refused (403)';
   });
   await check("Today's Work", 'Client messages are a department; the schedule and the assistant load; suggestions are counted, not acted on', async () => {

@@ -74,7 +74,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   }
   const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
   // Inbound texts from Twilio. STOP-type words revoke text consent for that number. Anything else is ignored here.
-  app.post('/api/webhooks/twilio/sms', (req, res) => {
+  app.post('/api/webhooks/twilio/sms', (req, res, next) => {
     res.type('text/xml');
     if (!twilioSigOk(req)) return res.status(403).send('<?xml version="1.0" encoding="UTF-8"?><Response/>');
     const from = normPhone((req.body || {}).From);
@@ -83,7 +83,8 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
       const n = revokeSmsConsent(from);
       console.log('sms opt-out: revoked ' + n + ' consent record(s)');
     }
-    res.send('<?xml version="1.0" encoding="UTF-8"?><Response/>');
+    // Hand the signed text on: the inbound handler in clientmsgs.js saves it to the conversation and answers Twilio.
+    next();
   });
 
   // ---- Texts (Twilio). Needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_SMS_FROM (a Twilio number that can send texts). ----

@@ -122,7 +122,9 @@ module.exports = function mountOps(app, ctx) {
     const em = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase();
     const role = (!ow || em === ow) ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
     if (role === 'inspector') return res.json({ customers: rows.map(c => ({ id: c.id, name: c.name, company: c.company, email: c.email, phone: c.phone, address: c.address, status: c.status })) });
-    res.json({ customers: rows.map(c => ({ ...c, ...related(c) })) });
+    // Invoice totals and balances are for roles that see money; the others get the customer without them.
+    const money = require('./roles').seesMoney(role);
+    res.json({ customers: rows.map(c => { const x = { ...c, ...related(c) }; if (!money) { delete x.invoices; delete x.billed; delete x.paid; } return x; }) });
   });
   app.post('/api/admin/customers', auth, (req, res) => {
     const b = req.body || {};
