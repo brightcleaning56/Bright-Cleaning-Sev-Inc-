@@ -177,9 +177,10 @@ module.exports = function mountAdminExt(app, ctx) {
     const allowed = Object.prototype.hasOwnProperty.call(EXTRA_FIELDS, req.params.table) ? EXTRA_FIELDS[req.params.table] : null;
     if (!allowed) return res.status(404).json({ error: 'Not found' });
     const keys = allowed.filter(k => Object.prototype.hasOwnProperty.call(req.body || {}, k));
-    if (!keys.length) return res.json({ ok: true });
+    if (!keys.length) return res.status(400).json({ error: 'Nothing to save.' });
     if (req.params.table === 'invoices' && keys.includes('issue_date')) { const v = String(req.body.issue_date || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) !== v) return res.status(400).json({ error: 'Enter the issue date as a real date (YYYY-MM-DD).' }); }
     if (req.params.table === 'invoices' && keys.includes('issue_date')) { const cur = db.prepare('SELECT * FROM invoices WHERE id=?').get(id(req)); if (cur && String(req.body.issue_date || '').slice(0, 10) !== require('./bizdate').invoiceDay(cur) && (cur.sent_at || cur.status !== 'Draft')) return res.status(409).json({ error: 'The issue date is locked once an invoice is sent, because it sets the business day its revenue is reported in. Void it and issue a new invoice instead.' }); }
+    if (!db.prepare(`SELECT 1 FROM ${req.params.table} WHERE id=?`).get(id(req))) return res.status(404).json({ error: 'Not found' });
     db.prepare(`UPDATE ${req.params.table} SET ${keys.map(k => k + '=?').join(',')} WHERE id=?`).run(...keys.map(k => clean(req.body[k], 10000)), id(req));
     res.json({ ok: true });
   });
