@@ -400,6 +400,11 @@ async function startServer(env, dataDir) {
 
   await check('Customers', 'Same company without an email is matched to the existing customer (no duplicate)', async () => {
     const r = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Other Person', company: 'prairie construction', scope: 'x', labor_hours: 1, labor_rate: 10 } });
+    // A proposal with no lead gets one automatically (From lead # is never blank), reusing the lead with the same email.
+    const autoLead = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Auto Lead Person', company: 'Auto Lead Co', email: 'autolead@test.test', scope: 'Final clean', labor_hours: 1, labor_rate: 10 } });
+    assert(autoLead.status === 201 && autoLead.data.estimate && autoLead.data.estimate.lead_id, 'a proposal saved without a lead should get one, got ' + autoLead.status);
+    const autoLead2 = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Auto Lead Person', company: 'Auto Lead Co', email: 'autolead@test.test', scope: 'Final clean', labor_hours: 1, labor_rate: 10 } });
+    assert(autoLead2.data.estimate && autoLead2.data.estimate.lead_id === autoLead.data.estimate.lead_id, 'a second proposal for the same email should reuse the same lead');
     const c = (await req('GET', '/api/admin/customers', { token: T })).data.customers.filter(x => (x.company || '').toLowerCase() === 'prairie construction');
     assert(r.status === 201 && c.length === 1, 'entries ' + c.length); return '1 Prairie Construction entry after a no-email estimate';
   });
