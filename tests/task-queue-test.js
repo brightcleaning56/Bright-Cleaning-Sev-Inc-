@@ -9,6 +9,8 @@ const db = new Database(':memory:');
 db.exec(`CREATE TABLE customer_issues(id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Open',
   priority TEXT NOT NULL DEFAULT 'Normal', assigned_to TEXT, due_date TEXT, resolution TEXT, resolved_at TEXT, verified_by TEXT, verified_at TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
+// The calls table: a task can be linked to a callback call, so the engine reads it when a task changes.
+db.exec('CREATE TABLE calls(id INTEGER PRIMARY KEY AUTOINCREMENT, direction TEXT, phone TEXT, summary TEXT, outcome TEXT, created_at TEXT, follow_up_date TEXT, follow_up_done INTEGER DEFAULT 0, handled_at TEXT, handled_by TEXT, handling TEXT, assigned_to TEXT, callback_issue_id INTEGER);');
 const now = new Date().toISOString();
 db.prepare(`INSERT INTO customer_issues(id,type,title,status,assigned_to,due_date,created_at,updated_at) VALUES
   (1,'task','Replace hallway bulbs','Open','ana@bc.test','2026-12-02',?,?),
