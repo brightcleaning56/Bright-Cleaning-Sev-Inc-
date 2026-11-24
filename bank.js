@@ -52,12 +52,17 @@ function importStatement(db, text, by) {
   ensureSchema(db);
   const { rows, problems } = parseStatement(text);
   if (!rows.length) throw new Error('No statement lines were found. Expected date, description, amount.' + (problems.length ? ' First problem: line ' + problems[0].line + ' ' + problems[0].problem : ''));
-  const exists = db.prepare('SELECT id FROM bank_statement_lines WHERE line_date=? AND amount=? AND description=?');
+  const countStmt = db.prepare('SELECT COUNT(*) n FROM bank_statement_lines WHERE line_date=? AND amount=? AND description=?');
+  const keyOf = r => [r.line_date, r.amount, r.description].join('\u0001');
+  // How many matching lines the database already holds, per line. Only that many of the same lines in this file are repeats.
+  const before = new Map(); for (const r of rows) { const k = keyOf(r); if (!before.has(k)) before.set(k, countStmt.get(r.line_date, r.amount, r.description).n); }
+  const seen = new Map();
   const at = new Date().toISOString();
   let added = 0, skipped = 0;
   db.transaction(() => {
     for (const r of rows) {
-      if (exists.get(r.line_date, r.amount, r.description)) { skipped++; continue; }
+      const k = keyOf(r), nth = seen.get(k) || 0; seen.set(k, nth + 1);
+      if (nth < before.get(k)) { skipped++; continue; }
       db.prepare('INSERT INTO bank_statement_lines(line_date,description,amount,status,imported_by,imported_at) VALUES(?,?,?,?,?,?)').run(r.line_date, r.description, r.amount, 'Unmatched', by || null, at);
       added++;
     }
