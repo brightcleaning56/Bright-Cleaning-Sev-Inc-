@@ -93,8 +93,8 @@ function mount(app, ctx) {
     const id = ensureVendor(db, b.name, { contact: b.contact, email: b.email, phone: b.phone });
     return { ok: true, id };
   }));
-  app.get('/api/admin/ledger/ar-aging', auth, (req, res) => run(res, () => arAging(db, { asOf: String(req.query.as_of || new Date().toISOString().slice(0, 10)) })));
-  app.get('/api/admin/ledger/ap-aging', auth, (req, res) => run(res, () => apAging(db, { asOf: String(req.query.as_of || new Date().toISOString().slice(0, 10)) })));
+  app.get('/api/admin/ledger/ar-aging', auth, (req, res) => run(res, () => arAging(db, { asOf: String(req.query.as_of || require('./bizdate').today()) })));
+  app.get('/api/admin/ledger/ap-aging', auth, (req, res) => run(res, () => apAging(db, { asOf: String(req.query.as_of || require('./bizdate').today()) })));
 }
 
 module.exports = { ensureSchema, ensureVendor, arAging, apAging, listVendors, bucketOf, mount };

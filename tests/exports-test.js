@@ -15,7 +15,8 @@ assert.strictEqual(X.cell('plain'), 'plain');
 assert.strictEqual(X.cell('a,b'), '"a,b"');
 assert.strictEqual(X.cell('say "hi"'), '"say ""hi"""');
 assert.strictEqual(X.cell('=1+1'), "'=1+1");
-assert.strictEqual(X.cell('-5'), "'-5");
+assert.strictEqual(X.cell('-5'), '-5', 'negative amounts stay numbers');
+assert.strictEqual(X.cell('-SUM(A1)'), "'-SUM(A1)", 'a dash followed by a formula is still neutralised');
 console.log('ok - CSV cells are quoted and formula-like text is neutralised');
 
 // Journal: a header, one row per line, and the quoted memo survives.

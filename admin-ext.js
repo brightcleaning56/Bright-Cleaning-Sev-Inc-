@@ -334,7 +334,7 @@ module.exports = function mountAdminExt(app, ctx) {
     { const t = ctx.signToken(email, req.user && req.user.mfa === true); require('./admin-session').setCookie(req, res, t); res.json({ ok: true, token: t, message: 'Password changed. Other devices have been signed out.' }); }
   });
   // ---- Accounting and payroll exports (CSV). Columns use QuickBooks-style names; money records stay with managers and office staff.
-  const csvCell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
+  const csvCell = v => { let s = String(v ?? ''); if (/^([=+@\t\r]|-(?![0-9.]))/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
   const sendCsv = (res, name, header, rows) => { res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${name}"`); res.send('﻿' + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n'); };
   const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
   const moneyGuard = (req, res) => { if (!require('./roles').seesMoney(roleOf(req.user && req.user.email))) { res.status(403).json({ error: 'Only managers and office staff can export money records.' }); return false; } return true; };

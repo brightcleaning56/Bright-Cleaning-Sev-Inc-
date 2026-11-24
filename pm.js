@@ -74,7 +74,7 @@ module.exports = function mountPM(app, ctx) {
     const why = [];
     if (open) why.push(`${open} task(s) are still open`);
     if (!p.signoff_name && !p.signoff_waiver) why.push('customer sign-off (or a recorded reason it is not needed) is missing');
-    const openCorrective = db.prepare("SELECT COUNT(*) n FROM inspections WHERE project_id=? AND status='Corrective action'").get(p.id).n;
+    const openCorrective = db.prepare("SELECT COUNT(*) n FROM inspections WHERE project_id=? AND status IN ('Corrective action','Reinspection due')").get(p.id).n;
     if (openCorrective) why.push(`${openCorrective} inspection(s) still have corrective work open`);
     // "Accepted with exceptions" is not a pass. It counts only once an owner has recorded a waiver of those exceptions.
     const passed = db.prepare("SELECT COUNT(*) n FROM inspections WHERE project_id=? AND signed_at IS NOT NULL AND ((passed=1 AND status IN ('Completed','Closed','Customer accepted')) OR (status='Accepted with exceptions' AND exception_waiver_by IS NOT NULL))").get(p.id).n;

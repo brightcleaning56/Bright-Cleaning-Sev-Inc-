@@ -202,6 +202,7 @@ module.exports = function mountContracts(app, ctx) {
   app.post('/api/contract/:token/sign', async (req, res) => {
     const k = byToken(req.params.token); if (!k) return res.status(404).json({ error: 'This contract link is not valid.' });
     if (k.status === 'Superseded') return res.status(410).json({ error: 'This contract was replaced by a newer version. Use the current link.' });
+    if (k.archived_at) return res.status(409).json({ error: 'This contract has been archived and cannot be signed or declined from this link.' });
     if (!['Sent', 'Viewed'].includes(k.signature_status)) return res.status(409).json({ error: k.signature_status === 'Declined' ? 'This contract was declined. Contact Bright Cleaning Sev Inc. for an updated version.' : 'This contract can no longer be signed from this link.' });
     const b = req.body || {}, name = clean(b.name, 120);
     if (name.length < 3 || !/\s/.test(name)) return res.status(400).json({ error: 'Type your full name (first and last) to sign.' });
@@ -215,6 +216,7 @@ module.exports = function mountContracts(app, ctx) {
   app.post('/api/contract/:token/decline', async (req, res) => {
     const k = byToken(req.params.token); if (!k) return res.status(404).json({ error: 'This contract link is not valid.' });
     if (k.status === 'Superseded') return res.status(410).json({ error: 'This contract was replaced by a newer version. Use the current link.' });
+    if (k.archived_at) return res.status(409).json({ error: 'This contract has been archived and cannot be signed or declined from this link.' });
     if (!['Sent', 'Viewed'].includes(k.signature_status)) return res.status(409).json({ error: 'This contract can no longer be declined from this link.' });
     const reason = clean((req.body || {}).reason, 1000); if (reason.length < 3) return res.status(400).json({ error: 'Please tell us why, so we can fix it.' });
     db.prepare("UPDATE contracts SET signature_status='Declined', decline_reason=?, updated_at=? WHERE id=?").run(reason, now(), k.id);

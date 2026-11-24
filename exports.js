@@ -9,7 +9,7 @@ const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 function cell(v) {
   let s = v == null ? '' : String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  if (/^([=+@\t\r]|-(?![0-9.]))/.test(s)) s = "'" + s;
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 const csv = rows => rows.map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';

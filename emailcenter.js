@@ -99,6 +99,7 @@ module.exports = function (app, { db, auth }) {
     if (got.length !== want.length || !require('crypto').timingSafeEqual(Buffer.from(got), Buffer.from(want))) return res.status(403).type('text/plain').send('Forbidden.');
     const b = req.body || {}, id = String(b.MessageID || '');
     const t = new Date().toISOString();
+    if (b.RecordType === 'SpamComplaint') { const sa = String(b.Email || b.Recipient || '').toLowerCase(); if (sa) { try { ES.suppress(db, sa, 'spam complaint', 'postmark', 'Marked as spam', 'system'); } catch { /* best effort */ } } }
     if (b.RecordType === 'Delivery' && id) {
       db.prepare('UPDATE email_log SET delivered_at=COALESCE(delivered_at, ?) WHERE provider_id=?').run(String(b.DeliveredAt || t), id);
     } else if (b.RecordType === 'Bounce' && id) {

@@ -56,6 +56,8 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     const want = normPhone(phone); if (!want) return 0;
     const when = new Date().toISOString(); let n = 0;
     try {
+      // A STOP from a number with no consent on record is still an opt-out: record it, so the number is blocked.
+      if (!db.prepare('SELECT phone FROM sms_consents').all().some(r => normPhone(r.phone) === want)) { db.prepare("INSERT INTO sms_consents(phone, source, wording_version, wording, consented_at, revoked_at) VALUES(?,?,?,?,?,?)").run(want, 'stop', 'stop-reply', 'Texted STOP', when, when); n++; }
       for (const r of db.prepare('SELECT id, phone FROM sms_consents WHERE revoked_at IS NULL').all()) {
         if (normPhone(r.phone) === want) { db.prepare('UPDATE sms_consents SET revoked_at=? WHERE id=?').run(when, r.id); n++; }
       }
