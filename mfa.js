@@ -61,6 +61,13 @@ function mountMfa(app, ctx) {
     res.json({ ok: true });
   });
 
+  // Wrong codes are counted per account as well as per address, so spreading guesses over many addresses does not help.
+  const acctFails = new Map();
+  const ACCT_WINDOW = 15 * 60 * 1000, ACCT_MAX = 8;
+  const acctState = k => { const s = acctFails.get(k); return s && Date.now() - s.first <= ACCT_WINDOW ? s : null; };
+  const failAcct = k => { const s = acctState(k); if (s) s.n++; else acctFails.set(k, { n: 1, first: Date.now() }); };
+  const acctLocked = k => { const s = acctState(k); return !!s && s.n >= ACCT_MAX; };
+
   // Second step of sign-in. Needs the short-lived challenge token from /api/admin/login.
   app.post('/api/admin/login/mfa', rateLimit({ windowMs: 15 * 60 * 1000, max: 12 }), (req, res) => {
     const bad = () => res.status(401).json({ error: 'Sign-in did not complete. Start again with your password.' });
@@ -70,8 +77,9 @@ function mountMfa(app, ctx) {
     const f = factor(p.email);
     if (!f || !f.enabled) return bad();
     if (!p.jti) return bad();
+    if (acctLocked(lower(p.email))) return res.status(429).json({ error: 'Too many wrong codes for this account. Wait 15 minutes and start sign-in again.' });
     const step = totp.matchStep(f.secret, (req.body || {}).code);
-    if (step === null) { audit(lower(p.email), 'two-step sign-in failed', 'wrong code'); return res.status(401).json({ error: 'That code is not right. Check the time on your phone and try again.' }); }
+    if (step === null) { failAcct(lower(p.email)); audit(lower(p.email), 'two-step sign-in failed', 'wrong code'); return res.status(401).json({ error: 'That code is not right. Check the time on your phone and try again.' }); }
     const email = lower(p.email), row = db.prepare('SELECT * FROM admin_users WHERE email=?').get(email), now = new Date().toISOString();
     // Spend the code and the challenge together. A code whose time step is not newer than the last one accepted is a
     // replay (F-14.3a); a challenge id that is already recorded was used before (F-14.3b). Either way nothing is granted.
