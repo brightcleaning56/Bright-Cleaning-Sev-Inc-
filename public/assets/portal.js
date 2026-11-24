@@ -310,13 +310,20 @@
       body + '</aside>';
   }
   function proposalSel() { return (data.proposals || []).filter(function (p) { return p.id === propSel; })[0]; }
+  // Radio buttons for the proposal's options; the customer must pick one before approving.
+  function optionsFieldHtml(p) {
+    if (!p.options || !p.options.length) return '';
+    return '<fieldset class="field" style="margin:0 0 12px;border:0;padding:0"><legend style="font-weight:600">Choose one option *</legend>' +
+      p.options.map(function (o) { return '<label class="chk" style="display:block;margin:8px 0"><input type="radio" name="option_id" value="' + esc(o.id) + '" required> ' + esc(o.label) + (o.duration_weeks ? ' · ' + esc(o.duration_weeks) + ' wk' : '') + ' · ' + money(o.total) + '</label>'; }).join('') +
+      '</fieldset>';
+  }
   function openProposalModal(kind) {
     var p = proposalSel(); if (!p) return;
     var title, text, fields, btn;
     if (kind === 'approve') {
       title = 'Approve ' + p.number + '?';
-      text = 'You are approving ' + p.title + ' for ' + money(p.total) + '. Type your full name to sign. Our team will then confirm next steps.';
-      fields = '<div class="field"><label>Full name *</label><input name="signer_name" required autocomplete="name"></div>' +
+      text = p.options && p.options.length ? 'Choose the option you are approving, then type your full name to sign. Our team will then confirm next steps.' : 'You are approving ' + p.title + ' for ' + money(p.total) + '. Type your full name to sign. Our team will then confirm next steps.';
+      fields = optionsFieldHtml(p) + '<div class="field"><label>Full name *</label><input name="signer_name" required autocomplete="name"></div>' +
         '<div class="field" style="margin-top:12px"><label>Title (optional)</label><input name="signer_title"></div>' +
         '<label class="chk" style="margin-top:14px"><input type="checkbox" name="agree" required> I am authorized to approve this proposal for my organization.</label>';
       btn = 'Approve proposal';
@@ -345,7 +352,7 @@
       if (kind === 'changes') { url = '/api/portal/proposals/' + p.id + '/changes'; payload = { body: f.body.value }; }
       else {
         url = '/api/portal/proposals/' + p.id + '/respond';
-        payload = kind === 'approve' ? { decision: 'approve', signer_name: f.signer_name.value, signer_title: f.signer_title.value, agree: f.agree.checked } : { decision: 'decline', reason: f.reason.value };
+        payload = kind === 'approve' ? { decision: 'approve', option_id: f.option_id ? f.option_id.value : undefined, signer_name: f.signer_name.value, signer_title: f.signer_title.value, agree: f.agree.checked } : { decision: 'decline', reason: f.reason.value };
       }
       fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session }, body: JSON.stringify(payload) })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })

@@ -13,7 +13,12 @@ module.exports = function mountPortal(app, ctx) {
   // One proposal as the customer sees it in the portal. Only this customer's own proposal, never internal notes.
   const todayStr = () => require('./bizdate').today();
   const numberOf = p => 'P-' + (String(p.created_at || '').slice(0, 4) || '2026') + '-' + String(1000 + p.id);
-  function portalProposal(p) {
+  // The options a customer can choose from, with sales tax included (the same figures the public proposal page shows).
+  function optionsForPortal(p) {
+    const PO = require('./proposal-options');
+    return PO.optionsFor(db, p.id).map(o => ({ id: o.id, label: o.label, duration_weeks: o.duration_weeks, scope_kind: o.scope_kind, building: o.building, total: PO.totalWithTax(p, o.total) }));
+  }
+  function portalProposal(p, opts = []) {
     let items = []; try { items = JSON.parse(p.line_items || '[]'); } catch { items = []; }
     items = (Array.isArray(items) ? items : []).map(i => ({ description: String(i.description || ''), amount: Number(i.amount) || 0, frequency: String(i.frequency || '') }));
     const decided = ['Approved', 'Declined'].includes(p.status);
@@ -24,6 +29,7 @@ module.exports = function mountPortal(app, ctx) {
       total: p.proposal_total || 0, tax_pct: p.tax_pct || 0, scope: p.scope || '', area_sqft: p.area_sqft || 0, items, terms: p.terms || '',
       status: expired ? 'Expired' : p.status, raw_status: p.status, issued: String(p.created_at || '').slice(0, 10), expires: p.expires_on || '',
       decided_at: p.decided_at ? String(p.decided_at).slice(0, 10) : '', decline_reason: p.decline_reason || '', signer_name: p.signer_name || '',
+      options: opts, selected_option_id: p.selected_option_id || null,
       actionable, pdf: '/api/proposal/' + p.public_token + '/pdf', link: '/proposal/' + p.public_token
     };
   }
@@ -96,8 +102,8 @@ module.exports = function mountPortal(app, ctx) {
     const s = unsign(String(req.headers.authorization || '').replace(/^Bearer /, ''));
     if (!s) return res.status(401).json({ error: 'Please sign in again.' });
     const e = s.email, cid = s.cid; // cid: the customer record this session is bound to; every record below must belong to it
-    const proposals = db.prepare(`SELECT id, project_name, customer_name, company, site_address, scope, area_sqft, line_items, terms, tax_pct, proposal_total, status, public_token, expires_on, decided_at, decline_reason, signer_name, lead_id, created_at FROM estimates WHERE lower(email)=? AND status NOT IN ('Draft','Ready','Superseded','Withdrawn') ORDER BY created_at DESC`).all(e)
-      .map(portalProposal);
+    const proposals = db.prepare(`SELECT id, project_name, customer_name, company, site_address, scope, area_sqft, line_items, terms, tax_pct, proposal_total, selected_option_id, status, public_token, expires_on, decided_at, decline_reason, signer_name, lead_id, created_at FROM estimates WHERE lower(email)=? AND status NOT IN ('Draft','Ready','Superseded','Withdrawn') ORDER BY created_at DESC`).all(e)
+      .map(p => portalProposal(p, optionsForPortal(p)));
     const contracts = db.prepare(`SELECT id, title, value, status, signature_status, public_token FROM contracts WHERE ${ownRecord('customer_id', 'email')} AND status NOT IN ('Draft','Superseded') ORDER BY id DESC`).all(cid, e)
       .map(k => ({ id: k.id, title: k.title || 'Contract', value: k.value, status: k.status, signature: k.signature_status, link: k.public_token && k.signature_status !== 'Signed' ? `/contract/${k.public_token}` : null }));
     const invoices = db.prepare(`SELECT id, invoice_number, amount, paid_amount, due_date, status FROM invoices WHERE ${ownRecord('customer_id', 'email')} AND status NOT IN ('Draft','Void') ORDER BY id DESC`).all(cid, e)
@@ -253,7 +259,15 @@ module.exports = function mountPortal(app, ctx) {
       if (signer.length < 2 || !b.agree) return res.status(400).json({ error: 'To approve, type your full name and confirm you are authorized to approve this proposal.' });
       // A proposal with options is approved only after one is chosen (the public proposal page records the choice).
       const hasOptions = require('./proposal-options').optionsFor(db, e.id).length > 0;
-      if (hasOptions && !e.selected_option_id) return res.status(409).json({ error: 'Your proposal has options. Open your proposal link and choose one before you approve.' });
+      if (hasOptions && !e.selected_option_id && b.option_id != null) {
+        const PO = require('./proposal-options');
+        const pick = PO.optionsFor(db, e.id).find(o => o.id === Number(b.option_id));
+        if (!pick) return res.status(400).json({ error: 'Choose one of the options before you approve.' });
+        db.prepare('UPDATE estimates SET selected_option_id=?, proposal_total=? WHERE id=?').run(pick.id, PO.totalWithTax(e, pick.total), e.id);
+        db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, 'chose option in client portal', 'estimate', e.id, pick.label, dt);
+        e.selected_option_id = pick.id;
+      }
+      if (hasOptions && !e.selected_option_id) return res.status(409).json({ error: 'Choose one of the options before you approve.' });
       db.prepare('UPDATE estimates SET signer_name=?, signer_title=?, signed_at=? WHERE id=?').run(signer, clip(b.signer_title, 120), dt, e.id);
     } else if (clip(b.reason, 1000)) {
       db.prepare('UPDATE estimates SET decline_reason=? WHERE id=?').run(clip(b.reason, 1000), e.id);

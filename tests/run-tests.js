@@ -5116,6 +5116,36 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'conversation shows sent mail and replies together, newest first; the Outlook note is accurate';
   });
 
+  await check('Portal', 'Client sees the proposal options with tax, must choose one to approve, and the chosen total is used', async () => {
+    const crypto = require('crypto');
+    const addr = 'portal.opts@example.com', nowS = new Date().toISOString();
+    const made = await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Portal Options', company: 'Opt Co', email: addr, project_name: 'Portal option check', scope: 'Final clean', labor_hours: 1, labor_rate: 10 } });
+    const eid = made.data.estimate.id;
+    const lines = rate => [{ description: 'Units', unit: 'unit', quantity: 20, unit_price: rate }, { description: 'Windows', unit: 'window', quantity: 100, unit_price: 10 }];
+    await req('PUT', `/api/admin/estimates/${eid}/options`, { token: T, json: { reason: 'Portal option check', options: [
+      { label: '1-week', duration_weeks: 1, scope_kind: 'Whole project', cost: 100, lines: lines(160) },
+      { label: '2-week', duration_weeks: 2, scope_kind: 'Whole project', cost: 100, lines: lines(130) }] } });
+    const pdb = new Database(path.join(dataDir, 'brightclean.db'));
+    const cid = Number(pdb.prepare('INSERT INTO customers(match_key,name,email,created_at,updated_at) VALUES(?,?,?,?,?)').run('email:' + addr, 'Portal Options', addr, nowS, nowS).lastInsertRowid);
+    pdb.prepare("UPDATE estimates SET status='Sent' WHERE id=?").run(eid);
+    const taxPct = Number(pdb.prepare('SELECT tax_pct FROM estimates WHERE id=?').get(eid).tax_pct) || 0;
+    pdb.close();
+    const payload = Buffer.from(JSON.stringify({ email: addr, cid, iat: Date.now(), exp: Date.now() + 3600000 })).toString('base64url');
+    const sess = payload + '.' + crypto.createHmac('sha256', globalThis.__jwtSecret + ':client-portal').update(payload).digest('base64url');
+    const me = await req('GET', '/api/portal/me', { token: sess });
+    const prop = (me.data.proposals || []).find(x => x.id === eid);
+    const o1 = prop && prop.options.find(o => o.label === '1-week');
+    const want1 = (20 * 160 + 100 * 10) * (1 + taxPct / 100);
+    const noPick = await req('POST', `/api/portal/proposals/${eid}/respond`, { token: sess, json: { decision: 'approve', agree: true, signer_name: 'Pat Client' } });
+    const badPick = await req('POST', `/api/portal/proposals/${eid}/respond`, { token: sess, json: { decision: 'approve', option_id: 999999, agree: true, signer_name: 'Pat Client' } });
+    const ok = await req('POST', `/api/portal/proposals/${eid}/respond`, { token: sess, json: { decision: 'approve', option_id: o1 && o1.id, agree: true, signer_name: 'Pat Client' } });
+    const pv = new Database(path.join(dataDir, 'brightclean.db'), { readonly: true });
+    const after = pv.prepare('SELECT status, selected_option_id, proposal_total FROM estimates WHERE id=?').get(eid);
+    pv.close();
+    const chk = { listed: !!prop && prop.options.length === 2, taxIncluded: !!o1 && Math.abs(o1.total - want1) < 0.01, noPickRefused: noPick.status === 409, badPickRefused: badPick.status === 400, approved: ok.status === 200 && after.status === 'Approved', chosenRecorded: !!o1 && after.selected_option_id === o1.id, totalUsed: Math.abs(after.proposal_total - want1) < 0.01 };
+    assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, noPick: noPick.status, badPick: badPick.status, ok: ok.status }));
+    return 'portal shows options with tax; approval needs a chosen option; the chosen total is recorded';
+  });
   await check('Portal', 'Cross-customer isolation: one customer never sees or changes another customer’s proposals, contracts, invoices, projects or uploads', async () => {
     const crypto = require('crypto');
     const pdb = new Database(path.join(dataDir, 'brightclean.db'));

@@ -210,3 +210,4 @@ module.exports.currentTotal = currentTotal;
 module.exports.optionsFor = optionsFor;
 module.exports.signature = signature;
 module.exports.LOCKED = LOCKED;
+module.exports.totalWithTax = totalWithTax;
