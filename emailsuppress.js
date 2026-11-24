@@ -80,7 +80,7 @@ function mount(app, ctx) {
   ensure(db);
   const roleOf = req => {
     const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(adminEmail || '').toLowerCase();
-    if (!ow || e === ow) return 'owner';
+    if (ow && e === ow) return 'owner';
     const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e);
     return (r && r.role) || 'staff';
   };

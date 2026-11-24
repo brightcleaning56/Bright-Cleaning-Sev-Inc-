@@ -160,7 +160,7 @@ module.exports = function mountAdminExt(app, ctx) {
     app.delete(`/api/admin/${table}/:id`, auth, (req, res) => {
       // Audit D-11: only owners/managers delete, and only records with no financial or signed history.
       const em = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase();
-      const role = !ow || em === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
+      const role = ow && em === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
       if (!['owner', 'manager'].includes(role)) return res.status(403).json({ error: 'Only an owner or manager can delete records.' });
       const r = db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(id(req)); if (!r) return res.status(404).json({ error: 'Not found' });
       if (table === 'contracts' && (r.signature_status === 'Signed' || ['Active', 'Completed'].includes(r.status))) return res.status(409).json({ error: 'A signed or active contract cannot be deleted. Close or archive it instead so its history is kept.' });
@@ -257,7 +257,7 @@ module.exports = function mountAdminExt(app, ctx) {
   // Customers are served by ops.js (persistent customer directory).
 
   // ---------- Account & users ----------
-  app.get('/api/admin/me', auth, (req, res) => { const R = require('./roles'), e = req.user && req.user.email, ow = String(adminEmail || '').toLowerCase(); const role = !ow || String(e || '').toLowerCase() === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(String(e || '').toLowerCase()) || {}).role || 'staff');
+  app.get('/api/admin/me', auth, (req, res) => { const R = require('./roles'), e = req.user && req.user.email, ow = String(adminEmail || '').toLowerCase(); const role = ow && String(e || '').toLowerCase() === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(String(e || '').toLowerCase()) || {}).role || 'staff');
     const nm = role === 'owner' && String(e || '').toLowerCase() === ow ? ownerName() : ((db.prepare('SELECT name FROM admin_users WHERE lower(email)=?').get(String(e || '').toLowerCase()) || {}).name || '');
     res.json({ email: e, name: nm, role, label: (R.ROLES[role] || {}).label || role, views: R.VIEWS[role] || null, home: R.HOME[role] || 'overview', sees_money: R.seesMoney(role), mfa_setup_required: !!(req.user && req.user.mfa !== true && ['owner', 'manager'].includes(role)) }); });
   const ownerName = () => { try { const r = db.prepare("SELECT value FROM settings WHERE key='owner_name'").get(); return (r && r.value) || process.env.ADMIN_NAME || 'Owner'; } catch { return process.env.ADMIN_NAME || 'Owner'; } };

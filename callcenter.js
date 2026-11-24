@@ -82,7 +82,7 @@ module.exports = function (app, { db, auth, logAction, clean }) {
     const row = enrich([c], dir)[0];
     const out = { call: row, match: row.match, customer: null, lead: null };
     // Balances are for owners, managers and office staff. Other roles see the caller's projects and open work, not money.
-    const roleCC = (() => { const e = who(req).toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; })();
+    const roleCC = (() => { const e = who(req).toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase(); if (ow && e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; })();
     const seeMoney = require('./roles').seesMoney(roleCC);
     const custId = row.match && row.match.type === 'customer' ? row.match.id : null;
     if (custId) {

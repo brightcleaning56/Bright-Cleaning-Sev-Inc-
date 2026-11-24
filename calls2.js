@@ -176,7 +176,7 @@ module.exports = function mountCalls(app, ctx) {
       hot_leads: db.prepare("SELECT id, contact_name, company, lead_score, intent, created_at FROM calls WHERE lead_score>=70 AND created_at>=? ORDER BY lead_score DESC LIMIT 10").all(from) });
   });
   // ---- Click-to-call: ring the staff member's phone first, then bridge to the customer from the Twilio number ----
-  const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
+  const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase(); if (ow && e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
   app.get('/api/admin/phone/settings', auth, (req, res) => res.json({ connected: !!token(), account_sid: acctSid() ? acctSid().slice(0, 6) + '…' + acctSid().slice(-4) : '', number: twNumber(), callback_owner: callbackOwner(), ai_receptionist: { mode: getS('ai_receptionist_mode') || process.env.AI_RECEPTIONIST || 'off', ai_key: !!process.env.ANTHROPIC_API_KEY, hours: (() => { try { return JSON.parse(getS('ai_receptionist_hours') || ''); } catch { return { days: [1, 2, 3, 4, 5], open: '08:00', close: '17:00' }; } })() }, ring_phone: ringPhones()[0] || '', ring_phones: ringPhones(), ring_source: getS('twilio_ring_phones') ? 'admin' : 'render', render_forward_digits: String(process.env.TWILIO_FORWARD_TO || '').replace(/\D/g, '').length, render_forward_parsed: parsePhones(process.env.TWILIO_FORWARD_TO).map(p => '…' + p.slice(-4)), can_dial: !!(token() && acctSid() && twNumber()), softphone: softphone() }));
   app.put('/api/admin/phone/settings', auth, (req, res) => {
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can change phone settings.' });
@@ -527,7 +527,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
   });
   app.put('/api/admin/phone/callback-owner', auth, (req, res) => {
     const e = String((req.body || {}).email || '').trim().toLowerCase(), em = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || '').toLowerCase();
-    const role = !ow || em === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
+    const role = ow && em === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
     if (!['owner', 'manager'].includes(role)) return res.status(403).json({ error: 'Only an owner or manager can change who gets callbacks.' });
     if (e !== ow && !db.prepare('SELECT 1 FROM admin_users WHERE lower(email)=?').get(e)) return res.status(400).json({ error: 'Choose someone who has access to the admin.' });
     setS('callback_owner', e); logAction(req, 'set callback owner', 'phone settings', 0, e); res.json({ ok: true, owner: e });

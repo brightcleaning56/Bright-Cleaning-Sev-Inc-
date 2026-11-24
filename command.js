@@ -2,7 +2,7 @@
 // "not connected" with what is required, instead of showing sample data.
 module.exports = function mountCommand(app, ctx) {
   const { db, auth } = ctx;
-  const roleOfReq = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; return ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e) || {}).role) || 'staff'; };
+  const roleOfReq = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || process.env.ADMIN_EMAIL || '').toLowerCase(); if (ow && e === ow) return 'owner'; return ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e) || {}).role) || 'staff'; };
 
   db.exec(`CREATE TABLE IF NOT EXISTS payments(
     id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, amount REAL NOT NULL, note TEXT,
@@ -165,7 +165,7 @@ module.exports = function mountCommand(app, ctx) {
     res.json({ months: out });
   });
   app.get('/api/admin/command-center/metrics', auth, (req, res) => {
-    const _rl = roleOfReq(req), _x = (() => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || process.env.ADMIN_EMAIL || '').toLowerCase(); if (!ow || e === ow) return 'owner'; return ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e) || {}).role) || 'staff'; })(), _money = require('./roles').seesMoney(_rl);
+    const _rl = roleOfReq(req), _x = (() => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(ctx.adminEmail || process.env.ADMIN_EMAIL || '').toLowerCase(); if (ow && e === ow) return 'owner'; return ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e) || {}).role) || 'staff'; })(), _money = require('./roles').seesMoney(_rl);
     const d = daysOf(req.query), out = [];
     for (const m of M) { try { const r = run(m, d, false); out.push({ key: m.key, group: m.group, label: m.label, count: r.n, amount: r.v, alert: !!m.alert && r.n > 0, period: !!m.period, view: m.view }); } catch (e) { out.push({ key: m.key, group: m.group, label: m.label, error: 'Not available: ' + e.message.slice(0, 80) }); } }
     res.json({ days: d, as_of: new Date().toISOString(), today: bd(), metrics: _money ? out : out.filter(x => !['Finance', 'Management', 'Sales'].includes(x.group)) });

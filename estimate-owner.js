@@ -32,7 +32,7 @@ module.exports = function mountEstimateOwner(app, { db, auth }) {
       }
       if (!Number(b.lead_id)) { const id = findOrCreateLead(b); if (id) b.lead_id = id; }
     } catch (e) { /* the proposal still saves; the lead can be linked by hand */ }
-    { const lid = Number((req.body || {}).lead_id); if (lid) { const l = db.prepare('SELECT status FROM leads WHERE id=?').get(lid); if (l && l.status === 'Archived') return res.status(409).json({ error: 'This lead is archived. Open the customer or start a new lead before writing a proposal.' }); } }
+    { const lid = Number((req.body || {}).lead_id); if (lid) { const l = db.prepare('SELECT status FROM leads WHERE id=?').get(lid); if (l && l.status === 'Archived') return res.status(409).json({ error: 'This lead is archived. Open the customer or start a new lead before writing a proposal.' }); if (l && l.status === 'Lost') return res.status(409).json({ error: 'This lead was lost. Reopen the lead, or start a new one, before writing a proposal.' }); } }
     next();
   };
   // The form asks for the lead as soon as a customer is named, so "From lead #" fills in before the first save.

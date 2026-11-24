@@ -83,7 +83,7 @@ function queueRows(db, today) {
 
 function roleOf(db, req) {
   const em = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase();
-  if (!ow || em === ow) return 'owner';
+  if (ow && em === ow) return 'owner';
   return ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em)) || {}).role || 'staff';
 }
 

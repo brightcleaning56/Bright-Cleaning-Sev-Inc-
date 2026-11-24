@@ -3,7 +3,7 @@
 module.exports = function mountEstimateArchive(app, { db, auth, logAction }) {
   app.post('/api/admin/estimates/:id/archive', auth, (req, res) => {
     const em = String((req.user && req.user.email) || '').toLowerCase(), ow = String(process.env.ADMIN_EMAIL || '').toLowerCase();
-    const role = !ow || em === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
+    const role = ow && em === ow ? 'owner' : ((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em) || {}).role || 'staff');
     if (!['owner', 'manager'].includes(role)) return res.status(403).json({ error: 'Only an owner or manager can archive proposals.' });
     const e = db.prepare('SELECT * FROM estimates WHERE id=?').get(Number(req.params.id));
     if (!e) return res.status(404).json({ error: 'Not found' });

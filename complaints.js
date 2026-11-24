@@ -25,7 +25,7 @@ module.exports = function mountComplaints(app, ctx) {
   const RESPONSE_HOURS = { Urgent: 4, High: 24, Normal: 48, Low: 72 };
   const setting = (k, d) => { try { const r = db.prepare('SELECT value FROM settings WHERE key=?').get(k); return r ? r.value : d; } catch { return d; } };
   const qualityManager = () => (setting('quality_manager', '') || adminEmail || '').toLowerCase();
-  const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(adminEmail || '').toLowerCase(); if (!ow || e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
+  const roleOf = req => { const e = String((req.user && req.user.email) || '').toLowerCase(), ow = String(adminEmail || '').toLowerCase(); if (ow && e === ow) return 'owner'; const r = db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(e); return (r && r.role) || 'staff'; };
   const manager = req => require('./roles').canRunOperations(roleOf(req)); const inspector = req => require('./roles').canInspect(roleOf(req));
   const who = req => (req && req.user && req.user.email) || 'Autopilot';
   const hist = (id, actor, action, prev, next) => db.prepare('INSERT INTO quality_complaint_history(complaint_id,actor,action,prev,next,created_at) VALUES(?,?,?,?,?,?)').run(id, actor, action, prev == null ? null : String(prev), next == null ? null : String(next), now());

@@ -209,7 +209,7 @@ require('./workqueue')(app,{db,auth,logAction,clean});require('./maintenance')(a
 // The customer's online approval is the only other way to reach Approved, so this step needs a written reason, which is kept in the audit log.
 app.post('/api/admin/estimates/:id/record-approval',auth,(req,res)=>{
   const em=String((req.user&&req.user.email)||'').toLowerCase(), ow=String(process.env.ADMIN_EMAIL||'').toLowerCase();
-  const role=!ow||em===ow?'owner':((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em)||{}).role||'staff');
+  const role=ow&&em===ow?'owner':((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em)||{}).role||'staff');
   if(!['owner','manager'].includes(role))return res.status(403).json({error:'Only an owner or manager can record a customer approval.'});
   const note=clean(req.body&&req.body.note,500);
   if(!note||note.length<5)return res.status(400).json({error:'Say how the customer approved (for example: signed paper copy received, or email from the customer). It is kept on record.'});
@@ -228,7 +228,7 @@ app.post('/api/admin/estimates/:id/record-approval',auth,(req,res)=>{
 // project. This does not ask for a second approval: the approval is what made the proposal Approved.
 app.post('/api/admin/estimates/:id/create-contract',auth,(req,res)=>{
   const em=String((req.user&&req.user.email)||'').toLowerCase(), ow=String(process.env.ADMIN_EMAIL||'').toLowerCase();
-  const role=!ow||em===ow?'owner':((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em)||{}).role||'staff');
+  const role=ow&&em===ow?'owner':((db.prepare('SELECT role FROM admin_users WHERE lower(email)=?').get(em)||{}).role||'staff');
   if(!['owner','manager'].includes(role))return res.status(403).json({error:'Only an owner or manager can create a contract from a proposal.'});
   const e=db.prepare('SELECT * FROM estimates WHERE id=?').get(Number(req.params.id));
   if(!e)return res.status(404).json({error:'Not found'});
