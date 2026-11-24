@@ -1486,6 +1486,14 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const cc1 = (await req('GET', '/api/admin/calls-center', { token: T })).data;
     const doneRow = cc1.calls.find(x => x.id === cid);
     assert(doneRow && doneRow.queue === 'Completed' && !doneRow.callback_open, 'a completed callback should leave the active queue (Completed), got ' + (doneRow && doneRow.queue));
+    // A worked call that was answered (no callback) also leaves the Call Queue once it is completed.
+    const ans = (await req('POST', '/api/admin/calls', { token: T, json: { phone: '5155550177', contact_name: 'Worked Caller', direction: 'Inbound', outcome: 'Answered', purpose: 'Other' } })).data.call.id;
+    const before = (await req('GET', '/api/admin/calls-center', { token: T })).data.calls.find(x => x.id === ans);
+    assert(before && before.queue !== 'Completed', 'an answered call should be in the queue before it is worked, got ' + (before && before.queue));
+    const ansDone = await req('POST', '/api/admin/calls/' + ans + '/work', { token: T, json: { action: 'complete', note: 'Talked through the quote' } });
+    assert(ansDone.status === 200, 'completing an answered call should work: ' + ansDone.status + ' ' + JSON.stringify(ansDone.data));
+    const after = (await req('GET', '/api/admin/calls-center', { token: T })).data.calls.find(x => x.id === ans);
+    assert(after && after.queue === 'Completed', 'a completed answered call should leave the Call Queue (Completed), got ' + (after && after.queue));
     const again = await req('POST', '/api/admin/calls/' + cid + '/work', { token: T, json: { action: 'reopen', reason: 'Customer called again' } });
     assert(again.status === 200 && (await callDone()) === 0 && (await issueStatus()) === 'Open', 'reopening the call should reopen its callback');
     const pat = await req('PATCH', '/api/admin/issues/' + iid, { token: T, json: { status: 'Resolved', resolution: 'Handled on the Issues screen' } });

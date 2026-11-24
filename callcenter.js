@@ -43,8 +43,9 @@ module.exports = function (app, { db, auth, logAction, clean }) {
       else if (d && dir.custByPhone.has(d)) { const x = dir.custByPhone.get(d); match = { type: 'customer', id: x.id, name: x.name, company: x.company, suggested: true }; }
       else if (d && dir.leadByPhone.has(d)) { const x = dir.leadByPhone.get(d); match = { type: 'lead', id: x.id, name: x.contact_name, company: x.company, status: x.status, suggested: true }; }
       let queue;
-      // A callback or missed call that has been completed or cancelled leaves the active queues: it sits under Completed.
-      const finished = !!c.follow_up_done && (c.outcome === 'Missed' || !!c.callback_issue_id || c.handling === 'Callback' || c.handling === 'Waiting');
+      // Any call that has been completed leaves the active queues and sits under Completed, whatever its outcome.
+      // Completing requires a note (work-engine), so a finished call always has a recorded outcome.
+      const finished = !!c.follow_up_done || !!c.handled_at;
       // A call with a follow-up date later than today waits under Scheduled and comes back to the queue on that day.
       const later = !c.follow_up_done && !!c.follow_up_date && c.follow_up_date > bizdate.today();
       // A number marked do not call never comes back into the queue; its calls stay in history under Do not call.
