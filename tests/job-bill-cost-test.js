@@ -57,4 +57,28 @@ E.approveBill(db, office, 'owner@test');
 assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM project_costs WHERE source_bill_id=?').get(office).n, 0, 'an overhead bill is not a job cost');
 console.log('ok - overhead bills are not job costs');
 
+// 6. A bill split across two jobs and overhead: each job gets its share, overhead goes to 6000, and the ledger balances.
+db.exec("INSERT INTO projects(id,name) VALUES(2,'Prairie Office')");
+const split = E.createBill(db, { vendor: 'Chemical Co', description: 'Supplies', category: 'materials', amount: 300, bill_date: '2026-11-22' }, 'crew@test');
+assert.throws(() => E.setSplits(db, split, [{ project_name: 'Bricktowne', amount: 200 }], 'owner@test'), /must match to the cent/, 'lines that do not add up are refused');
+assert.throws(() => E.setSplits(db, split, [{ project_name: 'Nowhere', amount: 300 }], 'owner@test'), /no single job is named/, 'an unknown job name is refused');
+E.setSplits(db, split, [{ project_name: 'Bricktowne', amount: 200, category: 'materials' }, { project_name: 'Prairie Office', amount: 75 }, { overhead: true, amount: 25 }], 'owner@test');
+E.approveBill(db, split, 'owner@test');
+const rowsFor = id => db.prepare('SELECT project_id, amount FROM project_costs WHERE source_bill_id=? ORDER BY project_id').all(id);
+assert.deepStrictEqual(rowsFor(split).map(r => [r.project_id, r.amount]), [[1, 200], [2, 75]], 'each job gets its share; overhead is not a job cost');
+const tbS = L.trialBalance(db);
+assert.strictEqual(tbS.balanced, true, 'the split posting balances');
+assert.strictEqual(bal('6000'), 105, 'operating expense: the 80 phone bill plus the 25 overhead share');
+assert.strictEqual(bal('2000'), 380, 'payable: the 80 phone bill plus the full 300 split bill');
+console.log('ok - a split bill gives each job its share and overhead to operating expense');
+
+// 7. Changing the split takes the approved bill off the books and out of the job costs until it is approved again.
+E.setSplits(db, split, [{ project_name: 'Bricktowne', amount: 300 }], 'owner@test');
+assert.strictEqual(rowsFor(split).length, 0, 'a changed split leaves the job costs until approved');
+E.approveBill(db, split, 'owner@test');
+assert.deepStrictEqual(rowsFor(split).map(r => [r.project_id, r.amount]), [[1, 300]], 'approval records the new split');
+assert.throws(() => E.updateBill(db, split, { amount: 310 }, 'owner@test'), /split across jobs/, 'a split bill cannot change amount directly');
+assert.throws(() => E.updateBill(db, split, { project_id: 2 }, 'owner@test'), /split across jobs/, 'a split bill cannot change job directly');
+console.log('ok - a changed split comes off the books until approved; direct amount and job edits are refused');
+
 console.log('job bill cost: all checks passed');

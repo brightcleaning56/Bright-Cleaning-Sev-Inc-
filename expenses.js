@@ -19,6 +19,7 @@ function ensureSchema(db) {
   // Receipts and approvals (audit G11). Added on first use; switched on by settings (both off by default).
   const cols = db.prepare('PRAGMA table_info(expense_bills)').all().map(c => c.name);
   for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT'], ['receipt_file', 'TEXT'], ['void_reason', 'TEXT'], ['void_by', 'TEXT'], ['void_at', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
+  db.exec(`CREATE TABLE IF NOT EXISTS expense_bill_splits(id INTEGER PRIMARY KEY AUTOINCREMENT, bill_id INTEGER NOT NULL, project_id INTEGER, category TEXT, amount REAL NOT NULL, created_at TEXT NOT NULL)`);
   if (hasTable(db, 'project_costs') && !db.prepare('PRAGMA table_info(project_costs)').all().some(c => c.name === 'source_bill_id')) db.exec('ALTER TABLE project_costs ADD COLUMN source_bill_id INTEGER');
 }
 // Settings that make approval and a receipt required before a bill is paid. Both are off until the owner turns them on.
@@ -45,23 +46,32 @@ function syncJobCost(db, id) {
   if (!hasTable(db, 'project_costs')) return;
   ensureSchema(db);
   const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(Number(id));
-  const want = !!(b && b.project_id && b.approved_by && b.status !== 'Void');
-  const row = db.prepare('SELECT id FROM project_costs WHERE source_bill_id=?').get(Number(id));
-  if (!want) { if (row) db.prepare('DELETE FROM project_costs WHERE id=?').run(row.id); return; }
-  const category = b.category || b.description || b.vendor;
+  db.prepare('DELETE FROM project_costs WHERE source_bill_id=?').run(Number(id));
+  if (!(b && b.approved_by && b.status !== 'Void')) return;
   const desc = (b.vendor + (b.description ? ': ' + b.description : '')).slice(0, 300);
-  if (row) db.prepare('UPDATE project_costs SET project_id=?, category=?, description=?, amount=?, cost_date=? WHERE id=?').run(b.project_id, category, desc, r2(b.amount), b.bill_date, row.id);
-  else db.prepare('INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at,source_bill_id) VALUES(?,?,?,?,?,?,?,?)').run(b.project_id, category, desc, r2(b.amount), b.bill_date, b.approved_by, new Date().toISOString(), b.id);
+  for (const a of allocationsOf(db, b).filter(x => x.project_id)) {
+    db.prepare('INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at,source_bill_id) VALUES(?,?,?,?,?,?,?,?)')
+      .run(a.project_id, a.category, desc, a.amount, b.bill_date, b.approved_by, new Date().toISOString(), b.id);
+  }
+}
+
+// Where a bill's money goes: its split lines when it has any, otherwise its single job (or overhead).
+function splitRows(db, id) { return hasTable(db, 'expense_bill_splits') ? db.prepare('SELECT * FROM expense_bill_splits WHERE bill_id=? ORDER BY id').all(Number(id)) : []; }
+function allocationsOf(db, b) {
+  const rows = splitRows(db, b.id);
+  const cat = b.category || b.description || b.vendor;
+  if (rows.length) return rows.map(r => ({ project_id: r.project_id || null, category: r.category || cat, amount: r2(r.amount) }));
+  return [{ project_id: b.project_id || null, category: cat, amount: r2(b.amount) }];
 }
 
 function postBill(db, id) {
   const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(id);
   if (!b || b.status === 'Void' || activeEntry(db, 'bill', 'bill:' + id)) return false;
   // A bill on a job is job cost (by category). A bill with no job is an operating expense (6000), whatever its category.
-  const exp = b.project_id ? accountFor(b.category || b.description || b.vendor) : { code: '6000' };
+  const allocs = allocationsOf(db, b);
   L.postEntry(db, {
     date: b.bill_date, memo: 'Bill from ' + b.vendor + (b.description ? ': ' + b.description : ''), source: 'bill', sourceRef: 'bill:' + id, by: 'expense-sync',
-    lines: [{ account: exp.code, debit: b.amount }, { account: '2000', credit: b.amount }]
+    lines: [...allocs.map(a => ({ account: a.project_id ? accountFor(a.category).code : '6000', debit: a.amount })), { account: '2000', credit: r2(allocs.reduce((t, a) => t + a.amount, 0)) }]
   });
   return true;
 }
@@ -123,6 +133,48 @@ function findDuplicates(db, b) {
 }
 
 // Checks the fields of a bill and returns them cleaned. Used for new bills and for edits.
+// Splits a bill across jobs and overhead. Each line is a job (by id or exact name) or overhead, with an amount. The lines must add
+// up to the bill amount to the cent. Changing the split takes an approved bill off the books until it is approved again.
+function setSplits(db, id, rows, by) {
+  ensureSchema(db); L.seedChart(db);
+  const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(Number(id));
+  if (!b) throw new Error('Bill not found.');
+  if (b.status === 'Void') throw new Error('A void bill cannot be changed.');
+  if (b.status === 'Paid') throw new Error('A paid bill cannot be changed. Void it and enter it again.');
+  const list = Array.isArray(rows) ? rows : [];
+  const hasProjects = hasTable(db, 'projects');
+  const clean = list.map((r, i) => {
+    const amount = r2(r.amount);
+    if (!(amount > 0)) throw new Error('Line ' + (i + 1) + ': the amount must be above zero.');
+    let project_id = null;
+    if (!r.overhead && (r.project_id || String(r.project_name || '').trim())) {
+      if (r.project_id) {
+        project_id = Number(r.project_id);
+        if (hasProjects && !db.prepare('SELECT id FROM projects WHERE id=?').get(project_id)) throw new Error('Line ' + (i + 1) + ': that job does not exist.');
+      } else {
+        const hits = hasProjects ? db.prepare('SELECT id FROM projects WHERE lower(name)=?').all(String(r.project_name).trim().toLowerCase()) : [];
+        if (hits.length !== 1) throw new Error('Line ' + (i + 1) + ': no single job is named "' + String(r.project_name).trim() + '".');
+        project_id = hits[0].id;
+      }
+    }
+    return { project_id, category: String(r.category || '').trim().slice(0, 80), amount };
+  });
+  if (clean.length) {
+    const lineCents = clean.reduce((t, r) => t + Math.round(r.amount * 100), 0);
+    if (lineCents !== Math.round(r2(b.amount) * 100)) throw new Error('The lines add up to $' + (lineCents / 100).toFixed(2) + ' but the bill is $' + r2(b.amount).toFixed(2) + '. They must match to the cent.');
+  }
+  db.transaction(() => {
+    const posted = activeEntry(db, 'bill', 'bill:' + b.id);
+    if (posted) L.reverseEntry(db, posted.id, { reason: 'Bill ' + b.id + ' split changed', by });
+    db.prepare('DELETE FROM expense_bill_splits WHERE bill_id=?').run(b.id);
+    for (const r of clean) db.prepare('INSERT INTO expense_bill_splits(bill_id,project_id,category,amount,created_at) VALUES(?,?,?,?,?)').run(b.id, r.project_id, r.category || null, r.amount, new Date().toISOString());
+    db.prepare('UPDATE expense_bills SET project_id=?, approved_by=NULL, approved_at=NULL WHERE id=?').run(clean.length ? null : b.project_id, b.id);
+    syncJobCost(db, b.id);
+    require('./audit').record(db, { actor: by, action: 'split bill', entity: 'bill', entityId: b.id, detail: clean.length ? clean.map(r => (r.project_id ? 'job ' + r.project_id : 'overhead') + ' ' + r.amount.toFixed(2)).join('; ') : 'split cleared' });
+  })();
+  return b.id;
+}
+
 function cleanBill(b) {
   const vendor = String(b.vendor || '').trim();
   const amount = r2(b.amount);
@@ -156,6 +208,9 @@ function updateBill(db, id, body, by) {
   });
   const costFields = ['vendor', 'amount', 'bill_date', 'category', 'project_id'];
   const changed = costFields.filter(k => String(next[k] ?? '') !== String(b[k] ?? ''));
+  const splitN = splitRows(db, b.id).length;
+  if (splitN && changed.includes('amount')) throw new Error('This bill is split across jobs. Change the split so it adds up to the new amount.');
+  if (splitN && changed.includes('project_id')) throw new Error('This bill is split across jobs. Change the split instead of the job.');
   const other = ['description', 'receipt_ref'].filter(k => String(next[k] ?? '') !== String(b[k] ?? ''));
   if (!changed.length && !other.length) return b.id;
   require('./aging').ensureVendor(db, next.vendor);
@@ -342,7 +397,17 @@ function mount(app, ctx) {
     if (!r) return res.status(404).json({ error: 'No receipt is attached to this bill.' });
     res.download(r.path, r.name);
   });
-  app.get('/api/admin/expenses', auth, (req, res) => res.json({ bills: db.prepare('SELECT * FROM expense_bills ORDER BY id DESC LIMIT 300').all() }));
+  app.get('/api/admin/expenses', auth, (req, res) => {
+    const bills = db.prepare('SELECT * FROM expense_bills ORDER BY id DESC LIMIT 300').all();
+    const named = hasTable(db, 'projects');
+    const lines = hasTable(db, 'expense_bill_splits') ? db.prepare(`SELECT s.bill_id, s.project_id, s.category, s.amount${named ? ', p.name AS project_name' : ''} FROM expense_bill_splits s ${named ? 'LEFT JOIN projects p ON p.id=s.project_id' : ''} ORDER BY s.id`).all() : [];
+    const byBill = {}; for (const l of lines) (byBill[l.bill_id] = byBill[l.bill_id] || []).push(l);
+    res.json({ bills: bills.map(b => ({ ...b, splits: byBill[b.id] || [] })) });
+  });
+  app.put('/api/admin/expenses/:id/splits', auth, (req, res) => {
+    try { setSplits(db, req.params.id, (req.body || {}).splits, req.user && req.user.email); res.json({ ok: true }); }
+    catch (e) { res.status(400).json({ error: e.message }); }
+  });
   app.post('/api/admin/expenses', auth, (req, res) => {
     const b = req.body || {};
     if (!b.confirm_duplicate) {
@@ -376,4 +441,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, burdenPct, mount };
+module.exports = { ensureSchema, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, burdenPct, mount };

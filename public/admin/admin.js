@@ -2912,7 +2912,7 @@
     const rowsOf = list => list.length ? list.map(x => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${money(x.amount)}</td></tr>`).join('') : '<tr><td colspan="3" class="muted">Nothing posted yet.</td></tr>';
     const total = (label, v) => `<tr><th colspan="2">${esc(label)}</th><th class="num">${money(v)}</th></tr>`;
     const tieBadge = tie.tied_out ? '<span class="pill st-Approved">Tied out</span>' : '<span class="pill st-Declined">Not tied out</span>';
-    const billRows = (bills.bills || []).map(b => `<tr><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}${b.status === 'Void' && b.void_reason ? `<div class="muted">${esc(b.void_reason)}</div>` : ''}</td><td>${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accedit="${b.id}" type="button">Edit</button> <button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button> ` : ''}${b.status === 'Paid' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void (reverses payment)</button>` : b.status === 'Open' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
+    const billRows = (bills.bills || []).map(b => `<tr><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}${(b.splits || []).length ? `<div class="muted"><small>${b.splits.map(l => esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Overhead')) + ' ' + money(l.amount)).join(' · ')}</small></div>` : ''}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}${b.status === 'Void' && b.void_reason ? `<div class="muted">${esc(b.void_reason)}</div>` : ''}</td><td>${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accedit="${b.id}" type="button">Edit</button> <button class="btn small ghost" data-accsplit="${b.id}" type="button">Split</button> <button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button> ` : ''}${b.status === 'Paid' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void (reverses payment)</button>` : b.status === 'Open' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
     const reconRows = (recs.reconciliations || []).slice(0, 10).map(r => `<tr><td>${esc(r.as_of)}</td><td class="num">${money(r.statement_balance)}</td><td class="num">${money(r.ledger_balance)}</td><td class="num">${money(r.difference)}</td><td>${esc(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No reconciliations yet.</td></tr>';
     const driftRows = (drift.drift || []).map(d => `<li>${esc(d.ref)}: ${esc(d.issue)}</li>`).join('') || '<li class="muted">No recorded costs changed after posting.</li>';
     const openRows = (tie.unposted || []).map(i => `<tr><td>${esc(i.invoice_number || i.id)}</td><td class="num">${money(i.amount)}</td><td class="num">${money(i.tax_amount)}</td><td><button class="btn small ghost" data-acctax="${i.id}" type="button">Set sales tax</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Every invoice is on the ledger.</td></tr>';
@@ -3144,6 +3144,22 @@
           { name: 'amount', label: 'Amount ($)', type: 'number' }, { name: 'bill_date', label: 'Bill date', type: 'date' }, { name: 'receipt_ref', label: 'Receipt reference (file name or number)' }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
         values: { vendor: bill.vendor, description: bill.description || '', category: bill.category || '', amount: bill.amount, bill_date: bill.bill_date, receipt_ref: bill.receipt_ref || '', project_id: bill.project_id || '' },
         submit: b => api('/api/admin/expenses/' + bill.id, { method: 'PATCH', json: b }), after: () => { toast('Bill updated'); loadAccounting(); } });
+    });
+    body.querySelectorAll('[data-accsplit]').forEach(btn => btn.onclick = () => {
+      const bill = (bills.bills || []).find(x => String(x.id) === btn.dataset.accsplit);
+      if (!bill) return;
+      const current = (bill.splits || []).map(l => (l.project_id ? (l.project_name || 'Job ' + l.project_id) : 'Overhead') + ' | ' + Number(l.amount).toFixed(2) + (l.category ? ' | ' + l.category : '')).join('\n');
+      openForm({ title: 'Split bill ' + bill.id, sub: 'One line per job or overhead: Job name or Overhead | amount | category (optional). The lines must add up to the bill amount. Changing the split asks for approval again.',
+        defs: [{ name: 'lines', label: 'Lines', type: 'textarea', wide: true }],
+        values: { lines: current },
+        submit: f => {
+          const splits = String(f.lines || '').split('\n').map(x => x.trim()).filter(Boolean).map(x => {
+            const [name, amt, cat] = x.split('|').map(y => (y || '').trim());
+            return /^overhead$/i.test(name) ? { overhead: true, amount: Number(amt), category: cat || '' } : { project_name: name, amount: Number(amt), category: cat || '' };
+          });
+          return api('/api/admin/expenses/' + bill.id + '/splits', { method: 'PUT', json: { splits } });
+        },
+        after: () => { toast('Split saved. Approve the bill again to post it.'); loadAccounting(); } });
     });
     body.querySelectorAll('[data-accvoid]').forEach(btn => btn.onclick = () => {
       const bill = (bills.bills || []).find(x => String(x.id) === btn.dataset.accvoid);
