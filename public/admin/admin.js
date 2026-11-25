@@ -3093,11 +3093,18 @@
       try { const r = await api('/api/admin/ledger/sync', { method: 'POST' }); toast(`Posted: ${r.invoices_posted} invoice(s), ${r.payments_posted} payment(s), ${r.bills_posted} bill(s), ${r.project_costs_posted} job cost(s), ${r.payroll_posted} payroll line(s)`); loadAccounting(); }
       catch (err) { toast(err.message, true); }
     };
+    // What to check on a bill before approving: the usual category and job, then the flags (no AI; nothing is sent anywhere).
+    const closeReview = rv => {
+      if (!rv) return '';
+      const sg = rv.suggestion ? '<div class="muted"><small>Usual: ' + esc(rv.suggestion.category || 'no category') + ', ' + esc(rv.suggestion.project_name || 'no job') + ' (from ' + rv.suggestion.basis + ' bills)</small></div>' : '';
+      const fl = (rv.flags || []).map(f => '<div><small>' + esc(f.text) + '</small></div>').join('');
+      return (sg + fl) || '<span class="muted">Nothing to check</span>';
+    };
     const closeLoad = async () => {
       const from = $('#closeFrom').value || '', to = $('#closeTo').value || '';
       const qs = '?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to);
       let c, t; try { [c, t] = await Promise.all([api('/api/admin/expenses/close' + qs), api('/api/admin/time/close' + qs)]); } catch (err) { $('#closeHost').innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; return; }
-      $('#closeHost').innerHTML = c.count ? `<div class="tablewrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Vendor</th><th class="num">Amount</th></tr></thead><tbody>${c.bills.map(b => `<tr><td><input type="checkbox" data-closeid="${b.id}" checked></td><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td class="num">${money(b.amount)}</td></tr>`).join('')}</tbody></table></div><p><button class="btn small" id="closeGo" type="button">Approve and post selected bills</button> <span class="muted">${c.count} waiting, ${money(c.total)} in total</span></p>` : '<p class="muted">No bills are waiting for approval in this range.</p>';
+      $('#closeHost').innerHTML = c.count ? `<div class="tablewrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Vendor</th><th class="num">Amount</th><th>Check</th></tr></thead><tbody>${c.bills.map(b => `<tr><td><input type="checkbox" data-closeid="${b.id}" checked></td><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td class="num">${money(b.amount)}</td><td>${closeReview(b.review)}</td></tr>`).join('')}</tbody></table></div><p><button class="btn small" id="closeGo" type="button">Approve and post selected bills</button> <span class="muted">${c.count} waiting, ${money(c.total)} in total</span></p>` : '<p class="muted">No bills are waiting for approval in this range.</p>';
       $('#closeTimeHost').innerHTML = t.count ? `<div class="tablewrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Employee</th><th class="num">Hours</th></tr></thead><tbody>${t.entries.map(x => `<tr><td><input type="checkbox" data-closetime="${x.id}" checked></td><td>${esc(String(x.clock_in).slice(0, 10))}</td><td>${esc(x.employee_name)}</td><td class="num">${(x.minutes / 60).toFixed(2)}</td></tr>`).join('')}</tbody></table></div><p><button class="btn small" id="closeTimeGo" type="button">Approve and post selected time</button> <span class="muted">${t.count} entries, ${(t.minutes / 60).toFixed(2)} hours</span></p>` : '<p class="muted">No finished time is waiting for approval in this range.</p>';
       const batch = async (sel, data, path, btn) => {
         const ids = [...$('#closeHost').parentNode.querySelectorAll(sel)].filter(i => i.checked).map(i => Number(i.dataset[data]));

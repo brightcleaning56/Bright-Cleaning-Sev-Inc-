@@ -48,6 +48,8 @@ reimbursements, job expenses, overhead), with AI preparing the bookkeeping and p
 - Each upload becomes a pending expense with its photo, employee and job.
 
 **Phase 3: AI reading (needs decision A below)**
+- Built without AI: a suggested category and job from the vendor's earlier approved bills, and flags on the weekly close (possible duplicate, unusual amount, missing receipt over $75, crew receipt with no job, job over budget). Files: `expense-review.js`, `tests/receipt-review-test.js`.
+- Not built: reading receipt photos with the AI service. Waits for decision A.
 - Extract vendor, date, total, tax and line items from a photo or PDF.
 - Suggest a category and job for each line. A person confirms every suggestion; nothing posts from the AI alone.
 - Flag: duplicates, unusual amounts, missing receipts, purchases over job budget, recurring vendors and price changes.

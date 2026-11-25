@@ -391,7 +391,9 @@ function closeList(db, q) {
   const ok = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
   const from = ok(q.from) ? q.from : '0000-00-00', to = ok(q.to) ? q.to : '9999-12-31';
   const bills = db.prepare("SELECT * FROM expense_bills WHERE approved_by IS NULL AND status<>'Void' AND bill_date BETWEEN ? AND ? ORDER BY bill_date, id").all(from, to);
-  return { from, to, count: bills.length, total: r2(bills.reduce((t, b) => t + Number(b.amount || 0), 0)), bills };
+  const R = require('./expense-review');
+  const withReview = bills.map(b => ({ ...b, review: R.reviewFor(db, b) }));
+  return { from, to, count: bills.length, total: r2(bills.reduce((t, b) => t + Number(b.amount || 0), 0)), bills: withReview };
 }
 // Approves each chosen bill on its own, so one failure does not stop the rest; returns what happened to each.
 function approveBatch(db, ids, by) {
