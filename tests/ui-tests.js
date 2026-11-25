@@ -910,10 +910,10 @@ async function check(area, name, fn) {
     await nav('proposals'); await sleep(500);
     [...d.querySelectorAll('#v-proposals tr')].find(r => r.textContent.includes('Owner Flow')).click(); await sleep(900);
     let asked = []; w.confirm = m => { asked.push(m); return true; };
-    $('#eSend').click(); await sleep(1500);
+    d.querySelector('#eCc').value = 'partner@t.test'; $('#eSend').click(); await sleep(1500);
     const ap = await api('GET', `/api/admin/estimates/${e.id}/approval`, null, T);
     await api('PUT', '/api/admin/approval-rules', { min_margin_pct: 0, max_total: 0, flag_pre_pricing: false }, T);
-    assert(/You can approve it/.test(asked[0] || '') && ap.approval && ap.approval.valid && /when it goes to the customer/.test(ap.approval.note), JSON.stringify({ asked, ap }));
+    assert(asked.some(m => /(cc partner@t.test)/.test(m)) && /You can approve it/.test(asked[0] || '') && ap.approval && ap.approval.valid && /when it goes to the customer/.test(ap.approval.note), JSON.stringify({ asked, ap }));
     return `owner asked once ("${asked[0].split('\n')[0]}"), approved with note "${ap.approval.note}", then the send was attempted`;
   });
   await check('Customer page UI', 'Customer opens as a full page; all 15 tabs render (incl. Communication); contact, property and note save from the page; Edit account saves', async () => {
