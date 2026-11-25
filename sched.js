@@ -344,7 +344,7 @@ module.exports = function mountSched(app, ctx) {
     res.status(201).json({ id });
   });
   // Approving time posts the labor cost to the project (actual cost, not an estimate).
-  app.post('/api/admin/time/:id/approve', auth, (req, res) => {
+  const approveTime = (req, res) => {
     if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can approve time.' });
     const t = db.prepare('SELECT t.*, e.name, e.hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.id=?').get(Number(req.params.id));
     if (!t) return res.status(404).json({ error: 'Entry not found.' });
@@ -357,7 +357,27 @@ module.exports = function mountSched(app, ctx) {
     db.prepare('UPDATE time_entries SET approved_by=?, approved_at=?, cost_id=?, labor_rate=?, labor_cost=?, overtime_minutes=? WHERE id=?').run(who(req), now(), costId, Number(t.hourly_rate) || 0, cost, lc.overtime_minutes, t.id);
     logAction(req, 'approved time', 'employee', t.employee_id, `${t.name}: ${(t.minutes / 60).toFixed(2)} h${costId ? `, $${cost} labor posted to project` : ''}`);
     res.json({ ok: true, cost, posted: !!costId });
+  };
+  // Weekly close for labor: finished time that is not approved yet, and a batch approval that runs the same approval for each entry.
+  const closeRange = q => { const ok = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')); return { from: ok(q.from) ? q.from : '0000-00-00', to: ok(q.to) ? q.to : '9999-12-31' }; };
+  app.get('/api/admin/time/close', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can approve time.' });
+    const r = closeRange(req.query || {});
+    const entries = db.prepare(`SELECT t.id, t.employee_id, e.name AS employee_name, t.project_id, t.clock_in, t.minutes FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.approved_by IS NULL AND t.clock_out IS NOT NULL AND substr(t.clock_in,1,10) BETWEEN ? AND ? ORDER BY t.clock_in, t.id`).all(r.from, r.to);
+    res.json({ from: r.from, to: r.to, count: entries.length, minutes: entries.reduce((s, t) => s + (t.minutes || 0), 0), entries });
   });
+  app.post('/api/admin/time/close/approve', auth, (req, res) => {
+    if (!['owner', 'manager'].includes(roleOf(req))) return res.status(403).json({ error: 'Only an owner or manager can approve time.' });
+    const ids = [...new Set(((req.body || {}).ids || []).map(Number).filter(n => n > 0))];
+    const out = { approved: [], failed: [] };
+    for (const id of ids) {
+      const sub = Object.assign(Object.create(req), { params: { id: String(id) } });
+      const fake = { code: 200, status(c) { this.code = c; return this; }, json(b) { if (this.code >= 400) out.failed.push({ id, error: b && b.error }); else out.approved.push(id); return this; } };
+      try { approveTime(sub, fake); } catch (e) { out.failed.push({ id, error: e.message }); }
+    }
+    res.json(out);
+  });
+  app.post('/api/admin/time/:id/approve', auth, approveTime);
 
   // ---------- Crew page (per-employee private link) ----------
   const crewAuth = (req, res) => {

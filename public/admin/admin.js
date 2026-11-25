@@ -2938,7 +2938,8 @@
         <h3 class="secth" style="margin:18px 0 4px;font-size:1rem">Weekly close</h3>
         <p class="muted" style="margin:0 0 8px">Bills waiting for approval in the range. Approving posts the checked bills to the books; unchecked ones stay pending.</p>
         <div class="row" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>From <input type="date" id="closeFrom"></label><label>To <input type="date" id="closeTo"></label><button class="btn small ghost" id="closeLoad" type="button">Show</button></div>
-        <div id="closeHost" style="margin-top:8px"></div></div>
+        <div id="closeHost" style="margin-top:8px"></div>
+        <div id="closeTimeHost" style="margin-top:12px"></div></div>
       <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Periods</h2>
         <p class="muted">${closedTo}. Once closed, nothing can be posted on or before that date.</p>
         <button class="btn small" id="accClose" type="button">Close the books through a date</button></div>
@@ -3094,19 +3095,22 @@
     };
     const closeLoad = async () => {
       const from = $('#closeFrom').value || '', to = $('#closeTo').value || '';
-      let c; try { c = await api('/api/admin/expenses/close?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to)); } catch (err) { $('#closeHost').innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; return; }
-      $('#closeHost').innerHTML = c.count ? `<div class="tablewrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Vendor</th><th class="num">Amount</th></tr></thead><tbody>${c.bills.map(b => `<tr><td><input type="checkbox" data-closeid="${b.id}" checked></td><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td class="num">${money(b.amount)}</td></tr>`).join('')}</tbody></table></div><p><button class="btn small" id="closeGo" type="button">Approve and post selected</button> <span class="muted">${c.count} waiting, ${money(c.total)} in total</span></p>` : '<p class="muted">Nothing is waiting for approval in this range.</p>';
-      const go = $('#closeGo');
-      if (go) go.onclick = async () => {
-        const ids = [...$('#closeHost').querySelectorAll('[data-closeid]:checked')].map(i => Number(i.dataset.closeid));
-        if (!ids.length) { toast('Check at least one bill to approve.'); return; }
-        go.disabled = true;
+      const qs = '?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to);
+      let c, t; try { [c, t] = await Promise.all([api('/api/admin/expenses/close' + qs), api('/api/admin/time/close' + qs)]); } catch (err) { $('#closeHost').innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; return; }
+      $('#closeHost').innerHTML = c.count ? `<div class="tablewrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Vendor</th><th class="num">Amount</th></tr></thead><tbody>${c.bills.map(b => `<tr><td><input type="checkbox" data-closeid="${b.id}" checked></td><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td class="num">${money(b.amount)}</td></tr>`).join('')}</tbody></table></div><p><button class="btn small" id="closeGo" type="button">Approve and post selected bills</button> <span class="muted">${c.count} waiting, ${money(c.total)} in total</span></p>` : '<p class="muted">No bills are waiting for approval in this range.</p>';
+      $('#closeTimeHost').innerHTML = t.count ? `<div class="tablewrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Employee</th><th class="num">Hours</th></tr></thead><tbody>${t.entries.map(x => `<tr><td><input type="checkbox" data-closetime="${x.id}" checked></td><td>${esc(String(x.clock_in).slice(0, 10))}</td><td>${esc(x.employee_name)}</td><td class="num">${(x.minutes / 60).toFixed(2)}</td></tr>`).join('')}</tbody></table></div><p><button class="btn small" id="closeTimeGo" type="button">Approve and post selected time</button> <span class="muted">${t.count} entries, ${(t.minutes / 60).toFixed(2)} hours</span></p>` : '<p class="muted">No finished time is waiting for approval in this range.</p>';
+      const batch = async (sel, data, path, btn) => {
+        const ids = [...$('#closeHost').parentNode.querySelectorAll(sel)].filter(i => i.checked).map(i => Number(i.dataset[data]));
+        if (!ids.length) { toast('Check at least one entry to approve.'); return; }
+        btn.disabled = true;
         try {
-          const out = await api('/api/admin/expenses/close/approve', { method: 'POST', json: { ids } });
+          const out = await api(path, { method: 'POST', json: { ids } });
           toast(out.approved.length + ' approved' + (out.failed.length ? '; ' + out.failed.length + ' not approved: ' + out.failed.map(f => f.error).join(' ') : ''));
         } catch (err) { toast(err.message); }
         loadAccounting();
       };
+      const go = $('#closeGo'); if (go) go.onclick = () => batch('[data-closeid]', 'closeid', '/api/admin/expenses/close/approve', go);
+      const tgo = $('#closeTimeGo'); if (tgo) tgo.onclick = () => batch('[data-closetime]', 'closetime', '/api/admin/time/close/approve', tgo);
     };
     $('#closeLoad').onclick = closeLoad;
     { const t = new Date(), w = new Date(); w.setDate(w.getDate() - 6); const iso = x => x.toISOString().slice(0, 10); $('#closeFrom').value = iso(w); $('#closeTo').value = iso(t); }

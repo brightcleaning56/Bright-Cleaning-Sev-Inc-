@@ -989,6 +989,21 @@ async function check(area, name, fn) {
     return 'listed in the close, then approved and gone from it';
   });
 
+  await check('Weekly close labor UI', 'The weekly close lists finished time waiting for approval; approving it removes the entry from the list', async () => {
+    const emp = await api('POST', '/api/admin/employees', { name: 'Close Labor Crew', email: 'close.labor@test.test', role: 'Lead', crew: 'A', hourly_rate: 20, max_week_hours: 40 }, T);
+    const empId = (emp.employee || emp).id;
+    const day = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+    await api('POST', '/api/admin/time', { employee_id: empId, clock_in: day + 'T08:00:00Z', clock_out: day + 'T12:00:00Z' }, T);
+    await nav('accounting'); await sleep(1200);
+    d.querySelector('#accTabs button[data-acctab="expenses"]').click(); await sleep(1200);
+    const before = txt('#closeTimeHost');
+    assert(/Close Labor Crew/.test(before), before.slice(0, 200));
+    d.querySelector('#closeTimeGo').click(); await sleep(1500);
+    const after = txt('#closeTimeHost');
+    assert(!/Close Labor Crew/.test(after), after.slice(0, 200));
+    return 'listed in the labor close, then approved and gone from it';
+  });
+
   await check('Admin UI', 'No JavaScript errors on any screen', async () => { assert(!errors.length, errors.join(' | ')); return '0 errors'; });
 
   child.kill();
