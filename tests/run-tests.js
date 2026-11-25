@@ -4075,6 +4075,12 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const pdf = await req('GET', '/api/admin/bids/' + est.id + '/pdf', { token: T });
     const pdfText = Buffer.isBuffer(pdf.data) ? pdf.data.toString('latin1') : '';
     assert(pdf.status === 200 && /\/Subtype \/Link/.test(pdfText) && /\/URI \(https?:\/\/[^)]*\/portal\.html\)/.test(pdfText), 'the proposal PDF should carry a clickable client portal link');
+    const fu = await req('POST', '/api/admin/estimates/' + est.id + '/followups', { token: T, json: { due_date: '2099-01-15', channel: 'email', message: 'Checking in on the proposal.' } });
+    const fm0 = mail.length;
+    const fsent = fu.data && fu.data.id ? await req('POST', '/api/admin/estimates/' + est.id + '/followups/' + fu.data.id + '/send', { token: T, json: {} }) : { status: 0, data: {} };
+    await sleep(300);
+    const fmail = mailsTo('copy.customer@example.test', fm0).find(m => /Following up/i.test(m.subject));
+    assert(fsent.status === 200 && fsent.data.ok === true && fmail && /portal\.html/.test(fmail.raw), 'the follow-up email should carry the client portal link, got ' + fsent.status + ' ' + JSON.stringify(fsent.data));
     return 'bad copy refused; copies sent; customer not duplicated; portal link in email and PDF';
   });
 
