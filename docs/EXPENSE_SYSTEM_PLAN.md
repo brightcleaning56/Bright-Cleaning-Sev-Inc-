@@ -77,3 +77,12 @@ reimbursements, job expenses, overhead), with AI preparing the bookkeeping and p
 - Split totals equal the document; every posted entry balances.
 - The weekly approval screen matches exactly what posts.
 - All reports read from the same ledger.
+
+## 6. Phase 1 progress and blockers (added after the first build)
+
+**Done**
+- Duplicate warning when a bill is entered: same vendor, amount and date, or the same receipt reference. Confirming saves it.
+
+**Blocked: needs a decision first**
+- **Bills post to the ledger when entered.** The weekly close in the plan needs bills to wait for approval before they post. Today a bill posts on entry, and the bill form says so. Choose: (a) keep posting on entry, and the weekly close becomes a review and sign-off; or (b) bills stay pending until the weekly approval, which moves when expenses reach Profit & Loss.
+- **Job cost does not read bills.** A bill with a job attached posts to a general job-expense account, but the per-job cost view only reads recorded project costs. A bill split across jobs would therefore not change any job's cost. The fix is to record each bill split as a project cost (one source of truth), which needs the owner's sign-off because it changes job cost figures.
