@@ -95,6 +95,14 @@ function payBill(db, id, { date, by } = {}) {
   return b.id;
 }
 
+// Bills that look like an earlier one: same vendor, amount and bill date, or the same receipt reference. Void bills are ignored.
+function findDuplicates(db, b) {
+  const vendor = String(b.vendor || '').trim().toLowerCase(), amount = r2(b.amount), date = String(b.bill_date || '');
+  const ref = String(b.receipt_ref || '').trim();
+  return db.prepare(`SELECT id, vendor, amount, bill_date, status FROM expense_bills WHERE status<>'Void'
+    AND ((lower(vendor)=? AND ROUND(amount,2)=? AND bill_date=?) OR (?<>'' AND receipt_ref=?)) ORDER BY id DESC LIMIT 5`).all(vendor, amount, date, ref, ref);
+}
+
 // Checks the fields of a bill and returns them cleaned. Used for new bills and for edits.
 function cleanBill(b) {
   const vendor = String(b.vendor || '').trim();
@@ -313,6 +321,11 @@ function mount(app, ctx) {
   });
   app.get('/api/admin/expenses', auth, (req, res) => res.json({ bills: db.prepare('SELECT * FROM expense_bills ORDER BY id DESC LIMIT 300').all() }));
   app.post('/api/admin/expenses', auth, (req, res) => {
+    const b = req.body || {};
+    if (!b.confirm_duplicate) {
+      const dups = findDuplicates(db, b);
+      if (dups.length) return res.status(409).json({ error: 'Possible duplicate: bill ' + dups.map(d => '#' + d.id + ' (' + d.vendor + ', ' + Number(d.amount).toFixed(2) + ', ' + d.bill_date + ')').join('; ') + '. Save anyway only if this is a different bill.', duplicates: dups });
+    }
     try { const id = createBill(db, req.body || {}, req.user && req.user.email); res.status(201).json({ ok: true, id }); }
     catch (e) { res.status(400).json({ error: e.message }); }
   });

@@ -4089,6 +4089,19 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     return 'bad copy refused; copies sent; customer not duplicated; portal link in email and PDF';
   });
 
+  await check('Bills: duplicate warning', 'A bill with the same vendor, amount and date, or the same receipt reference, asks before it is saved; confirming saves it', async () => {
+    const bill = { vendor: 'Dup Test Supply', amount: 123.45, bill_date: '2026-11-10', category: 'materials', receipt_ref: 'DUP-REF-1' };
+    const first = await req('POST', '/api/admin/expenses', { token: T, json: bill });
+    const again = await req('POST', '/api/admin/expenses', { token: T, json: { ...bill, receipt_ref: '' } });
+    const sameRef = await req('POST', '/api/admin/expenses', { token: T, json: { vendor: 'Other Vendor', amount: 5, bill_date: '2026-11-11', receipt_ref: 'DUP-REF-1' } });
+    const confirmed = await req('POST', '/api/admin/expenses', { token: T, json: { ...bill, receipt_ref: '', confirm_duplicate: true } });
+    assert(first.status === 201, 'first bill should save, got ' + first.status + ' ' + JSON.stringify(first.data));
+    assert(again.status === 409 && /Possible duplicate/.test(again.data.error || ''), 'same vendor, amount and date should be flagged, got ' + again.status);
+    assert(sameRef.status === 409, 'same receipt reference should be flagged, got ' + sameRef.status);
+    assert(confirmed.status === 201, 'confirmed duplicate should save, got ' + confirmed.status);
+    return 'duplicates flagged by vendor/amount/date and by receipt reference; confirmation saves';
+  });
+
   await check('Insurance', 'Attached certificates: a proposal that needs insurance cannot be sent until a current certificate is attached; then it goes out and shows the certificate', async () => {
     const est = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Attach Test GC', company: 'Attach Test GC', email: 'attach.gc@example.test', scope: 'Final clean for insurance attachment test', area_sqft: 1000, use_line_items: 1, line_items: [{ description: 'Final clean', amount: 900 }] } })).data.estimate;
     const set = await req('PUT', '/api/admin/estimates/' + est.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

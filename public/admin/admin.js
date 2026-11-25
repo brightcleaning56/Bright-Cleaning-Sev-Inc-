@@ -3091,7 +3091,13 @@
     $('#accNewBill').onclick = () => openForm({ title: 'New bill', sub: 'Recorded as an expense when entered. Mark it paid when it is paid.',
       defs: [{ name: 'vendor', label: 'Vendor' }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example materials, equipment, insurance)' },
         { name: 'amount', label: 'Amount ($)', type: 'number' }, { name: 'bill_date', label: 'Bill date', type: 'date' }, { name: 'receipt_ref', label: 'Receipt reference (file name or number)' }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
-      submit: b => api('/api/admin/expenses', { method: 'POST', json: b }), after: () => { toast('Bill saved'); loadAccounting(); } });
+      submit: async b => {
+        try { return await api('/api/admin/expenses', { method: 'POST', json: b }); }
+        catch (err) {
+          if (/Possible duplicate/.test(err.message) && confirm(err.message + '\n\nSave it anyway?')) return api('/api/admin/expenses', { method: 'POST', json: { ...b, confirm_duplicate: true } });
+          throw err;
+        }
+      }, after: () => { toast('Bill saved'); loadAccounting(); } });
     body.querySelectorAll('[data-acctax]').forEach(btn => btn.onclick = async () => {
       const inv = (tie.unposted || []).find(i => String(i.id) === btn.dataset.acctax);
       if (!inv) return;
