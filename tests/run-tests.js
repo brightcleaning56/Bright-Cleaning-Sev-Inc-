@@ -4075,6 +4075,11 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     const pdf = await req('GET', '/api/admin/bids/' + est.id + '/pdf', { token: T });
     const pdfText = Buffer.isBuffer(pdf.data) ? pdf.data.toString('latin1') : '';
     assert(pdf.status === 200 && /\/Subtype \/Link/.test(pdfText) && /\/URI \(https?:\/\/[^)]*\/portal\.html\)/.test(pdfText), 'the proposal PDF should carry a clickable client portal link');
+    const viewed = await req('GET', '/api/proposal/' + est.public_token, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' } });
+    const views = await req('GET', '/api/admin/estimates/' + est.id + '/followups', { token: T });
+    const vrow = views.data && views.data.viewed && views.data.viewed.views && views.data.viewed.views[0];
+    assert(viewed.status === 200 && vrow && vrow.device === 'Chrome on Windows' && vrow.at, 'the staff list should show the view with its device, got ' + JSON.stringify(views.data && views.data.viewed));
+
     const fu = await req('POST', '/api/admin/estimates/' + est.id + '/followups', { token: T, json: { due_date: '2099-01-15', channel: 'email', message: 'Checking in on the proposal.' } });
     const fm0 = mail.length;
     const fsent = fu.data && fu.data.id ? await req('POST', '/api/admin/estimates/' + est.id + '/followups/' + fu.data.id + '/send', { token: T, json: {} }) : { status: 0, data: {} };

@@ -99,7 +99,7 @@ module.exports = function mountBids(app, ctx) {
     let docs = [], takeoffs = [];
     try { docs = db.prepare('SELECT id,title,kind,revision,file_name,file_url,created_at FROM documents WHERE (lead_id IS NOT NULL AND lead_id=?) ORDER BY id DESC').all(e.lead_id || -1); } catch { /* */ }
     try { takeoffs = db.prepare('SELECT id,name title,category,building_sf,status,document_id,created_at FROM takeoffs WHERE estimate_id=? ORDER BY id DESC').all(e.id); } catch { /* */ }
-    res.json({ estimate: decorate(e), versions, communications: comms, history, contract, documents: docs, takeoffs, steps: STEPS, approval: gate(e) || null });
+    res.json({ estimate: decorate(e), versions, communications: comms, history, contract, documents: docs, takeoffs, steps: STEPS, approval: gate(e) || null, views: db.prepare('SELECT viewed_at, ip, agent FROM proposal_views WHERE estimate_id=? ORDER BY id DESC LIMIT 20').all(e.id).map(v => ({ at: v.viewed_at, ip: v.ip || '', device: require('./device').describeAgent(v.agent) })) });
   });
 
   // Internal-only fields (assumptions/exclusions are customer-facing; internal notes never leave the admin).

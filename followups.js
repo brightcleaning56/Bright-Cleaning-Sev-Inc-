@@ -8,6 +8,9 @@ const { COMPANY_NAME } = require('./company');
 //   system never texts a customer on its own. Staff-chosen texts are unchanged.
 module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
   const bizdate = require('./bizdate');
+  // One row per view of a customer proposal: when, the network address, and the browser and device.
+  db.exec(`CREATE TABLE IF NOT EXISTS proposal_views(id INTEGER PRIMARY KEY AUTOINCREMENT, estimate_id INTEGER NOT NULL, viewed_at TEXT NOT NULL, ip TEXT, agent TEXT)`);
+  const describeAgent = require('./device').describeAgent;
   const ES = require('./emailsuppress');
 
   db.exec(`
@@ -172,7 +175,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
     res.json({
       followups: db.prepare('SELECT * FROM proposal_followups WHERE estimate_id=? ORDER BY due_date, id').all(e.id),
       texts: db.prepare('SELECT id,to_number,body,status,error,created_by,created_at FROM sms_messages WHERE estimate_id=? ORDER BY id DESC LIMIT 30').all(e.id),
-      viewed: { count: e.view_count || 0, first: e.viewed_at || null, last: e.last_viewed_at || null },
+      viewed: { count: e.view_count || 0, first: e.viewed_at || null, last: e.last_viewed_at || null, views: db.prepare('SELECT viewed_at, ip, agent FROM proposal_views WHERE estimate_id=? ORDER BY id DESC LIMIT 50').all(e.id).map(v => ({ at: v.viewed_at, ip: v.ip || '', device: describeAgent(v.agent) })) },
       status: e.status, email: e.email || '', phone: phoneOf(e), text_ready: smsReady(), sent_at: e.sent_at || null, auto_sms_enabled: smsAutoOn()
     });
   });
