@@ -193,6 +193,8 @@ module.exports = function mountBids(app, ctx) {
     d.heading('Acceptance', 11);
     if (e.signed_at) d.para(`Accepted electronically by ${e.signer_name}${e.signer_title ? ', ' + e.signer_title : ''} on ${String(e.signed_at).slice(0, 16).replace('T', ' ')} UTC.`);
     else { d.gap(18); d.rule('0.3 0.3 0.3'); d.para('Authorized signature / name / title / date', { size: 8 }); }
+    // Client portal: the customer can sign in to review, request services or manage their account.
+    d.gap(8); d.ensure(30); d.link('Client portal: sign in to review proposals, request services or manage your account', require('./portal-link').portalUrl(), { size: 10, bold: true }); d.y -= 16;
     d.footer(`Bright Cleaning Sev Inc. - ${number(e)} v${e.version || 1} - Office +1 (515) 303-3024 - Eric Moore (Owner) 469-267-8472`);
     return d.toBuffer();
   }

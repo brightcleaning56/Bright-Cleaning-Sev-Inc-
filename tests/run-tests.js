@@ -4070,8 +4070,12 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(bad.status === 400, 'a bad copy address should be refused, got ' + bad.status);
     assert(sent.status === 200, 'send with copies should work, got ' + sent.status);
     assert(mm && mm.to.includes('partner@example.test') && mm.to.includes('office@example.test') && /^Cc:.*partner@example.test/mi.test(mm.raw), 'copies missing from the message');
+    assert(mm && /portal\.html/.test(mm.raw), 'the proposal email should carry the client portal link');
     assert(customerCopies === 1, 'customer should receive the proposal exactly once, got ' + customerCopies);
-    return 'bad copy refused; copies sent; customer not duplicated';
+    const pdf = await req('GET', '/api/admin/bids/' + est.id + '/pdf', { token: T });
+    const pdfText = Buffer.isBuffer(pdf.data) ? pdf.data.toString('latin1') : '';
+    assert(pdf.status === 200 && /\/Subtype \/Link/.test(pdfText) && /\/URI \(https?:\/\/[^)]*\/portal\.html\)/.test(pdfText), 'the proposal PDF should carry a clickable client portal link');
+    return 'bad copy refused; copies sent; customer not duplicated; portal link in email and PDF';
   });
 
   await check('Insurance', 'Attached certificates: a proposal that needs insurance cannot be sent until a current certificate is attached; then it goes out and shows the certificate', async () => {

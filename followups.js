@@ -149,7 +149,7 @@ module.exports = function (app, { db, auth, logAction, clean, getMailer }) {
       if (f.channel === 'email') {
         if (!isEmail(e.email)) throw new Error('No email address on the proposal');
         if (ES.isSuppressed(db, e.email)) throw new Error('This address has opted out or could not be delivered to');
-        await getMailer().sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: e.email, subject: 'Following up: ' + (e.project_name || 'your Bright Cleaning Sev Inc. proposal'), text: f.message + '\n\nReview the proposal: ' + proposalUrl(e) + '\n', automated: true });
+        await getMailer().sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: e.email, subject: 'Following up: ' + (e.project_name || 'your Bright Cleaning Sev Inc. proposal'), text: f.message + '\n\nReview the proposal: ' + proposalUrl(e) + '\n\nClient portal (sign in, request services or manage your account): ' + require('./portal-link').portalUrl() + '\n', automated: true });
       } else {
         await sendSms(phoneOf(e), f.message.slice(0, 480) + ' ' + proposalUrl(e));
       }

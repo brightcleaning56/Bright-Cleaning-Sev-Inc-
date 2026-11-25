@@ -18,12 +18,19 @@ function wrap(text, size, max) {
   return out;
 }
 class Doc {
-  constructor() { this.pages = []; this.newPage(); }
-  newPage() { this.ops = []; this.pages.push(this.ops); this.y = H - M; }
+  constructor() { this.pages = []; this.annotPages = []; this.newPage(); }
+  newPage() { this.ops = []; this.pages.push(this.ops); this.annots = []; this.annotPages.push(this.annots); this.y = H - M; }
   ensure(h) { if (this.y - h < M) this.newPage(); }
   text(s, { x = M, size = 10, bold = false, color = '0 0 0', align = 'left', maxW = W - 2 * M } = {}) {
     let tx = x; if (align === 'right') tx = x + maxW - width(s, size); else if (align === 'center') tx = x + (maxW - width(s, size)) / 2;
     this.ops.push(`BT ${color} rg /${bold ? 'F2' : 'F1'} ${size} Tf ${tx.toFixed(1)} ${this.y.toFixed(1)} Td (${esc(s)}) Tj ET`);
+  }
+  // A line of text that opens a web address when clicked (underlined, blue). The link area is the text itself.
+  link(s, url, { x = M, size = 10, bold = false } = {}) {
+    const w = width(s, size), color = '0.05 0.3 0.7';
+    this.text(s, { x, size, bold, color });
+    this.ops.push(`${color} RG 0.6 w ${x.toFixed(1)} ${(this.y - 2).toFixed(1)} m ${(x + w).toFixed(1)} ${(this.y - 2).toFixed(1)} l S`);
+    this.annots.push({ rect: [x, this.y - 3, x + w, this.y + size], url });
   }
   para(s, opt = {}) {
     const size = opt.size || 10, lh = size * 1.35, x = opt.x || M, maxW = opt.maxW || W - 2 * M - (x - M);
@@ -60,7 +67,8 @@ class Doc {
     for (const ops of this.pages) {
       const content = Buffer.from(ops.join('\n'), 'latin1');
       const cid = add(`<< /Length ${content.length} >>\nstream\n${content.toString('latin1')}\nendstream`);
-      kids.push(add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${cid} 0 R >>`));
+      const annIds = (this.annotPages[this.pages.indexOf(ops)] || []).map(a => add(`<< /Type /Annot /Subtype /Link /Rect [${a.rect.map(n => n.toFixed(1)).join(' ')}] /Border [0 0 0] /A << /S /URI /URI (${esc(a.url)}) >> >>`));
+      kids.push(add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${cid} 0 R${annIds.length ? ' /Annots [' + annIds.map(n => n + ' 0 R').join(' ') + ']' : ''} >>`));
     }
     objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map(k => k + ' 0 R').join(' ')}] /Count ${kids.length} >>`;
     const cat = add(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
