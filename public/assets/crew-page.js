@@ -281,6 +281,7 @@
         (todays.length ? todays.map(x => `<div class="card job" data-id="${x.j.id}"><h2>${esc(x.j.title)}</h2><div class="meta">${esc(x.j.address || '')}</div><div class="photos"><label class="btn ghost ph-up">Before<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="Before"></label><label class="btn ghost ph-up">After<input type="file" accept="image/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" data-ph="After"></label></div></div>`).join('') : '<div class="card"><b>No jobs for today.</b></div>');
     }
 
+    if (view === 'photos') { $('#v-photos').insertAdjacentHTML('beforeend', receiptCardHtml(todays)); wireReceipt(); }
     if (view === 'incidents') {
       $('#v-incidents').innerHTML = `<h1 style="font-size:22px;margin:4px 0 4px">Report an incident</h1><p class="muted">Use this for damage, access problems, missing supplies, complaints or safety issues. Reporting needs signal.</p>` +
         (todays.length ? todays.map(x => `<div class="card job" data-id="${x.j.id}"><h2>${esc(x.j.title)}</h2><div class="meta">${esc(x.j.address || '')}</div><div class="actions" style="grid-template-columns:1fr"><button class="danger big" data-a="incident">Report an incident for this job</button></div></div>`).join('') : '<div class="card"><b>No jobs for today.</b><p class="muted">Pick the job from My jobs when you have one.</p></div>');
@@ -291,6 +292,38 @@
     }
     wire();
     banner();
+  }
+
+  // Crew receipt (Phase 2): a photo or PDF of a purchase, sent with the job. The office reviews it before it posts.
+  function receiptCardHtml(list) {
+    const opts = list.map(x => `<option value="${x.j.id}">${esc(x.j.title)}</option>`).join('');
+    return `<div class="card" id="rc-card" style="margin-top:12px"><b>Add a receipt</b><p class="muted" style="margin:4px 0 10px">A photo or PDF of a purchase for a job. The office reviews it before it is posted.</p>
+      <form id="rc-form" style="display:grid;gap:10px">
+        <label>Job<select name="visit_id">${opts}<option value="">No job today</option></select></label>
+        <label>Vendor<input name="vendor" required maxlength="120" placeholder="Store or supplier"></label>
+        <label>Amount<input name="amount" inputmode="decimal" required placeholder="0.00"></label>
+        <label>Type<select name="category"><option value="materials">Materials</option><option value="equipment">Equipment</option><option value="travel">Travel or fuel</option><option value="other">Other</option></select></label>
+        <label>Note<input name="description" maxlength="300"></label>
+        <label>Receipt photo or PDF<input type="file" name="receipt" accept="image/*,application/pdf" capture="environment" required></label>
+        <button class="ok big" type="submit">Send receipt</button>
+        <div id="rc-msg" class="muted" role="status"></div>
+      </form></div>`;
+  }
+  function wireReceipt() {
+    const rc = $('#rc-form'); if (!rc) return;
+    rc.onsubmit = async ev => {
+      ev.preventDefault();
+      const msg = $('#rc-msg'), fd = new FormData(rc), file = fd.get('receipt');
+      if (!file || !file.size) { msg.textContent = 'Choose a photo or PDF first.'; return; }
+      if (!navigator.onLine) { msg.textContent = 'Receipts need signal. Send it when you have it.'; return; }
+      msg.textContent = 'Sending…';
+      try {
+        const r = await fetch(`/api/crew/${token}/receipts`, { method: 'POST', headers: authHdr(), body: fd });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'The receipt did not send.');
+        rc.reset(); msg.textContent = 'Receipt sent. The office will review it.';
+      } catch (e) { msg.textContent = e.message; }
+    };
   }
 
   function wire() {

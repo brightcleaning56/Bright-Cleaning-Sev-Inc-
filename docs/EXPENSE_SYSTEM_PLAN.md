@@ -15,7 +15,7 @@ reimbursements, job expenses, overhead), with AI preparing the bookkeeping and p
 | Labor burden (employer taxes, benefits) | `expenses.js` | **exists but off**: needs an owner-set rate |
 | Posting bills, project costs and labor to the ledger | `expenses.js`, `ledger.js` | **exists**: each source posts once; a drift check reports gaps |
 | Payroll totals for the payroll provider | `payrollsummary.js` | **exists**: gross pay only; ADP file not connected |
-| Crew receipt upload from the crew phone | — | **missing** |
+| Crew receipt upload from the crew phone | `crew-page.js` (Add a receipt), `sched.js` `/api/crew/me/receipts`, `expenses.js` `createCrewReceipt` | **exists**: photo, vendor, amount, type and job; arrives as an open bill for the office to approve |
 | AI reading of receipts and invoices | — | **missing** (no OCR or model call in the expense code) |
 | Splitting one document across several jobs and categories | — | **missing**: a bill has one category and one project |
 | Duplicate receipt and invoice detection | — | **missing** |
@@ -43,7 +43,7 @@ reimbursements, job expenses, overhead), with AI preparing the bookkeeping and p
 - Weekly close screen: lists the week's unposted bills, costs and labor, with a single approve-and-post step. Posts only the approved items.
 - Corrections use reversal entries; the audit trail keeps who changed what.
 
-**Phase 2: crew receipts**
+**Phase 2: crew receipts (built; office approves in the weekly close)**
 - Upload from the crew phone while on a job. The job is pre-filled when the crew member has one active job; a supervisor picks the job when there are several.
 - Each upload becomes a pending expense with its photo, employee and job.
 

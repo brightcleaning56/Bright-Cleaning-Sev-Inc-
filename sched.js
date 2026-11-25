@@ -757,6 +757,17 @@ module.exports = function mountSched(app, ctx) {
         .run(req.crewVisit.project_id || null, req.crewVisit.customer_id || null, `${stage} – ${req.crewVisit.title} ${req.crewVisit.date}`, 'Photos', f.originalname, '/api/files/' + path.basename(f.path), f.size, 'crew: ' + req.crewEmp.name, t, req.crewVisit.id).lastInsertRowid);
       res.status(201).json({ ids });
     });
+    // Crew receipts (Phase 2): a photo or PDF of a purchase, sent with the job. The office approves it like any bill.
+    const upr = multer({ storage: multer.diskStorage({ destination: (r, f, cb) => { fs.mkdirSync(dir, { recursive: true }); cb(null, dir); }, filename: (r, f, cb) => cb(null, crypto.randomBytes(12).toString('hex') + (path.extname(f.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '') || '.jpg')) }),
+      limits: { fileSize: 12 * 1024 * 1024, files: 1 }, fileFilter: (r, f, cb) => cb(null, /^image\/|^application\/pdf$/.test(f.mimetype)) });
+    app.post(['/api/crew/:token/receipts', '/api/crew/me/receipts'], (req, res, next) => { const e = crewAuth(req, res); if (!e) return; req.crewEmp = e; next(); }, upr.single('receipt'), require('./filecheck').verifyUploads, (req, res) => {
+      const e = req.crewEmp;
+      const drop = () => { if (req.file) try { fs.unlinkSync(req.file.path); } catch { /* already gone */ } };
+      let visit = null;
+      if (req.body.visit_id) { visit = assigned(e, req.body.visit_id); if (!visit) { drop(); return res.status(404).json({ error: 'This job is not assigned to you.' }); } }
+      try { res.status(201).json({ ok: true, ...require('./expenses').createCrewReceipt(db, { employee: e, project_id: visit ? visit.project_id : null, vendor: req.body.vendor, amount: req.body.amount, description: req.body.description, category: req.body.category, bill_date: req.body.bill_date }, req.file) }); }
+      catch (err) { drop(); res.status(400).json({ error: err.message }); }
+    });
   } catch (err) { console.error('crew photo upload disabled:', err.message); }
   app.get('/crew', (req, res) => res.sendFile(require('path').join(__dirname, 'public', 'crew.html')));
   app.get('/crew/:token', (req, res) => res.sendFile(require('path').join(__dirname, 'public', 'crew.html')));

@@ -18,7 +18,7 @@ function ensureSchema(db) {
     paid_at TEXT, created_by TEXT, created_at TEXT NOT NULL)`);
   // Receipts and approvals (audit G11). Added on first use; switched on by settings (both off by default).
   const cols = db.prepare('PRAGMA table_info(expense_bills)').all().map(c => c.name);
-  for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT'], ['receipt_file', 'TEXT'], ['void_reason', 'TEXT'], ['void_by', 'TEXT'], ['void_at', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
+  for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT'], ['receipt_file', 'TEXT'], ['void_reason', 'TEXT'], ['void_by', 'TEXT'], ['void_at', 'TEXT'], ['source', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
   db.exec(`CREATE TABLE IF NOT EXISTS expense_bill_splits(id INTEGER PRIMARY KEY AUTOINCREMENT, bill_id INTEGER NOT NULL, project_id INTEGER, category TEXT, amount REAL NOT NULL, created_at TEXT NOT NULL)`);
   if (hasTable(db, 'project_costs') && !db.prepare('PRAGMA table_info(project_costs)').all().some(c => c.name === 'source_bill_id')) db.exec('ALTER TABLE project_costs ADD COLUMN source_bill_id INTEGER');
 }
@@ -401,6 +401,28 @@ function approveBatch(db, ids, by) {
   return out;
 }
 
+// A receipt a crew member sends from the job (Phase 2). It is an open bill with its photo, the crew member and the job.
+// It posts only when the office approves it, like any other bill. The caller checks that the job is assigned to the crew member.
+function createCrewReceipt(db, { employee, project_id, vendor, amount, description, category, bill_date }, file) {
+  ensureSchema(db);
+  const name = String((employee && employee.name) || '').trim().slice(0, 80) || 'Crew member';
+  const v = String(vendor || '').trim().slice(0, 120);
+  if (!v) throw new Error('Enter the vendor name from the receipt.');
+  const amt = r2(amount);
+  if (!(amt > 0)) throw new Error('The amount must be above zero.');
+  if (!file || !file.filename) throw new Error('Attach a photo or PDF of the receipt.');
+  const date = isDate(bill_date) ? bill_date : new Date().toISOString().slice(0, 10);
+  const cat = ['materials', 'equipment', 'travel', 'other'].includes(category) ? category : 'materials';
+  const pid = project_id ? Number(project_id) : null;
+  return db.transaction(() => {
+    const id = db.prepare('INSERT INTO expense_bills(vendor,description,category,amount,bill_date,project_id,status,created_by,created_at,receipt_ref,receipt_file,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(v, String(description || '').trim().slice(0, 300) || null, cat, amt, date, pid, 'Open', 'crew: ' + name, new Date().toISOString(),
+        String(file.originalname || file.filename).slice(0, 300), file.filename, 'crew').lastInsertRowid;
+    require('./audit').record(db, { actor: 'crew: ' + name, action: 'sent receipt', entity: 'bill', entityId: Number(id), detail: v + ' ' + amt.toFixed(2) + (pid ? ' job ' + pid : ' no job') });
+    return { id: Number(id) };
+  })();
+}
+
 function mount(app, ctx) {
   const { db, auth, upload, uploadDir } = ctx;
   ensureSchema(db);
@@ -459,4 +481,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, closeList, approveBatch, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, burdenPct, mount };
+module.exports = { ensureSchema, closeList, approveBatch, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, createCrewReceipt, burdenPct, mount };
