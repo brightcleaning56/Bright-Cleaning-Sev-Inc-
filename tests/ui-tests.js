@@ -970,7 +970,7 @@ async function check(area, name, fn) {
     d.querySelector('#accTabs button[data-acctab="expenses"]').click(); await sleep(1000);
     d.querySelector('[data-accsplit="' + id + '"]').click(); await sleep(700);
     d.querySelector('#genForm [name="lines"]').value = 'Overhead | 100\nOverhead | 200';
-    d.querySelector('#genForm').dispatchEvent(new w.Event('submit', { cancelable: true })); await sleep(900);
+    d.querySelector('#genSave').click(); await sleep(900);
     const bill = (await api('GET', '/api/admin/expenses', null, T)).bills.find(b => b.id === id);
     assert(bill.splits && bill.splits.length === 2 && bill.splits.every(l => !l.project_id), JSON.stringify(bill.splits));
     return 'two overhead lines saved to the bill (300.00 total)';
