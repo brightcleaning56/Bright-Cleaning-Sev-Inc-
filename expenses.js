@@ -19,6 +19,7 @@ function ensureSchema(db) {
   // Receipts and approvals (audit G11). Added on first use; switched on by settings (both off by default).
   const cols = db.prepare('PRAGMA table_info(expense_bills)').all().map(c => c.name);
   for (const [c, t] of [['receipt_ref', 'TEXT'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT'], ['receipt_file', 'TEXT'], ['void_reason', 'TEXT'], ['void_by', 'TEXT'], ['void_at', 'TEXT']]) if (!cols.includes(c)) db.exec(`ALTER TABLE expense_bills ADD COLUMN ${c} ${t}`);
+  if (hasTable(db, 'project_costs') && !db.prepare('PRAGMA table_info(project_costs)').all().some(c => c.name === 'source_bill_id')) db.exec('ALTER TABLE project_costs ADD COLUMN source_bill_id INTEGER');
 }
 // Settings that make approval and a receipt required before a bill is paid. Both are off until the owner turns them on.
 function billRule(db, key) {
@@ -37,6 +38,21 @@ function ensureRateColumn(db) {
   if (cols.length && !cols.includes('labor_rate')) db.exec('ALTER TABLE time_entries ADD COLUMN labor_rate REAL');
 }
 const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
+
+// A bill on a job is also a job cost (the job-cost view reads recorded costs). One row per bill, kept in step with the bill:
+// present while the bill is approved, on a job, and not void; removed otherwise. The ledger posts it once, from the bill.
+function syncJobCost(db, id) {
+  if (!hasTable(db, 'project_costs')) return;
+  ensureSchema(db);
+  const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(Number(id));
+  const want = !!(b && b.project_id && b.approved_by && b.status !== 'Void');
+  const row = db.prepare('SELECT id FROM project_costs WHERE source_bill_id=?').get(Number(id));
+  if (!want) { if (row) db.prepare('DELETE FROM project_costs WHERE id=?').run(row.id); return; }
+  const category = b.category || b.description || b.vendor;
+  const desc = (b.vendor + (b.description ? ': ' + b.description : '')).slice(0, 300);
+  if (row) db.prepare('UPDATE project_costs SET project_id=?, category=?, description=?, amount=?, cost_date=? WHERE id=?').run(b.project_id, category, desc, r2(b.amount), b.bill_date, row.id);
+  else db.prepare('INSERT INTO project_costs(project_id,category,description,amount,cost_date,entered_by,created_at,source_bill_id) VALUES(?,?,?,?,?,?,?,?)').run(b.project_id, category, desc, r2(b.amount), b.bill_date, b.approved_by, new Date().toISOString(), b.id);
+}
 
 function postBill(db, id) {
   const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(id);
@@ -74,6 +90,7 @@ function approveBill(db, id, by) {
   if (b.approved_by) throw new Error('This bill is already approved.');
   db.prepare('UPDATE expense_bills SET approved_by=?, approved_at=? WHERE id=?').run(by || 'owner', new Date().toISOString(), b.id);
   postBill(db, b.id); // approval is what puts the bill on the books
+  syncJobCost(db, b.id);
   require('./audit').record(db, { actor: by, action: 'approved bill', entity: 'bill', entityId: b.id, detail: b.vendor + ' ' + Number(b.amount).toFixed(2) });
   return b.id;
 }
@@ -154,6 +171,7 @@ function updateBill(db, id, body, by) {
         changed.length ? null : b.approved_by, changed.length ? null : b.approved_at, b.id);
     require('./audit').record(db, { actor: by, action: 'edited bill', entity: 'bill', entityId: b.id, detail: summary.slice(0, 500) });
     // An edited bill is no longer approved, so it stays off the books until it is approved again.
+    syncJobCost(db, b.id);
   })();
   return b.id;
 }
@@ -174,6 +192,7 @@ function voidBill(db, id, { reason, by } = {}) {
     const bill = activeEntry(db, 'bill', 'bill:' + b.id);
     if (bill) L.reverseEntry(db, bill.id, { reason: note, by });
     db.prepare('UPDATE expense_bills SET status=?, void_reason=?, void_by=?, void_at=? WHERE id=?').run('Void', why.slice(0, 300), by || null, new Date().toISOString(), b.id);
+    syncJobCost(db, b.id);
     require('./audit').record(db, { actor: by, action: 'voided bill', entity: 'bill', entityId: b.id, detail: (b.vendor + ' ' + Number(b.amount).toFixed(2) + ': ' + why).slice(0, 500) });
   })();
   return b.id;
@@ -183,11 +202,13 @@ function voidBill(db, id, { reason, by } = {}) {
 function syncRecorded(db) {
   ensureSchema(db); L.seedChart(db); ensureRateColumn(db); LB.ensureColumns(db);
   const out = { bills_posted: 0, project_costs_posted: 0, payroll_posted: 0, errors: [] };
+  for (const b of db.prepare('SELECT id FROM expense_bills WHERE approved_by IS NOT NULL AND project_id IS NOT NULL').all()) { try { syncJobCost(db, b.id); } catch (e) { out.errors.push('job cost for bill ' + b.id + ': ' + e.message); } }
   for (const b of db.prepare("SELECT id FROM expense_bills WHERE status<>'Void' AND approved_by IS NOT NULL ORDER BY id").all()) {
     try { if (postBill(db, b.id)) out.bills_posted++; } catch (e) { out.errors.push('bill ' + b.id + ': ' + e.message); }
   }
   if (hasTable(db, 'project_costs')) {
     for (const c of db.prepare('SELECT * FROM project_costs ORDER BY id').all()) {
+      if (c.source_bill_id) continue; // posted from its bill
       const ref = 'project-cost:' + c.id;
       if (postedEntry(db, 'project-cost', ref) || !(Number(c.amount) > 0)) continue;
       const isLabor = /labou?r|crew|wage|payroll/i.test(String(c.category || ''));
