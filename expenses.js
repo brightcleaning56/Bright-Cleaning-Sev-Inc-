@@ -1,5 +1,5 @@
 // Expenses and payroll costs posted to Bright Clean's ledger (Phase 5 of the accounting plan).
-// - Vendor bills: recognised on the bill date (Dr expense / Cr accounts payable). Paying a bill: Dr payable / Cr cash.
+// - Vendor bills: on the books once approved, dated the bill date (Dr expense / Cr accounts payable). Unapproved bills are not posted. Paying a bill: Dr payable / Cr cash.
 // - Recorded project costs (materials, equipment, subcontractors, travel, other): Dr expense / Cr accounts payable.
 //   Recorded project labor: Dr job labor / Cr accrued payroll.
 // - Approved time not tied to a job: Dr payroll not assigned to a job / Cr accrued payroll.
@@ -61,17 +61,19 @@ function createBill(db, b, by) {
   const id = db.prepare('INSERT INTO expense_bills(vendor,description,category,amount,bill_date,project_id,status,created_by,created_at,receipt_ref) VALUES(?,?,?,?,?,?,?,?,?,?)')
     .run(vendor.slice(0, 200), String(b.description || '').slice(0, 300), String(b.category || '').slice(0, 80), amount, b.bill_date,
       b.project_id ? Number(b.project_id) : null, 'Open', by || null, new Date().toISOString(), String(b.receipt_ref || '').trim().slice(0, 300) || null).lastInsertRowid;
-  postBill(db, id);
+  // Not on the books until approved: approveBill posts it.
   return id;
 }
 
 function approveBill(db, id, by) {
+  L.seedChart(db);
   ensureSchema(db);
   const b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(Number(id));
   if (!b) throw new Error('Bill not found.');
   if (b.status === 'Void') throw new Error('A void bill cannot be approved.');
   if (b.approved_by) throw new Error('This bill is already approved.');
   db.prepare('UPDATE expense_bills SET approved_by=?, approved_at=? WHERE id=?').run(by || 'owner', new Date().toISOString(), b.id);
+  postBill(db, b.id); // approval is what puts the bill on the books
   require('./audit').record(db, { actor: by, action: 'approved bill', entity: 'bill', entityId: b.id, detail: b.vendor + ' ' + Number(b.amount).toFixed(2) });
   return b.id;
 }
@@ -83,7 +85,7 @@ function payBill(db, id, { date, by } = {}) {
   if (b.status === 'Paid') throw new Error('This bill is already paid.');
   if (b.status === 'Void') throw new Error('A void bill cannot be paid.');
   if (billRule(db, 'bill_receipt_required') && !b.receipt_ref) throw new Error('This bill needs a receipt reference before it is paid.');
-  if (billRule(db, 'bill_approval_required') && !b.approved_by) throw new Error('This bill needs approval before it is paid.');
+  if (!b.approved_by) throw new Error('Approve this bill before it is paid. Approval puts it on the books.');
   const d = date || new Date().toISOString().slice(0, 10);
   if (!isDate(d)) throw new Error('Payment date must be a real date.');
   postBill(db, b.id);
@@ -151,7 +153,7 @@ function updateBill(db, id, body, by) {
       .run(next.vendor, next.description, next.category, next.amount, next.bill_date, next.project_id, next.receipt_ref,
         changed.length ? null : b.approved_by, changed.length ? null : b.approved_at, b.id);
     require('./audit').record(db, { actor: by, action: 'edited bill', entity: 'bill', entityId: b.id, detail: summary.slice(0, 500) });
-    if (changed.length) postBill(db, b.id);
+    // An edited bill is no longer approved, so it stays off the books until it is approved again.
   })();
   return b.id;
 }
@@ -181,7 +183,7 @@ function voidBill(db, id, { reason, by } = {}) {
 function syncRecorded(db) {
   ensureSchema(db); L.seedChart(db); ensureRateColumn(db); LB.ensureColumns(db);
   const out = { bills_posted: 0, project_costs_posted: 0, payroll_posted: 0, errors: [] };
-  for (const b of db.prepare("SELECT id FROM expense_bills WHERE status<>'Void' ORDER BY id").all()) {
+  for (const b of db.prepare("SELECT id FROM expense_bills WHERE status<>'Void' AND approved_by IS NOT NULL ORDER BY id").all()) {
     try { if (postBill(db, b.id)) out.bills_posted++; } catch (e) { out.errors.push('bill ' + b.id + ': ' + e.message); }
   }
   if (hasTable(db, 'project_costs')) {

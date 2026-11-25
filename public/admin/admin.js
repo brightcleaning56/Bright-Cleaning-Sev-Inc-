@@ -3088,7 +3088,7 @@
       try { const r = await api('/api/admin/ledger/sync', { method: 'POST' }); toast(`Posted: ${r.invoices_posted} invoice(s), ${r.payments_posted} payment(s), ${r.bills_posted} bill(s), ${r.project_costs_posted} job cost(s), ${r.payroll_posted} payroll line(s)`); loadAccounting(); }
       catch (err) { toast(err.message, true); }
     };
-    $('#accNewBill').onclick = () => openForm({ title: 'New bill', sub: 'Recorded as an expense when entered. Mark it paid when it is paid.',
+    $('#accNewBill').onclick = () => openForm({ title: 'New bill', sub: 'Goes on the books once approved. Mark it paid when it is paid.',
       defs: [{ name: 'vendor', label: 'Vendor' }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example materials, equipment, insurance)' },
         { name: 'amount', label: 'Amount ($)', type: 'number' }, { name: 'bill_date', label: 'Bill date', type: 'date' }, { name: 'receipt_ref', label: 'Receipt reference (file name or number)' }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
       submit: async b => {

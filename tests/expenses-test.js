@@ -22,12 +22,18 @@ db.prepare("INSERT INTO time_entries VALUES(2,1,NULL,'2026-11-23T08:00:00Z',600,
 const billId = E.createBill(db, { vendor: 'Insurance Co', description: 'Liability premium', category: 'insurance', amount: 500, bill_date: '2026-11-20' }, 'owner@test');
 let tb = L.trialBalance(db);
 const bal = c => tb.accounts.find(a => a.code === c).balance;
-assert.strictEqual(bal('2000'), 500, 'bill creates a payable');
+assert.strictEqual(bal('2000'), 0, 'an unapproved bill is not on the books');
+E.approveBill(db, billId, 'owner@test');
+tb = L.trialBalance(db);
+assert.strictEqual(bal('2000'), 500, 'approving the bill creates the payable');
 assert.strictEqual(bal('6000'), 500, 'bill is an operating expense');
 E.payBill(db, billId, { date: '2026-11-25', by: 'owner@test' });
 tb = L.trialBalance(db);
 assert.strictEqual(bal('2000'), 0, 'paying the bill clears the payable');
 assert.throws(() => E.payBill(db, billId, {}), /already paid/);
+const unapproved = E.createBill(db, { vendor: 'Pending Co', amount: 75, bill_date: '2026-11-21' }, 'crew@test');
+assert.throws(() => E.payBill(db, unapproved, {}), /Approve this bill before it is paid/, 'an unapproved bill cannot be paid');
+assert.strictEqual(L.trialBalance(db).accounts.find(a => a.code === '2000').balance, 0, 'an unapproved bill is not on the books');
 console.log('ok - a bill posts when entered and clears when paid; paying twice refused');
 
 // Recorded job costs and unassigned approved time post once.
@@ -75,7 +81,7 @@ console.log('ok - payroll payments clear accrued payroll and payroll taxes, and 
 db.exec("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)");
 db.prepare("INSERT INTO settings(key,value) VALUES('bill_approval_required','1')").run();
 const needApproval = E.createBill(db, { vendor: 'Glass Co', description: 'Squeegees', amount: 80, bill_date: '2026-11-26', receipt_ref: 'receipt-0042.pdf' }, 'staff@test');
-assert.throws(() => E.payBill(db, needApproval, { date: '2026-11-27' }), /needs approval/);
+assert.throws(() => E.payBill(db, needApproval, { date: '2026-11-27' }), /Approve this bill before it is paid/);
 E.approveBill(db, needApproval, 'owner@test');
 E.payBill(db, needApproval, { date: '2026-11-27', by: 'owner@test' });
 db.prepare("UPDATE settings SET value='1' WHERE key='bill_approval_required'").run();

@@ -21,12 +21,13 @@ const id = E.createBill(db, { vendor: 'Glass Supply', description: 'Mops', categ
 E.approveBill(db, id, 'owner@test');
 assert.strictEqual(bal('6000'), 150, 'bill posted as operating expense');
 E.updateBill(db, id, { amount: 175.5, description: 'Mops and buckets' }, 'owner@test');
-assert.strictEqual(bal('6000'), 175.5, 'edit replaces the amount, no double count');
+assert.strictEqual(bal('6000'), 0, 'an edited bill comes off the books until it is approved again');
+E.approveBill(db, id, 'owner@test');
+assert.strictEqual(bal('6000'), 175.5, 'approving the edit posts the new amount once, no double count');
 assert.strictEqual(bal('2000'), 175.5, 'payable follows the edit');
 let b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(id);
-assert.strictEqual(b.approved_by, null, 'a cost change clears the approval');
+assert.ok(b.approved_by, 'the bill is approved again after the edit');
 // The note-only change does not touch the ledger.
-E.approveBill(db, id, 'owner@test');
 E.updateBill(db, id, { description: 'Mops, buckets and wipes' }, 'owner@test');
 assert.strictEqual(bal('6000'), 175.5, 'description-only change leaves the ledger alone');
 b = db.prepare('SELECT * FROM expense_bills WHERE id=?').get(id);
