@@ -296,6 +296,7 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
   check('sign-up: opening the link creates the record and gives a session', vNew.code === 200 && !!vNew.body.session, vNew.code);
   const rec = db.prepare('SELECT name, company, phone, source FROM customers WHERE lower(email)=?').get(NEW);
   check('sign-up: record holds the details given and its source', rec && rec.name === 'Dana Prairie' && rec.company === 'Prairie Props' && /555/.test(rec.phone) && rec.source === 'portal sign-up', rec);
+  check('sign-up: the office is told about the new client', sent.some(m => m.to === 'info@brightclean.net' && /New client portal sign-up/.test(m.subject) && /new.client@example.com/.test(m.text)), sent.map(m => m.subject));
   const pending = db.prepare('SELECT COUNT(*) AS c FROM portal_signups WHERE email=?').get(NEW).c;
   check('sign-up: pending request cleared once confirmed', pending === 0, pending);
   const reuse = await call('POST /api/portal/verify', { token: newTok });
