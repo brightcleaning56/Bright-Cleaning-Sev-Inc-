@@ -298,7 +298,7 @@
   function receiptCardHtml(list) {
     const opts = list.map(x => `<option value="${x.j.id}">${esc(x.j.title)}</option>`).join('');
     return `<div class="card" id="rc-card" style="margin-top:12px"><b>Add a receipt</b><p class="muted" style="margin:4px 0 10px">A photo or PDF of a purchase for a job. The office reviews it before it is posted.</p>
-      <form id="rc-form" style="display:grid;gap:10px">
+      <form id="rc-form" style="display:grid;gap:10px"><style>#rc-form label{display:grid;gap:4px;min-width:0}#rc-form input,#rc-form select{width:100%;box-sizing:border-box;min-width:0}</style>
         <label>Job<select name="visit_id">${opts}<option value="">No job today</option></select></label>
         <label>Vendor<input name="vendor" required maxlength="120" placeholder="Store or supplier"></label>
         <label>Amount<input name="amount" inputmode="decimal" required placeholder="0.00"></label>
