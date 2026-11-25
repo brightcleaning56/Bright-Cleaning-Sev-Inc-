@@ -976,6 +976,19 @@ async function check(area, name, fn) {
     return 'two overhead lines saved to the bill (300.00 total)';
   });
 
+  await check('Weekly close UI', 'The weekly close lists an unapproved bill in the range; approving the checked bills posts them and removes them from the list', async () => {
+    const day = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+    await api('POST', '/api/admin/expenses', { vendor: 'Close UI Co', description: 'Close check', amount: 45, bill_date: day, category: 'materials' }, T);
+    await nav('accounting'); await sleep(1200);
+    d.querySelector('#accTabs button[data-acctab="expenses"]').click(); await sleep(1200);
+    const before = txt('#closeHost');
+    assert(/Close UI Co/.test(before), before.slice(0, 200));
+    d.querySelector('#closeGo').click(); await sleep(1500);
+    const after = txt('#closeHost');
+    assert(!/Close UI Co/.test(after), after.slice(0, 200));
+    return 'listed in the close, then approved and gone from it';
+  });
+
   await check('Admin UI', 'No JavaScript errors on any screen', async () => { assert(!errors.length, errors.join(' | ')); return '0 errors'; });
 
   child.kill();

@@ -20,7 +20,7 @@ reimbursements, job expenses, overhead), with AI preparing the bookkeeping and p
 | Splitting one document across several jobs and categories | — | **missing**: a bill has one category and one project |
 | Duplicate receipt and invoice detection | — | **missing** |
 | Employee reimbursements | — | **missing** |
-| Weekly company-wide close with one approval batch | — | **missing** |
+| Weekly company-wide close with one approval batch | — | **bills done (Expenses tab, Weekly close); crew labor not in the close yet** |
 | Separate pending and posted views on every report | partial | Bills show status; project cost pending vs posted is not split everywhere |
 
 ## 2. Accounting rules to hold to (from the owner's direction)

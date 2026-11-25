@@ -13,6 +13,8 @@ const checks = [
   ['POST', '/api/admin/expenses/7/approve', 'approve is gated'],
   ['POST', '/api/admin/expenses/7/pay', 'pay is gated'],
   ['POST', '/api/admin/expenses/7/void', 'void is gated'],
+  ['GET', '/api/admin/expenses/close', 'the weekly close list is gated'],
+  ['POST', '/api/admin/expenses/close/approve', 'the batch approval is gated'],
 ];
 let failed = 0;
 for (const [m, u, name] of checks) {

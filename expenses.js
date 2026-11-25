@@ -385,6 +385,22 @@ function receiptPath(db, billId, uploadDir) {
   return { path: p, name: b.receipt_ref || b.receipt_file };
 }
 
+// Weekly close: the bills in a date range that are not approved yet. Approving posts them; nothing else is posted here.
+function closeList(db, q) {
+  ensureSchema(db);
+  const ok = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  const from = ok(q.from) ? q.from : '0000-00-00', to = ok(q.to) ? q.to : '9999-12-31';
+  const bills = db.prepare("SELECT * FROM expense_bills WHERE approved_by IS NULL AND status<>'Void' AND bill_date BETWEEN ? AND ? ORDER BY bill_date, id").all(from, to);
+  return { from, to, count: bills.length, total: r2(bills.reduce((t, b) => t + Number(b.amount || 0), 0)), bills };
+}
+// Approves each chosen bill on its own, so one failure does not stop the rest; returns what happened to each.
+function approveBatch(db, ids, by) {
+  const list = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(n => n > 0))];
+  const out = { approved: [], failed: [] };
+  for (const id of list) { try { approveBill(db, id, by); out.approved.push(id); } catch (e) { out.failed.push({ id, error: e.message }); } }
+  return out;
+}
+
 function mount(app, ctx) {
   const { db, auth, upload, uploadDir } = ctx;
   ensureSchema(db);
@@ -404,6 +420,8 @@ function mount(app, ctx) {
     const byBill = {}; for (const l of lines) (byBill[l.bill_id] = byBill[l.bill_id] || []).push(l);
     res.json({ bills: bills.map(b => ({ ...b, splits: byBill[b.id] || [] })) });
   });
+  app.get('/api/admin/expenses/close', auth, (req, res) => res.json(closeList(db, req.query || {})));
+  app.post('/api/admin/expenses/close/approve', auth, (req, res) => res.json(approveBatch(db, (req.body || {}).ids, req.user && req.user.email)));
   app.put('/api/admin/expenses/:id/splits', auth, (req, res) => {
     try { setSplits(db, req.params.id, (req.body || {}).splits, req.user && req.user.email); res.json({ ok: true }); }
     catch (e) { res.status(400).json({ error: e.message }); }
@@ -441,4 +459,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, burdenPct, mount };
+module.exports = { ensureSchema, closeList, approveBatch, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, burdenPct, mount };

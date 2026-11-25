@@ -2934,7 +2934,11 @@
         <p class="muted">Difference between what customers owe and the ledger's receivable: <b>${money(tie.difference)}</b>. Unposted invoices: ${tie.unposted_invoices}. Unposted payments: ${tie.unposted_payments}.</p>
         <p class="muted">${esc(tie.gap)}</p></div>
       <div class="card accg" data-accg="expenses" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="secth" style="margin:0">Bills and expenses</h2><button class="btn small" id="accNewBill" type="button">New bill</button></div>
-        <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div></div>
+        <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div>
+        <h3 class="secth" style="margin:18px 0 4px;font-size:1rem">Weekly close</h3>
+        <p class="muted" style="margin:0 0 8px">Bills waiting for approval in the range. Approving posts the checked bills to the books; unchecked ones stay pending.</p>
+        <div class="row" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>From <input type="date" id="closeFrom"></label><label>To <input type="date" id="closeTo"></label><button class="btn small ghost" id="closeLoad" type="button">Show</button></div>
+        <div id="closeHost" style="margin-top:8px"></div></div>
       <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Periods</h2>
         <p class="muted">${closedTo}. Once closed, nothing can be posted on or before that date.</p>
         <button class="btn small" id="accClose" type="button">Close the books through a date</button></div>
@@ -3088,6 +3092,25 @@
       try { const r = await api('/api/admin/ledger/sync', { method: 'POST' }); toast(`Posted: ${r.invoices_posted} invoice(s), ${r.payments_posted} payment(s), ${r.bills_posted} bill(s), ${r.project_costs_posted} job cost(s), ${r.payroll_posted} payroll line(s)`); loadAccounting(); }
       catch (err) { toast(err.message, true); }
     };
+    const closeLoad = async () => {
+      const from = $('#closeFrom').value || '', to = $('#closeTo').value || '';
+      let c; try { c = await api('/api/admin/expenses/close?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to)); } catch (err) { $('#closeHost').innerHTML = '<p class="msg err">' + esc(err.message) + '</p>'; return; }
+      $('#closeHost').innerHTML = c.count ? `<div class="tablewrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Vendor</th><th class="num">Amount</th></tr></thead><tbody>${c.bills.map(b => `<tr><td><input type="checkbox" data-closeid="${b.id}" checked></td><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td class="num">${money(b.amount)}</td></tr>`).join('')}</tbody></table></div><p><button class="btn small" id="closeGo" type="button">Approve and post selected</button> <span class="muted">${c.count} waiting, ${money(c.total)} in total</span></p>` : '<p class="muted">Nothing is waiting for approval in this range.</p>';
+      const go = $('#closeGo');
+      if (go) go.onclick = async () => {
+        const ids = [...$('#closeHost').querySelectorAll('[data-closeid]:checked')].map(i => Number(i.dataset.closeid));
+        if (!ids.length) { toast('Check at least one bill to approve.'); return; }
+        go.disabled = true;
+        try {
+          const out = await api('/api/admin/expenses/close/approve', { method: 'POST', json: { ids } });
+          toast(out.approved.length + ' approved' + (out.failed.length ? '; ' + out.failed.length + ' not approved: ' + out.failed.map(f => f.error).join(' ') : ''));
+        } catch (err) { toast(err.message); }
+        loadAccounting();
+      };
+    };
+    $('#closeLoad').onclick = closeLoad;
+    { const t = new Date(), w = new Date(); w.setDate(w.getDate() - 6); const iso = x => x.toISOString().slice(0, 10); $('#closeFrom').value = iso(w); $('#closeTo').value = iso(t); }
+    closeLoad();
     $('#accNewBill').onclick = () => openForm({ title: 'New bill', sub: 'Goes on the books once approved. Mark it paid when it is paid.',
       defs: [{ name: 'vendor', label: 'Vendor' }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example materials, equipment, insurance)' },
         { name: 'amount', label: 'Amount ($)', type: 'number' }, { name: 'bill_date', label: 'Bill date', type: 'date' }, { name: 'receipt_ref', label: 'Receipt reference (file name or number)' }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
