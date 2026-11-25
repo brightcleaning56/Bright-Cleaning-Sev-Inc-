@@ -4059,6 +4059,21 @@ await check('Proposals', 'Customer view carries every line item (description, qu
     assert(!failed.length, 'failed: ' + failed.join(', ') + ' | ' + JSON.stringify({ id, kinds, lead: fu.data && fu.data.lead }));
     return 'opened, noted, status changed, emailed and scheduled: each entry stamped with who and when';
   });
+  await check('Proposal copies', 'A proposal can copy other addresses: bad addresses are refused, the copy is sent, and the customer is not copied to themself', async () => {
+    const est = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Copy Test', company: 'Copy Test Co', email: 'copy.customer@example.test', scope: 'Copy test scope', area_sqft: 1000, use_line_items: 1, line_items: [{ description: 'Final clean', amount: 900 }] } })).data.estimate;
+    await req('POST', '/api/admin/estimates/' + est.id + '/approve', { token: T, json: { note: 'Owner approved for the copy test' } });
+    const bad = await req('POST', '/api/admin/estimates/' + est.id + '/send', { token: T, json: { cc: 'not-an-address' } });
+    const m0 = mail.length;
+    const sent = await req('POST', '/api/admin/estimates/' + est.id + '/send', { token: T, json: { cc: 'Partner@Example.test; office@example.test, copy.customer@example.test' } }); await sleep(300);
+    const mm = mailsTo('copy.customer@example.test', m0).find(m => /proposal/i.test(m.subject));
+    const customerCopies = mm ? mm.to.filter(a => a === 'copy.customer@example.test').length : 0;
+    assert(bad.status === 400, 'a bad copy address should be refused, got ' + bad.status);
+    assert(sent.status === 200, 'send with copies should work, got ' + sent.status);
+    assert(mm && mm.to.includes('partner@example.test') && mm.to.includes('office@example.test') && /^Cc:.*partner@example.test/mi.test(mm.raw), 'copies missing from the message');
+    assert(customerCopies === 1, 'customer should receive the proposal exactly once, got ' + customerCopies);
+    return 'bad copy refused; copies sent; customer not duplicated';
+  });
+
   await check('Insurance', 'Attached certificates: a proposal that needs insurance cannot be sent until a current certificate is attached; then it goes out and shows the certificate', async () => {
     const est = (await req('POST', '/api/admin/estimates', { token: T, json: { customer_name: 'Attach Test GC', company: 'Attach Test GC', email: 'attach.gc@example.test', scope: 'Final clean for insurance attachment test', area_sqft: 1000, use_line_items: 1, line_items: [{ description: 'Final clean', amount: 900 }] } })).data.estimate;
     const set = await req('PUT', '/api/admin/estimates/' + est.id + '/insurance', { token: T, json: { required: ['general_liability'] } });

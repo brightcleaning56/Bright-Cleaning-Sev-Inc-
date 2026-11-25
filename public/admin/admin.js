@@ -1999,6 +1999,8 @@
         <div class="formsection">Scope</div><div class="pre">${esc(e.scope)}</div>
         ${items.length ? `<div class="formsection">Line items</div><table class="t"><tbody>${items.map(i => `<tr><td>${esc(i.description)}</td><td class="num">${money(i.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
         ${e.terms ? `<div class="formsection">Terms</div><div class="pre">${esc(e.terms)}</div>` : ''}
+        <div class="formsection">Copies</div>
+        <div class="f wide"><label for="eCc">Cc (optional)</label><input id="eCc" type="text" autocomplete="off" placeholder="name@company.com, other@company.com"><small class="muted">Sent to the customer's address above, with a copy to these addresses. Everyone on the email can see all addresses.</small></div>
         <div class="formsection">Customer link</div>
         <div class="f"><input readonly value="${esc(url)}" id="eUrl" aria-label="Customer proposal link"></div>`,
       footer: `
@@ -2068,8 +2070,9 @@
     $('#eCopy').onclick = () => copyText(url, $('#eUrl'), 'Link copied');
     $('#eSend').onclick = async () => {
       try { if (!(await clearApproval('goes to the customer'))) return; } catch (err) { return toast(err.message, true); }
-      if (!confirm(`Email this proposal to ${e.email}?`)) return;
-      try { let r; try { r = await api(`/api/admin/estimates/${e.id}/send`, { method: 'POST' }); } catch (er) { if (/was due/.test(er.message) && confirm(er.message + '\n\nSend it anyway?')) r = await api(`/api/admin/estimates/${e.id}/send`, { method: 'POST', json: { late_ok: true } }); else throw er; } toast(r.message || 'Sent'); closeDrawer(); loadEstimates(); }
+      const ccRaw = (($('#eCc') && $('#eCc').value) || '').trim();
+      if (!confirm(`Email this proposal to ${e.email}${ccRaw ? ' (cc ' + ccRaw + ')' : ''}?`)) return;
+      try { let r; try { r = await api(`/api/admin/estimates/${e.id}/send`, { method: 'POST', json: { cc: ccRaw } }); } catch (er) { if (/was due/.test(er.message) && confirm(er.message + '\n\nSend it anyway?')) r = await api(`/api/admin/estimates/${e.id}/send`, { method: 'POST', json: { late_ok: true, cc: ccRaw } }); else throw er; } toast(r.message || 'Sent'); closeDrawer(); loadEstimates(); }
       catch (err) { toast(err.message, true); }
     };
     $('#eEdit').onclick = () => { closeDrawer(); editEstimate(e.id); };
