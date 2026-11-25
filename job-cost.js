@@ -23,6 +23,26 @@ const LB = require('./labor');
 const hasCol = (db, t, c) => db.prepare(`PRAGMA table_info(${t})`).all().some(x => x.name === c);
 const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
 
+// Pending: bills and finished time that are not approved yet. They are shown beside the cost, never added to it.
+function pendingFor(db, projectId) {
+  const pid = Number(projectId);
+  let bills = 0, laborCost = 0, laborMinutes = 0;
+  if (hasTable(db, 'expense_bills')) {
+    const splitsOk = hasTable(db, 'expense_bill_splits');
+    for (const b of db.prepare("SELECT id, amount, project_id FROM expense_bills WHERE approved_by IS NULL AND status<>'Void'").all()) {
+      const sp = splitsOk ? db.prepare('SELECT project_id, amount FROM expense_bill_splits WHERE bill_id=?').all(b.id) : [];
+      if (sp.length) bills += sp.filter(x => Number(x.project_id) === pid).reduce((t, x) => t + (Number(x.amount) || 0), 0);
+      else if (Number(b.project_id) === pid) bills += Number(b.amount) || 0;
+    }
+  }
+  if (hasTable(db, 'time_entries') && hasTable(db, 'employees')) {
+    LB.ensureColumns(db);
+    const rows = db.prepare('SELECT t.minutes, COALESCE(t.labor_rate, e.hourly_rate) AS hourly_rate FROM time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.project_id=? AND t.approved_by IS NULL' + (hasCol(db, 'time_entries', 'clock_out') ? ' AND t.clock_out IS NOT NULL' : '')).all(pid);
+    for (const t of rows) { laborMinutes += Number(t.minutes) || 0; laborCost += (Number(t.minutes) || 0) / 60 * (Number(t.hourly_rate) || 0); }
+  }
+  return { bills: r2(bills), labor: r2(laborCost), labor_hours: r2(laborMinutes / 60), total: r2(bills + laborCost) };
+}
+
 function jobCostReport(db, projectId) {
   const p = db.prepare('SELECT * FROM projects WHERE id=?').get(Number(projectId));
   if (!p) return null;
@@ -92,6 +112,7 @@ function jobCostReport(db, projectId) {
       overhead_rate_pct: overheadPct, allocated_overhead: allocatedOverhead, contract_basis_profit_after_overhead: price != null ? r2(price - actualCost - allocatedOverhead) : null,
       earned_revenue: null, earned_revenue_note: 'Not calculated: the revenue-recognition policy (percent complete or milestone) is not approved yet.',
       invoiced: invoicedTotal, collected: collectedTotal,
+      pending: { ...pendingFor(db, p.id), note: 'Waiting for approval. Not in the cost above until approved.' },
       unposted_labor: r2(unposted), unposted_labor_hours: r2(unpostedMinutes / 60), contract_note: contractNote },
     cost_by_account: lines,
     gaps: [
@@ -113,4 +134,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { jobCostReport, accountFor, CATEGORY_ACCOUNT, mount };
+module.exports = { jobCostReport, pendingFor, accountFor, CATEGORY_ACCOUNT, mount };

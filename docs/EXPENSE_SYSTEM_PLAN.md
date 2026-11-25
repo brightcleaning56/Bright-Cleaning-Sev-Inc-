@@ -21,7 +21,7 @@ reimbursements, job expenses, overhead), with AI preparing the bookkeeping and p
 | Duplicate receipt and invoice detection | — | **missing** |
 | Employee reimbursements | — | **missing** |
 | Weekly company-wide close with one approval batch | — | **bills done (Expenses tab, Weekly close); crew labor not in the close yet** |
-| Separate pending and posted views on every report | partial | Bills show status; project cost pending vs posted is not split everywhere |
+| Separate pending and posted views on every report | partial | Job profitability shows a Pending approval column (bills and time waiting for approval, not in cost); P&L shows only approved, posted amounts |
 
 ## 2. Accounting rules to hold to (from the owner's direction)
 

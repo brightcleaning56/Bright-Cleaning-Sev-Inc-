@@ -60,7 +60,7 @@ module.exports = function mountReports2(app, ctx) {
         (SELECT COALESCE(SUM(amount),0) FROM project_costs WHERE project_id=p.id) cost,
         (SELECT COALESCE(SUM(amount),0) FROM project_costs WHERE project_id=p.id AND category='Labor') labor,
         (SELECT COALESCE(SUM(amount),0) FROM project_costs WHERE project_id=p.id AND category LIKE 'Material%') materials
-      FROM projects p LEFT JOIN contracts k ON k.id=p.contract_id WHERE p.status<>'Archived' ORDER BY p.id DESC`).all().map(p => ({ ...p, other_cost: r2(p.cost - p.labor - p.materials), profit: p.cost > 0 ? r2(p.invoiced - p.cost) : null, margin: p.cost > 0 && p.invoiced > 0 ? Math.round((p.invoiced - p.cost) / p.invoiced * 1000) / 10 : null })) : [];
+      FROM projects p LEFT JOIN contracts k ON k.id=p.contract_id WHERE p.status<>'Archived' ORDER BY p.id DESC`).all().map(p => ({ ...p, other_cost: r2(p.cost - p.labor - p.materials), pending: require('./job-cost').pendingFor(db, p.id), profit: p.cost > 0 ? r2(p.invoiced - p.cost) : null, margin: p.cost > 0 && p.invoiced > 0 ? Math.round((p.invoiced - p.cost) / p.invoiced * 1000) / 10 : null })) : [];
     const checks = [];
     if (project_id) checks.push('Showing one project only. Overhead and labor not tied to a project are left out, so this is not the whole company.');
     const noCost = projects.filter(p => p.invoiced > 0 && p.cost === 0); if (noCost.length) checks.push(`${noCost.length} invoiced project(s) have no recorded costs, so their profit is not shown: ${noCost.slice(0, 5).map(p => p.name || '#' + p.id).join(', ')}.`);
