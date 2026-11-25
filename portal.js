@@ -86,11 +86,63 @@ module.exports = function mountPortal(app, ctx) {
     }
   });
 
+  // New clients sign up with their name, phone, email and (optional) company. Nothing is created until the email link is
+  // opened, so no one can create a record in someone else's name and then use it. The answer is the same whether or not
+  // the email is already a customer, so the form cannot be used to check who is on file.
+  db.exec(`CREATE TABLE IF NOT EXISTS portal_signups(email TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, phone TEXT NOT NULL, created_at TEXT NOT NULL)`);
+  const signupHits = new Map();
+  const signupTooMany = ip => { const t = Date.now(), a = (signupHits.get(ip) || []).filter(x => t - x < 600000); a.push(t); signupHits.set(ip, a); return a.length > 5; };
+  const officeEmail = () => process.env.NOTIFY_EMAIL || process.env.FROM_EMAIL || 'info@brightclean.net';
+  const customerCount = email => db.prepare('SELECT COUNT(*) AS c FROM customers WHERE lower(email)=?').get(email).c;
+  const issueLink = async email => {
+    const token = crypto.randomBytes(24).toString('base64url');
+    db.prepare('INSERT INTO portal_logins(email,token_hash,expires_at,created_at) VALUES(?,?,?,?)').run(email, sha(token), new Date(Date.now() + 30 * 60000).toISOString(), now());
+    const m = getMailer && getMailer();
+    if (!m) return;
+    try { await m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: email, subject: 'Finish signing up for the Bright Cleaning Sev Inc. client portal', text: `Open this link to confirm your email and finish signing up for the ${COMPANY_NAME} client portal. It expires in 30 minutes and works once.\n\n${base()}/portal.html#${token}\n\nIf you did not ask for this, you can ignore this email.\n\nBright Cleaning Sev Inc.` }); }
+    catch (e) { console.error('portal sign-up link not sent', e.message); }
+  };
+  app.post('/api/portal/signup', async (req, res) => {
+    if (signupTooMany(req.ip || 'x')) return res.status(429).json({ error: 'Too many sign-up requests. Please wait a few minutes and try again.' });
+    const b = req.body || {};
+    const name = String(b.name || '').trim().slice(0, 120), company = String(b.company || '').trim().slice(0, 160);
+    const phone = String(b.phone || '').trim().slice(0, 40), email = norm(b.email);
+    if (name.length < 2) return res.status(400).json({ error: 'Please enter your name.' });
+    if (phone.replace(/\D/g, '').length < 10) return res.status(400).json({ error: 'Please enter a phone number with area code.' });
+    if (!isEmail(email)) return res.status(400).json({ error: 'Please enter a valid email address.' });
+    const answer = () => res.json({ ok: true, message: 'Thanks. Check your email for a link to finish signing up. Existing clients get the same link at this address.' });
+    const count = customerCount(email);
+    if (count > 1) { // several records share this mailbox: staff sort it out, no link goes out
+      try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES('automation','portal sign-up refused','portal',0,?,?)").run('email is on more than one customer record: ' + email, now()); } catch { /* audit optional */ }
+      return answer();
+    }
+    const recent = db.prepare('SELECT created_at FROM portal_logins WHERE email=? ORDER BY id DESC LIMIT 1').get(email);
+    if (recent && Date.now() - Date.parse(recent.created_at) < 60000) return answer(); // one link a minute
+    if (count === 0) db.prepare('INSERT OR REPLACE INTO portal_signups(email,name,company,phone,created_at) VALUES(?,?,?,?,?)').run(email, name, company, phone, now());
+    answer(); // the link is sent after the reply
+    await issueLink(email);
+  });
+  // A new client who opens the sign-up link: the record is created now, and the office is told.
+  function activateSignup(email) {
+    const sg = db.prepare('SELECT * FROM portal_signups WHERE email=?').get(email);
+    if (!sg) return false;
+    if (customerCount(email) === 0) {
+      // A new record only: never matched to an existing customer by company name, because that would hand this mailbox
+      // another customer's records.
+      try { const t = now(); db.prepare("INSERT OR IGNORE INTO customers(match_key,name,company,email,phone,address,source,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run('e:' + email, sg.name, sg.company, email, sg.phone, '', 'portal sign-up', '', t, t); } catch (e) { console.error('portal sign-up record not created', e.message); }
+      const m = getMailer && getMailer();
+      if (m) m.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net', to: officeEmail(), subject: `New client portal sign-up: ${sg.name}`, text: `${sg.name}${sg.company ? ' (' + sg.company + ')' : ''} signed up on the client portal and confirmed their email.\n\nPhone: ${sg.phone}\nEmail: ${email}\n\nThe record is in Customers. Open it to send a proposal or follow up.` }).catch(() => {});
+    }
+    db.prepare('DELETE FROM portal_signups WHERE email=?').run(email);
+    return customerFor(email) != null;
+  }
+
   // Step 2: the link becomes a session (valid 8 hours), used once.
   app.post('/api/portal/verify', (req, res) => {
     const token = String((req.body || {}).token || '');
     if (!token) return res.status(400).json({ error: 'This sign-in link is not valid.' });
     const row = db.prepare('SELECT * FROM portal_logins WHERE token_hash=? AND used_at IS NULL').get(sha(token));
+    if (row && Date.parse(row.expires_at) >= Date.now() && customerFor(row.email) == null) activateSignup(row.email);
     const cid = row ? customerFor(row.email) : null;
     if (!row || Date.parse(row.expires_at) < Date.now() || cid == null) return res.status(401).json({ error: 'This sign-in link has expired or was already used. Request a new one.' });
     db.prepare('UPDATE portal_logins SET used_at=? WHERE id=?').run(now(), row.id);

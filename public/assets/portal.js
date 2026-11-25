@@ -388,7 +388,14 @@
       '<div class="panel" style="margin-top:16px"><h2>No password yet?</h2><p class="muted">Enter your email and we will send a one-time sign-in link. After you sign in, you can set a password under Account Settings.</p>' +
       '<form id="pForm"><div class="field"><label>Email address</label><input name="email" type="email" required autocomplete="email"></div>' +
       '<p style="margin-top:14px"><button class="nav-item sm" type="submit">Email me a sign-in link</button></p></form>' +
-      '<p class="msg" id="pMsg" role="status"></p></div>';
+      '<p class="msg" id="pMsg" role="status"></p></div>' +
+      '<div class="panel" style="margin-top:16px"><h2>New client? Sign up</h2><p class="muted">Tell us who you are. We will email you a link to confirm your address, then you can request services and see your proposals.</p>' +
+      '<form id="suForm"><div class="field"><label>Your name *</label><input name="name" required autocomplete="name"></div>' +
+      '<div class="field" style="margin-top:12px"><label>Company (optional)</label><input name="company" autocomplete="organization"></div>' +
+      '<div class="field" style="margin-top:12px"><label>Phone *</label><input name="phone" type="tel" required autocomplete="tel"></div>' +
+      '<div class="field" style="margin-top:12px"><label>Email address *</label><input name="email" type="email" required autocomplete="email"></div>' +
+      '<p style="margin-top:14px"><button class="primary-button" type="submit">Sign up</button></p></form>' +
+      '<p class="msg" id="suMsg" role="status"></p></div>';
   }
   function startSession(token, email) {
     session = token; email = email || '';
@@ -410,6 +417,16 @@
           email = x.j.email; return startSession(x.j.session, x.j.email);
         })
         .catch(function () { $('pwLoginMsg').textContent = 'Could not sign in. Please try again.'; });
+    });
+    var sf = $('suForm');
+    if (sf) sf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var v = e.target;
+      $('suMsg').textContent = 'Sending…';
+      fetch('/api/portal/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: v.name.value, company: v.company.value, phone: v.phone.value, email: v.email.value }) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) { $('suMsg').textContent = x.j.message || x.j.error || 'Could not sign up. Please try again.'; if (x.ok) v.reset(); })
+        .catch(function () { $('suMsg').textContent = 'Could not sign up. Please try again.'; });
     });
     var f = $('pForm'); if (!f) return;
     f.addEventListener('submit', function (e) {

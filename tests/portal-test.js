@@ -1,6 +1,6 @@
 // Tests the client portal backend against an in-memory database and a fake mailer.
 const path = require('path');
-const root = process.argv[2];
+const root = path.resolve(process.argv[2] || '.');
 process.env.JWT_SECRET = 'test-secret-for-portal-tests-only-0123456789';
 const Database = require(path.join(root, 'node_modules', 'better-sqlite3'));
 const db = new Database(':memory:');
@@ -8,12 +8,13 @@ db.exec(`
 CREATE TABLE estimates(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, project_name TEXT, status TEXT, proposal_total REAL, public_token TEXT, created_at TEXT, lead_id INTEGER, customer_name TEXT, company TEXT, site_address TEXT, scope TEXT, area_sqft REAL, line_items TEXT, terms TEXT, tax_pct REAL, expires_on TEXT, decided_at TEXT, decline_reason TEXT, signer_name TEXT, signer_title TEXT, signed_at TEXT, updated_at TEXT, decision_ip TEXT, decision_agent TEXT, line_items_total REAL, use_line_items INTEGER);
 CREATE TABLE contracts(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, email TEXT, title TEXT, value REAL, status TEXT, signature_status TEXT, public_token TEXT, created_at TEXT, signed_at TEXT, customer_name TEXT, company TEXT);
 CREATE TABLE invoices(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, email TEXT, invoice_number TEXT, amount REAL, paid_amount REAL DEFAULT 0, due_date TEXT, status TEXT, created_at TEXT);
-CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT);
+CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, match_key TEXT UNIQUE, name TEXT, company TEXT, email TEXT, phone TEXT, address TEXT, source TEXT, notes TEXT, created_at TEXT, updated_at TEXT);
 CREATE TABLE leads(id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT, email TEXT, kind TEXT, status TEXT, contact_name TEXT, company TEXT, phone TEXT, address TEXT, service TEXT, project_name TEXT, details TEXT, created_at TEXT, updated_at TEXT);
 CREATE TABLE projects(id INTEGER PRIMARY KEY AUTOINCREMENT, contract_id INTEGER, customer_id INTEGER, name TEXT, status TEXT, progress REAL, site_address TEXT);
 CREATE TABLE visits(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, type TEXT, date TEXT, start_time TEXT, end_time TEXT, address TEXT, status TEXT, project_id INTEGER);
 CREATE TABLE audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT, action TEXT, entity TEXT, entity_id INTEGER, details TEXT, created_at TEXT);
 `);
+db.exec("ALTER TABLE estimates ADD COLUMN selected_option_id INTEGER");
 const todayIso = new Date().toISOString().slice(0, 10);
 const EMAIL = 'client@example.com';
 db.prepare("INSERT INTO leads(email) VALUES(?)").run(EMAIL);
@@ -46,6 +47,8 @@ const mailer = { sendMail: async m => { sent.push(m); return { messageId: 'x' };
 const UPD = require('path').join(require('os').tmpdir(), 'bc-portal-uploads-' + process.pid);
 require('fs').mkdirSync(UPD, { recursive: true });
 require('fs').writeFileSync(require('path').join(UPD, 'abc123.pdf'), '%PDF-1.4 test');
+db.exec("CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER, amount REAL DEFAULT 0, status TEXT, created_at TEXT)");
+require(path.join(root, 'proposal-options.js'))(app, { db, auth: staffAuth, logAction: () => {}, clean: v => v }); // creates the option tables the portal reads
 require(path.join(root, 'portal.js'))(app, { db, getMailer: () => mailer, auth: staffAuth, uploadDir: UPD });
 
 function call(key, body = {}, headers = {}, ip = '10.0.0.1') {
@@ -173,7 +176,7 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
   const dlNo = await call('GET /api/portal/files/:name', {}, { authorization: 'Bearer ' + sessionOther }, { name: 'abc123.pdf' });
   check('documents: another customer cannot open it', dlNo.code === 404, dlNo.code);
   const upNo = await call('POST /api/portal/documents', {}, { authorization: 'Bearer ' + session });
-  check('documents: upload refused when the upload service is not configured', upNo.code === 503, upNo.code);
+  check('documents: upload refused while public uploads are paused', upNo.code === 403, upNo.code);
   // 10b. Proposals: the customer sees their own proposals with detail, and can approve, decline or ask for changes
   const pm = await call('GET /api/portal/me', {}, { authorization: 'Bearer ' + session });
   const p1 = (pm.body.proposals || []).find(p => p.id === 1);
@@ -274,6 +277,31 @@ function check(name, cond, detail) { if (cond) { pass++; console.log('PASS ' + n
   check("binding: a session with another customer id is refused", bindWrong.code === 401, bindWrong.code);
   const noCid = await call("GET /api/portal/me", {}, { authorization: "Bearer " + sign({ email: EMAIL, cid: null, iat: Date.now(), exp: Date.now() + 3600000 }) });
   check("binding: a session without a customer id is refused", noCid.code === 401, noCid.code);
+
+  // 5. Client sign-up: name, phone, email required; the record is made only after the emailed link is opened
+  const NEW = 'new.client@example.com';
+  const shortPhone = await call('POST /api/portal/signup', { name: 'Dana Prairie', phone: '555', email: NEW }, {}, '10.2.0.1');
+  check('sign-up: phone needs 10 digits', shortPhone.code === 400, shortPhone.code);
+  const badMail = await call('POST /api/portal/signup', { name: 'Dana Prairie', phone: '5155550123', email: 'not-an-email' }, {}, '10.2.0.2');
+  check('sign-up: bad email refused', badMail.code === 400, badMail.code);
+  const before = sent.length;
+  const su = await call('POST /api/portal/signup', { name: 'Dana Prairie', company: 'Prairie Props', phone: '(515) 555-0123', email: NEW }, {}, '10.2.0.3');
+  await new Promise(r => setTimeout(r, 20));
+  check('sign-up: same answer as any request', su.code === 200 && su.body.ok && /Check your email/.test(su.body.message), su.body);
+  const newMail = sent.slice(before).find(m => m.to === NEW);
+  check('sign-up: confirmation link sent to the typed address', !!newMail && /portal\.html#/.test(newMail.text), sent.slice(before).map(m => m.to));
+  check('sign-up: no customer record until the link is opened', db.prepare('SELECT COUNT(*) AS c FROM customers WHERE lower(email)=?').get(NEW).c === 0);
+  const newTok = newMail && (/portal\.html#([A-Za-z0-9_-]+)/.exec(newMail.text) || [])[1];
+  const vNew = await call('POST /api/portal/verify', { token: newTok });
+  check('sign-up: opening the link creates the record and gives a session', vNew.code === 200 && !!vNew.body.session, vNew.code);
+  const rec = db.prepare('SELECT name, company, phone, source FROM customers WHERE lower(email)=?').get(NEW);
+  check('sign-up: record holds the details given and its source', rec && rec.name === 'Dana Prairie' && rec.company === 'Prairie Props' && /555/.test(rec.phone) && rec.source === 'portal sign-up', rec);
+  const pending = db.prepare('SELECT COUNT(*) AS c FROM portal_signups WHERE email=?').get(NEW).c;
+  check('sign-up: pending request cleared once confirmed', pending === 0, pending);
+  const reuse = await call('POST /api/portal/verify', { token: newTok });
+  check('sign-up: the link works once', reuse.code === 401, reuse.code);
+  const sharedSu = await call('POST /api/portal/signup', { name: 'Shared Box', phone: '5155550999', email: 'shared.box@example.com' }, {}, '10.2.0.4');
+  check('sign-up: a shared mailbox gets the same answer and no link', sharedSu.code === 200 && !sent.slice(before).some(m => m.to === 'shared.box@example.com'), sharedSu.code);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
