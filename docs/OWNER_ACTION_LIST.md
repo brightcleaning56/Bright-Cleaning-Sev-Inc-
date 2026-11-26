@@ -18,7 +18,7 @@ Last updated: 2026-11-15.
 
 ## Still open from earlier (unchanged)
 
-- **AI lead triage is down.** The Anthropic credit balance is too low. Add credits in Anthropic billing.
+- **AI lead triage. Working again 2026-11-25** (drafts regenerated on live). The earlier credit problem is not blocking now. Keep an eye on the Anthropic balance in Plans & Billing; if the balance runs out, triage stops again.
 - **GROK BOT lead key** sent five leads on 2026-11-13 and is still active. Confirm the leads are real, then keep or revoke the key.
 - **QC-1001 and QC-1002 are overdue.** Approve the corrective-cleaning visits, and approve the customer reply for QC-1001. QC-1002 is linked to a ZZ TEST customer and needs the real customer.
 - **Two customers left Active on purpose:** "Eric Moore" (info@compass.com) and "Cutler Construction". Set them Inactive?
@@ -135,6 +135,14 @@ Owner actions:
 - Two-step sign-in on the owner account: on (verified from the account settings API).
 - Restore test: still open. It needs the BACKUP_KEY value from Render, which only the owner can supply or run. Steps: download the newest backup from Settings > Backups, decrypt it with that key into a temporary folder, open it, and confirm invoices and customers are there. Tell the assistant the result.
 - Two-step sign-in secrets are not encrypted at rest. Decision: not changed, because the backups are already encrypted and encrypting with the JWT secret would lock owners out if that secret is rotated.
+
+## Status, 2026-11-25 (lead reply drafts)
+
+- **Lead reply drafts fixed and checked.** Leads from our own lead feeds are now written as outreach, not as a request the person sent in. No draft thanks them for interest or names where the contact came from. Build `a47f5dd` on the deploy branch; tests pass (96/96). Triage also retries an unparseable AI reply once.
+- **All 157 saved drafts checked on live.** Only lead 346 matches the wording check, and that is correct: she wrote to us through the contact form.
+- **Nothing has been sent.** Each draft still needs your approval before it goes to the lead.
+- **Lead 4 (1730 Boulevard Avenue, return cleaning, archived).** The draft addresses the contact as "Eric." Check that is right before anyone sends it.
+- **Stray local branch `prod-security-merge`** in the working copy. Tell the assistant whether to delete it.
 
 ## Status check, 2026-11-23 (later)
 
