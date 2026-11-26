@@ -40,9 +40,18 @@ Never invent prices, rates, availability, insurance, licenses, certifications or
   app.locals.aiOn = () => !!key();
   app.locals.aiCall = (messages, system, maxTokens) => call(messages, system, maxTokens);
   function parseJSON(text) {
-    const m = String(text).replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('The AI reply was not in the expected format.');
-    return JSON.parse(m[0]);
+    const clean0 = String(text).replace(/```json|```/g, '');
+    const start = clean0.indexOf('{');
+    if (start < 0) {
+      // Keep a short piece of what the model actually said so the failure can be diagnosed from the log.
+      const e = new Error('The AI reply was not in the expected format.');
+      e.raw = clean0.trim().slice(0, 200);
+      throw e;
+    }
+    const end = clean0.lastIndexOf('}');
+    // Use the outermost braces; if the reply was cut off or has text after the JSON, this still reads the object.
+    const body = end > start ? clean0.slice(start, end + 1) : clean0.slice(start);
+    try { return JSON.parse(body); } catch { throw new Error('The AI reply was not in the expected format.'); }
   }
 
   // What a lead's source means in plain words, so the reply matches how the lead actually reached us.
@@ -69,7 +78,7 @@ Never invent prices, rates, availability, insurance, licenses, certifications or
       .filter(k => l[k]).map(k => `${k}: ${String(l[k]).slice(0, 3000)}`);
     let files = []; try { files = (JSON.parse(l.files || '[]') || []).map(f => f.name).filter(Boolean); } catch { files = []; }
     if (files.length) facts.push(`files attached: ${files.slice(0, 10).join(', ')}`);
-    const text = await call([{ role: 'user', content: `Where this lead came from: ${src.label}.
+    const ask = () => call([{ role: 'user', content: `Where this lead came from: ${src.label}.
 What that means for the reply: ${src.how}
 
 Lead details:
@@ -78,8 +87,13 @@ ${facts.join('\n')}
 Return ONLY JSON with keys:
 "summary" (2 sentences), "category" (one of construction, multifamily, janitorial, windows, power_washing, parking, unit_turnover, other),
 "priority" (High/Normal/Low with bid deadlines or large projects High), "missing" (array of short items still needed before pricing, e.g. drawings, square footage, site visit),
-"next_step" (one sentence for the Bright Clean team), "reply_subject", "reply_body" (a short, friendly email from Bright Cleaning Sev Inc. that follows the lead source above, asks only for the missing items, and promises follow-up. No prices.)` }], COMPANY, 1200);
-    const ai = parseJSON(text);
+"next_step" (one sentence for the Bright Clean team), "reply_subject", "reply_body" (a short, friendly email from Bright Cleaning Sev Inc. that follows the lead source above, asks only for the missing items, and promises follow-up. No prices.)` }], COMPANY, 1500);
+    // The model occasionally returns prose instead of JSON; one retry resolves almost all of these.
+    let ai;
+    try { ai = parseJSON(await ask()); } catch (e) {
+      if (!/not in the expected format/.test(e.message)) throw e;
+      ai = parseJSON(await ask());
+    }
     const out = { summary: clean(ai.summary, 600), category: clean(ai.category, 40), priority: clean(ai.priority, 10), missing: (Array.isArray(ai.missing) ? ai.missing : []).slice(0, 10).map(x => clean(x, 160)),
       next_step: clean(ai.next_step, 300), reply_subject: clean(ai.reply_subject, 160), reply_body: clean(ai.reply_body, 4000), model: model(), at: now() };
     db.prepare('UPDATE leads SET ai=? WHERE id=?').run(JSON.stringify(out), id);

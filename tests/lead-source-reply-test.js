@@ -20,4 +20,9 @@ assert.ok(/Never thank them for their interest/.test(reach), 'outreach text forb
 assert.ok(/never say how or from where we got their contact/.test(reach), 'outreach text forbids naming the source');
 console.log('ok - outreach wording forbids thanks for interest and naming the source');
 
+// 3. A reply that fails to parse is retried once, and the parser reads the outermost JSON braces.
+assert.ok(/try \{ ai = parseJSON\(await ask\(\)\); \}/.test(src), 'triage retries once when the reply does not parse');
+assert.ok(/lastIndexOf\('\}'\)/.test(src), 'parser reads up to the last closing brace');
+console.log('ok - triage retries an unparseable reply once');
+
 console.log('lead source reply: all checks passed');
