@@ -166,6 +166,14 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
     logAction(req, 'changed', 'ai settings', 0, `auto_triage ${!!req.body.auto_triage}`);
     res.json({ enabled: !!key(), model: model(), auto_triage: setting('auto_triage', true), auto_request_info: setting('auto_request_info', false), auto_draft_estimates: setting('auto_draft_estimates', true) });
   });
+  // Receipt reading (Phase 3): suggests the vendor, date, total and lines from the bill's receipt. Stores a suggestion only.
+  app.post('/api/admin/ai/expenses/:id/read-receipt', auth, async (req, res) => {
+    try {
+      const reading = await require('./receipt-read').readReceipt({ db, billId: Number(req.params.id), uploadDir, model: model(), callFn: (m, s, t) => call(m, s, t) });
+      logAction(req, 'AI read a receipt (suggestion only)', 'bill', Number(req.params.id), reading.vendor || 'receipt');
+      res.json({ reading });
+    } catch (e) { if (e.code !== 'AI_OFF') logRun('ai_receipt_read', Number(req.params.id), 'failed', e.message); fail(res, e); }
+  });
   app.post('/api/admin/ai/leads/:id/triage', auth, async (req, res) => {
     try { const ai = await triageLead(Number(req.params.id)); logAction(req, 'ran AI triage', 'lead', Number(req.params.id), ai.summary.slice(0, 120)); res.json({ ai }); }
     catch (e) { if (e.code !== 'AI_OFF') logRun('ai_lead_triage', Number(req.params.id), 'failed', e.message); fail(res, e); }
