@@ -33,7 +33,8 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
     if (content.includes('BLUEPRINT READING')) out = { sheets: [{ sheet: 'G0.1', title: 'Cover', discipline: 'General' }, { sheet: 'A1.1', title: 'Level 1 plan', discipline: 'Architectural' }], building_sf: 24000, building_sf_sheet: 'G0.1', floors: 2, floors_sheet: 'G0.1',
       rooms: [{ number: '101', name: 'Lobby', area_sf: 1200, floor_finish: 'Terrazzo', sheet: 'A1.1', confidence: 'High' }, { number: '102', name: 'Open office', area_sf: 9000, floor_finish: 'Carpet tile', sheet: 'A1.1', confidence: 'Medium' }, { number: '103', name: 'Guessed room', area_sf: 500 }],
       counts: [{ item: 'Restrooms', quantity: 6, sheet: 'A1.1', confidence: 'High' }], finishes: [{ finish: 'Terrazzo', areas: 'Lobby', sheet: 'A6.1' }], cleaning_notes: [{ note: '24 ft atrium glass', sheet: 'A3.1' }, { note: 'no sheet note' }], questions: ['Is level 2 tenant space in scope?'] };
-    else if (content.includes('"type":"document"')) out = { sheets: [{ sheet: 'G0.1', title: 'Code plan', revision: 'IFC' }, { sheet: 'A1.1', title: 'Level 1 plan' }], building_sf: 136600, building_sf_sheet: 'G0.1', quantities: [{ item: 'Restrooms', quantity: 28, sheet: 'A6.1', method: 'From schedule', confidence: 'High', note: 'toilet room schedule' }], questions: ['Exterior glass quantity is not shown on the A-sheets.'] };
+    else if (content.includes('Read this receipt')) out = { vendor: 'Glass Co', date: '2026-11-26', total: 80, tax: 4, line_items: [{ description: 'Squeegee', amount: 76, suggested_category: 'Supplies' }] };
+    else if (content.includes('"type":"document"')) out ={ sheets: [{ sheet: 'G0.1', title: 'Code plan', revision: 'IFC' }, { sheet: 'A1.1', title: 'Level 1 plan' }], building_sf: 136600, building_sf_sheet: 'G0.1', quantities: [{ item: 'Restrooms', quantity: 28, sheet: 'A6.1', method: 'From schedule', confidence: 'High', note: 'toilet room schedule' }], questions: ['Exterior glass quantity is not shown on the A-sheets.'] };
     else if (content.includes('CALL ANALYSIS')) out = { summary: 'Pat from Phone Match Co wants a final clean quote for 20,000 SF next month.', intent: 'New bid request', sentiment: 'Positive', urgency: 'High', lead_score: 82, score_reasons: ['Defined scope', 'Near-term timeline'], details: { service: 'Final clean', square_feet: 20000, site_address: '', timeline: 'next month', budget: '' }, action_items: [{ task: 'Send final clean quote', owner: 'Estimator', due: '2026-11-06' }, { task: '', owner: 'x' }], follow_up_date: '2026-11-05', reply_draft: 'Hi Pat, thanks for calling...', risks: [] };
     else if (content.includes('Phone call notes')) out = { contact_name: 'Dana Ruiz', company: 'Ridge Builders', phone: '515-555-0100', email: '', purpose: 'Bid request', service: 'Final clean', square_footage: '80,000', deadline: 'December walkthrough', summary: 'GC needs final clean for 80,000 SF building.', follow_up: 'Request drawings' };
     else out = { summary: 'Ridge Builders needs a construction final clean for an 80,000 SF office.', category: 'construction', priority: 'High', missing: ['Drawing set', 'Site access details'], next_step: 'Request drawings and schedule a walkthrough.', reply_subject: 'Your final cleaning request', reply_body: 'Thank you for contacting Bright Clean. Could you send the drawing set?' };
@@ -323,6 +324,23 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
     };
     assert(Object.values(chk).every(Boolean), JSON.stringify({ chk, webId, patId }));
     return 'contact-form lead told it wrote to us (not outreach), with its message and status; staff-added lead told to reach out; every saved field reaches the prompt';
+  });
+
+  await check('AI receipt reading: a receipt is read as a suggestion over HTTP; the bill itself is not changed', async () => {
+    const cr = await api('POST', '/api/admin/expenses', { vendor: 'Glass Co', description: 'Squeegees', amount: 80, bill_date: '2026-11-26' }, T);
+    assert(cr.status === 200 || cr.status === 201, 'create ' + cr.status + ' ' + JSON.stringify(cr.data));
+    const id = cr.data.id || (cr.data.bill && cr.data.bill.id);
+    assert(id, 'no bill id in ' + JSON.stringify(cr.data));
+    const fd = new FormData(); fd.append('receipt', new Blob([Buffer.from('%PDF-1.4 test receipt')], { type: 'application/pdf' }), 'glass-invoice.pdf');
+    const up = await fetch(B + `/api/admin/expenses/${id}/receipt`, { method: 'POST', headers: { Authorization: 'Bearer ' + T }, body: fd });
+    assert(up.status === 201, 'attach receipt ' + up.status);
+    const rr = await api('POST', `/api/admin/ai/expenses/${id}/read-receipt`, {}, T);
+    assert(rr.status === 200, 'read ' + rr.status + ' ' + JSON.stringify(rr.data));
+    assert(rr.data.reading.total === 80 && rr.data.reading.total_matches_bill === true, 'reading ' + JSON.stringify(rr.data.reading));
+    const list = await api('GET', '/api/admin/expenses', null, T);
+    const bill = (list.data.bills || []).find(b => b.id === id);
+    assert(bill && bill.amount === 80 && bill.status === 'Open' && bill.ai_read, 'bill state ' + JSON.stringify(bill));
+    return 'receipt read: total 80 matches the bill; stored as a suggestion; bill amount 80 and status Open unchanged';
   });
 
   child.kill(); fake.close();
