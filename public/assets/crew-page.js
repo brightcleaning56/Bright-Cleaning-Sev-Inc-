@@ -1,7 +1,8 @@
 (() => {
   // /crew/<token> is the personal link; /crew is the sign-in page. A signed-in crew member uses the token 'me'.
   const rawToken = location.pathname.split('/').pop(), $ = s => document.querySelector(s);
-  const SIGNIN = rawToken === 'crew' || rawToken === '';
+  // /crew.html (the bare page) opens the same phone and PIN sign-in as /crew, instead of reading "crew.html" as a token.
+  const SIGNIN = rawToken === 'crew' || rawToken === 'crew.html' || rawToken === '';
   const token = SIGNIN ? 'me' : rawToken;
   const SESSION_KEY = 'bc_crew_session';
   const session = () => { try { return localStorage.getItem(SESSION_KEY) || ''; } catch { return ''; } };
