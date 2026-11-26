@@ -148,7 +148,7 @@ Owner actions:
 
 - **Built and deployed (`71e724a`, `712c728`).** On an expense bill with a receipt photo or PDF, a Read receipt button asks the AI for the vendor, date, total, tax and lines. The reading shows under the bill as a suggestion. It never changes the bill, and a total that does not match the bill is flagged. Tests pass (suite 96/96, admin UI 97/97).
 - **Not yet clicked through on live.** Live has one expense bill and it has no receipt. Testing needs a real or test receipt attached to a bill, which sends that file to the AI service. Say yes to test it, and say which bill to use.
-- **Crew link.** `https://brightclean.net/crew.html` has no crew member's token, so it always shows "This link is not valid." Each crew member needs their own `/crew/<token>` link, copied from the Employees screen. Say whether the bare page should say "Open the personal link your supervisor sent you."
+- **Crew link.** `https://brightclean.net/crew.html` has no crew member's token, so it always shows "This link is not valid." Each crew member needs their own `/crew/<token>` link, copied from the Employees screen. Done 2026-11-26: the bare page `/crew.html` now opens the phone and PIN sign-in (`c890a6c`, checked live).
 
 ## Status check, 2026-11-23 (later)
 
