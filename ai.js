@@ -46,14 +46,15 @@ Never invent prices, rates, availability, insurance, licenses, certifications or
   }
 
   // What a lead's source means in plain words, so the reply matches how the lead actually reached us.
-  const REACH_OUT = 'BRIGHT CLEAN ADDED THIS CONTACT to reach out to them. They did NOT contact us. Do NOT say they reached out, called, filled in a form, or ask us to thank them for anything. Introduce Bright Cleaning Sev Inc. in one or two sentences: commercial janitorial, construction final, rough and touch-up cleaning, multifamily common areas and unit turnovers, window cleaning, power washing and floor care. Say we would like to learn about their projects and what they need cleaned, ask the questions needed to price, and offer a call or site walkthrough.';
+  const REACH_OUT = 'BRIGHT CLEAN ADDED THIS CONTACT to reach out to them. They did NOT contact us. Do NOT say they reached out, called, filled in a form, or ask us to thank them for anything. Never thank them for their interest, and never say how or from where we got their contact (no partner, bot, feed, API, website or "received your request" wording). Introduce Bright Cleaning Sev Inc. in one or two sentences: commercial janitorial, construction final, rough and touch-up cleaning, multifamily common areas and unit turnovers, window cleaning, power washing and floor care. Say we would like to learn about their projects and what they need cleaned, ask the questions needed to price, and offer a call or site walkthrough.';
   function leadSource(l) {
     const d = String(l.details || '');
     let form = null; try { form = l.intake ? JSON.parse(l.intake) : null; } catch { form = null; }
     const origin = l.origin || (form ? 'website' : 'manual');
     if (origin === 'inbound_call' || /^Source: Phone call/.test(d)) return { label: 'Phone call to Bright Cleaning Sev Inc.', how: 'They called Bright Cleaning Sev Inc. and the call was logged. Thank them for calling and answer what they asked about.' };
     if (origin === 'portal' || /^Source: client portal/.test(d)) return { label: 'Client portal request', how: 'They sent this request from their Bright Cleaning Sev Inc. client portal. Thank them and confirm we have the request.' };
-    if (origin === 'api') return { label: 'Partner or integration: ' + (String(l.intake || '').replace(/^API:\s*/, '') || 'partner website'), how: 'A partner website or tool sent this contact to us. Thank them for their interest and say we received their request through that source.' };
+    // Leads that arrive through an API key come from our own lead feeds. They did not write to us, so reach out as for any staff-added lead.
+    if (origin === 'api') return { label: 'Found by Bright Clean from a lead feed (we reach out to them)', how: REACH_OUT };
     if (origin === 'website' && form) return { label: 'Website quote request' + (form.service ? ' (' + form.service + ')' : ''), how: 'They filled in the quote request form on our website. Thank them and confirm the details we still need before we can price the work.' };
     if (origin === 'website') return { label: 'Website contact form message', how: 'They wrote to us through the contact form on our website. Reply to their message directly: answer what they asked and thank them for writing. Do not say they filled in a quote request unless the details say so.' };
     return { label: 'Added by Bright Clean staff (we reach out to them)', how: REACH_OUT };
