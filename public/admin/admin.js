@@ -311,6 +311,7 @@
   $('#logout').addEventListener('click', () => signOut());
   // Narrow screens: the sidebar sits behind a Menu button; choosing a section closes it.
   $('#navToggle').addEventListener('click', () => { const open = document.querySelector('.side').classList.toggle('open'); $('#navToggle').setAttribute('aria-expanded', String(open)); });
+  if ($('#navMarketing')) $('#navMarketing').addEventListener('click', () => { location.assign('/admin/marketing'); });
   $('#nav').addEventListener('click', e => { if (e.target.closest('button[data-view]')) { document.querySelector('.side').classList.remove('open'); $('#navToggle').setAttribute('aria-expanded', 'false'); } });
 
   // Owners and managers must set up two-step sign-in before using the app: send them straight to the Security card.
@@ -375,6 +376,7 @@
     try {
       const me = await api('/api/admin/me'); state.me = me;
       { const ag = $('#navAccGroup'); if (ag) ag.hidden = !['owner', 'manager'].includes(me.role); }
+      { const mk = $('#navMarketing'); if (mk) mk.hidden = !['owner', 'manager'].includes(me.role); }
       loadMfa();
       if (me.mfa_setup_required) routeToMfaSetup();
       state.people = {}; try { for (const x of ((await api('/api/admin/people')).people || [])) state.people[String(x.email).toLowerCase()] = x; } catch { /* names fall back to email */ }
