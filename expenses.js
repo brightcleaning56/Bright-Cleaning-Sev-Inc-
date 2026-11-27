@@ -483,7 +483,8 @@ function mount(app, ctx) {
     const named = hasTable(db, 'projects');
     const lines = hasTable(db, 'expense_bill_splits') ? db.prepare(`SELECT s.bill_id, s.project_id, s.category, s.amount${named ? ', p.name AS project_name' : ''} FROM expense_bill_splits s ${named ? 'LEFT JOIN projects p ON p.id=s.project_id' : ''} ORDER BY s.id`).all() : [];
     const byBill = {}; for (const l of lines) (byBill[l.bill_id] = byBill[l.bill_id] || []).push(l);
-    res.json({ bills: bills.map(b => ({ ...b, splits: byBill[b.id] || [] })) });
+    const jobNames = named ? Object.fromEntries(db.prepare('SELECT id, name FROM projects').all().map(p => [p.id, p.name])) : {};
+    res.json({ bills: bills.map(b => ({ ...b, splits: byBill[b.id] || [], project_name: b.project_id ? (jobNames[b.project_id] || null) : null })) });
   });
   app.get('/api/admin/expenses/close', auth, (req, res) => res.json(closeList(db, req.query || {})));
   app.post('/api/admin/expenses/close/approve', auth, (req, res) => res.json(approveBatch(db, (req.body || {}).ids, req.user && req.user.email)));
