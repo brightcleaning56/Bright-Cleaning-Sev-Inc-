@@ -2934,7 +2934,23 @@
       return d ? `<div class="muted"><small>Possible duplicate of bill ${esc(d.id)}. Check before approving.</small></div>` : '';
     };
     const noCategory = allBills.filter(b => b.status !== 'Void' && !String(b.category || '').trim()).length;
-    const billRows = allBills.map(b => `<tr data-bstate="${billState(b)}" data-bdate="${esc(b.bill_date)}"><td>${esc(b.bill_date)}</td><td>${b.source === 'crew' ? 'Crew' : 'Office'}</td><td>${esc(b.vendor)}${dupOf(b)}</td><td>${esc(b.description || '')}${(b.splits || []).length ? `<div class="muted"><small>${b.splits.map(l => esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Overhead')) + ' ' + money(l.amount)).join(' · ')}</small></div>` : ''}${aiLine(b)}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}${b.status === 'Void' && b.void_reason ? `<div class="muted">${esc(b.void_reason)}</div>` : ''}</td><td><button class="btn small ghost" data-accreview="${b.id}" type="button">Review</button> ${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.receipt_file ? `<button class="btn small ghost" data-accread="${b.id}" type="button">Read receipt</button> ` : ''}${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accedit="${b.id}" type="button">Edit</button> <button class="btn small ghost" data-accsplit="${b.id}" type="button">Split</button> <button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button> ` : ''}${b.status === 'Paid' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void (reverses payment)</button>` : b.status === 'Open' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No bills yet.</td></tr>';
+    // Possible duplicate (same as the row warning), an AI total that does not match, and the review flag for the workspace.
+    const isDupBill = b => b.status !== 'Void' && allBills.some(o => o.id !== b.id && o.status !== 'Void' && String(o.vendor || '').trim().toLowerCase() === String(b.vendor || '').trim().toLowerCase() && Number(o.amount) === Number(b.amount) && Math.abs(new Date(o.bill_date) - new Date(b.bill_date)) <= 3 * 864e5);
+    const aiMismatch = b => { try { const r = JSON.parse(b.ai_read || 'null'); return !!(r && r.total_matches_bill === false); } catch { return false; } };
+    const needsReview = b => b.status !== 'Void' && b.status !== 'Paid' && (!String(b.category || '').trim() || !b.receipt_file || isDupBill(b) || aiMismatch(b));
+    const pad2 = n => String(n).padStart(2, '0');
+    const weekStart = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; })();
+    const weekBills = allBills.filter(b => b.status !== 'Void' && String(b.bill_date || '') >= weekStart);
+    const weekSum = list => list.reduce((s, b) => s + (Number(b.amount) || 0), 0);
+    const jobWeek = weekBills.filter(b => b.project_id), overheadWeek = weekBills.filter(b => !b.project_id);
+    const waitWeek = weekBills.filter(b => billState(b) === 'waiting');
+    const reviewCount = allBills.filter(needsReview).length;
+    const dupCount = allBills.filter(isDupBill).length;
+    const aiCount = allBills.filter(b => b.ai_read && b.status !== 'Void').length;
+    const liveCount = allBills.filter(b => b.status !== 'Void').length;
+    const companyCount = allBills.filter(b => b.status !== 'Void' && !b.project_id).length;
+    const jobCount = allBills.filter(b => b.status !== 'Void' && b.project_id).length;
+    const billRows = allBills.map(b => `<tr data-bstate="${billState(b)}" data-bdate="${esc(b.bill_date)}" data-review="${needsReview(b) ? 1 : 0}" data-ai="${b.ai_read && b.status !== 'Void' ? 1 : 0}" data-company="${b.project_id ? 0 : 1}" data-job="${b.project_id ? 1 : 0}"><td>${esc(b.bill_date)}</td><td>${b.source === 'crew' ? 'Crew' : 'Office'}</td><td>${esc(b.vendor)}${dupOf(b)}</td><td>${esc(b.description || '')}${(b.splits || []).length ? `<div class="muted"><small>${b.splits.map(l => esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Overhead')) + ' ' + money(l.amount)).join(' · ')}</small></div>` : ''}${aiLine(b)}</td><td>${esc(b.category || '—')}</td><td>${b.project_id ? 'Job ' + esc(b.project_id) : 'Company'}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}${b.status === 'Void' && b.void_reason ? `<div class="muted">${esc(b.void_reason)}</div>` : ''}</td><td><button class="btn small ghost" data-accreview="${b.id}" type="button">Review</button> ${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.receipt_file ? `<button class="btn small ghost" data-accread="${b.id}" type="button">Read receipt</button> ` : ''}${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accedit="${b.id}" type="button">Edit</button> <button class="btn small ghost" data-accsplit="${b.id}" type="button">Split</button> <button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button> ` : ''}${b.status === 'Paid' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void (reverses payment)</button>` : b.status === 'Open' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No bills yet.</td></tr>';
     const reconRows = (recs.reconciliations || []).slice(0, 10).map(r => `<tr><td>${esc(r.as_of)}</td><td class="num">${money(r.statement_balance)}</td><td class="num">${money(r.ledger_balance)}</td><td class="num">${money(r.difference)}</td><td>${esc(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No reconciliations yet.</td></tr>';
     const driftRows = (drift.drift || []).map(d => `<li>${esc(d.ref)}: ${esc(d.issue)}</li>`).join('') || '<li class="muted">No recorded costs changed after posting.</li>';
     const openRows = (tie.unposted || []).map(i => `<tr><td>${esc(i.invoice_number || i.id)}</td><td class="num">${money(i.amount)}</td><td class="num">${money(i.tax_amount)}</td><td><button class="btn small ghost" data-acctax="${i.id}" type="button">Set sales tax</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Every invoice is on the ledger.</td></tr>';
@@ -2955,27 +2971,36 @@
       <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Receivables tie-out ${tieBadge}</h2>
         <p class="muted">Difference between what customers owe and the ledger's receivable: <b>${money(tie.difference)}</b>. Unposted invoices: ${tie.unposted_invoices}. Unposted payments: ${tie.unposted_payments}.</p>
         <p class="muted">${esc(tie.gap)}</p></div>
-      <div class="card accg" data-accg="expenses" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><h2 class="secth" style="margin:0">Expenses &amp; receipts</h2><p class="muted" style="margin:2px 0 0">Enter a bill, attach its receipt, approve it to post it to the books, then mark it paid.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small ghost" id="accBatchGo" type="button">Review &amp; approve batch</button><button class="btn small ghost" id="accUpload" type="button">Upload receipt</button><button class="btn small" id="accNewBill" type="button">New bill</button></div></div>
-        <div class="acc-stats">
-          <div class="acc-stat"><span class="muted">Waiting approval</span><b>${countOf('waiting')}</b><span class="muted">${money(sumOf('waiting'))}</span></div>
-          <div class="acc-stat"><span class="muted">Approved, not paid</span><b>${countOf('approved')}</b><span class="muted">${money(sumOf('approved'))}</span></div>
-          <div class="acc-stat"><span class="muted">Paid</span><b>${countOf('paid')}</b><span class="muted">${money(sumOf('paid'))}</span></div>
-          <div class="acc-stat"><span class="muted">Receipts attached</span><b>${withReceipt}</b><span class="muted">${withAi} read by AI (suggestion only)</span></div>
+      <div class="card accg" data-accg="expenses" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><h2 class="secth" style="margin:0">Expenses &amp; receipts</h2><p class="muted" style="margin:2px 0 0">Enter a bill, attach its receipt, approve it to post it to the books, then mark it paid.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small ghost" id="accUpload" type="button">Upload receipt</button><button class="btn small" id="accNewBill" type="button">New bill</button></div></div>
+        <div class="acc-stages" aria-label="Expense workflow">
+          <div class="acc-stage"><span class="muted">Captured</span><b>${liveCount}</b><span class="muted">bills entered</span></div>
+          <div class="acc-stage"><span class="muted">AI read</span><b>${aiCount}</b><span class="muted">suggestion only</span></div>
+          <div class="acc-stage"><span class="muted">Needs review</span><b>${reviewCount}</b><span class="muted">${dupCount} possible duplicate${dupCount === 1 ? '' : 's'}</span></div>
+          <div class="acc-stage"><span class="muted">Waiting approval</span><b>${countOf('waiting')}</b><span class="muted">${money(sumOf('waiting'))}</span></div>
+          <div class="acc-stage"><span class="muted">Approved, not paid</span><b>${countOf('approved')}</b><span class="muted">${money(sumOf('approved'))}</span></div>
+          <div class="acc-stage"><span class="muted">Paid</span><b>${countOf('paid')}</b><span class="muted">${money(sumOf('paid'))}</span></div>
         </div>
         <div class="filt" style="margin:4px 0"><label>From <input type="date" id="billFrom"></label><label>To <input type="date" id="billTo"></label><button type="button" class="btn small ghost" id="billClear">Clear dates</button></div>
-        <div class="acc-filters" role="group" aria-label="Filter bills">
-          <button type="button" class="btn small ghost on" data-bfilter="all">All (${allBills.length})</button>
+        <div class="acc-filters" role="tablist" aria-label="Filter bills">
+          <button type="button" class="btn small ghost on" data-bfilter="all">Workspace (${allBills.length})</button>
+          <button type="button" class="btn small ghost" data-bfilter="review">Needs review (${reviewCount})</button>
+          <button type="button" class="btn small ghost" data-bfilter="ai">AI read (${aiCount})</button>
           <button type="button" class="btn small ghost" data-bfilter="waiting">Waiting approval (${countOf('waiting')})</button>
           <button type="button" class="btn small ghost" data-bfilter="approved">Approved (${countOf('approved')})</button>
           <button type="button" class="btn small ghost" data-bfilter="paid">Paid (${countOf('paid')})</button>
+          <button type="button" class="btn small ghost" data-bfilter="company">Company bills (${companyCount})</button>
+          <button type="button" class="btn small ghost" data-bfilter="job">Job expenses (${jobCount})</button>
           <button type="button" class="btn small ghost" data-bfilter="void">Void (${countOf('void')})</button>
         </div>
-        <ol class="acc-steps" aria-label="Expense workflow">
-          <li><b>1 Enter</b><span class="muted">${allBills.filter(b => b.status !== 'Void').length} bills</span></li>
-          <li><b>2 Review</b><span class="muted">${countOf('waiting')} waiting approval · ${noCategory} with no category</span></li>
-          <li><b>3 Post</b><span class="muted">${countOf('approved') + countOf('paid')} on the books</span></li>
-          <li><b>4 Pay</b><span class="muted">${countOf('paid')} paid</span></li>
-        </ol>
+        <div class="acc-two">
+          <div class="acc-panel"><h3 class="secth" style="margin:0 0 6px">This week</h3>
+            <dl class="acc-rv-facts"><dt>Total expenses</dt><dd>${money(weekSum(weekBills))}</dd><dt>Job costs</dt><dd>${money(weekSum(jobWeek))}</dd><dt>Company overhead</dt><dd>${money(weekSum(overheadWeek))}</dd><dt>Waiting approval</dt><dd>${money(weekSum(waitWeek))}</dd></dl>
+            <p class="muted"><small>Bills dated from ${esc(weekStart)} (Monday) to now.</small></p></div>
+          <div class="acc-panel"><h3 class="secth" style="margin:0 0 6px">Weekly accounting review</h3>
+            <div class="acc-tiles"><div><span class="muted">Job receipts</span><b>${jobWeek.length}</b></div><div><span class="muted">Company bills</span><b>${overheadWeek.length}</b></div><div><span class="muted">Exceptions</span><b>${reviewCount}</b></div><div><span class="muted">Possible duplicates</span><b>${dupCount}</b></div><div><span class="muted">No category</span><b>${noCategory}</b></div></div>
+            <button class="btn" type="button" id="accBatchGo">Review &amp; approve batch</button>
+            <p class="muted"><small>Opens the weekly close below, where you check each bill and approve it.</small></p></div>
+        </div>
         <div id="accReview" class="acc-review" hidden>
           <div class="acc-rv-doc" id="accRvDoc"></div>
           <div class="acc-rv-side">
@@ -3002,7 +3027,7 @@
           </div>
         </div>
         <div id="monthlyHost" style="margin:8px 0"></div>
-        <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Source</th><th>Vendor</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div>
+        <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Source</th><th>Vendor</th><th>Description</th><th>Category</th><th>Job</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div>
         <h3 class="secth" style="margin:18px 0 4px;font-size:1rem">Weekly close</h3>
         <p class="muted" style="margin:0 0 8px">Bills waiting for approval in the range. Approving posts the checked bills to the books; unchecked ones stay pending.</p>
         <div class="row" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>From <input type="date" id="closeFrom"></label><label>To <input type="date" id="closeTo"></label><button class="btn small ghost" id="closeLoad" type="button">Show</button></div>
@@ -3053,7 +3078,10 @@
       const from = ($('#billFrom') || {}).value || '', to = ($('#billTo') || {}).value || '';
       body.querySelectorAll('tr[data-bstate]').forEach(tr => {
         const d = tr.dataset.bdate || '';
-        tr.hidden = (billChip !== 'all' && tr.dataset.bstate !== billChip) || (!!from && d < from) || (!!to && d > to);
+        // The flag tabs (review, ai, company, job) read the row's flags; the others read the bill's state.
+        const flagTab = ['review', 'ai', 'company', 'job'].includes(billChip);
+        const chipOk = billChip === 'all' || (flagTab ? tr.dataset[billChip] === '1' : tr.dataset.bstate === billChip);
+        tr.hidden = !chipOk || (!!from && d < from) || (!!to && d > to);
       });
     };
     body.querySelectorAll('[data-bfilter]').forEach(chip => chip.onclick = () => {
