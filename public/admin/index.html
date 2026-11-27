@@ -256,6 +256,14 @@
   .side nav .navsub button { padding: 8px 12px; font-size: 13px; font-weight: 500; }
   .side nav .navsub button.active { background: #ffffff1f; color: #fff; }
   .side nav .navgroup[hidden], .side nav .navsub[hidden], .accg[hidden] { display: none !important; }
+  /* Expenses workspace: summary tiles, filter chips, workflow steps */
+  .acc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
+  .acc-stat { border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; background: var(--card); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .acc-stat b { font-size: 20px; color: #10263e; }
+  .acc-filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .acc-filters .btn.on { background: #10263e; color: #fff; border-color: #10263e; }
+  .acc-steps { list-style: none; padding: 0; margin: 8px 0 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .acc-steps li { border: 1px solid var(--line2); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
   /* Accounting page: tab bar, overview dashboard */
   .acctabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
   .acctabs button { border: 1px solid var(--line2); background: var(--card); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted, #4a5b6e); cursor: pointer; }
