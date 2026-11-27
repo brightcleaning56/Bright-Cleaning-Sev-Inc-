@@ -99,6 +99,7 @@ module.exports = function mountPayments(app, ctx) {
       db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)').run(inv.id, amount, 'Online card payment (Stripe ' + s.id + ')', now(), 'stripe', now());
       if (prev) db.prepare("UPDATE online_payments SET status='Paid', paid_at=? WHERE stripe_session_id=?").run(now(), s.id);
       else db.prepare("INSERT INTO online_payments(invoice_id,stripe_session_id,amount,email,status,created_at,paid_at) VALUES(?,?,?,?,?,?,?)").run(inv.id, s.id, amount, s.customer_email || inv.email || '', 'Paid', now(), now());
+      { const mk=require('./marketing'); mk.emitLifecycle(db,'payment_received',{leadId:mk.leadForInvoice(db,inv.id),sourceModule:'payments',sourceRecordId:'stripe:'+s.id,valueAmount:amount,occurredAt:now()}); }
       try { logAction({ user: { email: 'stripe' } }, 'online payment received', 'invoice', inv.id, `${inv.invoice_number}: $${amount.toFixed(2)} (${status})`); } catch { /* */ }
       return 'ok';
     });
