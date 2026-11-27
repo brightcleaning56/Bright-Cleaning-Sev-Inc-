@@ -70,25 +70,29 @@ async function readReceipt({ db, billId, uploadDir, callFn, model }) {
 
 // Category suggestions (Phase 3). The AI picks from the bookkeeping list below. It is stored next to the
 // receipt reading as a suggestion; the bill's category changes only when a person applies it.
-// These match the job-cost accounts (job-cost.js CATEGORY_ACCOUNT): a job receipt must land in a job cost account.
-// Insurance, rent of space, utilities and software are overhead, not job cost, so they are not offered here.
-const CATEGORIES = ['Materials', 'Equipment', 'Travel or fuel', 'Subcontractor', 'Other'];
+// Job bills: only the job-cost accounts (job-cost.js CATEGORY_ACCOUNT), so a job receipt lands in a job cost account.
+const JOB_CATEGORIES = ['Materials', 'Equipment', 'Travel or fuel', 'Subcontractor', 'Other'];
+// Company bills (no job): operating expenses. Insurance, rent, utilities and software belong here.
+const OVERHEAD_CATEGORIES = ['Insurance', 'Rent', 'Utilities', 'Software', 'Materials', 'Equipment', 'Travel or fuel', 'Subcontractor', 'Other'];
+const CATEGORIES = OVERHEAD_CATEGORIES;
 function parseStored(s) { try { return s ? JSON.parse(s) || {} : {}; } catch { return {}; } }
 async function suggestCategory({ db, billId, uploadDir, callFn, model }) {
   ensureSchema(db);
-  const bill = db.prepare('SELECT id, ai_read FROM expense_bills WHERE id=?').get(Number(billId));
+  const bill = db.prepare('SELECT id, project_id, ai_read FROM expense_bills WHERE id=?').get(Number(billId));
   if (!bill) throw new Error('Bill not found.');
   const r = receiptPath(db, Number(billId), uploadDir);
   if (!r) throw new Error('Attach a receipt photo or PDF to this bill first.');
   const size = fs.statSync(r.path).size;
   if (size > MAX_BYTES) throw new Error('This receipt file is over 20 MB. Attach a smaller photo or PDF.');
   const block = contentBlockFor(r.name, fs.readFileSync(r.path));
+  // A bill on a job gets job-cost categories; a company bill gets the operating-expense categories.
+  const list = bill.project_id ? JOB_CATEGORIES : OVERHEAD_CATEGORIES;
   const reply = await callFn([{ role: 'user', content: [block, { type: 'text', text:
-    `Suggest the expense category for this receipt. Return ONLY JSON: {"category": one of ${JSON.stringify(CATEGORIES)}, "confidence": a number from 0 to 1, "reason": a short phrase}. ` +
+    `Suggest the expense category for this receipt. The file is named "${text(r.name, 200)}". Return ONLY JSON: {"category": one of ${JSON.stringify(list)}, "confidence": a number from 0 to 1, "reason": a short phrase}. ` +
     `If you are not sure, use "Other" with a low confidence.` }] }],
     'You categorize business expenses for Bright Cleaning Sev Inc. Use only what the receipt shows.', 400);
   const p = parseReply(reply);
-  const category = CATEGORIES.includes(p.category) ? p.category : 'Other';
+  const category = list.includes(p.category) ? p.category : 'Other';
   const confidence = Math.round(Math.max(0, Math.min(1, Number(p.confidence) || 0)) * 100) / 100;
   const sugg = { category, confidence, reason: text(p.reason, 200), model: model || null, at: new Date().toISOString(), status: 'suggestion' };
   db.prepare('UPDATE expense_bills SET ai_read=? WHERE id=?').run(JSON.stringify({ ...parseStored(bill.ai_read), category_suggestion: sugg }), bill.id);

@@ -37,7 +37,8 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
       ? { vendor: 'Blurry Co', date: null, total: null, category: 'Other', confidence: 0.2, reason: 'unreadable' }
       : { vendor: 'Auto Supply Co', date: '2026-11-20', total: 45.5, category: 'Materials', confidence: 0.9, reason: 'cleaning supplies' };
     else if (content.includes('Read this receipt')) out ={ vendor: 'Glass Co', date: '2026-11-26', total: 80, tax: 4, line_items: [{ description: 'Squeegee', amount: 76, suggested_category: 'Supplies' }] };
-    else if (content.includes('Suggest the expense category')) out = { category: 'Materials', confidence: 0.9, reason: 'cleaning squeegees' };
+    else if (content.includes('Suggest the expense category') && content.includes('amtrust')) out = { category: 'Insurance', confidence: 0.95, reason: 'workers compensation premium' };
+    else if (content.includes('Suggest the expense category')) out ={ category: 'Materials', confidence: 0.9, reason: 'cleaning squeegees' };
     else if (content.includes('"type":"document"')) out ={ sheets: [{ sheet: 'G0.1', title: 'Code plan', revision: 'IFC' }, { sheet: 'A1.1', title: 'Level 1 plan' }], building_sf: 136600, building_sf_sheet: 'G0.1', quantities: [{ item: 'Restrooms', quantity: 28, sheet: 'A6.1', method: 'From schedule', confidence: 'High', note: 'toilet room schedule' }], questions: ['Exterior glass quantity is not shown on the A-sheets.'] };
     else if (content.includes('CALL ANALYSIS')) out = { summary: 'Pat from Phone Match Co wants a final clean quote for 20,000 SF next month.', intent: 'New bid request', sentiment: 'Positive', urgency: 'High', lead_score: 82, score_reasons: ['Defined scope', 'Near-term timeline'], details: { service: 'Final clean', square_feet: 20000, site_address: '', timeline: 'next month', budget: '' }, action_items: [{ task: 'Send final clean quote', owner: 'Estimator', due: '2026-11-06' }, { task: '', owner: 'x' }], follow_up_date: '2026-11-05', reply_draft: 'Hi Pat, thanks for calling...', risks: [] };
     else if (content.includes('Phone call notes')) out = { contact_name: 'Dana Ruiz', company: 'Ridge Builders', phone: '515-555-0100', email: '', purpose: 'Bid request', service: 'Final clean', square_footage: '80,000', deadline: 'December walkthrough', summary: 'GC needs final clean for 80,000 SF building.', follow_up: 'Request drawings' };
@@ -381,6 +382,19 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
     const after = ((await api('GET', '/api/admin/expenses', null, T)).data.bills || []).length;
     assert(after === before, 'a bill was saved anyway');
     return '422 names the missing amount; no bill saved';
+  });
+
+  await check('Company bill (no job): a workers comp receipt is categorized as Insurance; the suggestion does not change the bill', async () => {
+    const cr = await api('POST', '/api/admin/expenses', { vendor: 'AmTrust Financial Services', description: 'Workers comp premium', amount: 500, bill_date: '2026-11-20' }, T);
+    const id = cr.data.id || (cr.data.bill && cr.data.bill.id);
+    const fd = new FormData(); fd.append('receipt', new Blob([Buffer.from('%PDF-1.4 amtrust')], { type: 'application/pdf' }), 'amtrust-workers-comp.pdf');
+    const up = await fetch(B + `/api/admin/expenses/${id}/receipt`, { method: 'POST', headers: { Authorization: 'Bearer ' + T }, body: fd });
+    assert(up.status === 201, 'attach ' + up.status);
+    const sg = await api('POST', `/api/admin/ai/expenses/${id}/suggest-category`, {}, T);
+    assert(sg.status === 200 && sg.data.suggestion.category === 'Insurance', 'suggest ' + sg.status + ' ' + JSON.stringify(sg.data));
+    const bill = ((await api('GET', '/api/admin/expenses', null, T)).data.bills || []).find(b => b.id === id);
+    assert(bill.category !== 'Insurance', 'the suggestion changed the bill: ' + bill.category);
+    return 'suggested Insurance for a company bill; the bill category is unchanged';
   });
 
   child.kill(); fake.close();
