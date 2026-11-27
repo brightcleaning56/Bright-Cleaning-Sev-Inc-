@@ -2927,7 +2927,7 @@
     const sumOf = st => allBills.filter(b => billState(b) === st).reduce((s, b) => s + (Number(b.amount) || 0), 0);
     const withReceipt = allBills.filter(b => b.receipt_file && b.status !== 'Void').length;
     const withAi = allBills.filter(b => b.ai_read && b.status !== 'Void').length;
-    const billRows = allBills.map(b => `<tr data-bstate="${billState(b)}"><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}${(b.splits || []).length ? `<div class="muted"><small>${b.splits.map(l => esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Overhead')) + ' ' + money(l.amount)).join(' · ')}</small></div>` : ''}${aiLine(b)}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}${b.status === 'Void' && b.void_reason ? `<div class="muted">${esc(b.void_reason)}</div>` : ''}</td><td>${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.receipt_file ? `<button class="btn small ghost" data-accread="${b.id}" type="button">Read receipt</button> ` : ''}${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accedit="${b.id}" type="button">Edit</button> <button class="btn small ghost" data-accsplit="${b.id}" type="button">Split</button> <button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button> ` : ''}${b.status === 'Paid' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void (reverses payment)</button>` : b.status === 'Open' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
+    const billRows = allBills.map(b => `<tr data-bstate="${billState(b)}"><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}${(b.splits || []).length ? `<div class="muted"><small>${b.splits.map(l => esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Overhead')) + ' ' + money(l.amount)).join(' · ')}</small></div>` : ''}${aiLine(b)}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}${b.status === 'Void' && b.void_reason ? `<div class="muted">${esc(b.void_reason)}</div>` : ''}</td><td><button class="btn small ghost" data-accreview="${b.id}" type="button">Review</button> ${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.receipt_file ? `<button class="btn small ghost" data-accread="${b.id}" type="button">Read receipt</button> ` : ''}${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accedit="${b.id}" type="button">Edit</button> <button class="btn small ghost" data-accsplit="${b.id}" type="button">Split</button> <button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button> ` : ''}${b.status === 'Paid' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void (reverses payment)</button>` : b.status === 'Open' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
     const reconRows = (recs.reconciliations || []).slice(0, 10).map(r => `<tr><td>${esc(r.as_of)}</td><td class="num">${money(r.statement_balance)}</td><td class="num">${money(r.ledger_balance)}</td><td class="num">${money(r.difference)}</td><td>${esc(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No reconciliations yet.</td></tr>';
     const driftRows = (drift.drift || []).map(d => `<li>${esc(d.ref)}: ${esc(d.issue)}</li>`).join('') || '<li class="muted">No recorded costs changed after posting.</li>';
     const openRows = (tie.unposted || []).map(i => `<tr><td>${esc(i.invoice_number || i.id)}</td><td class="num">${money(i.amount)}</td><td class="num">${money(i.tax_amount)}</td><td><button class="btn small ghost" data-acctax="${i.id}" type="button">Set sales tax</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Every invoice is on the ledger.</td></tr>';
@@ -2968,6 +2968,21 @@
           <li><b>3 Post</b><span class="muted">${countOf('approved') + countOf('paid')} on the books</span></li>
           <li><b>4 Pay</b><span class="muted">${countOf('paid')} paid</span></li>
         </ol>
+        <div id="accReview" class="acc-review" hidden>
+          <div class="acc-rv-doc" id="accRvDoc"></div>
+          <div class="acc-rv-side">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 class="secth" id="accRvTitle" style="margin:0"></h3><button type="button" class="btn small ghost" id="accRvClose">Close</button></div>
+            <dl class="acc-rv-facts" id="accRvFacts"></dl>
+            <div id="accRvAi"></div>
+            <div class="filt" id="accRvActions">
+              <button class="btn small" type="button" data-accappr="" id="accRvApprove" hidden>Approve</button>
+              <button class="btn small ghost" type="button" data-accedit="" id="accRvEdit" hidden>Edit</button>
+              <button class="btn small ghost" type="button" data-accsplit="" id="accRvSplit" hidden>Split</button>
+              <button class="btn small ghost" type="button" data-accpay="" id="accRvPay" hidden>Mark paid</button>
+              <button class="btn small ghost" type="button" data-accvoid="" id="accRvReject" hidden>Reject (void, with a reason)</button>
+            </div>
+          </div>
+        </div>
         <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div>
         <h3 class="secth" style="margin:18px 0 4px;font-size:1rem">Weekly close</h3>
         <p class="muted" style="margin:0 0 8px">Bills waiting for approval in the range. Approving posts the checked bills to the books; unchecked ones stay pending.</p>
@@ -3193,6 +3208,45 @@
       };
       inp.click();
     });
+    // Review panel: the receipt on the left, the bill's facts and its actions on the right. Actions reuse the buttons above.
+    let reviewUrl = null, reviewId = null;
+    const showReview = id => {
+      const bill = allBills.find(x => String(x.id) === String(id)); if (!bill) return;
+      const panel = $('#accReview'); if (!panel) return;
+      reviewId = bill.id;
+      const st = billState(bill);
+      const stateLabel = { waiting: 'Waiting approval', approved: 'Approved, not paid', paid: 'Paid', void: 'Void' }[st];
+      $('#accRvTitle').textContent = 'Bill ' + bill.id + ': ' + (bill.vendor || 'no vendor');
+      const jobs = (bill.splits || []).length ? bill.splits.map(l => esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Overhead')) + ' ' + money(l.amount)).join(' · ') : (bill.project_id ? 'Job ' + esc(bill.project_id) : 'Company overhead');
+      const facts = [['Date', esc(bill.bill_date)], ['Amount', money(bill.amount)], ['Status', esc(stateLabel)], ['Approved by', bill.approved_by ? esc(bill.approved_by) : 'Not yet'], ['Description', esc(bill.description || '')], ['Job / split', jobs], ['Receipt reference', esc(bill.receipt_ref || '')]];
+      $('#accRvFacts').innerHTML = facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v || '<span class="muted">none</span>'}</dd>`).join('');
+      const r = (() => { if (!bill.ai_read) return null; try { return JSON.parse(bill.ai_read); } catch { return null; } })();
+      $('#accRvAi').innerHTML = r ? `<p class="muted"><small>AI reading (suggestion only): ${esc(r.vendor || 'vendor unclear')} ${esc(r.date || '')} total ${r.total == null ? 'unclear' : esc(money(r.total))}${r.total_matches_bill === false ? ' · does NOT match the bill amount, check it' : ''}</small></p>` : '';
+      // Each action button shows only when it applies, and carries this bill's id for the shared handler.
+      const set = (sel, attr, on) => { const el = $(sel); if (!el) return; el.hidden = !on; if (on) el.dataset[attr] = String(bill.id); };
+      set('#accRvApprove', 'accappr', st === 'waiting');
+      set('#accRvEdit', 'accedit', st === 'waiting' || st === 'approved');
+      set('#accRvSplit', 'accsplit', st === 'waiting' || st === 'approved');
+      set('#accRvPay', 'accpay', st === 'approved');
+      set('#accRvReject', 'accvoid', st === 'waiting' || st === 'approved');
+      panel.hidden = false;
+      const doc = $('#accRvDoc');
+      if (!bill.receipt_file) { doc.innerHTML = '<p class="muted">No receipt attached yet. Attach one from the table, then the receipt shows here.</p>'; }
+      else {
+        doc.innerHTML = '<p class="muted">Loading the receipt…</p>';
+        const isPdf = /\.pdf$/i.test(bill.receipt_file);
+        fetch('/api/admin/expenses/' + bill.id + '/receipt', { credentials: 'same-origin' }).then(async res => {
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'The receipt could not be opened.');
+          const url = URL.createObjectURL(await res.blob());
+          if (reviewId !== bill.id) { URL.revokeObjectURL(url); return; }
+          if (reviewUrl) URL.revokeObjectURL(reviewUrl); reviewUrl = url;
+          doc.innerHTML = isPdf ? `<iframe title="Receipt for bill ${esc(bill.id)}" src="${url}"></iframe>` : `<img alt="Receipt for bill ${esc(bill.id)}" src="${url}">`;
+        }).catch(err => { if (reviewId === bill.id) doc.innerHTML = `<p class="msg err">${esc(err.message)}</p>`; });
+      }
+      if (panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    body.querySelectorAll('[data-accreview]').forEach(btn => btn.onclick = () => showReview(btn.dataset.accreview));
+    $('#accRvClose') && ($('#accRvClose').onclick = () => { $('#accReview').hidden = true; reviewId = null; });
     body.querySelectorAll('[data-accview]').forEach(btn => btn.onclick = async () => {
       try {
         const r = await fetch('/api/admin/expenses/' + btn.dataset.accview + '/receipt', { credentials: 'same-origin' });

@@ -976,6 +976,23 @@ async function check(area, name, fn) {
     return 'two overhead lines saved to the bill (300.00 total)';
   });
 
+  await check('Expense review UI', 'Review opens a bill with its facts and actions; Approve from the review panel approves the bill', async () => {
+    await api('POST', '/api/admin/expenses', { vendor: 'UI Review Co', description: 'Review check', amount: 55, bill_date: '2026-11-24', category: 'materials' }, T);
+    const id = (await api('GET', '/api/admin/expenses', null, T)).bills.find(b => b.vendor === 'UI Review Co').id;
+    await nav('accounting'); await sleep(1200);
+    d.querySelector('#accTabs button[data-acctab="expenses"]').click(); await sleep(1000);
+    d.querySelector('[data-accreview="' + id + '"]').click(); await sleep(900);
+    const panel = d.querySelector('#accReview');
+    assert(panel && !panel.hidden, 'review panel did not open');
+    assert(/UI Review Co/.test(txt('#accRvTitle')), txt('#accRvTitle'));
+    const approve = d.querySelector('#accRvApprove');
+    assert(approve && !approve.hidden && approve.dataset.accappr === String(id), 'Approve is not offered for the waiting bill');
+    approve.click(); await sleep(1200);
+    const bill = (await api('GET', '/api/admin/expenses', null, T)).bills.find(b => b.id === id);
+    assert(bill.approved_by, 'bill was not approved');
+    return 'review panel showed the bill, and Approve from it approved the bill';
+  });
+
   await check('Weekly close UI', 'The weekly close lists an unapproved bill in the range; approving the checked bills posts them and removes them from the list', async () => {
     const day = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
     await api('POST', '/api/admin/expenses', { vendor: 'Close UI Co', description: 'Close check', amount: 45, bill_date: day, category: 'materials' }, T);
