@@ -1005,6 +1005,18 @@ async function check(area, name, fn) {
     return 'bill before the From date hidden; shown again after Clear dates';
   });
 
+  await check('Expense duplicate and source UI', 'Two bills with the same vendor, amount and near date show a duplicate warning; office bills show Office in the Source column', async () => {
+    await api('POST', '/api/admin/expenses', { vendor: 'UI Dup Co', description: 'First', amount: 77, bill_date: '2026-02-10', category: 'materials' }, T);
+    await api('POST', '/api/admin/expenses', { vendor: 'UI Dup Co', description: 'Second', amount: 77, bill_date: '2026-02-11', category: 'materials' }, T);
+    await nav('accounting'); await sleep(1200);
+    d.querySelector('#accTabs button[data-acctab="expenses"]').click(); await sleep(1000);
+    const rows = [...d.querySelectorAll('tr[data-bdate]')].filter(tr => /UI Dup Co/.test(tr.textContent));
+    assert(rows.length === 2, 'expected 2 rows, got ' + rows.length);
+    assert(rows.every(tr => /Possible duplicate/.test(tr.textContent)), 'duplicate warning missing');
+    assert(rows.every(tr => /Office/.test(tr.textContent)), 'Source column missing');
+    return 'both bills flagged as possible duplicates and labeled Office';
+  });
+
   await check('Weekly close UI', 'The weekly close lists an unapproved bill in the range; approving the checked bills posts them and removes them from the list', async () => {
     const day = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
     await api('POST', '/api/admin/expenses', { vendor: 'Close UI Co', description: 'Close check', amount: 45, bill_date: day, category: 'materials' }, T);
