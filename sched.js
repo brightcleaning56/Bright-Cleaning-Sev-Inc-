@@ -765,6 +765,8 @@ module.exports = function mountSched(app, ctx) {
       const drop = () => { if (req.file) try { fs.unlinkSync(req.file.path); } catch { /* already gone */ } };
       let visit = null;
       if (req.body.visit_id) { visit = assigned(e, req.body.visit_id); if (!visit) { drop(); return res.status(404).json({ error: 'This job is not assigned to you.' }); } }
+      // A crew receipt goes on a job: it is job cost for that job's category. Without an assigned job it is refused.
+      if (!visit || !visit.project_id) { drop(); return res.status(400).json({ error: 'Choose the job this purchase is for. Receipts go on the job you are working on.' }); }
       try { res.status(201).json({ ok: true, ...require('./expenses').createCrewReceipt(db, { employee: e, project_id: visit ? visit.project_id : null, vendor: req.body.vendor, amount: req.body.amount, description: req.body.description, category: req.body.category, bill_date: req.body.bill_date }, req.file) }); }
       catch (err) { drop(); res.status(400).json({ error: err.message }); }
     });

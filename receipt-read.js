@@ -70,7 +70,9 @@ async function readReceipt({ db, billId, uploadDir, callFn, model }) {
 
 // Category suggestions (Phase 3). The AI picks from the bookkeeping list below. It is stored next to the
 // receipt reading as a suggestion; the bill's category changes only when a person applies it.
-const CATEGORIES = ['Materials', 'Equipment', 'Vehicle / fuel', 'Insurance', 'Labor', 'Rent', 'Utilities', 'Software', 'Other'];
+// These match the job-cost accounts (job-cost.js CATEGORY_ACCOUNT): a job receipt must land in a job cost account.
+// Insurance, rent of space, utilities and software are overhead, not job cost, so they are not offered here.
+const CATEGORIES = ['Materials', 'Equipment', 'Travel or fuel', 'Subcontractor', 'Other'];
 function parseStored(s) { try { return s ? JSON.parse(s) || {} : {}; } catch { return {}; } }
 async function suggestCategory({ db, billId, uploadDir, callFn, model }) {
   ensureSchema(db);

@@ -297,10 +297,12 @@
 
   // Crew receipt (Phase 2): a photo or PDF of a purchase, sent with the job. The office reviews it before it posts.
   function receiptCardHtml(list) {
+    // A receipt goes on a job. With no job assigned today there is nothing to attach it to, so the form is not shown.
+    if (!list.length) return `<div class="card" id="rc-card" style="margin-top:12px"><b>Add a receipt</b><p class="muted" style="margin:4px 0 0">Receipts go on the job you are working on. You have no job assigned right now.</p></div>`;
     const opts = list.map(x => `<option value="${x.j.id}">${esc(x.j.title)}</option>`).join('');
-    return `<div class="card" id="rc-card" style="margin-top:12px"><b>Add a receipt</b><p class="muted" style="margin:4px 0 10px">A photo or PDF of a purchase for a job. The office reviews it before it is posted.</p>
+    return `<div class="card" id="rc-card" style="margin-top:12px"><b>Add a receipt</b><p class="muted" style="margin:4px 0 10px">A photo or PDF of a purchase for the job you are working on. The office reviews it before it is posted.</p>
       <form id="rc-form" style="display:grid;gap:10px"><style>#rc-form label{display:grid;gap:4px;min-width:0}#rc-form input,#rc-form select{width:100%;box-sizing:border-box;min-width:0}</style>
-        <label>Job<select name="visit_id">${opts}<option value="">No job today</option></select></label>
+        <label>Job<select name="visit_id" required>${opts}</select></label>
         <label>Vendor<input name="vendor" required maxlength="120" placeholder="Store or supplier"></label>
         <label>Amount<input name="amount" inputmode="decimal" required placeholder="0.00"></label>
         <label>Type<select name="category"><option value="materials">Materials</option><option value="equipment">Equipment</option><option value="travel">Travel or fuel</option><option value="other">Other</option></select></label>
