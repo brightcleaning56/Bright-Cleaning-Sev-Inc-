@@ -3002,6 +3002,11 @@
             <p class="muted"><small>Opens the weekly close below, where you check each bill and approve it.</small></p></div>
         </div>
         <div id="accReview" class="acc-review" hidden>
+          <div class="acc-rv-tabs" style="grid-column:1 / -1;display:flex;gap:6px;flex-wrap:wrap" role="tablist" aria-label="Receipt views">
+            <button type="button" class="btn small on" data-rvtab="receipt">Receipt preview</button>
+            <button type="button" class="btn small ghost" data-rvtab="ai">AI extracted</button>
+            <button type="button" class="btn small ghost" data-rvtab="alloc">Allocation</button>
+          </div>
           <div class="acc-rv-doc" id="accRvDoc"></div>
           <div class="acc-rv-side">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 class="secth" id="accRvTitle" style="margin:0"></h3><button type="button" class="btn small ghost" id="accRvClose">Close</button></div>
@@ -3269,12 +3274,14 @@
       inp.click();
     });
     // Review panel: the receipt on the left, the bill's facts and its actions on the right. Actions reuse the buttons above.
-    let reviewUrl = null, reviewId = null;
+    let reviewUrl = null, reviewId = null, rvTab = 'receipt', rvReceiptHtml = '';
     const showReview = id => {
       const bill = allBills.find(x => String(x.id) === String(id)); if (!bill) return;
       const panel = $('#accReview'); if (!panel) return;
       if (reviewId !== bill.id) { scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; } // scanned pages belong to one bill
       reviewId = bill.id;
+      rvTab = 'receipt'; rvReceiptHtml = '';
+      $('#accReview').querySelectorAll('[data-rvtab]').forEach(x => x.classList.toggle('on', x.dataset.rvtab === 'receipt'));
       const st = billState(bill);
       const stateLabel = { waiting: 'Waiting approval', approved: 'Approved, not paid', paid: 'Paid', void: 'Void' }[st];
       $('#accRvTitle').textContent = 'Bill ' + bill.id + ': ' + (bill.vendor || 'no vendor');
@@ -3299,7 +3306,9 @@
       set('#accRvPay', 'accpay', st === 'approved');
       set('#accRvReject', 'accvoid', st === 'waiting' || st === 'approved');
       panel.hidden = false;
-      const doc = $('#accRvDoc');
+      // The receipt preview is kept even while another view (AI extracted, Allocation) is showing.
+      const realDoc = $('#accRvDoc');
+      const doc = { set innerHTML(h) { rvReceiptHtml = h; if (rvTab === 'receipt') realDoc.innerHTML = h; } };
       if (!bill.receipt_file) { doc.innerHTML = '<p class="muted">No receipt attached yet. Attach one from the table, then the receipt shows here.</p>'; }
       else {
         doc.innerHTML = '<p class="muted">Loading the receipt…</p>';
@@ -3314,6 +3323,29 @@
       }
       if (panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
+    // The three views of the open bill: receipt preview, AI extracted details, and the job allocation.
+    const renderRvPane = () => {
+      const pane = $('#accRvDoc'); if (!pane) return;
+      if (rvTab === 'receipt') { pane.innerHTML = rvReceiptHtml; return; }
+      const bill = allBills.find(x => String(x.id) === String(reviewId)); if (!bill) { pane.innerHTML = ''; return; }
+      if (rvTab === 'ai') {
+        let r = null; try { r = JSON.parse(bill.ai_read || 'null'); } catch { r = null; }
+        if (!r) { pane.innerHTML = '<p class="muted">No AI reading yet. Click Read receipt, and this view shows what the AI found.</p>'; return; }
+        const cs = r.category_suggestion;
+        const items = Array.isArray(r.line_items) && r.line_items.length ? `<table class="t"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${r.line_items.map(l => `<tr><td>${esc(l.description || '')}</td><td class="num">${l.amount == null ? '' : esc(money(l.amount))}</td></tr>`).join('')}</tbody></table>` : '';
+        pane.innerHTML = `<dl class="acc-rv-facts"><dt>Vendor</dt><dd>${esc(r.vendor || 'not read')}</dd><dt>Date</dt><dd>${esc(r.date || 'not read')}</dd><dt>Total</dt><dd>${r.total == null ? 'not read' : esc(money(r.total))}</dd><dt>Tax</dt><dd>${r.tax == null ? 'not read' : esc(money(r.tax))}</dd><dt>Matches the bill</dt><dd>${r.total_matches_bill === false ? 'No, check the amount' : r.total_matches_bill === true ? 'Yes' : 'not checked'}</dd><dt>Category suggestion</dt><dd>${cs ? esc(cs.category) + ' (' + Math.round((Number(cs.confidence) || 0) * 100) + '% confident)' : 'none yet'}</dd></dl><p class="muted"><small>Suggestions only. Nothing changes until someone applies it.</small></p>${items}`;
+        return;
+      }
+      const rows = bill.splits || [];
+      pane.innerHTML = rows.length
+        ? `<table class="t"><thead><tr><th>Job or overhead</th><th>Category</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(l => `<tr><td>${esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Company overhead'))}</td><td>${esc(l.category || '')}</td><td class="num">${esc(money(l.amount))}</td></tr>`).join('')}</tbody></table>`
+        : `<p class="muted">Not split. The whole bill goes to ${bill.project_id ? 'Job ' + esc(bill.project_id) : 'company overhead'}.</p>`;
+    };
+    $('#accReview').querySelectorAll('[data-rvtab]').forEach(b => b.onclick = () => {
+      rvTab = b.dataset.rvtab;
+      $('#accReview').querySelectorAll('[data-rvtab]').forEach(x => x.classList.toggle('on', x === b));
+      renderRvPane();
+    });
     body.querySelectorAll('[data-accreview]').forEach(btn => btn.onclick = () => showReview(btn.dataset.accreview));
     $('#accRvClose') && ($('#accRvClose').onclick = () => { $('#accReview').hidden = true; reviewId = null; body.dataset.reviewId = ''; scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; });
     // Receipt upload from the phone camera or a file. Attaches to the bill the panel is showing.

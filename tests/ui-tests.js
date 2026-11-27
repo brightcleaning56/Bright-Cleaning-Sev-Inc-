@@ -985,6 +985,11 @@ async function check(area, name, fn) {
     const panel = d.querySelector('#accReview');
     assert(panel && !panel.hidden, 'review panel did not open');
     assert(/UI Review Co/.test(txt('#accRvTitle')), txt('#accRvTitle'));
+    d.querySelector('[data-rvtab="ai"]').click(); await sleep(200);
+    assert(/No AI reading yet/.test(txt('#accRvDoc')), 'AI extracted view did not show: ' + txt('#accRvDoc').slice(0, 120));
+    d.querySelector('[data-rvtab="alloc"]').click(); await sleep(200);
+    assert(/Not split/.test(txt('#accRvDoc')), 'Allocation view did not show: ' + txt('#accRvDoc').slice(0, 120));
+    d.querySelector('[data-rvtab="receipt"]').click(); await sleep(200);
     const approve = d.querySelector('#accRvApprove');
     assert(approve && !approve.hidden && approve.dataset.accappr === String(id), 'Approve is not offered for the waiting bill');
     approve.click(); await sleep(1200);
