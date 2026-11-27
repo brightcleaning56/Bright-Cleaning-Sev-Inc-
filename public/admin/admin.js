@@ -3245,7 +3245,7 @@
     const showReview = id => {
       const bill = allBills.find(x => String(x.id) === String(id)); if (!bill) return;
       const panel = $('#accReview'); if (!panel) return;
-      if (reviewId !== bill.id && typeof scanPages !== 'undefined') { scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; } // scanned pages belong to one bill
+      if (reviewId !== bill.id) { scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; } // scanned pages belong to one bill
       reviewId = bill.id;
       const st = billState(bill);
       const stateLabel = { waiting: 'Waiting approval', approved: 'Approved, not paid', paid: 'Paid', void: 'Void' }[st];
@@ -3349,18 +3349,20 @@
     if ($('#accScanCancel')) $('#accScanCancel').onclick = () => { scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; };
     if ($('#accScanSave')) $('#accScanSave').onclick = async () => {
       if (!reviewId) { toast('Open a bill first.', true); return; }
-      if (!scanPages.length) { toast('Add at least one page first.', true); return; }
+      // Take the bill and the pages as they are now, so opening another bill during the save cannot mix them.
+      const billId = reviewId, snapshot = scanPages.slice();
+      if (!snapshot.length) { toast('Add at least one page first.', true); return; }
       try {
         const pages = [];
-        for (const pg of scanPages) {
+        for (const pg of snapshot) {
           const c = scanRender(pg, 2000);
           const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
           pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), width: c.width, height: c.height });
         }
         const pdf = window.BCScanPdf.buildPdf(pages);
         const fd = new FormData(); fd.append('receipt', new File([pdf], 'receipt-scan.pdf', { type: 'application/pdf' }));
-        await api('/api/admin/expenses/' + reviewId + '/receipt', { method: 'POST', body: fd });
-        toast('Scan saved as the receipt'); scanPages = []; body.dataset.reviewId = String(reviewId); loadAccounting();
+        await api('/api/admin/expenses/' + billId + '/receipt', { method: 'POST', body: fd });
+        toast('Scan saved as the receipt'); scanPages = []; body.dataset.reviewId = String(billId); loadAccounting();
       } catch (err) { toast(err.message, true); }
     };
     // Category suggestion: the AI suggests, a person applies it.

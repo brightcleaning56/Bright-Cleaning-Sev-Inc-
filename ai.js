@@ -194,8 +194,9 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
       // The file name is not a receipt number: phone photos often share a name, so only vendor, amount and date count here.
       const dups = E.findDuplicates(db, { ...bill, receipt_ref: '' });
       if (dups.length) { discard(); return res.status(409).json({ error: 'Possible duplicate of bill ' + dups.map(d => '#' + d.id).join(', ') + '. Nothing was saved. Open that bill to check.', duplicates: dups }); }
-      const id = E.createBill(db, bill, by); created = true;
-      E.attachReceipt(db, { billId: id, file: f, by, uploadDir });
+      // The bill row and its receipt are saved together: if the receipt cannot be attached, the bill is not kept.
+      const id = db.transaction(() => { const i = E.createBill(db, bill, by); E.attachReceipt(db, { billId: i, file: f, by, uploadDir }); return i; })();
+      created = true;
       db.prepare('UPDATE expense_bills SET ai_read=? WHERE id=?').run(JSON.stringify({
         vendor: read.vendor, date: read.date, total: read.total, bill_amount: read.total, total_matches_bill: true, model: read.model, at: read.at, status: 'suggestion',
         category_suggestion: { category: read.category, confidence: read.confidence, reason: read.reason, model: read.model, at: read.at, status: 'suggestion' } }), id);
