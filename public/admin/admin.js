@@ -3374,18 +3374,24 @@
       catch (err) { toast(err.message, true); btn.disabled = false; }
     });
     // Upload a receipt for a new bill: enter the bill, save it, then add its receipt in the panel.
-    if ($('#accUpload')) $('#accUpload').onclick = () => openForm({ title: 'Upload a receipt', sub: 'Enter the bill and save it. Then take a photo or choose the receipt file in the panel that opens.',
-      defs: [{ name: 'vendor', label: 'Vendor', required: true }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example materials, equipment, insurance)' },
-        { name: 'amount', label: 'Amount ($)', type: 'number', required: true }, { name: 'bill_date', label: 'Bill date', type: 'date', required: true }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
-      values: { bill_date: new Date().toISOString().slice(0, 10) },
-      submit: async b => {
-        const send = confirmDup => api('/api/admin/expenses', { method: 'POST', json: { ...b, confirm_duplicate: confirmDup } });
-        let saved;
-        try { saved = await send(false); }
-        catch (err) { if (!/Possible duplicate/.test(err.message) || !confirm(err.message + '\n\nSave anyway?')) throw err; saved = await send(true); }
-        body.dataset.reviewId = String(saved.id); return saved;
-      },
-      after: () => { toast('Bill saved. Now add its receipt in the panel.'); loadAccounting(); } });
+    // Upload a receipt: the AI reads it and fills in the bill (vendor, date, amount, category). Nothing is typed by hand.
+    // The bill is created Open; approval still happens in the weekly close.
+    if ($('#accUpload')) $('#accUpload').onclick = () => {
+      const pick = document.createElement('input');
+      pick.type = 'file'; pick.accept = 'image/*,application/pdf'; pick.capture = 'environment';
+      pick.onchange = async () => {
+        const f = pick.files && pick.files[0]; if (!f) return;
+        const fd = new FormData(); fd.append('receipt', f);
+        toast('Reading the receipt…');
+        try {
+          const out = await api('/api/admin/ai/expenses/intake', { method: 'POST', body: fd });
+          const x = out.filled;
+          toast('Bill created from the receipt: ' + x.vendor + ', $' + Number(x.amount).toFixed(2) + ', ' + x.category + '. Check it, then approve it in the weekly close.');
+          body.dataset.reviewId = String(out.id); loadAccounting();
+        } catch (err) { toast(err.message, true); }
+      };
+      pick.click();
+    };
     // Reopen the review panel after a reload, so a change does not lose the bill being looked at.
     if (body.dataset.reviewId) { try { showReview(body.dataset.reviewId); } catch { /* the bill may be gone */ } }
     body.querySelectorAll('[data-accview]').forEach(btn => btn.onclick = async () => {

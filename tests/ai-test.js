@@ -33,7 +33,10 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
     if (content.includes('BLUEPRINT READING')) out = { sheets: [{ sheet: 'G0.1', title: 'Cover', discipline: 'General' }, { sheet: 'A1.1', title: 'Level 1 plan', discipline: 'Architectural' }], building_sf: 24000, building_sf_sheet: 'G0.1', floors: 2, floors_sheet: 'G0.1',
       rooms: [{ number: '101', name: 'Lobby', area_sf: 1200, floor_finish: 'Terrazzo', sheet: 'A1.1', confidence: 'High' }, { number: '102', name: 'Open office', area_sf: 9000, floor_finish: 'Carpet tile', sheet: 'A1.1', confidence: 'Medium' }, { number: '103', name: 'Guessed room', area_sf: 500 }],
       counts: [{ item: 'Restrooms', quantity: 6, sheet: 'A1.1', confidence: 'High' }], finishes: [{ finish: 'Terrazzo', areas: 'Lobby', sheet: 'A6.1' }], cleaning_notes: [{ note: '24 ft atrium glass', sheet: 'A3.1' }, { note: 'no sheet note' }], questions: ['Is level 2 tenant space in scope?'] };
-    else if (content.includes('Read this receipt')) out = { vendor: 'Glass Co', date: '2026-11-26', total: 80, tax: 4, line_items: [{ description: 'Squeegee', amount: 76, suggested_category: 'Supplies' }] };
+    else if (content.includes('Fill in the expense bill from this receipt')) out = content.includes('nototal')
+      ? { vendor: 'Blurry Co', date: null, total: null, category: 'Other', confidence: 0.2, reason: 'unreadable' }
+      : { vendor: 'Auto Supply Co', date: '2026-11-20', total: 45.5, category: 'Materials', confidence: 0.9, reason: 'cleaning supplies' };
+    else if (content.includes('Read this receipt')) out ={ vendor: 'Glass Co', date: '2026-11-26', total: 80, tax: 4, line_items: [{ description: 'Squeegee', amount: 76, suggested_category: 'Supplies' }] };
     else if (content.includes('Suggest the expense category')) out = { category: 'Materials', confidence: 0.9, reason: 'cleaning squeegees' };
     else if (content.includes('"type":"document"')) out ={ sheets: [{ sheet: 'G0.1', title: 'Code plan', revision: 'IFC' }, { sheet: 'A1.1', title: 'Level 1 plan' }], building_sf: 136600, building_sf_sheet: 'G0.1', quantities: [{ item: 'Restrooms', quantity: 28, sheet: 'A6.1', method: 'From schedule', confidence: 'High', note: 'toilet room schedule' }], questions: ['Exterior glass quantity is not shown on the A-sheets.'] };
     else if (content.includes('CALL ANALYSIS')) out = { summary: 'Pat from Phone Match Co wants a final clean quote for 20,000 SF next month.', intent: 'New bid request', sentiment: 'Positive', urgency: 'High', lead_score: 82, score_reasons: ['Defined scope', 'Near-term timeline'], details: { service: 'Final clean', square_feet: 20000, site_address: '', timeline: 'next month', budget: '' }, action_items: [{ task: 'Send final clean quote', owner: 'Estimator', due: '2026-11-06' }, { task: '', owner: 'x' }], follow_up_date: '2026-11-05', reply_draft: 'Hi Pat, thanks for calling...', risks: [] };
@@ -356,6 +359,28 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
     assert(bill.category === 'Other', 'category changed without approval: ' + bill.category);
     assert(JSON.parse(bill.ai_read).category_suggestion.category === 'Materials', 'suggestion not stored');
     return 'suggested Materials (90%); stored beside the reading; bill category still Other';
+  });
+
+  await check('Receipt upload fills in the bill: vendor, date, amount and category come from the receipt; the bill is Open and not approved', async () => {
+    const fd = new FormData(); fd.append('receipt', new Blob([Buffer.from('%PDF-1.4 auto receipt')], { type: 'application/pdf' }), 'auto-supply.pdf');
+    const r = await fetch(B + '/api/admin/ai/expenses/intake', { method: 'POST', headers: { Authorization: 'Bearer ' + T }, body: fd });
+    const data = await r.json();
+    assert(r.status === 201, 'intake ' + r.status + ' ' + JSON.stringify(data));
+    assert(data.filled.vendor === 'Auto Supply Co' && data.filled.amount === 45.5 && data.filled.date === '2026-11-20' && data.filled.category === 'Materials', JSON.stringify(data.filled));
+    const bill = ((await api('GET', '/api/admin/expenses', null, T)).data.bills || []).find(b => b.id === data.id);
+    assert(bill && bill.status === 'Open' && !bill.approved_by && bill.receipt_file && bill.category === 'Materials', 'bill ' + JSON.stringify(bill));
+    return 'bill created from the receipt: Auto Supply Co, $45.50, Materials, Open, not approved, receipt attached';
+  });
+
+  await check('Receipt upload with no readable total saves nothing and says what is missing', async () => {
+    const before = ((await api('GET', '/api/admin/expenses', null, T)).data.bills || []).length;
+    const fd = new FormData(); fd.append('receipt', new Blob([Buffer.from('%PDF-1.4 blurry')], { type: 'application/pdf' }), 'nototal-receipt.pdf');
+    const r = await fetch(B + '/api/admin/ai/expenses/intake', { method: 'POST', headers: { Authorization: 'Bearer ' + T }, body: fd });
+    const data = await r.json();
+    assert(r.status === 422 && /amount/.test(data.error), 'expected a 422 naming the amount: ' + r.status + ' ' + JSON.stringify(data));
+    const after = ((await api('GET', '/api/admin/expenses', null, T)).data.bills || []).length;
+    assert(after === before, 'a bill was saved anyway');
+    return '422 names the missing amount; no bill saved';
   });
 
   child.kill(); fake.close();

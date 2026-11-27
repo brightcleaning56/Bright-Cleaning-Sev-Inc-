@@ -5,7 +5,7 @@ const { COMPANY_NAME } = require('./company');
 const fs = require('fs');
 
 module.exports = function mountAI(app, ctx) {
-  const { db, auth, logAction, clean, path, uploadDir, getMailer, isEmail } = ctx;
+  const { db, auth, logAction, clean, path, uploadDir, getMailer, isEmail, upload } = ctx;
   const key = () => process.env.ANTHROPIC_API_KEY || '';
   const model = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
   const apiUrl = () => (process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/$/, '') + '/v1/messages';
@@ -173,6 +173,33 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
       logAction(req, 'AI read a receipt (suggestion only)', 'bill', Number(req.params.id), reading.vendor || 'receipt');
       res.json({ reading });
     } catch (e) { if (e.code !== 'AI_OFF') logRun('ai_receipt_read', Number(req.params.id), 'failed', e.message); fail(res, e); }
+  });
+  // Upload a receipt and the AI fills in the bill: vendor, date, amount and category. The bill is created Open, not on
+  // the books. Approval still happens in the weekly close. If the receipt does not show a vendor, date or amount, nothing
+  // is saved and the response says what is missing.
+  app.post('/api/admin/ai/expenses/intake', auth, ...(upload ? upload.single('receipt') : []), async (req, res) => {
+    const f = req.file;
+    if (!f) return res.status(400).json({ error: 'Choose a receipt photo or PDF.' });
+    const fs = require('fs'), dataPath = require('path').join(uploadDir, require('path').basename(f.filename));
+    const discard = () => { try { fs.unlinkSync(dataPath); } catch { /* already gone */ } };
+    const by = req.user && req.user.email;
+    try {
+      const E = require('./expenses');
+      const name = String(f.originalname || f.filename);
+      const read = await require('./receipt-read').autoFill({ name, buf: fs.readFileSync(dataPath), model: model(), callFn: (m, s, t) => call(m, s, t) });
+      const missing = [!read.vendor && 'the vendor', !read.date && 'the date', !(read.total > 0) && 'the amount'].filter(Boolean);
+      if (missing.length) { discard(); return res.status(422).json({ error: 'The receipt did not show ' + missing.join(', ') + '. Nothing was saved. Enter the bill yourself.', reading: read }); }
+      const bill = { vendor: read.vendor, amount: read.total, bill_date: read.date, category: read.category, description: '', receipt_ref: name };
+      const dups = E.findDuplicates(db, bill);
+      if (dups.length) { discard(); return res.status(409).json({ error: 'Possible duplicate of bill ' + dups.map(d => '#' + d.id).join(', ') + '. Nothing was saved. Open that bill to check.', duplicates: dups }); }
+      const id = E.createBill(db, bill, by);
+      E.attachReceipt(db, { billId: id, file: f, by, uploadDir });
+      db.prepare('UPDATE expense_bills SET ai_read=? WHERE id=?').run(JSON.stringify({
+        vendor: read.vendor, date: read.date, total: read.total, bill_amount: read.total, total_matches_bill: true, model: read.model, at: read.at, status: 'suggestion',
+        category_suggestion: { category: read.category, confidence: read.confidence, reason: read.reason, model: read.model, at: read.at, status: 'suggestion' } }), id);
+      logAction(req, 'uploaded a receipt; AI filled in the bill (check it)', 'bill', id, read.vendor);
+      res.status(201).json({ id, filled: { vendor: read.vendor, date: read.date, amount: read.total, category: read.category, confidence: read.confidence } });
+    } catch (e) { discard(); if (e.code !== 'AI_OFF') logRun('ai_intake', 0, 'failed', e.message); fail(res, e); }
   });
   // Category suggestion for a bill's receipt. Stores a suggestion only; the bill changes only if a person applies it.
   app.post('/api/admin/ai/expenses/:id/suggest-category', auth, async (req, res) => {

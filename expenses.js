@@ -483,4 +483,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, closeList, approveBatch, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, createCrewReceipt, burdenPct, mount };
+module.exports = { ensureSchema, closeList, approveBatch, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, createCrewReceipt, burdenPct, findDuplicates, mount };

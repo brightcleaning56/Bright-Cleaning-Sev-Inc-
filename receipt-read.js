@@ -93,4 +93,26 @@ async function suggestCategory({ db, billId, uploadDir, callFn, model }) {
   return sugg;
 }
 
-module.exports = { readReceipt, suggestCategory, CATEGORIES, contentBlockFor, parseReply, shapeReading, ensureSchema };
+// Auto-fill for a new upload: one AI call reads the receipt and suggests its category, before any bill exists.
+// Returns only what the receipt shows; missing fields come back null. Nothing is saved here.
+async function autoFill({ name, buf, callFn, model }) {
+  if (buf.length > MAX_BYTES) throw new Error('This receipt file is over 20 MB. Attach a smaller photo or PDF.');
+  const block = contentBlockFor(name, buf);
+  const reply = await callFn([{ role: 'user', content: [block, { type: 'text', text:
+    `Fill in the expense bill from this receipt. The file is named "${text(name, 200)}". Return ONLY JSON with keys: ` +
+    `"vendor" (the store or company), "date" (YYYY-MM-DD or null), "total" (number, the amount paid), ` +
+    `"category" (one of ${JSON.stringify(CATEGORIES)}), "confidence" (0 to 1), "reason" (short phrase). ` +
+    `Use null for anything not printed on the receipt. Do not guess.` }] }],
+    'You read receipts for Bright Cleaning Sev Inc. Only report what is printed on the receipt.', 500);
+  const p = parseReply(reply);
+  const category = CATEGORIES.includes(p.category) ? p.category : 'Other';
+  const confidence = Math.round(Math.max(0, Math.min(1, Number(p.confidence) || 0)) * 100) / 100;
+  return {
+    vendor: text(p.vendor, 160) || null,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(String(p.date || '')) ? p.date : null,
+    total: money(p.total),
+    category, confidence, reason: text(p.reason, 200), model: model || null, at: new Date().toISOString(), status: 'suggestion',
+  };
+}
+
+module.exports = { readReceipt, suggestCategory, autoFill, CATEGORIES, contentBlockFor, parseReply, shapeReading, ensureSchema };
