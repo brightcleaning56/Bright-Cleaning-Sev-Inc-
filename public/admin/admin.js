@@ -2927,7 +2927,7 @@
     const sumOf = st => allBills.filter(b => billState(b) === st).reduce((s, b) => s + (Number(b.amount) || 0), 0);
     const withReceipt = allBills.filter(b => b.receipt_file && b.status !== 'Void').length;
     const withAi = allBills.filter(b => b.ai_read && b.status !== 'Void').length;
-    const billRows = allBills.map(b => `<tr data-bstate="${billState(b)}"><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}${(b.splits || []).length ? `<div class="muted"><small>${b.splits.map(l => esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Overhead')) + ' ' + money(l.amount)).join(' · ')}</small></div>` : ''}${aiLine(b)}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}${b.status === 'Void' && b.void_reason ? `<div class="muted">${esc(b.void_reason)}</div>` : ''}</td><td><button class="btn small ghost" data-accreview="${b.id}" type="button">Review</button> ${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.receipt_file ? `<button class="btn small ghost" data-accread="${b.id}" type="button">Read receipt</button> ` : ''}${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accedit="${b.id}" type="button">Edit</button> <button class="btn small ghost" data-accsplit="${b.id}" type="button">Split</button> <button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button> ` : ''}${b.status === 'Paid' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void (reverses payment)</button>` : b.status === 'Open' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
+    const billRows = allBills.map(b => `<tr data-bstate="${billState(b)}" data-bdate="${esc(b.bill_date)}"><td>${esc(b.bill_date)}</td><td>${esc(b.vendor)}</td><td>${esc(b.description || '')}${(b.splits || []).length ? `<div class="muted"><small>${b.splits.map(l => esc(l.project_name || (l.project_id ? 'Job ' + l.project_id : 'Overhead')) + ' ' + money(l.amount)).join(' · ')}</small></div>` : ''}${aiLine(b)}</td><td class="num">${money(b.amount)}</td><td>${esc(b.status)}${b.status === 'Void' && b.void_reason ? `<div class="muted">${esc(b.void_reason)}</div>` : ''}</td><td><button class="btn small ghost" data-accreview="${b.id}" type="button">Review</button> ${b.receipt_file ? `<button class="btn small ghost" data-accview="${b.id}" type="button">Receipt</button> ` : ''}<button class="btn small ghost" data-accattach="${b.id}" type="button">Attach receipt</button> ${b.receipt_file ? `<button class="btn small ghost" data-accread="${b.id}" type="button">Read receipt</button> ` : ''}${b.status === 'Open' && !b.approved_by ? `<button class="btn small ghost" data-accappr="${b.id}" type="button">Approve</button> ` : ''}${b.status === 'Open' ? `<button class="btn small ghost" data-accedit="${b.id}" type="button">Edit</button> <button class="btn small ghost" data-accsplit="${b.id}" type="button">Split</button> <button class="btn small ghost" data-accpay="${b.id}" type="button">Mark paid</button> ` : ''}${b.status === 'Paid' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void (reverses payment)</button>` : b.status === 'Open' ? `<button class="btn small ghost" data-accvoid="${b.id}" type="button">Void</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet.</td></tr>';
     const reconRows = (recs.reconciliations || []).slice(0, 10).map(r => `<tr><td>${esc(r.as_of)}</td><td class="num">${money(r.statement_balance)}</td><td class="num">${money(r.ledger_balance)}</td><td class="num">${money(r.difference)}</td><td>${esc(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No reconciliations yet.</td></tr>';
     const driftRows = (drift.drift || []).map(d => `<li>${esc(d.ref)}: ${esc(d.issue)}</li>`).join('') || '<li class="muted">No recorded costs changed after posting.</li>';
     const openRows = (tie.unposted || []).map(i => `<tr><td>${esc(i.invoice_number || i.id)}</td><td class="num">${money(i.amount)}</td><td class="num">${money(i.tax_amount)}</td><td><button class="btn small ghost" data-acctax="${i.id}" type="button">Set sales tax</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Every invoice is on the ledger.</td></tr>';
@@ -2955,6 +2955,7 @@
           <div class="acc-stat"><span class="muted">Paid</span><b>${countOf('paid')}</b><span class="muted">${money(sumOf('paid'))}</span></div>
           <div class="acc-stat"><span class="muted">Receipts attached</span><b>${withReceipt}</b><span class="muted">${withAi} read by AI (suggestion only)</span></div>
         </div>
+        <div class="filt" style="margin:4px 0"><label>From <input type="date" id="billFrom"></label><label>To <input type="date" id="billTo"></label><button type="button" class="btn small ghost" id="billClear">Clear dates</button></div>
         <div class="acc-filters" role="group" aria-label="Filter bills">
           <button type="button" class="btn small ghost on" data-bfilter="all">All (${allBills.length})</button>
           <button type="button" class="btn small ghost" data-bfilter="waiting">Waiting approval (${countOf('waiting')})</button>
@@ -3028,11 +3029,22 @@
     // Tab bar, overview quick actions and the transaction filter.
     renderAccTabs(); rpBind();
     // Filter chips show only the bills in that state. Hiding is client-side; the data is unchanged.
+    // A row shows only if it passes both the state chip and the date range.
+    let billChip = 'all';
+    const applyBillFilters = () => {
+      const from = ($('#billFrom') || {}).value || '', to = ($('#billTo') || {}).value || '';
+      body.querySelectorAll('tr[data-bstate]').forEach(tr => {
+        const d = tr.dataset.bdate || '';
+        tr.hidden = (billChip !== 'all' && tr.dataset.bstate !== billChip) || (!!from && d < from) || (!!to && d > to);
+      });
+    };
     body.querySelectorAll('[data-bfilter]').forEach(chip => chip.onclick = () => {
-      const want = chip.dataset.bfilter;
+      billChip = chip.dataset.bfilter;
       body.querySelectorAll('[data-bfilter]').forEach(x => x.classList.toggle('on', x === chip));
-      body.querySelectorAll('tr[data-bstate]').forEach(tr => { tr.hidden = want !== 'all' && tr.dataset.bstate !== want; });
+      applyBillFilters();
     });
+    ['#billFrom', '#billTo'].forEach(sel => { const el = $(sel); if (el) el.onchange = applyBillFilters; });
+    if ($('#billClear')) $('#billClear').onclick = () => { $('#billFrom').value = ''; $('#billTo').value = ''; applyBillFilters(); };
     body.querySelectorAll('[data-acccsv]').forEach(b => b.onclick = () => accCsv(b.dataset.acccsv === 'journal' ? 'journal' : 'trial'));
     const accEl = body.querySelector('.accov');
     if (accEl) accEl.addEventListener('click', e => {

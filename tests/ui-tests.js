@@ -993,6 +993,18 @@ async function check(area, name, fn) {
     return 'review panel showed the bill, and Approve from it approved the bill';
   });
 
+  await check('Expense date filter UI', 'The From and To dates hide bills outside the range, and Clear dates shows them again', async () => {
+    await api('POST', '/api/admin/expenses', { vendor: 'UI Dates Co', description: 'Date check', amount: 12, bill_date: '2026-01-05', category: 'materials' }, T);
+    await nav('accounting'); await sleep(1200);
+    d.querySelector('#accTabs button[data-acctab="expenses"]').click(); await sleep(1000);
+    const row = () => [...d.querySelectorAll('tr[data-bdate]')].find(tr => /UI Dates Co/.test(tr.textContent));
+    d.querySelector('#billFrom').value = '2026-06-01'; d.querySelector('#billFrom').onchange(); await sleep(200);
+    assert(row() && row().hidden, 'bill before the From date is still shown');
+    d.querySelector('#billClear').click(); await sleep(200);
+    assert(row() && !row().hidden, 'bill is hidden after Clear dates');
+    return 'bill before the From date hidden; shown again after Clear dates';
+  });
+
   await check('Weekly close UI', 'The weekly close lists an unapproved bill in the range; approving the checked bills posts them and removes them from the list', async () => {
     const day = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
     await api('POST', '/api/admin/expenses', { vendor: 'Close UI Co', description: 'Close check', amount: 45, bill_date: day, category: 'materials' }, T);
