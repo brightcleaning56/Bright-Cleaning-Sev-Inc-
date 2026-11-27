@@ -274,6 +274,12 @@
   .acc-rv-facts dt { color: #6b7c90; font-size: 13px; }
   .acc-rv-facts dd { margin: 0; overflow-wrap: anywhere; }
   @media (max-width: 900px) { .acc-review { grid-template-columns: minmax(0, 1fr); } .acc-rv-doc iframe { height: 420px; } }
+  .acc-scan { border: 1px dashed var(--line2); border-radius: 10px; padding: 10px; margin: 8px 0; min-width: 0; }
+  .acc-scan[hidden] { display: none; }
+  .acc-scan-page { border-bottom: 1px solid var(--line2); padding: 8px 0; min-width: 0; }
+  .acc-scan-canvas { display: block; max-width: 100%; height: auto; border: 1px solid var(--line2); border-radius: 8px; background: #fff; margin: 6px 0; }
+  .acc-scan-crop { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; }
+  .acc-scan-crop label { font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
   /* Accounting page: tab bar, overview dashboard */
   .acctabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
   .acctabs button { border: 1px solid var(--line2); background: var(--card); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted, #4a5b6e); cursor: pointer; }
@@ -1471,6 +1477,7 @@
 </div>
 
 <div id="drawerRoot"></div>
+<script src="/assets/scan-pdf.js"></script>
 <script src="/admin/admin.js"></script>
 </body>
 </html>

@@ -993,7 +993,22 @@ async function check(area, name, fn) {
     return 'review panel showed the bill, and Approve from it approved the bill';
   });
 
-  await check('Expense date filter UI', 'The From and To dates hide bills outside the range, and Clear dates shows them again', async () => {
+  await check('Receipt scan UI', 'The review panel opens the receipt scanner with a page picker, crop controls and a save button', async () => {
+    await api('POST', '/api/admin/expenses', { vendor: 'UI Scan Co', description: 'Scan check', amount: 19, bill_date: '2026-03-03', category: 'materials' }, T);
+    const id = (await api('GET', '/api/admin/expenses', null, T)).bills.find(b => b.vendor === 'UI Scan Co').id;
+    await nav('accounting'); await sleep(1200);
+    d.querySelector('#accTabs button[data-acctab="expenses"]').click(); await sleep(1000);
+    d.querySelector('[data-accreview="' + id + '"]').click(); await sleep(800);
+    assert(d.querySelector('#accScan').hidden, 'scanner should start closed');
+    d.querySelector('#accRvScan').click(); await sleep(200);
+    assert(!d.querySelector('#accScan').hidden, 'scanner did not open');
+    assert(d.querySelector('#accScanFile') && d.querySelector('#accScanSave') && d.querySelector('#accScanCancel'), 'scanner controls missing');
+    d.querySelector('#accScanCancel').click(); await sleep(150);
+    assert(d.querySelector('#accScan').hidden, 'cancel did not close the scanner');
+    return 'scanner opens with a page picker, and cancel closes it';
+  });
+
+  await check('Expense date filter UI','The From and To dates hide bills outside the range, and Clear dates shows them again', async () => {
     await api('POST', '/api/admin/expenses', { vendor: 'UI Dates Co', description: 'Date check', amount: 12, bill_date: '2026-01-05', category: 'materials' }, T);
     await nav('accounting'); await sleep(1200);
     d.querySelector('#accTabs button[data-acctab="expenses"]').click(); await sleep(1000);

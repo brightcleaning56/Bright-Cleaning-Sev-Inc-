@@ -2983,7 +2983,13 @@
             <dl class="acc-rv-facts" id="accRvFacts"></dl>
             <div id="accRvAi"></div>
             <div id="accRvCat"></div>
-            <div class="filt" id="accRvUpload"><label for="accRvFile">Receipt: take a photo or choose a file (photo or PDF)</label><input type="file" id="accRvFile" accept="image/*,application/pdf" capture="environment"></div>
+            <div class="filt" id="accRvUpload"><label for="accRvFile">Receipt: take a photo or choose a file (photo or PDF)</label><input type="file" id="accRvFile" accept="image/*,application/pdf" capture="environment"> <button class="btn small ghost" type="button" id="accRvScan">Scan receipt (crop, several pages)</button></div>
+            <div id="accScan" class="acc-scan" hidden>
+              <p class="muted"><small>Add one photo per page. Crop each page and turn it if needed. Save makes one PDF receipt from the pages.</small></p>
+              <div class="filt"><label for="accScanFile">Add pages (take a photo or choose photos)</label><input type="file" id="accScanFile" accept="image/*" capture="environment" multiple></div>
+              <div id="accScanPages"></div>
+              <div class="filt"><button class="btn small" type="button" id="accScanSave">Save scan as the receipt</button><button class="btn small ghost" type="button" id="accScanCancel">Cancel</button></div>
+            </div>
             <div class="filt" id="accRvActions">
               <button class="btn small ghost" type="button" data-accread="" id="accRvRead" hidden>Read receipt</button>
               <button class="btn small ghost" type="button" data-acccat="" id="accRvSuggest" hidden>Suggest category</button>
@@ -3287,6 +3293,72 @@
       const fd = new FormData(); fd.append('receipt', f);
       try { await api('/api/admin/expenses/' + reviewId + '/receipt', { method: 'POST', body: fd }); toast('Receipt attached'); body.dataset.reviewId = String(reviewId); loadAccounting(); }
       catch (err) { toast(err.message, true); }
+    };
+    // Scan: several photos become pages. Each page is cropped and turned, and the pages are saved as one PDF receipt.
+    let scanPages = [];
+    const scanBox = $('#accScan'), pagesHost = $('#accScanPages');
+    const loadImage = file => new Promise((res, rej) => {
+      const url = URL.createObjectURL(file); const img = new Image();
+      img.onload = () => res(img); img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('That file is not a photo this page can read.')); };
+      img.src = url;
+    });
+    const scanRender = (pg, maxSide) => {
+      const sw = pg.img.naturalWidth, sh = pg.img.naturalHeight;
+      const cx = Math.round(sw * pg.crop.l / 100), cy = Math.round(sh * pg.crop.t / 100);
+      const cw = Math.max(1, sw - cx - Math.round(sw * pg.crop.r / 100)), ch = Math.max(1, sh - cy - Math.round(sh * pg.crop.b / 100));
+      const turned = pg.rot % 180 !== 0;
+      const outW = turned ? ch : cw, outH = turned ? cw : ch;
+      const s = Math.min(1, maxSide / Math.max(outW, outH));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(outW * s)); c.height = Math.max(1, Math.round(outH * s));
+      const g = c.getContext('2d');
+      g.setTransform(c.width / outW, 0, 0, c.height / outH, 0, 0);
+      g.translate(outW / 2, outH / 2); g.rotate(pg.rot * Math.PI / 180);
+      g.drawImage(pg.img, cx, cy, cw, ch, -cw / 2, -ch / 2, cw, ch);
+      return c;
+    };
+    const redrawPage = (block, pg) => {
+      const c = scanRender(pg, 600); c.className = 'acc-scan-canvas';
+      const old = block.querySelector('canvas'); if (old) block.replaceChild(c, old); else block.prepend(c);
+    };
+    const rebuildPages = () => {
+      pagesHost.innerHTML = '';
+      scanPages.forEach((pg, idx) => {
+        const block = document.createElement('div'); block.className = 'acc-scan-page';
+        const side = (label, k) => `<label>${label} <input type="range" min="0" max="30" value="${pg.crop[k]}" data-k="${k}"></label>`;
+        block.innerHTML = `<div class="filt"><b>Page ${idx + 1}</b> <button type="button" class="btn small ghost" data-rot>Turn</button> <button type="button" class="btn small ghost" data-del>Remove</button></div><div class="acc-scan-crop">${side('Top cut (%)', 't')}${side('Bottom cut (%)', 'b')}${side('Left cut (%)', 'l')}${side('Right cut (%)', 'r')}</div>`;
+        redrawPage(block, pg);
+        block.querySelectorAll('input[type=range]').forEach(r => r.oninput = () => { pg.crop[r.dataset.k] = Number(r.value); redrawPage(block, pg); });
+        block.querySelector('[data-rot]').onclick = () => { pg.rot = (pg.rot + 90) % 360; redrawPage(block, pg); };
+        block.querySelector('[data-del]').onclick = () => { scanPages.splice(idx, 1); rebuildPages(); };
+        pagesHost.appendChild(block);
+      });
+    };
+    if ($('#accRvScan')) $('#accRvScan').onclick = () => { scanBox.hidden = !scanBox.hidden; };
+    const scanFile = $('#accScanFile');
+    if (scanFile) scanFile.onchange = async () => {
+      const files = Array.from(scanFile.files || []);
+      for (const f of files) {
+        try { scanPages.push({ img: await loadImage(f), rot: 0, crop: { t: 0, b: 0, l: 0, r: 0 } }); }
+        catch (err) { toast(err.message, true); }
+      }
+      scanFile.value = ''; rebuildPages();
+    };
+    if ($('#accScanCancel')) $('#accScanCancel').onclick = () => { scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; };
+    if ($('#accScanSave')) $('#accScanSave').onclick = async () => {
+      if (!scanPages.length) { toast('Add at least one page first.', true); return; }
+      try {
+        const pages = [];
+        for (const pg of scanPages) {
+          const c = scanRender(pg, 2000);
+          const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+          pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), width: c.width, height: c.height });
+        }
+        const pdf = window.BCScanPdf.buildPdf(pages);
+        const fd = new FormData(); fd.append('receipt', new File([pdf], 'receipt-scan.pdf', { type: 'application/pdf' }));
+        await api('/api/admin/expenses/' + reviewId + '/receipt', { method: 'POST', body: fd });
+        toast('Scan saved as the receipt'); scanPages = []; body.dataset.reviewId = String(reviewId); loadAccounting();
+      } catch (err) { toast(err.message, true); }
     };
     // Category suggestion: the AI suggests, a person applies it.
     const applyCategory = async (bill, cat) => {
