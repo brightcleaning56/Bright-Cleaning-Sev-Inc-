@@ -183,6 +183,7 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
     const fs = require('fs'), dataPath = require('path').join(uploadDir, require('path').basename(f.filename));
     const discard = () => { try { fs.unlinkSync(dataPath); } catch { /* already gone */ } };
     const by = req.user && req.user.email;
+    let created = false; // once the bill row exists, the uploaded file must stay attached to it
     try {
       const E = require('./expenses');
       const name = String(f.originalname || f.filename);
@@ -190,16 +191,17 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
       const missing = [!read.vendor && 'the vendor', !read.date && 'the date', !(read.total > 0) && 'the amount'].filter(Boolean);
       if (missing.length) { discard(); return res.status(422).json({ error: 'The receipt did not show ' + missing.join(', ') + '. Nothing was saved. Enter the bill yourself.', reading: read }); }
       const bill = { vendor: read.vendor, amount: read.total, bill_date: read.date, category: read.category, description: '', receipt_ref: name };
-      const dups = E.findDuplicates(db, bill);
+      // The file name is not a receipt number: phone photos often share a name, so only vendor, amount and date count here.
+      const dups = E.findDuplicates(db, { ...bill, receipt_ref: '' });
       if (dups.length) { discard(); return res.status(409).json({ error: 'Possible duplicate of bill ' + dups.map(d => '#' + d.id).join(', ') + '. Nothing was saved. Open that bill to check.', duplicates: dups }); }
-      const id = E.createBill(db, bill, by);
+      const id = E.createBill(db, bill, by); created = true;
       E.attachReceipt(db, { billId: id, file: f, by, uploadDir });
       db.prepare('UPDATE expense_bills SET ai_read=? WHERE id=?').run(JSON.stringify({
         vendor: read.vendor, date: read.date, total: read.total, bill_amount: read.total, total_matches_bill: true, model: read.model, at: read.at, status: 'suggestion',
         category_suggestion: { category: read.category, confidence: read.confidence, reason: read.reason, model: read.model, at: read.at, status: 'suggestion' } }), id);
       logAction(req, 'uploaded a receipt; AI filled in the bill (check it)', 'bill', id, read.vendor);
       res.status(201).json({ id, filled: { vendor: read.vendor, date: read.date, amount: read.total, category: read.category, confidence: read.confidence } });
-    } catch (e) { discard(); if (e.code !== 'AI_OFF') logRun('ai_intake', 0, 'failed', e.message); fail(res, e); }
+    } catch (e) { if (!created) discard(); if (e.code !== 'AI_OFF') logRun('ai_intake', 0, 'failed', e.message); fail(res, e); }
   });
   // Category suggestion for a bill's receipt. Stores a suggestion only; the bill changes only if a person applies it.
   app.post('/api/admin/ai/expenses/:id/suggest-category', auth, async (req, res) => {

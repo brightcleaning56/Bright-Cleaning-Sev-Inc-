@@ -84,6 +84,8 @@ const ROLE_RULES=[
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/(adjustments|entries\/\d+\/reverse)$/,roles:['owner','manager'],why:'Only an owner or manager can post adjustments or reversals.'},
   {m:/^GET$/,p:/^\/api\/admin\/receivables\/tie-out$/,roles:['owner','manager'],why:'Receivables tie-out is limited to owners and managers.'},
   {m:/^(GET|POST|PATCH|PUT)$/,p:/^\/api\/admin\/expenses(\/\d+(\/(pay|approve|receipt|void|splits))?|\/close(\/approve)?)?$/,roles:['owner','manager'],why:'Bills, splits and payments are limited to owners and managers.'},
+  {m:/^POST$/,p:/^\/api\/admin\/ai\/expenses\/(intake|\d+\/(read-receipt|suggest-category))$/,roles:['owner','manager'],why:'Reading receipts with AI and creating bills from them are limited to owners and managers.'},
+  {m:/^(GET|POST)$/,p:/^\/api\/admin\/recurring-bills(\/\d+\/stop)?$/,roles:['owner','manager'],why:'Monthly bills are standing rules: only owners and managers can set or stop them.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/periods\/close$/,roles:['owner'],why:'Only an owner can close the books for a period.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/rates$/,roles:['owner'],why:'Only an owner can change burden, sales tax or the overtime threshold.'},
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/reconciliations$/,roles:['owner','manager'],why:'Bank reconciliations are limited to owners and managers.'},

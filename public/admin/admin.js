@@ -3245,6 +3245,7 @@
     const showReview = id => {
       const bill = allBills.find(x => String(x.id) === String(id)); if (!bill) return;
       const panel = $('#accReview'); if (!panel) return;
+      if (reviewId !== bill.id && typeof scanPages !== 'undefined') { scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; } // scanned pages belong to one bill
       reviewId = bill.id;
       const st = billState(bill);
       const stateLabel = { waiting: 'Waiting approval', approved: 'Approved, not paid', paid: 'Paid', void: 'Void' }[st];
@@ -3286,7 +3287,7 @@
       if (panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     body.querySelectorAll('[data-accreview]').forEach(btn => btn.onclick = () => showReview(btn.dataset.accreview));
-    $('#accRvClose') && ($('#accRvClose').onclick = () => { $('#accReview').hidden = true; reviewId = null; body.dataset.reviewId = ''; });
+    $('#accRvClose') && ($('#accRvClose').onclick = () => { $('#accReview').hidden = true; reviewId = null; body.dataset.reviewId = ''; scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; });
     // Receipt upload from the phone camera or a file. Attaches to the bill the panel is showing.
     const rvFile = $('#accRvFile');
     if (rvFile) rvFile.onchange = async () => {
@@ -3347,6 +3348,7 @@
     };
     if ($('#accScanCancel')) $('#accScanCancel').onclick = () => { scanPages = []; scanBox.hidden = true; pagesHost.innerHTML = ''; };
     if ($('#accScanSave')) $('#accScanSave').onclick = async () => {
+      if (!reviewId) { toast('Open a bill first.', true); return; }
       if (!scanPages.length) { toast('Add at least one page first.', true); return; }
       try {
         const pages = [];
@@ -3366,7 +3368,7 @@
       if (!confirm('Change this bill\'s category to ' + cat + '? Changing the category of an approved bill asks for approval again.')) return;
       try {
         await api('/api/admin/expenses/' + bill.id, { method: 'PATCH', json: { vendor: bill.vendor, description: bill.description || '', category: cat, amount: bill.amount, bill_date: bill.bill_date, receipt_ref: bill.receipt_ref || '', project_id: bill.project_id || '' } });
-        toast('Category changed'); body.dataset.reviewId = String(bill.id); loadAccounting();
+        toast((bill.splits || []).length ? 'Category changed on the bill. Its split lines keep their own categories.' : 'Category changed'); body.dataset.reviewId = String(bill.id); loadAccounting();
       } catch (err) { toast(err.message, true); }
     };
     body.querySelectorAll('[data-acccat]').forEach(btn => btn.onclick = async () => {
@@ -3399,10 +3401,10 @@
       if (!monthlyHost) return;
       try {
         const { bills: tpl } = await api('/api/admin/recurring-bills');
-        const rows = tpl.filter(t => t.active).map(t => `<tr><td>${esc(t.vendor)}</td><td>${esc(t.description || '')}</td><td>${esc(t.category || '')}</td><td class="num">${money(t.amount)}</td><td>Day ${esc(t.day_of_month)}</td><td>${esc(t.last_month || 'none yet')}</td><td><button class="btn small ghost" data-stopmonthly="${esc(t.id)}" type="button">Stop</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No monthly bills.</td></tr>';
+        const rows = tpl.filter(t => t.active).map(t => `<tr><td>${esc(t.vendor)}</td><td>${esc(t.description || '')}</td><td>${esc(t.category || '')}</td><td class="num">${money(t.amount)}</td><td>Day ${esc(t.day_of_month)}</td><td>${esc(t.last_month || 'starts on its day')}</td><td><button class="btn small ghost" data-stopmonthly="${esc(t.id)}" type="button">Stop</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No monthly bills.</td></tr>';
         monthlyHost.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 class="secth" style="margin:0;font-size:1rem">Monthly bills</h3><button class="btn small" id="monthlyNew" type="button">New monthly bill</button></div>
           <p class="muted" style="margin:4px 0">Each month one Open bill is made on its day. Approve it in the weekly close, like any bill.</p>
-          <div class="tablewrap"><table class="t"><thead><tr><th>Vendor</th><th>Description</th><th>Category</th><th class="num">Amount</th><th>Day</th><th>Last month made</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+          <div class="tablewrap"><table class="t"><thead><tr><th>Vendor</th><th>Description</th><th>Category</th><th class="num">Amount</th><th>Day</th><th>Covered through</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
       } catch (err) { monthlyHost.innerHTML = `<p class="msg err">${esc(err.message)}</p>`; return; }
       monthlyHost.querySelectorAll('[data-stopmonthly]').forEach(btn => btn.onclick = async () => {
         if (!confirm('Stop this monthly bill? Bills already made stay.')) return;
