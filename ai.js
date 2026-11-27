@@ -174,6 +174,14 @@ Only report numbers you can trace to a sheet. Never invent quantities; leave the
       res.json({ reading });
     } catch (e) { if (e.code !== 'AI_OFF') logRun('ai_receipt_read', Number(req.params.id), 'failed', e.message); fail(res, e); }
   });
+  // Category suggestion for a bill's receipt. Stores a suggestion only; the bill changes only if a person applies it.
+  app.post('/api/admin/ai/expenses/:id/suggest-category', auth, async (req, res) => {
+    try {
+      const suggestion = await require('./receipt-read').suggestCategory({ db, billId: Number(req.params.id), uploadDir, model: model(), callFn: (m, s, t) => call(m, s, t) });
+      logAction(req, 'AI suggested a category (suggestion only)', 'bill', Number(req.params.id), suggestion.category);
+      res.json({ suggestion });
+    } catch (e) { if (e.code !== 'AI_OFF') logRun('ai_category_suggest', Number(req.params.id), 'failed', e.message); fail(res, e); }
+  });
   app.post('/api/admin/ai/leads/:id/triage', auth, async (req, res) => {
     try { const ai = await triageLead(Number(req.params.id)); logAction(req, 'ran AI triage', 'lead', Number(req.params.id), ai.summary.slice(0, 120)); res.json({ ai }); }
     catch (e) { if (e.code !== 'AI_OFF') logRun('ai_lead_triage', Number(req.params.id), 'failed', e.message); fail(res, e); }

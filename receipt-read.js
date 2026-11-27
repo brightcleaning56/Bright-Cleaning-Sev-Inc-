@@ -49,7 +49,7 @@ function shapeReading(r, bill) {
 // db: the app database. callFn(messages, system, maxTokens) -> reply text (the AI service).
 async function readReceipt({ db, billId, uploadDir, callFn, model }) {
   ensureSchema(db);
-  const bill = db.prepare('SELECT id, vendor, amount FROM expense_bills WHERE id=?').get(Number(billId));
+  const bill = db.prepare('SELECT id, vendor, amount, ai_read FROM expense_bills WHERE id=?').get(Number(billId));
   if (!bill) throw new Error('Bill not found.');
   const r = receiptPath(db, Number(billId), uploadDir);
   if (!r) throw new Error('Attach a receipt photo or PDF to this bill first.');
@@ -61,9 +61,36 @@ async function readReceipt({ db, billId, uploadDir, callFn, model }) {
     `"line_items" (array of {"description","amount","suggested_category"}). Use null for anything you cannot read. Do not guess; leave unclear values null.` }] }],
     'You read receipts for Bright Cleaning Sev Inc. Only report what is printed on the receipt.', 1200);
   const reading = shapeReading(parseReply(reply), bill);
-  const stored = { ...reading, model: model || null, at: new Date().toISOString(), status: 'suggestion' };
+  const prev = parseStored(bill.ai_read);
+  // Keep an earlier category suggestion; a new reading does not discard it.
+  const stored = { ...reading, model: model || null, at: new Date().toISOString(), status: 'suggestion', ...(prev.category_suggestion ? { category_suggestion: prev.category_suggestion } : {}) };
   db.prepare('UPDATE expense_bills SET ai_read=? WHERE id=?').run(JSON.stringify(stored), bill.id);
   return stored;
 }
 
-module.exports = { readReceipt, contentBlockFor, parseReply, shapeReading, ensureSchema };
+// Category suggestions (Phase 3). The AI picks from the bookkeeping list below. It is stored next to the
+// receipt reading as a suggestion; the bill's category changes only when a person applies it.
+const CATEGORIES = ['Materials', 'Equipment', 'Vehicle / fuel', 'Insurance', 'Labor', 'Rent', 'Utilities', 'Software', 'Other'];
+function parseStored(s) { try { return s ? JSON.parse(s) || {} : {}; } catch { return {}; } }
+async function suggestCategory({ db, billId, uploadDir, callFn, model }) {
+  ensureSchema(db);
+  const bill = db.prepare('SELECT id, ai_read FROM expense_bills WHERE id=?').get(Number(billId));
+  if (!bill) throw new Error('Bill not found.');
+  const r = receiptPath(db, Number(billId), uploadDir);
+  if (!r) throw new Error('Attach a receipt photo or PDF to this bill first.');
+  const size = fs.statSync(r.path).size;
+  if (size > MAX_BYTES) throw new Error('This receipt file is over 20 MB. Attach a smaller photo or PDF.');
+  const block = contentBlockFor(r.name, fs.readFileSync(r.path));
+  const reply = await callFn([{ role: 'user', content: [block, { type: 'text', text:
+    `Suggest the expense category for this receipt. Return ONLY JSON: {"category": one of ${JSON.stringify(CATEGORIES)}, "confidence": a number from 0 to 1, "reason": a short phrase}. ` +
+    `If you are not sure, use "Other" with a low confidence.` }] }],
+    'You categorize business expenses for Bright Cleaning Sev Inc. Use only what the receipt shows.', 400);
+  const p = parseReply(reply);
+  const category = CATEGORIES.includes(p.category) ? p.category : 'Other';
+  const confidence = Math.round(Math.max(0, Math.min(1, Number(p.confidence) || 0)) * 100) / 100;
+  const sugg = { category, confidence, reason: text(p.reason, 200), model: model || null, at: new Date().toISOString(), status: 'suggestion' };
+  db.prepare('UPDATE expense_bills SET ai_read=? WHERE id=?').run(JSON.stringify({ ...parseStored(bill.ai_read), category_suggestion: sugg }), bill.id);
+  return sugg;
+}
+
+module.exports = { readReceipt, suggestCategory, CATEGORIES, contentBlockFor, parseReply, shapeReading, ensureSchema };

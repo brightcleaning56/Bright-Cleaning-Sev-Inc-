@@ -2955,7 +2955,7 @@
       <div class="card accg" data-accg="reconciliation" style="margin:12px 0"><h2 class="secth" style="margin-top:0">Receivables tie-out ${tieBadge}</h2>
         <p class="muted">Difference between what customers owe and the ledger's receivable: <b>${money(tie.difference)}</b>. Unposted invoices: ${tie.unposted_invoices}. Unposted payments: ${tie.unposted_payments}.</p>
         <p class="muted">${esc(tie.gap)}</p></div>
-      <div class="card accg" data-accg="expenses" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><h2 class="secth" style="margin:0">Expenses &amp; receipts</h2><p class="muted" style="margin:2px 0 0">Enter a bill, attach its receipt, approve it to post it to the books, then mark it paid.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small ghost" id="accBatchGo" type="button">Review &amp; approve batch</button><button class="btn small" id="accNewBill" type="button">New bill</button></div></div>
+      <div class="card accg" data-accg="expenses" style="margin:12px 0"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><h2 class="secth" style="margin:0">Expenses &amp; receipts</h2><p class="muted" style="margin:2px 0 0">Enter a bill, attach its receipt, approve it to post it to the books, then mark it paid.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small ghost" id="accBatchGo" type="button">Review &amp; approve batch</button><button class="btn small ghost" id="accUpload" type="button">Upload receipt</button><button class="btn small" id="accNewBill" type="button">New bill</button></div></div>
         <div class="acc-stats">
           <div class="acc-stat"><span class="muted">Waiting approval</span><b>${countOf('waiting')}</b><span class="muted">${money(sumOf('waiting'))}</span></div>
           <div class="acc-stat"><span class="muted">Approved, not paid</span><b>${countOf('approved')}</b><span class="muted">${money(sumOf('approved'))}</span></div>
@@ -2982,7 +2982,11 @@
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 class="secth" id="accRvTitle" style="margin:0"></h3><button type="button" class="btn small ghost" id="accRvClose">Close</button></div>
             <dl class="acc-rv-facts" id="accRvFacts"></dl>
             <div id="accRvAi"></div>
+            <div id="accRvCat"></div>
+            <div class="filt" id="accRvUpload"><label for="accRvFile">Receipt: take a photo or choose a file (photo or PDF)</label><input type="file" id="accRvFile" accept="image/*,application/pdf" capture="environment"></div>
             <div class="filt" id="accRvActions">
+              <button class="btn small ghost" type="button" data-accread="" id="accRvRead" hidden>Read receipt</button>
+              <button class="btn small ghost" type="button" data-acccat="" id="accRvSuggest" hidden>Suggest category</button>
               <button class="btn small" type="button" data-accappr="" id="accRvApprove" hidden>Approve</button>
               <button class="btn small ghost" type="button" data-accedit="" id="accRvEdit" hidden>Edit</button>
               <button class="btn small ghost" type="button" data-accsplit="" id="accRvSplit" hidden>Split</button>
@@ -3245,7 +3249,15 @@
       $('#accRvAi').innerHTML = r ? `<p class="muted"><small>AI reading (suggestion only): ${esc(r.vendor || 'vendor unclear')} ${esc(r.date || '')} total ${r.total == null ? 'unclear' : esc(money(r.total))}${r.total_matches_bill === false ? ' · does NOT match the bill amount, check it' : ''}</small></p>` : '';
       // Each action button shows only when it applies, and carries this bill's id for the shared handler.
       const set = (sel, attr, on) => { const el = $(sel); if (!el) return; el.hidden = !on; if (on) el.dataset[attr] = String(bill.id); };
+      set('#accRvRead', 'accread', !!bill.receipt_file);
+      set('#accRvSuggest', 'acccat', !!bill.receipt_file && st !== 'paid');
       set('#accRvApprove', 'accappr', st === 'waiting');
+      const cs = r && r.category_suggestion;
+      const catBox = $('#accRvCat');
+      catBox.innerHTML = cs ? `<p class="muted"><small>Suggested category: <b>${esc(cs.category)}</b> (${Math.round((Number(cs.confidence) || 0) * 100)}% confident). ${esc(cs.reason || '')} Suggestion only.</small></p>${st !== 'paid' && cs.category !== bill.category ? '<button type="button" class="btn small ghost" id="accRvUseCat">Use this category</button>' : ''}` : '';
+      const useCat = $('#accRvUseCat'); if (useCat) useCat.onclick = () => applyCategory(bill, cs.category);
+      $('#accRvUpload').hidden = st === 'paid';
+      body.dataset.reviewId = String(bill.id);
       set('#accRvEdit', 'accedit', st === 'waiting' || st === 'approved');
       set('#accRvSplit', 'accsplit', st === 'waiting' || st === 'approved');
       set('#accRvPay', 'accpay', st === 'approved');
@@ -3267,7 +3279,43 @@
       if (panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     body.querySelectorAll('[data-accreview]').forEach(btn => btn.onclick = () => showReview(btn.dataset.accreview));
-    $('#accRvClose') && ($('#accRvClose').onclick = () => { $('#accReview').hidden = true; reviewId = null; });
+    $('#accRvClose') && ($('#accRvClose').onclick = () => { $('#accReview').hidden = true; reviewId = null; body.dataset.reviewId = ''; });
+    // Receipt upload from the phone camera or a file. Attaches to the bill the panel is showing.
+    const rvFile = $('#accRvFile');
+    if (rvFile) rvFile.onchange = async () => {
+      const f = rvFile.files && rvFile.files[0]; if (!f || !reviewId) return;
+      const fd = new FormData(); fd.append('receipt', f);
+      try { await api('/api/admin/expenses/' + reviewId + '/receipt', { method: 'POST', body: fd }); toast('Receipt attached'); body.dataset.reviewId = String(reviewId); loadAccounting(); }
+      catch (err) { toast(err.message, true); }
+    };
+    // Category suggestion: the AI suggests, a person applies it.
+    const applyCategory = async (bill, cat) => {
+      if (!confirm('Change this bill\'s category to ' + cat + '? Changing the category of an approved bill asks for approval again.')) return;
+      try {
+        await api('/api/admin/expenses/' + bill.id, { method: 'PATCH', json: { vendor: bill.vendor, description: bill.description || '', category: cat, amount: bill.amount, bill_date: bill.bill_date, receipt_ref: bill.receipt_ref || '', project_id: bill.project_id || '' } });
+        toast('Category changed'); body.dataset.reviewId = String(bill.id); loadAccounting();
+      } catch (err) { toast(err.message, true); }
+    };
+    body.querySelectorAll('[data-acccat]').forEach(btn => btn.onclick = async () => {
+      btn.disabled = true;
+      try { const out = await api('/api/admin/ai/expenses/' + btn.dataset.acccat + '/suggest-category', { method: 'POST', json: {} }); toast('Suggested: ' + out.suggestion.category + ' (suggestion only)'); body.dataset.reviewId = btn.dataset.acccat; loadAccounting(); }
+      catch (err) { toast(err.message, true); btn.disabled = false; }
+    });
+    // Upload a receipt for a new bill: enter the bill, save it, then add its receipt in the panel.
+    if ($('#accUpload')) $('#accUpload').onclick = () => openForm({ title: 'Upload a receipt', sub: 'Enter the bill and save it. Then take a photo or choose the receipt file in the panel that opens.',
+      defs: [{ name: 'vendor', label: 'Vendor', required: true }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example materials, equipment, insurance)' },
+        { name: 'amount', label: 'Amount ($)', type: 'number', required: true }, { name: 'bill_date', label: 'Bill date', type: 'date', required: true }, { name: 'project_id', label: 'Project (optional)', type: 'project' }],
+      values: { bill_date: new Date().toISOString().slice(0, 10) },
+      submit: async b => {
+        const send = confirmDup => api('/api/admin/expenses', { method: 'POST', json: { ...b, confirm_duplicate: confirmDup } });
+        let saved;
+        try { saved = await send(false); }
+        catch (err) { if (!/Possible duplicate/.test(err.message) || !confirm(err.message + '\n\nSave anyway?')) throw err; saved = await send(true); }
+        body.dataset.reviewId = String(saved.id); return saved;
+      },
+      after: () => { toast('Bill saved. Now add its receipt in the panel.'); loadAccounting(); } });
+    // Reopen the review panel after a reload, so a change does not lose the bill being looked at.
+    if (body.dataset.reviewId) { try { showReview(body.dataset.reviewId); } catch { /* the bill may be gone */ } }
     body.querySelectorAll('[data-accview]').forEach(btn => btn.onclick = async () => {
       try {
         const r = await fetch('/api/admin/expenses/' + btn.dataset.accview + '/receipt', { credentials: 'same-origin' });

@@ -34,6 +34,7 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
       rooms: [{ number: '101', name: 'Lobby', area_sf: 1200, floor_finish: 'Terrazzo', sheet: 'A1.1', confidence: 'High' }, { number: '102', name: 'Open office', area_sf: 9000, floor_finish: 'Carpet tile', sheet: 'A1.1', confidence: 'Medium' }, { number: '103', name: 'Guessed room', area_sf: 500 }],
       counts: [{ item: 'Restrooms', quantity: 6, sheet: 'A1.1', confidence: 'High' }], finishes: [{ finish: 'Terrazzo', areas: 'Lobby', sheet: 'A6.1' }], cleaning_notes: [{ note: '24 ft atrium glass', sheet: 'A3.1' }, { note: 'no sheet note' }], questions: ['Is level 2 tenant space in scope?'] };
     else if (content.includes('Read this receipt')) out = { vendor: 'Glass Co', date: '2026-11-26', total: 80, tax: 4, line_items: [{ description: 'Squeegee', amount: 76, suggested_category: 'Supplies' }] };
+    else if (content.includes('Suggest the expense category')) out = { category: 'Materials', confidence: 0.9, reason: 'cleaning squeegees' };
     else if (content.includes('"type":"document"')) out ={ sheets: [{ sheet: 'G0.1', title: 'Code plan', revision: 'IFC' }, { sheet: 'A1.1', title: 'Level 1 plan' }], building_sf: 136600, building_sf_sheet: 'G0.1', quantities: [{ item: 'Restrooms', quantity: 28, sheet: 'A6.1', method: 'From schedule', confidence: 'High', note: 'toilet room schedule' }], questions: ['Exterior glass quantity is not shown on the A-sheets.'] };
     else if (content.includes('CALL ANALYSIS')) out = { summary: 'Pat from Phone Match Co wants a final clean quote for 20,000 SF next month.', intent: 'New bid request', sentiment: 'Positive', urgency: 'High', lead_score: 82, score_reasons: ['Defined scope', 'Near-term timeline'], details: { service: 'Final clean', square_feet: 20000, site_address: '', timeline: 'next month', budget: '' }, action_items: [{ task: 'Send final clean quote', owner: 'Estimator', due: '2026-11-06' }, { task: '', owner: 'x' }], follow_up_date: '2026-11-05', reply_draft: 'Hi Pat, thanks for calling...', risks: [] };
     else if (content.includes('Phone call notes')) out = { contact_name: 'Dana Ruiz', company: 'Ridge Builders', phone: '515-555-0100', email: '', purpose: 'Bid request', service: 'Final clean', square_footage: '80,000', deadline: 'December walkthrough', summary: 'GC needs final clean for 80,000 SF building.', follow_up: 'Request drawings' };
@@ -341,6 +342,20 @@ async function check(name, fn) { try { const ev = await fn(); results.push({ nam
     const bill = (list.data.bills || []).find(b => b.id === id);
     assert(bill && bill.amount === 80 && bill.status === 'Open' && bill.ai_read, 'bill state ' + JSON.stringify(bill));
     return 'receipt read: total 80 matches the bill; stored as a suggestion; bill amount 80 and status Open unchanged';
+  });
+
+  await check('AI category suggestion: stored as a suggestion next to the receipt reading; the bill category is not changed until a person applies it', async () => {
+    const cr = await api('POST', '/api/admin/expenses', { vendor: 'Category Co', description: 'Squeegees', amount: 33, bill_date: '2026-11-26', category: 'Other' }, T);
+    const id = cr.data.id || (cr.data.bill && cr.data.bill.id);
+    const fd = new FormData(); fd.append('receipt', new Blob([Buffer.from('%PDF-1.4 cat receipt')], { type: 'application/pdf' }), 'cat.pdf');
+    const up = await fetch(B + `/api/admin/expenses/${id}/receipt`, { method: 'POST', headers: { Authorization: 'Bearer ' + T }, body: fd });
+    assert(up.status === 201, 'attach ' + up.status);
+    const sg = await api('POST', `/api/admin/ai/expenses/${id}/suggest-category`, {}, T);
+    assert(sg.status === 200 && sg.data.suggestion.category === 'Materials', 'suggest ' + sg.status + ' ' + JSON.stringify(sg.data));
+    const bill = ((await api('GET', '/api/admin/expenses', null, T)).data.bills || []).find(b => b.id === id);
+    assert(bill.category === 'Other', 'category changed without approval: ' + bill.category);
+    assert(JSON.parse(bill.ai_read).category_suggestion.category === 'Materials', 'suggestion not stored');
+    return 'suggested Materials (90%); stored beside the reading; bill category still Other';
   });
 
   child.kill(); fake.close();
