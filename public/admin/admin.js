@@ -3001,6 +3001,7 @@
             </div>
           </div>
         </div>
+        <div id="monthlyHost" style="margin:8px 0"></div>
         <div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Source</th><th>Vendor</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${billRows}</tbody></table></div>
         <h3 class="secth" style="margin:18px 0 4px;font-size:1rem">Weekly close</h3>
         <p class="muted" style="margin:0 0 8px">Bills waiting for approval in the range. Approving posts the checked bills to the books; unchecked ones stay pending.</p>
@@ -3392,6 +3393,30 @@
       };
       pick.click();
     };
+    // Monthly bills: templates that make one Open bill a month on their day. Approval stays in the weekly close.
+    const monthlyHost = $('#monthlyHost');
+    const drawMonthly = async () => {
+      if (!monthlyHost) return;
+      try {
+        const { bills: tpl } = await api('/api/admin/recurring-bills');
+        const rows = tpl.filter(t => t.active).map(t => `<tr><td>${esc(t.vendor)}</td><td>${esc(t.description || '')}</td><td>${esc(t.category || '')}</td><td class="num">${money(t.amount)}</td><td>Day ${esc(t.day_of_month)}</td><td>${esc(t.last_month || 'none yet')}</td><td><button class="btn small ghost" data-stopmonthly="${esc(t.id)}" type="button">Stop</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No monthly bills.</td></tr>';
+        monthlyHost.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 class="secth" style="margin:0;font-size:1rem">Monthly bills</h3><button class="btn small" id="monthlyNew" type="button">New monthly bill</button></div>
+          <p class="muted" style="margin:4px 0">Each month one Open bill is made on its day. Approve it in the weekly close, like any bill.</p>
+          <div class="tablewrap"><table class="t"><thead><tr><th>Vendor</th><th>Description</th><th>Category</th><th class="num">Amount</th><th>Day</th><th>Last month made</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      } catch (err) { monthlyHost.innerHTML = `<p class="msg err">${esc(err.message)}</p>`; return; }
+      monthlyHost.querySelectorAll('[data-stopmonthly]').forEach(btn => btn.onclick = async () => {
+        if (!confirm('Stop this monthly bill? Bills already made stay.')) return;
+        try { await api('/api/admin/recurring-bills/' + btn.dataset.stopmonthly + '/stop', { method: 'POST', json: {} }); toast('Monthly bill stopped'); loadAccounting(); }
+        catch (err) { toast(err.message, true); }
+      });
+      const nb = $('#monthlyNew');
+      if (nb) nb.onclick = () => openForm({ title: 'New monthly bill', sub: 'One Open bill is made each month on this day. Enter the amount that stays the same. Approve each bill in the weekly close.',
+        defs: [{ name: 'vendor', label: 'Vendor', required: true }, { name: 'description', label: 'Description', wide: true }, { name: 'category', label: 'Category (for example Insurance, Rent, Utilities, Software)' },
+          { name: 'amount', label: 'Amount ($)', type: 'number', required: true }, { name: 'day_of_month', label: 'Day of the month (1 to 28)', type: 'number', required: true }],
+        values: { day_of_month: 28 },
+        submit: b => api('/api/admin/recurring-bills', { method: 'POST', json: b }), after: () => { toast('Monthly bill added'); loadAccounting(); } });
+    };
+    drawMonthly();
     // Reopen the review panel after a reload, so a change does not lose the bill being looked at.
     if (body.dataset.reviewId) { try { showReview(body.dataset.reviewId); } catch { /* the bill may be gone */ } }
     body.querySelectorAll('[data-accview]').forEach(btn => btn.onclick = async () => {

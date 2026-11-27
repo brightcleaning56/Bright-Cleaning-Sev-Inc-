@@ -425,6 +425,28 @@ function createCrewReceipt(db, { employee, project_id, vendor, amount, descripti
   })();
 }
 
+// Monthly bills: a template makes one Open bill each month, on its day (1 to 28, so every month has it).
+// Nothing is approved here; approval stays in the weekly close. A template never makes the same month twice.
+function ensureRecurring(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS recurring_bills(id INTEGER PRIMARY KEY AUTOINCREMENT, vendor TEXT NOT NULL, description TEXT, category TEXT, amount REAL NOT NULL,
+    day_of_month INTEGER NOT NULL, project_id INTEGER, active INTEGER NOT NULL DEFAULT 1, last_month TEXT, created_by TEXT, created_at TEXT NOT NULL)`);
+}
+function createDueRecurring(db, today) {
+  ensureSchema(db); ensureRecurring(db);
+  const ym = String(today).slice(0, 7), day = Number(String(today).slice(8, 10));
+  const made = [];
+  for (const t of db.prepare('SELECT * FROM recurring_bills WHERE active=1 ORDER BY id').all()) {
+    if (t.last_month === ym || day < t.day_of_month) continue;
+    made.push(db.transaction(() => {
+      const billId = createBill(db, { vendor: t.vendor, amount: t.amount, bill_date: ym + '-' + String(t.day_of_month).padStart(2, '0'), category: t.category,
+        description: 'Monthly: ' + (t.description || ''), project_id: t.project_id, confirm_duplicate: true }, 'monthly bill');
+      db.prepare('UPDATE recurring_bills SET last_month=? WHERE id=?').run(ym, t.id);
+      return billId;
+    })());
+  }
+  return made;
+}
+
 function mount(app, ctx) {
   const { db, auth, upload, uploadDir } = ctx;
   ensureSchema(db);
@@ -437,7 +459,26 @@ function mount(app, ctx) {
     if (!r) return res.status(404).json({ error: 'No receipt is attached to this bill.' });
     res.download(r.path, r.name);
   });
+  // Monthly bills: a daily check (and each list load) makes any due bill. A failure is retried on the next check.
+  const runMonthly = () => { try { createDueRecurring(db, bizdate.today()); } catch (e) { console.error('monthly bills:', e.message); } };
+  setInterval(runMonthly, 60 * 60 * 1000).unref();
+  app.get('/api/admin/recurring-bills', auth, (req, res) => { ensureRecurring(db); res.json({ bills: db.prepare('SELECT * FROM recurring_bills ORDER BY id').all() }); });
+  app.post('/api/admin/recurring-bills', auth, (req, res) => {
+    ensureRecurring(db);
+    const b = req.body || {}, vendor = String(b.vendor || '').trim(), amount = r2(b.amount), day = Math.trunc(Number(b.day_of_month));
+    if (!vendor) return res.status(400).json({ error: 'A monthly bill needs a vendor.' });
+    if (!(amount > 0)) return res.status(400).json({ error: 'The amount must be above zero.' });
+    if (!(day >= 1 && day <= 28)) return res.status(400).json({ error: 'Choose a day from 1 to 28, so every month has it.' });
+    const today = bizdate.today();
+    // Starts with this month if its day has not come yet; otherwise next month. The office can set the month it starts from.
+    const startMonth = /^\d{4}-\d{2}$/.test(String(b.last_month || '')) ? b.last_month : (Number(today.slice(8, 10)) >= day ? today.slice(0, 7) : null);
+    const info = db.prepare('INSERT INTO recurring_bills(vendor,description,category,amount,day_of_month,project_id,active,last_month,created_by,created_at) VALUES(?,?,?,?,?,?,1,?,?,?)')
+      .run(vendor.slice(0, 200), String(b.description || '').slice(0, 300), String(b.category || '').slice(0, 80), amount, day, b.project_id ? Number(b.project_id) : null, startMonth, req.user && req.user.email, new Date().toISOString());
+    res.status(201).json({ ok: true, id: info.lastInsertRowid });
+  });
+  app.post('/api/admin/recurring-bills/:id/stop', auth, (req, res) => { ensureRecurring(db); db.prepare('UPDATE recurring_bills SET active=0 WHERE id=?').run(Number(req.params.id)); res.json({ ok: true }); });
   app.get('/api/admin/expenses', auth, (req, res) => {
+    runMonthly();
     const bills = db.prepare('SELECT * FROM expense_bills ORDER BY id DESC LIMIT 300').all();
     const named = hasTable(db, 'projects');
     const lines = hasTable(db, 'expense_bill_splits') ? db.prepare(`SELECT s.bill_id, s.project_id, s.category, s.amount${named ? ', p.name AS project_name' : ''} FROM expense_bill_splits s ${named ? 'LEFT JOIN projects p ON p.id=s.project_id' : ''} ORDER BY s.id`).all() : [];
@@ -483,4 +524,4 @@ function mount(app, ctx) {
   });
 }
 
-module.exports = { ensureSchema, closeList, approveBatch, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, createCrewReceipt, burdenPct, findDuplicates, mount };
+module.exports = { ensureSchema, closeList, approveBatch, setSplits, allocationsOf, createBill, updateBill, voidBill, approveBill, payBill, syncRecorded, costDrift, recordPayrollPayment, attachReceipt, receiptPath, createCrewReceipt, burdenPct, findDuplicates, createDueRecurring, ensureRecurring, mount };
