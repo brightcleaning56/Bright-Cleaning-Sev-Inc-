@@ -15,6 +15,11 @@ Last updated: 2026-11-15.
 8. **Labor and margin starting values. Approved 2026-11-15.** The starting values (0 wage, 20% burden, 30% minimum margin) stay for Bright Clean until you change them. **Still to do:** confirm or change them on the live Labor assumptions page (you save the page; that also confirms it). New company copies stay blocked from quoting until they save their own.
 9. **Crew phone test.** Run `docs/CREW_PHONE_TEST.md` on one real phone with a crew member before any pilot.
 10. **Route ordering address service.** Plan: keep manual ordering until phase 2. Confirm, or pick a lookup service and its cost.
+11. **Receipt inbox: what to set up (2026-11-26).** The system can read a mailbox through Microsoft 365 (Outlook), and the Command Center says the inbox still needs an app registration. Steps, in order:
+    - a. Make the app registration in the Microsoft 365 admin center (Mail.Read permission, the same one the inbox already uses). Put the app's values in Render as the Microsoft 365 settings.
+    - b. Decide where receipts arrive. Option 1 (quickest): a mail rule in your own Outlook that forwards receipt emails to the system, so no new address. Option 2: a shared mailbox such as `receipts@` on your domain, which needs an admin to grant the app access to that one mailbox.
+    - c. Tell me which option, and send the mailbox address. I'll build the intake: attachments are saved as held items for you to review, nothing becomes a bill or is approved automatically, and each attachment is limited to PDF and photo types under 20 MB.
+    - d. Whether an email from an unknown sender should be accepted. Default: accepted into the review list only, never posted.
 
 ## Still open from earlier (unchanged)
 
