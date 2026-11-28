@@ -30,6 +30,7 @@ function mockProvider() {
         return json(400, { error: 'invalid_grant', error_description: 'bad code' });
       }
       if (u.pathname === '/v26/customers:listAccessibleCustomers') return json(200, { resourceNames: ACCESSIBLE });
+      if (u.pathname === '/v26/customers/4628114893/googleAds:searchStream') return json(403, [{ error: { code: 403, message: 'The caller does not have permission', status: 'PERMISSION_DENIED', details: [{ errors: [{ errorCode: { authorizationError: 'USER_PERMISSION_DENIED' }, message: 'Not linked' }] }] } }]);
       if (u.pathname === '/v26/customers/4628114894/googleAds:searchStream') {
         if (/customer.id/.test(JSON.parse(body).query) && !/customer_client/.test(JSON.parse(body).query)) return json(200, [{ results: [{ customer: { id: '4628114894', descriptiveName: 'Bright Clean', manager: false } }] }]);
         return json(404, { error: { message: 'not found' } });
@@ -230,6 +231,8 @@ function mockProvider() {
       assert(typed.status === 200, 'typed client ID that the API can read was refused: ' + typed.status + ' ' + JSON.stringify(typed.data));
       const unknown = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '1111111111' }, T);
       assert(unknown.status === 400, 'unreadable typed ID was accepted: ' + unknown.status);
+      const notLinked = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '4628114893' }, T);
+      assert(notLinked.status === 400 && /USER_PERMISSION_DENIED/.test(notLinked.data.error), 'not-linked ID did not show Google reason: ' + JSON.stringify(notLinked.data));
       const pick = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '123-456-7890' }, T);
       assert(pick.status === 200 && /Test Client/.test(pick.data.account_label), 'choose failed: ' + pick.status + ' ' + JSON.stringify(pick.data));
       const bad = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '9999999999' }, T);

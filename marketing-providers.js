@@ -59,6 +59,8 @@ function mountProviders(app, ctx) {
     const text = await r.text().catch(() => '');
     let j = {}; try { j = text ? JSON.parse(text) : {}; } catch { j = {}; }
     if (!r.ok) {
+      // Streaming calls (searchStream) answer with an array of batches; an error arrives as the first item.
+      if (Array.isArray(j) && j.length && j[0] && j[0].error) j = j[0];
       // When the body is not a provider error object, keep a short piece of it so the owner can see what came back.
       const snippet = !j.error && !j.error_description && text ? ' body: ' + text.replace(/\s+/g, ' ').slice(0, 160) : '';
       const m = (j.error && (j.error.message || j.error)) || (j.error_description) || ('provider returned ' + r.status + snippet);
