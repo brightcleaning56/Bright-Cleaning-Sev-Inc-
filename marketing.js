@@ -13,12 +13,24 @@ const CHANNELS = ['google_ads', 'meta_ads', 'google_business_profile', 'facebook
 const BUDGET_PERIODS = ['daily', 'weekly', 'monthly', 'lifetime'];
 const CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'ended'];
 const CONTENT_STATUSES = ['draft', 'approved'];
-const EVENT_TYPES = ['contract_created', 'payment_received', 'refund_issued', 'lead_lost', 'lead_qualified', 'proposal_sent', 'proposal_approved', 'project_completed', 'invoice_issued'];
+const EVENT_TYPES = ['contract_created', 'payment_received', 'refund_issued', 'lead_lost', 'lead_qualified', 'proposal_sent', 'proposal_approved', 'proposal_declined', 'project_completed', 'invoice_issued'];
 // Lead statuses that count as qualified (a lead has been worked past intake). Shown on every report with this definition.
 const QUALIFIED_STATUSES = ['Site Walkthrough', 'Proposal in Progress', 'Proposal Sent', 'Won'];
 
 function migrate(db) {
   db.exec(fs.readFileSync(SCHEMA_FILE, 'utf8'));
+  // Lead status transitions are recorded by the database itself, so every route that changes a lead's status is covered.
+  // Each lead is counted once per event type (INSERT OR IGNORE on the idempotency key). Qualified uses the status rule above.
+  const qual = QUALIFIED_STATUSES.map(s => "'" + s.replace(/'/g, "''") + "'").join(',');
+  const ts = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+  const ev = (type, when) => `CREATE TRIGGER IF NOT EXISTS marketing_${type}_on_lead AFTER UPDATE OF status ON leads
+    WHEN ${when}
+    BEGIN
+      INSERT OR IGNORE INTO marketing_events(campaign_id,lead_id,event_type,source_module,source_record_id,idempotency_key,value_amount,currency,payload_json,occurred_at,created_at)
+      VALUES((SELECT first_campaign_id FROM marketing_attribution WHERE lead_id=NEW.id), NEW.id, '${type}', 'leads', 'lead:' || NEW.id, '${type}:leads:lead:' || NEW.id, NULL, 'USD', '{}', ${ts}, ${ts});
+    END;`;
+  db.exec(ev('lead_lost', "NEW.status = 'Lost' AND (OLD.status IS NULL OR OLD.status <> 'Lost')"));
+  db.exec(ev('lead_qualified', `NEW.status IN (${qual}) AND (OLD.status IS NULL OR OLD.status NOT IN (${qual}))`));
 }
 
 // Trims, strips control characters and caps length. Used for every attribution and marketing text field.
@@ -119,6 +131,10 @@ function leadForEstimate(db, estimateId) {
 function leadForContract(db, contractId) {
   const c = db.prepare('SELECT estimate_id FROM contracts WHERE id=?').get(positiveId(contractId));
   return c && c.estimate_id ? leadForEstimate(db, c.estimate_id) : null;
+}
+function leadForProject(db, projectId) {
+  const p = db.prepare('SELECT contract_id FROM projects WHERE id=?').get(positiveId(projectId));
+  return p && p.contract_id ? leadForContract(db, p.contract_id) : null;
 }
 function leadForInvoice(db, invoiceId) {
   const inv = db.prepare('SELECT project_id FROM invoices WHERE id=?').get(positiveId(invoiceId));
@@ -394,5 +410,6 @@ module.exports.emitLifecycle = emitLifecycle;
 module.exports.leadForEstimate = leadForEstimate;
 module.exports.leadForContract = leadForContract;
 module.exports.leadForInvoice = leadForInvoice;
+module.exports.leadForProject = leadForProject;
 module.exports.CHANNELS = CHANNELS;
 module.exports.EVENT_TYPES = EVENT_TYPES;

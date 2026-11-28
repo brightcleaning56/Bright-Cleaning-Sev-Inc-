@@ -77,6 +77,15 @@ const check = (what, ok, detail = '') => { results.push(ok); console.log(`${ok ?
     const paidNow = cents(invNow.paid_amount);
     check('Invoice paid amount after refund is 324.00', paidNow === 32400, (paidNow / 100).toFixed(2));
     check('Invoice owes 100.00 after refund (424.00 billed)', billed - paidNow === 10000, ((billed - paidNow) / 100).toFixed(2));
+    // Marketing events from this invoice: issued once, and one refund event. The invoice has no lead, so they are unresolved.
+    {
+      const mdb = new (require('better-sqlite3'))(path.join(work, 'data', 'brightclean.db'), { readonly: true });
+      const issued = mdb.prepare("SELECT COUNT(*) n FROM marketing_events WHERE event_type='invoice_issued' AND source_record_id=?").get('invoice:' + invId).n;
+      const refunds = mdb.prepare("SELECT COUNT(*) n FROM marketing_events WHERE event_type='refund_issued' AND source_record_id LIKE 'refund:%'").get().n;
+      mdb.close();
+      check('Marketing: invoice issued is recorded once for this invoice', issued === 1, 'events ' + issued);
+      check('Marketing: the refund is recorded as a refund event', refunds === 1, 'events ' + refunds);
+    }
 
     // 5. Ledger: sync everything, then tie-outs.
     const sync = await api('POST', '/api/admin/ledger/sync', null, T);

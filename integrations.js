@@ -65,6 +65,8 @@ module.exports = function (app, { db, auth, logAction, clean, isEmail, notify })
     const id = db.prepare("INSERT INTO leads(kind,contact_name,company,email,phone,project_name,service,details,status,intake,created_at,origin) VALUES('inquiry',?,?,?,?,?,?,?,'New',?,?,'api')")
       .run(name, company, email, phone, project, service, details, label, now()).lastInsertRowid;
     db.prepare('UPDATE api_keys SET last_used_at=? WHERE id=?').run(now(), key.id);
+    // Campaign link fields are optional. Without them the lead is attributed to the sending source only.
+    try { require('./marketing').recordTouch(db, id, { utm_source: source || key.name || 'api', utm_medium: 'webhook', utm_campaign: clean(b.utm_campaign, 200), utm_content: clean(b.utm_content, 200), utm_term: clean(b.utm_term, 200), campaign_id: b.campaign_id, landing_path: b.landing_path, referrer: b.referrer }, now()); } catch (e) { console.error('marketing webhook touch skipped', e.message); }
     logAction({ user: { email: 'api:' + key.name } }, 'received lead', 'lead', id, label);
     if (notify) leadNotifier.leadArrived(key.id, key.name, `${name || 'Unnamed'}${company ? ' · ' + company : ''}\n${email ? 'Email: ' + email + '\n' : ''}${phone ? 'Phone: ' + phone + '\n' : ''}${project ? 'Project: ' + project + '\n' : ''}${details ? '\n' + details : ''}\n\nSource: ${label}`);
     res.status(201).json({ ok: true, id });

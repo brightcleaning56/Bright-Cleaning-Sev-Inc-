@@ -238,12 +238,14 @@ module.exports = function mountAdminExt(app, ctx) {
     const status = paid <= 0 ? 'Sent' : (paid >= billed - 0.005 ? 'Paid' : 'Partially Paid');
     const day = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.date) || '')) && req.body.date <= today() ? req.body.date : today();
     // The refund goes through the receivables refund code: it is kept in the refunds table and posted to the ledger (cash down, receivable up).
+    let refundId = null;
     try {
       db.transaction(() => {
-        require('./receivables').recordRefund(db, { invoiceId: inv.id, amount: amt, date: day, reason: note, by: (req.user && req.user.email) || null });
+        refundId = require('./receivables').recordRefund(db, { invoiceId: inv.id, amount: amt, date: day, reason: note, by: (req.user && req.user.email) || null });
         db.prepare('UPDATE invoices SET paid_amount=?,status=? WHERE id=?').run(paid, status, inv.id);
       })();
     } catch (e) { return res.status(409).json({ error: e.message }); }
+    try { const mk = require('./marketing'); mk.emitLifecycle(db, 'refund_issued', { leadId: mk.leadForInvoice(db, inv.id), sourceModule: 'invoices', sourceRecordId: 'refund:' + (refundId == null ? inv.id + ':' + day + ':' + amt : refundId), valueAmount: amt, occurredAt: new Date().toISOString() }); } catch (e) { console.error('marketing refund event skipped', e.message); }
     logAction(req, 'refunded', 'invoice', inv.id, `$${amt.toFixed(2)} refunded — ${note}`);
     res.json({ ok: true, paid_amount: paid, status });
   });
