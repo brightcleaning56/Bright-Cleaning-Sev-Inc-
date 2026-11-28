@@ -250,13 +250,21 @@ function mountProviders(app, ctx) {
       try {
         const r = await call(`${PROVIDERS.google_ads.api()}/customers/${m.id}/googleAds:searchStream`, { method: 'POST', headers: { ...googleHeaders({ ...c, loginCustomer: m.id }, token), 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: 'SELECT customer_client.id, customer_client.descriptive_name, customer_client.manager FROM customer_client' }) });
-        for (const row of (Array.isArray(r) ? r : []).flatMap(b => b.results || [])) {
+        const rows = (Array.isArray(r) ? r : []).flatMap(b => b.results || []);
+        // Diagnostic: what the manager returned, so the owner can see why clients are missing.
+        const diag = 'Manager ' + m.id + ' returned ' + rows.length + ' client row(s) in ' + (Array.isArray(r) ? r.length : 0) + ' batch(es)';
+        console.log('[google_ads] ' + diag + ' raw=' + JSON.stringify(r).slice(0, 1500));
+        m.note = (m.note ? m.note + ' ' : '') + diag + '.';
+        for (const row of rows) {
           const cc = row.customerClient; if (!cc || !cc.id) continue;
           const cid = String(cc.id);
           if (out.some(a => a.id === cid)) continue;
           out.push({ id: cid, name: cc.descriptiveName || null, manager: !!cc.manager, note: 'Client of manager ' + m.id });
         }
-      } catch (e) { m.note = (m.note ? m.note + ' ' : '') + 'Client list not loaded: ' + String(e.message || '').slice(0, 200); }
+      } catch (e) {
+        console.log('[google_ads] client lookup failed for manager ' + m.id + ': ' + String(e.message || '').slice(0, 500));
+        m.note = (m.note ? m.note + ' ' : '') + 'Client list not loaded: ' + String(e.message || '').slice(0, 200);
+      }
     }
     return out;
   }
