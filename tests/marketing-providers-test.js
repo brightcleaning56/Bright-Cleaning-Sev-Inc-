@@ -16,6 +16,7 @@ const GOOGLE_REFRESH = 'g-refresh-SECRET-' + crypto.randomBytes(6).toString('hex
 const META_LONG = 'm-long-SECRET-' + crypto.randomBytes(6).toString('hex');
 
 // Mock provider: token exchange, account lookup, spend reports. Checks the headers Google requires.
+let ACCESSIBLE = ['customers/1234567890'];
 function mockProvider() {
   const hits = [];
   const srv = http.createServer((req, res) => {
@@ -28,7 +29,7 @@ function mockProvider() {
         if (f.get('grant_type') === 'refresh_token' && f.get('refresh_token') === GOOGLE_REFRESH) return json(200, { access_token: GOOGLE_TOKEN + '-r', expires_in: 3600 });
         return json(400, { error: 'invalid_grant', error_description: 'bad code' });
       }
-      if (u.pathname === '/v26/customers:listAccessibleCustomers') return json(200, { resourceNames: ['customers/1234567890'] });
+      if (u.pathname === '/v26/customers:listAccessibleCustomers') return json(200, { resourceNames: ACCESSIBLE });
       if (u.pathname === '/v26/customers/4628114894/googleAds:searchStream') {
         if (/customer.id/.test(JSON.parse(body).query) && !/customer_client/.test(JSON.parse(body).query)) return json(200, [{ results: [{ customer: { id: '4628114894', descriptiveName: 'Bright Clean', manager: false } }] }]);
         return json(404, { error: { message: 'not found' } });
@@ -205,6 +206,19 @@ function mockProvider() {
       const r = await api('POST', '/api/admin/marketing/providers/google_ads/sync', {}, T);
       assert(r.status === 200, 'sync after expiry failed: ' + r.status + ' ' + JSON.stringify(r.data));
       assert(mock.hits.some(h => h === 'POST /token'), 'no refresh request was sent');
+    });
+    await check('Several Google accounts: nothing is auto-chosen on connect, and sync waits for a choice', async () => {
+      ACCESSIBLE = ['customers/1234567890', 'customers/9998887777'];
+      const c = await api('POST', '/api/admin/marketing/providers/google_ads/connect', {}, T);
+      const st = new URL(c.data.url).searchParams.get('state');
+      const cb = await fetch(B + `/api/marketing/providers/google_ads/callback?code=g-code&state=${st}`, { redirect: 'manual' });
+      assert(cb.status === 302, 'callback got ' + cb.status);
+      const g = (await api('GET', '/api/admin/marketing/providers', null, T)).data.providers.find(p => p.provider === 'google_ads');
+      assert(g.connected && !g.account_external_id, 'account was auto-chosen: ' + g.account_external_id);
+      const sy = await api('POST', '/api/admin/marketing/providers/google_ads/sync', {}, T);
+      assert(sy.status >= 400 && /Choose the Google Ads account/.test(JSON.stringify(sy.data)), 'sync did not wait for a choice: ' + sy.status + ' ' + JSON.stringify(sy.data));
+      ACCESSIBLE = ['customers/1234567890'];
+      return 'connect left nothing chosen; sync refused';
     });
     await check('Owner can see the Google Ads accounts by name and choose one', async () => {
       const list = await api('GET', '/api/admin/marketing/providers/google_ads/accounts', null, T);

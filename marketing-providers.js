@@ -99,10 +99,11 @@ function mountProviders(app, ctx) {
     if (p === 'google_ads') {
       const c = creds(p);
       const j = await call(`${PROVIDERS.google_ads.api()}/customers:listAccessibleCustomers`, { headers: googleHeaders(c, token) });
-      const first = (j.resourceNames || [])[0];
-      if (!first) throw new Error('No Google Ads accounts are accessible to this sign-in.');
-      const id = String(first).replace(/^customers\//, '');
-      return { id, label: 'Google Ads customer ' + id };
+      const ids = (j.resourceNames || []).map(x => String(x).replace(/^customers\//, ''));
+      if (!ids.length) throw new Error('No Google Ads accounts are accessible to this sign-in.');
+      // One account is safe to use directly. With several, the owner must choose, because a wrong pick would read another business's spend.
+      if (ids.length === 1) return { id: ids[0], label: 'Google Ads customer ' + ids[0] };
+      return { id: null, label: 'Google Ads: choose the account to sync' };
     }
     const j = await call(`${PROVIDERS.meta_ads.api()}/me/adaccounts?` + new URLSearchParams({ fields: 'account_id,name', limit: '50', access_token: token.access_token }));
     const first = (j.data || [])[0];
@@ -190,7 +191,8 @@ function mountProviders(app, ctx) {
   async function sync(p) {
     const conn = row(p);
     if (!conn || conn.status !== 'connected') throw new Error(`${PROVIDERS[p].label} is not connected.`);
-    const linked = db.prepare('SELECT id, provider_campaign_id FROM marketing_campaigns WHERE provider=? AND provider_campaign_id IS NOT NULL').all(p);
+    if (p === 'google_ads' && !conn.account_external_id) throw new Error('Choose the Google Ads account to sync first.');
+    const linked =db.prepare('SELECT id, provider_campaign_id FROM marketing_campaigns WHERE provider=? AND provider_campaign_id IS NOT NULL').all(p);
     const byProvider = new Map(linked.map(x => [String(x.provider_campaign_id), x.id]));
     let token = open(conn.token_ciphertext); if (!token) throw new Error('Stored token could not be read. Disconnect and connect again.');
     if (p === 'google_ads') token = await freshGoogleToken(token);
@@ -253,7 +255,6 @@ function mountProviders(app, ctx) {
         const rows = (Array.isArray(r) ? r : []).flatMap(b => b.results || []);
         // Diagnostic: what the manager returned, so the owner can see why clients are missing.
         const diag = 'Manager ' + m.id + ' returned ' + rows.length + ' client row(s) in ' + (Array.isArray(r) ? r.length : 0) + ' batch(es)';
-        console.log('[google_ads] ' + diag + ' raw=' + JSON.stringify(r).slice(0, 1500));
         m.note = (m.note ? m.note + ' ' : '') + diag + '.';
         for (const row of rows) {
           const cc = row.customerClient; if (!cc || !cc.id) continue;
