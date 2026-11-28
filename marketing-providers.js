@@ -14,7 +14,7 @@ const PROVIDERS = {
     env: { id: 'GOOGLE_ADS_CLIENT_ID', secret: 'GOOGLE_ADS_CLIENT_SECRET', devToken: 'GOOGLE_ADS_DEVELOPER_TOKEN', loginCustomer: 'GOOGLE_ADS_LOGIN_CUSTOMER_ID' },
     authorize: () => process.env.GOOGLE_ADS_AUTHORIZE_URL || 'https://accounts.google.com/o/oauth2/v2/auth',
     token: () => process.env.GOOGLE_ADS_TOKEN_URL || 'https://oauth2.googleapis.com/token',
-    api: () => (process.env.GOOGLE_ADS_API_BASE || 'https://googleads.googleapis.com/v21').replace(/\/$/, ''),
+    api: () => (process.env.GOOGLE_ADS_API_BASE || 'https://googleads.googleapis.com/v26').replace(/\/$/, ''),
   },
   meta_ads: {
     label: 'Meta Ads',
