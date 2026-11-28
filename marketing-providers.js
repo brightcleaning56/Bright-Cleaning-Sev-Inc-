@@ -270,7 +270,7 @@ function mountProviders(app, ctx) {
   }
 
   // Reads one client account through the connected manager login. Returns { id, name } or null.
-  async function verifiedClient(conn, id) {
+  async function verifiedClient(conn, id, why) {
     let token = open(conn.token_ciphertext); if (!token) return null;
     token = await freshGoogleToken(token);
     const c = creds('google_ads');
@@ -280,7 +280,7 @@ function mountProviders(app, ctx) {
       const first = (Array.isArray(r) ? r : []).flatMap(b => b.results || [])[0];
       if (!first || !first.customer || String(first.customer.id) !== id) return null;
       return { id, name: first.customer.descriptiveName || null };
-    } catch (e) { return null; }
+    } catch (e) { if (why) why.reason = String(e.message || '').slice(0, 300); return null; }
   }
 
   app.get('/api/admin/marketing/providers/google_ads/accounts', auth, async (req, res) => {
@@ -300,8 +300,9 @@ function mountProviders(app, ctx) {
       let pick = accounts.find(a => a.id === id);
       if (!pick) {
         // Not in the list: accept a typed client ID only if the API can read it through the manager login.
-        pick = await verifiedClient(conn, id);
-        if (!pick) return res.status(400).json({ error: 'That account is not available to this sign-in. Check the ID and that it is linked to the manager account.' });
+        const why = {};
+        pick = await verifiedClient(conn, id, why);
+        if (!pick) return res.status(400).json({ error: 'That account is not available to this sign-in. Check the ID and that it is linked to the manager account.' + (why.reason ? ' Google said: ' + why.reason : '') });
       }
       const label = 'Google Ads ' + (pick.name || 'account') + ' (' + id + ')';
       db.prepare('UPDATE marketing_connections SET account_external_id=?, account_label=?, last_error=NULL, updated_at=? WHERE provider=?').run(id, label, now(), 'google_ads');
