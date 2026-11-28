@@ -245,6 +245,19 @@ function mountProviders(app, ctx) {
       } catch (e) { note = 'Name not loaded: ' + String(e.message || '').slice(0, 200); }
       out.push({ id, name, manager, note });
     }
+    // Client accounts under a manager are not in listAccessibleCustomers, so ask each manager for its clients.
+    for (const m of out.filter(a => a.manager)) {
+      try {
+        const r = await call(`${PROVIDERS.google_ads.api()}/customers/${m.id}/googleAds:searchStream`, { method: 'POST', headers: { ...googleHeaders({ ...c, loginCustomer: m.id }, token), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: 'SELECT customer_client.id, customer_client.descriptive_name, customer_client.manager FROM customer_client WHERE customer_client.status = ENABLED' }) });
+        for (const row of (Array.isArray(r) ? r : []).flatMap(b => b.results || [])) {
+          const cc = row.customerClient; if (!cc || !cc.id) continue;
+          const cid = String(cc.id);
+          if (out.some(a => a.id === cid)) continue;
+          out.push({ id: cid, name: cc.descriptiveName || null, manager: !!cc.manager, note: 'Client of manager ' + m.id });
+        }
+      } catch (e) { m.note = (m.note ? m.note + ' ' : '') + 'Client list not loaded: ' + String(e.message || '').slice(0, 200); }
+    }
     return out;
   }
 

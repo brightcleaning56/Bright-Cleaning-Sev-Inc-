@@ -31,7 +31,8 @@ function mockProvider() {
       if (u.pathname === '/v26/customers:listAccessibleCustomers') return json(200, { resourceNames: ['customers/1234567890'] });
       if (u.pathname === '/v26/customers/1234567890/googleAds:searchStream') {
         if (!req.headers['developer-token']) return json(401, { error: { message: 'developer token missing' } });
-        if (/descriptive_name/.test(JSON.parse(body).query)) return json(200, [{ results: [{ customer: { id: '1234567890', descriptiveName: 'Test Client', manager: false } }] }]);
+        if (/customer_client/.test(JSON.parse(body).query)) return json(200, [{ results: [{ customerClient: { id: '5550001111', descriptiveName: 'Bright Clean Client', manager: false } }, { customerClient: { id: '1234567890', descriptiveName: 'Test Client', manager: false } }] }]);
+        if (/descriptive_name/.test(JSON.parse(body).query)) return json(200, [{ results: [{ customer: { id: '1234567890', descriptiveName: 'Test Client', manager: true } }] }]);
         if (!/cost_micros/.test(JSON.parse(body).query)) return json(400, { error: { message: 'bad query' } });
         return json(200, [{ results: [
           { campaign: { id: '111' }, segments: { date: '2026-11-20' }, metrics: { costMicros: '42500000' } },
@@ -204,6 +205,9 @@ function mockProvider() {
     await check('Owner can see the Google Ads accounts by name and choose one', async () => {
       const list = await api('GET', '/api/admin/marketing/providers/google_ads/accounts', null, T);
       assert(list.status === 200 && list.data.accounts.some(a => a.id === '1234567890' && a.name === 'Test Client'), JSON.stringify(list.data).slice(0, 200));
+      assert(list.data.accounts.some(a => a.id === '5550001111' && a.name === 'Bright Clean Client'), 'client under manager not listed: ' + JSON.stringify(list.data).slice(0, 300));
+      const client = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '555-000-1111' }, T);
+      assert(client.status === 200, 'client under manager could not be chosen: ' + client.status);
       const pick = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '123-456-7890' }, T);
       assert(pick.status === 200 && /Test Client/.test(pick.data.account_label), 'choose failed: ' + pick.status + ' ' + JSON.stringify(pick.data));
       const bad = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '9999999999' }, T);
