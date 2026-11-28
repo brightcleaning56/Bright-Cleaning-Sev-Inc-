@@ -29,6 +29,10 @@ function mockProvider() {
         return json(400, { error: 'invalid_grant', error_description: 'bad code' });
       }
       if (u.pathname === '/v26/customers:listAccessibleCustomers') return json(200, { resourceNames: ['customers/1234567890'] });
+      if (u.pathname === '/v26/customers/4628114894/googleAds:searchStream') {
+        if (/customer.id/.test(JSON.parse(body).query) && !/customer_client/.test(JSON.parse(body).query)) return json(200, [{ results: [{ customer: { id: '4628114894', descriptiveName: 'Bright Clean', manager: false } }] }]);
+        return json(404, { error: { message: 'not found' } });
+      }
       if (u.pathname === '/v26/customers/1234567890/googleAds:searchStream') {
         if (!req.headers['developer-token']) return json(401, { error: { message: 'developer token missing' } });
         if (/customer_client/.test(JSON.parse(body).query)) return json(200, [{ results: [{ customerClient: { id: '5550001111', descriptiveName: 'Bright Clean Client', manager: false } }, { customerClient: { id: '1234567890', descriptiveName: 'Test Client', manager: false } }] }]);
@@ -208,6 +212,10 @@ function mockProvider() {
       assert(list.data.accounts.some(a => a.id === '5550001111' && a.name === 'Bright Clean Client'), 'client under manager not listed: ' + JSON.stringify(list.data).slice(0, 300));
       const client = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '555-000-1111' }, T);
       assert(client.status === 200, 'client under manager could not be chosen: ' + client.status);
+      const typed = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '462-811-4894' }, T);
+      assert(typed.status === 200, 'typed client ID that the API can read was refused: ' + typed.status + ' ' + JSON.stringify(typed.data));
+      const unknown = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '1111111111' }, T);
+      assert(unknown.status === 400, 'unreadable typed ID was accepted: ' + unknown.status);
       const pick = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '123-456-7890' }, T);
       assert(pick.status === 200 && /Test Client/.test(pick.data.account_label), 'choose failed: ' + pick.status + ' ' + JSON.stringify(pick.data));
       const bad = await api('POST', '/api/admin/marketing/providers/google_ads/account', { customer_id: '9999999999' }, T);
