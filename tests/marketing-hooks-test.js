@@ -65,6 +65,54 @@ async function check(name, fn) { try { const ev = await fn(); results.push(1); c
       db.close();
       assert(n === 1, 'lost recorded ' + n + ' times');
     });
+    // Proposal approved (offline, owner records the customer's approval) is recorded once for the lead.
+    let approvalLead = null, estimateId = null;
+    await check('Approval: a second lead and a proposal for it can be created', async () => {
+      const r = await api('POST', '/api/integrations/leads', { name: 'Approval Pat', email: 'approval.pat@example.test', service: 'Office cleaning', source: 'partner-site' }, null, { 'x-api-key': keyValue });
+      assert(r.status === 201 && r.data.id, 'lead not created: ' + r.status);
+      approvalLead = r.data.id;
+      const e = await api('POST', '/api/admin/estimates', { lead_id: approvalLead, customer_name: 'Approval Pat', email: 'approval.pat@example.test', project_name: 'Office approval test', proposal_total: 500, scope: 'Office cleaning, weekly' }, T);
+      assert(e.status < 300 && e.data.estimate && e.data.estimate.id, 'proposal not created: ' + e.status + ' ' + JSON.stringify(e.data).slice(0, 160));
+      estimateId = e.data.estimate.id; return 'proposal #' + estimateId;
+    });
+    await check('Approval: recording the customer approval records one proposal-approved event for the lead', async () => {
+      const r = await api('POST', `/api/admin/estimates/${estimateId}/record-approval`, { note: 'Signed paper copy received from the customer' }, T);
+      assert(r.status === 200, 'approval refused: ' + r.status + ' ' + JSON.stringify(r.data).slice(0, 160));
+      const again = await api('POST', `/api/admin/estimates/${estimateId}/record-approval`, { note: 'Signed paper copy received from the customer' }, T);
+      assert(again.status === 200, 'repeat approval refused: ' + again.status);
+      const db = dbRead();
+      const n = db.prepare("SELECT COUNT(*) n FROM marketing_events WHERE event_type='proposal_approved' AND source_record_id=? AND lead_id=?").get('estimate:' + estimateId, approvalLead).n;
+      db.close();
+      assert(n === 1, 'proposal approved recorded ' + n + ' times');
+    });
+    // Project completed: a signed contract on a proposal for this lead, work started, no open tasks, customer sign-off and a
+    // signed passing inspection. The project status is worked out when the project is read, which records the event once.
+    let projectId = null;
+    await check('Completion: a project with a signed contract, sign-off and a passing inspection is set up', async () => {
+      const wdb = new (require('better-sqlite3'))(path.join(work, 'data', 'brightclean.db'));
+      try {
+        wdb.prepare("UPDATE estimates SET status='Approved' WHERE id=?").run(estimateId);
+        const k = wdb.prepare("INSERT INTO contracts(estimate_id,title,value,status,signature_status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)")
+          .run(estimateId, 'Office contract', 500, 'Active', 'Signed', new Date().toISOString(), new Date().toISOString());
+        const p = wdb.prepare("INSERT INTO projects(contract_id,name,status,actual_start,signoff_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?)")
+          .run(k.lastInsertRowid, 'Office approval test', 'In Progress', '2026-11-20', 'Pat Client', new Date().toISOString(), new Date().toISOString());
+        projectId = p.lastInsertRowid;
+        const tt = new Date().toISOString();
+        wdb.prepare("INSERT INTO inspections(project_id,date,area,score,passed,status,itype,signed_name,signed_at,items,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
+          .run(projectId, '2026-11-21', 'Lobby', 95, 1, 'Completed', 'Final', 'Pat Client', tt, '[]', tt, tt);
+      } finally { wdb.close(); }
+      return 'project #' + projectId;
+    });
+    await check('Completion: reading the project records one project-completed event for the lead', async () => {
+      const r = await api('GET', '/api/admin/pm/projects/' + projectId, null, T);
+      assert(r.status === 200, 'project read failed: ' + r.status + ' ' + JSON.stringify(r.data).slice(0, 160));
+      assert(r.data.project && r.data.project.status === 'Completed', 'status is ' + (r.data.project && r.data.project.status) + ' (next: ' + JSON.stringify(r.data.project && r.data.project.status_next) + ')');
+      await api('GET', '/api/admin/pm/projects/' + projectId, null, T);
+      const db = dbRead();
+      const n = db.prepare("SELECT COUNT(*) n FROM marketing_events WHERE event_type='project_completed' AND source_record_id=? AND lead_id=?").get('project:' + projectId, approvalLead).n;
+      db.close();
+      assert(n === 1, 'project completed recorded ' + n + ' times');
+    });
     await check('Lost lead still shows its attribution and source in the lead list', async () => {
       const r = await api('GET', '/api/admin/marketing/leads?limit=200', null, T);
       const row = (r.data.leads || []).find(l => l.id === leadId);
