@@ -85,7 +85,7 @@ const ROLE_RULES=[
   {m:/^POST$/,p:/^\/api\/admin\/ledger\/(adjustments|entries\/\d+\/reverse)$/,roles:['owner','manager'],why:'Only an owner or manager can post adjustments or reversals.'},
   {m:/^GET$/,p:/^\/api\/admin\/receivables\/tie-out$/,roles:['owner','manager'],why:'Receivables tie-out is limited to owners and managers.'},
   {m:/^(GET|POST|PATCH|PUT)$/,p:/^\/api\/admin\/expenses(\/\d+(\/(pay|approve|receipt|void|splits))?|\/close(\/approve)?)?$/,roles:['owner','manager'],why:'Bills, splits and payments are limited to owners and managers.'},
-  {m:/^(POST|PATCH)$/,p:/^\/api\/admin\/marketing\/(campaigns\/\d+\/(budget|approve|status|link)|content\/\d+\/approve|spend\/import|providers\/(google_ads|meta_ads)\/(connect|sync|disconnect))$/,roles:['owner'],why:'Budgets, approvals, spend imports, content approval and provider connections are limited to the owner.'},
+  {m:/^(POST|PATCH)$/,p:/^\/api\/admin\/marketing\/(campaigns\/\d+\/(budget|approve|status|link)|content\/\d+\/approve|spend\/import|providers\/(google_ads|meta_ads)\/(connect|sync|disconnect)|providers\/google_ads\/account)$/,roles:['owner'],why:'Budgets, approvals, spend imports, content approval and provider connections are limited to the owner.'},
   {m:/^GET$/,p:/^\/api\/admin\/marketing\/events\/exceptions$/,roles:['owner'],why:'Unresolved marketing events are limited to the owner.'},
   {m:/^(GET|POST|PATCH)$/,p:/^\/api\/admin\/marketing(\/.*)?$/,roles:['owner','manager'],why:'Marketing is limited to owners and managers.'},
   {m:/^POST$/,p:/^\/api\/admin\/ai\/expenses\/(intake|\d+\/(read-receipt|suggest-category))$/,roles:['owner','manager'],why:'Reading receipts with AI and creating bills from them are limited to owners and managers.'},
