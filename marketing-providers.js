@@ -106,8 +106,11 @@ function mountProviders(app, ctx) {
       return { id: null, label: 'Google Ads: choose the account to sync' };
     }
     const j = await call(`${PROVIDERS.meta_ads.api()}/me/adaccounts?` + new URLSearchParams({ fields: 'account_id,name', limit: '50', access_token: token.access_token }));
-    const first = (j.data || [])[0];
-    if (!first) throw new Error('No Meta ad accounts are available to this sign-in.');
+    const list = j.data || [];
+    if (!list.length) throw new Error('No Meta ad accounts are available to this sign-in.');
+    // Same rule as Google: auto-pick only when there is exactly one account.
+    if (list.length > 1) return { id: null, label: 'Meta: choose the ad account to sync' };
+    const first = list[0];
     return { id: 'act_' + first.account_id, label: first.name || ('Ad account ' + first.account_id) };
   }
   const googleHeaders = (c, token) => ({ Authorization: 'Bearer ' + token.access_token, 'developer-token': c.devToken, ...(c.loginCustomer ? { 'login-customer-id': c.loginCustomer.replace(/-/g, '') } : {}) });
@@ -191,7 +194,7 @@ function mountProviders(app, ctx) {
   async function sync(p) {
     const conn = row(p);
     if (!conn || conn.status !== 'connected') throw new Error(`${PROVIDERS[p].label} is not connected.`);
-    if (p === 'google_ads' && !conn.account_external_id) throw new Error('Choose the Google Ads account to sync first.');
+    if (!conn.account_external_id) throw new Error(`Choose the ${PROVIDERS[p].label} account to sync first.`);
     const linked =db.prepare('SELECT id, provider_campaign_id FROM marketing_campaigns WHERE provider=? AND provider_campaign_id IS NOT NULL').all(p);
     const byProvider = new Map(linked.map(x => [String(x.provider_campaign_id), x.id]));
     let token = open(conn.token_ciphertext); if (!token) throw new Error('Stored token could not be read. Disconnect and connect again.');
