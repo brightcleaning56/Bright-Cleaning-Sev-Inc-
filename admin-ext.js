@@ -215,6 +215,7 @@ module.exports = function mountAdminExt(app, ctx) {
       db.prepare('INSERT INTO payments(invoice_id,amount,note,received_at,recorded_by,created_at) VALUES(?,?,?,?,?,?)')
         .run(inv.id, amt, clean(req.body.note || '', 300), day + 'T12:00:00.000Z', (req.user && req.user.email) || null, nowIso);
     })();
+        { const mk=require('./marketing'); mk.emitLifecycle(db,'payment_received',{leadId:mk.leadForInvoice(db,inv.id),sourceModule:'payments',sourceRecordId:'manual:'+inv.id+':'+nowIso,valueAmount:amt,occurredAt:nowIso}); }
     logAction(req, 'recorded payment', 'invoice', inv.id, `$${amt.toFixed(2)}${req.body.note ? ' — ' + clean(req.body.note, 300) : ''}`);
     res.json({ ok: true, paid_amount: paid, status });
   });
