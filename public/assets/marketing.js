@@ -112,11 +112,20 @@ function providerBox(s){
   const btns=!s.configured?`<span class="help">Set up in Render first. See docs/MARKETING_PROVIDER_SETUP.md.</span>`
     :s.connected?`<button type="button" class="button button-primary" data-prov-sync="${esc(s.provider)}">Sync spend now</button> <button type="button" class="button button-secondary" data-prov-disc="${esc(s.provider)}">Disconnect</button>`
     :`<button type="button" class="button button-primary" data-prov-connect="${esc(s.provider)}">Connect ${esc(s.label)}</button>`;
-  return `<div class="integration-card"><div class="integration-info"><strong>${esc(s.label)}</strong><span>${meta}</span></div>${badge}</div>${err}<div class="row-actions" style="margin-top:8px">${btns}</div>`;
+  const acct=(s.provider==='google_ads'&&s.connected)?`<div class="row-actions" style="margin-top:8px"><button type="button" class="button button-secondary" data-prov-accts="google_ads">Choose account</button></div><div id="acctPanel"></div>`:'';
+  return `<div class="integration-card"><div class="integration-info"><strong>${esc(s.label)}</strong><span>${meta}</span></div>${badge}</div>${err}<div class="row-actions" style="margin-top:8px">${btns}</div>${acct}`;
 }
 function bindProviderButtons(){
   view.querySelectorAll('[data-prov-connect]').forEach(b=>b.addEventListener('click',()=>{api(`/providers/${b.dataset.provConnect}/connect`,{method:'POST',body:{}}).then(r=>{location.assign(r.url);}).catch(e=>toast(e.message));}));
   view.querySelectorAll('[data-prov-sync]').forEach(b=>b.addEventListener('click',()=>{api(`/providers/${b.dataset.provSync}/sync`,{method:'POST',body:{}}).then(r=>{toast(`Synced: ${r.rows_written} spend row(s) written`);render();}).catch(e=>toast(e.message));}));
+  view.querySelectorAll('[data-prov-accts]').forEach(b=>b.addEventListener('click',()=>{
+    const panel=document.getElementById('acctPanel'); if(!panel) return; panel.innerHTML='<p class="muted">Loading accounts…</p>';
+    api('/providers/google_ads/accounts').then(d=>{
+      const rows=(d.accounts||[]).map(a=>`<div class="rec"><div><strong>${esc(a.name||'Account '+a.id)}</strong><span>${esc(a.id.slice(0,3)+'-'+a.id.slice(3,6)+'-'+a.id.slice(6))}${a.manager?' · manager account':''}${a.id===d.chosen?' · currently chosen':''}</span></div><div class="row-actions"><button type="button" class="button-small" data-acct-pick="${esc(a.id)}">Use this account</button></div></div>`).join('');
+      panel.innerHTML=`<div class="panel-head"><div><h3 class="panel-title">Choose the Google Ads account to sync</h3><p class="panel-subtitle">Only the account you choose is read for spend.</p></div></div>${rows||'<p class="muted">No accounts are available to this sign-in.</p>'}`;
+      panel.querySelectorAll('[data-acct-pick]').forEach(x=>x.addEventListener('click',()=>{api('/providers/google_ads/account',{method:'POST',body:{customer_id:x.dataset.acctPick}}).then(r=>{toast('Account chosen: '+r.account_label);render();}).catch(e=>toast(e.message));}));
+    }).catch(e=>{panel.innerHTML='';toast(e.message);});
+  }));
   view.querySelectorAll('[data-prov-disc]').forEach(b=>b.addEventListener('click',()=>{api(`/providers/${b.dataset.provDisc}/disconnect`,{method:'POST',body:{}}).then(()=>{toast('Disconnected');render();}).catch(e=>toast(e.message));}));
 }
 // After the provider's sign-in, the server returns here with ?provider=…&result=… Show it once, then clean the address.

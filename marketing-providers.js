@@ -91,9 +91,6 @@ function mountProviders(app, ctx) {
   // Finds the account the connection will read. First account only in this release; the label is shown on the screen.
   async function pickAccount(p, token) {
     if (p === 'google_ads') {
-      // An owner can choose the account in Render (GOOGLE_ADS_CUSTOMER_ID) instead of taking the first one Google lists.
-      const pinned = googleCustomerOverride();
-      if (pinned) return { id: pinned, label: 'Google Ads customer ' + pinned };
       const c = creds(p);
       const j = await call(`${PROVIDERS.google_ads.api()}/customers:listAccessibleCustomers`, { headers: googleHeaders(c, token) });
       const first = (j.resourceNames || [])[0];
@@ -106,7 +103,6 @@ function mountProviders(app, ctx) {
     if (!first) throw new Error('No Meta ad accounts are available to this sign-in.');
     return { id: 'act_' + first.account_id, label: first.name || ('Ad account ' + first.account_id) };
   }
-  const googleCustomerOverride = () => { const d = String(process.env.GOOGLE_ADS_CUSTOMER_ID || '').replace(/\D/g, ''); return d.length === 10 ? d : null; };
   const googleHeaders = (c, token) => ({ Authorization: 'Bearer ' + token.access_token, 'developer-token': c.devToken, ...(c.loginCustomer ? { 'login-customer-id': c.loginCustomer.replace(/-/g, '') } : {}) });
 
   // ----- Status (no secrets) -----
@@ -196,7 +192,7 @@ function mountProviders(app, ctx) {
     if (p === 'google_ads') {
       const c = creds(p);
       const q = 'SELECT campaign.id, segments.date, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_30_DAYS';
-      const customerId = googleCustomerOverride() || conn.account_external_id;
+      const customerId = conn.account_external_id;
       const batches = await call(`${PROVIDERS.google_ads.api()}/customers/${customerId}/googleAds:searchStream`, { method: 'POST', headers: { ...googleHeaders(c, token), 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) });
       for (const batch of Array.isArray(batches) ? batches : []) for (const r of batch.results || []) rows.push({ campaign: String(r.campaign.id), date: r.segments.date, amount: Number(r.metrics.costMicros || 0) / 1e6 });
     } else {
@@ -224,6 +220,52 @@ function mountProviders(app, ctx) {
     })();
     return { provider: p, rows_read: rows.length, rows_written: written, campaigns_linked: byProvider.size, provider_campaigns_not_linked: unmatched.size, batch };
   }
+
+  // Google Ads accounts this sign-in can use, with names. Used by the owner to choose the account to sync.
+  async function googleAccountList(conn) {
+    let token = open(conn.token_ciphertext); if (!token) throw new Error('Stored token could not be read. Disconnect and connect again.');
+    token = await freshGoogleToken(token);
+    const c = creds('google_ads');
+    const j = await call(`${PROVIDERS.google_ads.api()}/customers:listAccessibleCustomers`, { headers: googleHeaders(c, token) });
+    const ids = (j.resourceNames || []).map(x => String(x).replace(/^customers\//, '')).slice(0, 50);
+    const out = [];
+    for (const id of ids) {
+      let name = null, manager = false;
+      try {
+        const r = await call(`${PROVIDERS.google_ads.api()}/customers/${id}/googleAds:searchStream`, { method: 'POST', headers: { ...googleHeaders(c, token), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: 'SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1' }) });
+        const first = (Array.isArray(r) ? r : []).flatMap(b => b.results || [])[0];
+        if (first && first.customer) { name = first.customer.descriptiveName || null; manager = !!first.customer.manager; }
+      } catch { /* name unavailable for this account */ }
+      out.push({ id, name, manager });
+    }
+    return out;
+  }
+
+  app.get('/api/admin/marketing/providers/google_ads/accounts', auth, async (req, res) => {
+    const conn = row('google_ads');
+    if (!conn || conn.status !== 'connected') return res.status(409).json({ error: 'Google Ads is not connected.' });
+    try { res.json({ accounts: await googleAccountList(conn), chosen: conn.account_external_id }); }
+    catch (e) { res.status(502).json({ error: 'Could not list the Google Ads accounts: ' + e.message }); }
+  });
+
+  app.post('/api/admin/marketing/providers/google_ads/account', auth, async (req, res) => {
+    const conn = row('google_ads');
+    if (!conn || conn.status !== 'connected') return res.status(409).json({ error: 'Google Ads is not connected.' });
+    const id = String((req.body || {}).customer_id || '').replace(/\D/g, '');
+    if (!/^\d{10}$/.test(id)) return res.status(400).json({ error: 'Choose an account with a 10-digit ID.' });
+    try {
+      const accounts = await googleAccountList(conn);
+      const pick = accounts.find(a => a.id === id);
+      if (!pick) return res.status(400).json({ error: 'That account is not available to this sign-in.' });
+      const label = 'Google Ads ' + (pick.name || 'account') + ' (' + id + ')';
+      db.prepare('UPDATE marketing_connections SET account_external_id=?, account_label=?, last_error=NULL, updated_at=? WHERE provider=?').run(id, label, now(), 'google_ads');
+      audit(req, 'chose Google Ads account', 'provider', null, { provider: 'google_ads', account: id });
+      res.json({ ok: true, account_label: label });
+    } catch (e) {
+      res.status(502).json({ error: 'Could not save the account: ' + e.message });
+    }
+  });
 
   app.post('/api/admin/marketing/providers/:p/sync', auth, async (req, res) => {
     const p = req.params.p; if (!isProvider(p)) return res.status(404).json({ error: 'Unknown provider' });
