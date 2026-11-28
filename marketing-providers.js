@@ -230,14 +230,14 @@ function mountProviders(app, ctx) {
     const ids = (j.resourceNames || []).map(x => String(x).replace(/^customers\//, '')).slice(0, 50);
     const out = [];
     for (const id of ids) {
-      let name = null, manager = false;
+      let name = null, manager = false, note = null;
       try {
         const r = await call(`${PROVIDERS.google_ads.api()}/customers/${id}/googleAds:searchStream`, { method: 'POST', headers: { ...googleHeaders(c, token), 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: 'SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1' }) });
         const first = (Array.isArray(r) ? r : []).flatMap(b => b.results || [])[0];
         if (first && first.customer) { name = first.customer.descriptiveName || null; manager = !!first.customer.manager; }
-      } catch { /* name unavailable for this account */ }
-      out.push({ id, name, manager });
+      } catch (e) { note = 'Name not loaded: ' + String(e.message || '').slice(0, 200); }
+      out.push({ id, name, manager, note });
     }
     return out;
   }
