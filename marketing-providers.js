@@ -43,7 +43,16 @@ function mountProviders(app, ctx) {
   const open = s => { try { const b = Buffer.from(s, 'base64'), d = crypto.createDecipheriv('aes-256-gcm', key(), b.subarray(0, 12)); d.setAuthTag(b.subarray(12, 28)); return JSON.parse(Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8')); } catch { return null; } };
 
   const row = p => db.prepare('SELECT * FROM marketing_connections WHERE provider=?').get(p);
-  const setError = (p, msg) => db.prepare('UPDATE marketing_connections SET last_error=?, updated_at=? WHERE provider=?').run(String(msg || '').slice(0, 300) || null, now(), p);
+  // The last sign-in error is kept even when no connection exists yet, so the screen can show why it failed.
+  db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
+  const errKey = p => 'marketing_provider_error_' + p;
+  const getErr = p => { const r = db.prepare('SELECT value FROM settings WHERE key=?').get(errKey(p)); return r ? r.value : null; };
+  const setError = (p, msg) => {
+    const text = String(msg || '').slice(0, 300) || null;
+    db.prepare('UPDATE marketing_connections SET last_error=?, updated_at=? WHERE provider=?').run(text, now(), p);
+    db.prepare('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at').run(errKey(p), text || '', now());
+  };
+  const clearError = p => db.prepare('DELETE FROM settings WHERE key=?').run(errKey(p));
 
   async function call(url, opts = {}) {
     const r = await fetch(url, opts);
@@ -99,9 +108,12 @@ function mountProviders(app, ctx) {
   // ----- Status (no secrets) -----
   function statusOf(p) {
     const r = row(p);
-    return { provider: p, label: PROVIDERS[p].label, configured: configured(p), connected: !!r && r.status === 'connected', account_external_id: r ? r.account_external_id : null,
+    const out = { provider: p, label: PROVIDERS[p].label, configured: configured(p), connected: !!r && r.status === 'connected', account_external_id: r ? r.account_external_id : null,
       account_label: r ? r.account_label : null, token_expires_at: r ? r.token_expires_at : null, last_sync_at: r ? r.last_sync_at : null, last_error: r ? r.last_error : null,
       scopes: PROVIDERS[p].scopes, redirect_uri: redirectFor(p) };
+    // With no connection, the last sign-in error (if any) is shown instead.
+    if (!r) out.last_error = getErr(p);
+    return out;
   }
 
   // ----- Routes -----
@@ -137,6 +149,7 @@ function mountProviders(app, ctx) {
         VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(p, account.label, account.id, 'connected', JSON.stringify(PROVIDERS[p].scopes), seal(token), new Date(token.expires_at).toISOString(), null, null, t, t);
       if (typeof logAction === 'function') { try { logAction({ user: { email: st.by } }, 'connected ' + PROVIDERS[p].label, 'marketing', null, account.label); } catch { /* audit side-channel only */ } }
       db.prepare('INSERT INTO marketing_audit(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)').run(st.by, 'connected', 'provider', null, JSON.stringify({ provider: p, account: account.id }), t);
+      clearError(p);
       return back('connected');
     } catch (e) {
       setError(p, e.message);

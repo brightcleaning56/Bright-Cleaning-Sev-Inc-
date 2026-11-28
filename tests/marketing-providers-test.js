@@ -180,6 +180,15 @@ function mockProvider() {
       const r = await api('POST', '/api/admin/marketing/providers/google_ads/sync', {}, T);
       assert(r.status === 502 && /not connected/.test(r.data.error || ''), 'got ' + r.status + ' ' + JSON.stringify(r.data));
     });
+    await check('A failed sign-in is shown on the status even before a connection exists', async () => {
+      const c = await api('POST', '/api/admin/marketing/providers/google_ads/connect', {}, T);
+      const st = new URL(c.data.url).searchParams.get('state');
+      const r = await fetch(B + `/api/marketing/providers/google_ads/callback?error=access_denied&state=${st}`, { redirect: 'manual' });
+      assert(r.status === 302 && (r.headers.get('location') || '').includes('result=refused'), 'callback: ' + r.status);
+      const s = await api('GET', '/api/admin/marketing/providers', null, T);
+      const g = s.data.providers.find(p => p.provider === 'google_ads');
+      assert(!g.connected && /cancelled or refused/.test(g.last_error || ''), 'error not shown: ' + JSON.stringify(g));
+    });
     await check('Google refresh path is used when an access token has expired', async () => {
       const c = await api('POST', '/api/admin/marketing/providers/google_ads/connect', {}, T);
       const st = new URL(c.data.url).searchParams.get('state');
