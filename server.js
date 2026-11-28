@@ -229,6 +229,7 @@ app.post('/api/admin/estimates/:id/record-approval',auth,(req,res)=>{
   if(e.status==='Superseded')return res.status(409).json({error:'This is an older version that was replaced. Approve the current proposal instead.'});
   const now=new Date().toISOString();
   db.prepare("UPDATE estimates SET status='Approved',decided_at=COALESCE(decided_at,?),updated_at=? WHERE id=?").run(now,now,e.id);
+  try { const mk=require('./marketing'); mk.emitLifecycle(db,'proposal_approved',{leadId:mk.leadForEstimate(db,e.id),sourceModule:'estimates',sourceRecordId:'estimate:'+e.id,occurredAt:now}); } catch(err) { console.error('marketing approval event skipped', err.message); }
   logAction(req,'approved offline','estimate',e.id,note);
   syncLead(e.lead_id,'approved',e.id);
   res.json({ok:true});

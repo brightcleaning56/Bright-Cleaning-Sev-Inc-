@@ -328,6 +328,7 @@ module.exports = function mountPortal(app, ctx) {
     db.prepare('UPDATE estimates SET status=?, updated_at=?, decided_at=?, decision_ip=?, decision_agent=? WHERE id=?')
       .run(status, dt, dt, clip(req.ip, 100), clip((req.headers && req.headers['user-agent']) || '', 300), e.id);
     if (typeof syncLead === 'function') syncLead(e.lead_id, decision === 'approve' ? 'approved' : 'declined', e.id);
+    try { const mk = require('./marketing'); mk.emitLifecycle(db, decision === 'approve' ? 'proposal_approved' : 'proposal_declined', { leadId: mk.leadForEstimate(db, e.id), sourceModule: 'estimates', sourceRecordId: 'estimate:' + e.id, occurredAt: dt }); } catch (err) { console.error('marketing decision event skipped', err.message); }
     if (typeof afterDecision === 'function') { try { afterDecision(e, decision); } catch (err) { console.error('portal decision follow-up failed', err.message); } }
     db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, decision === 'approve' ? 'approved proposal in client portal' : 'declined proposal in client portal', 'estimate', e.id, 'from the client portal', dt);
     if (decision === 'approve' && ops && ops.upsertCustomer) { try { ops.upsertCustomer({ name: e.customer_name, company: e.company, email: e.email, address: e.site_address }, 'approved proposal'); } catch { /* */ } }
@@ -457,6 +458,7 @@ module.exports = function mountPortal(app, ctx) {
     const id = db.prepare("INSERT INTO leads(kind,status,contact_name,company,email,phone,address,service,project_name,details,created_at,updated_at,origin) VALUES('bid','New',?,?,?,?,?,?,?,?,?,?,'portal')")
       .run(name || company || sess.email, company, sess.email, phone, address, service, service, 'Source: client portal\n' + details, at, at).lastInsertRowid;
     try { db.prepare("INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)").run(sess.email, 'requested service in client portal', 'lead', id, service, at); } catch { /* */ }
+    try { require('./marketing').recordTouch(db, id, { utm_source: 'customer_portal', utm_medium: 'portal' }, at); } catch (err) { console.error('marketing portal touch skipped', err.message); }
     const m = getMailer && getMailer();
     if (m) {
       const from = process.env.FROM_EMAIL || process.env.SMTP_USER || 'info@brightclean.net';

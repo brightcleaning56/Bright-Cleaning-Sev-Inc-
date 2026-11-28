@@ -59,6 +59,15 @@ function inProcess() {
   assert(!mk.emitLifecycle(db, 'invoice_made_up', { leadId: 1, sourceModule: 'x', sourceRecordId: '1' }).ok, 'unknown event type was accepted');
   // Intake attribution never throws into the caller.
   assert(mk.recordIntake(db, 999, '{not json') === false, 'bad attribution should be contained');
+  // Lead status changes are recorded by the database: qualified and lost, once each, however many times the status is set.
+  assert(mk.leadForProject(db, 30) === 1, 'project 30 should resolve to lead 1');
+  assert(mk.EVENT_TYPES.includes('proposal_declined'), 'proposal_declined event type missing');
+  db.prepare("UPDATE leads SET status='Proposal Sent' WHERE id=1").run();
+  db.prepare("UPDATE leads SET status='Won' WHERE id=1").run();
+  db.prepare("UPDATE leads SET status='Lost' WHERE id=1").run();
+  db.prepare("UPDATE leads SET status='Lost' WHERE id=1").run();
+  assert(db.prepare("SELECT COUNT(*) n FROM marketing_events WHERE lead_id=1 AND event_type='lead_qualified'").get().n === 1, 'qualified should be recorded once');
+  assert(db.prepare("SELECT COUNT(*) n FROM marketing_events WHERE lead_id=1 AND event_type='lead_lost'").get().n === 1, 'lost should be recorded once');
   // Deleting a lead removes its attribution, but keeps lifecycle events for audit (they become unresolved).
   db.prepare('DELETE FROM leads WHERE id=1').run();
   assert(db.prepare('SELECT COUNT(*) n FROM marketing_attribution WHERE lead_id=1').get().n === 0, 'attribution should be removed with the lead');

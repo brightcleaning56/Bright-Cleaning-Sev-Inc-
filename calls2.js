@@ -400,6 +400,7 @@ Business hours: ${isOpen() ? 'open now' : 'currently closed'}.`;
           db.prepare('UPDATE ai_call_sessions SET lead_id=? WHERE call_sid=?').run(open.id, sess.call_sid); sess.lead_id = open.id; return 'This caller already has an open request; it was updated (no duplicate).'; } }
       const id = db.prepare(`INSERT INTO leads(kind,contact_name,company,email,phone,service,project_type,address,square_footage,bid_due_date,details,status,created_at,origin) VALUES(?,?,?,?,?,?,?,?,?,?,?,'New',?,'inbound_call')`)
         .run(cat === 'construction' ? 'bid' : 'inquiry', f.contact_name, f.company, f.email, f.phone, f.service, f.project_type, f.address, f.square_footage, f.bid_due_date, f.details, now()).lastInsertRowid;
+      try { require('./marketing').recordTouch(db, id, { utm_source: 'phone', utm_medium: 'call' }, now()); } catch (e) { console.error('marketing phone touch skipped', e.message); }
       db.prepare('UPDATE ai_call_sessions SET lead_id=? WHERE call_sid=?').run(id, sess.call_sid); sess.lead_id = id;
       db.prepare('INSERT INTO audit_log(actor,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)').run('AI receptionist', 'created', 'lead', id, `from call ${sess.call_sid}`, now());
       return 'Saved as a new lead.';

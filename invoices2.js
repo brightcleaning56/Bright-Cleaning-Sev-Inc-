@@ -108,6 +108,7 @@ module.exports = function mountInvoices(app, ctx) {
     if (overReason) db.prepare('UPDATE invoices SET over_contract_reason=? WHERE id=?').run(overReason, inv.id);
     const t = now(), resend = !!inv.sent_at;
     db.prepare("UPDATE invoices SET status=CASE WHEN status IN ('Draft') THEN 'Sent' ELSE status END, sent_at=COALESCE(sent_at,?), sent_to=?, send_count=COALESCE(send_count,0)+1, email=COALESCE(NULLIF(email,''),?), issue_date=COALESCE(issue_date,?) WHERE id=?").run(t, to, to, today(), inv.id);
+    if (inv.status === 'Draft') { try { const mk = require('./marketing'); mk.emitLifecycle(db, 'invoice_issued', { leadId: mk.leadForInvoice(db, inv.id), sourceModule: 'invoices', sourceRecordId: 'invoice:' + inv.id, valueAmount: Number(inv.amount) || null, occurredAt: t }); } catch (e) { console.error('marketing invoice event skipped', e.message); } }
     logAction(req, resend ? 'resent invoice' : 'sent invoice', 'invoice', inv.id, `${inv.invoice_number} ${money(inv.amount)} to ${to}${chk.ok ? '' : ' (above contract value — reason recorded)'}`);
     res.json({ ok: true, to, resend, invoice: get(inv.id) });
   }));

@@ -107,6 +107,7 @@ module.exports = function mountPM(app, ctx) {
       // The first time a project completes, its unbilled balance goes to billing as one draft (nothing is sent). Idempotent.
       if (status === 'Completed' && p.status !== 'Completed') {
         try { billingDraftFor(get(p.id), { user: { email: 'system' } }); } catch (e) { console.error('Completion billing draft failed:', e.message); }
+        try { const mk = require('./marketing'); mk.emitLifecycle(db, 'project_completed', { leadId: mk.leadForProject(db, p.id), sourceModule: 'projects', sourceRecordId: 'project:' + p.id, occurredAt: now() }); } catch (e) { console.error('marketing completion event skipped', e.message); }
       }
     }
     return { status, next: nextSteps({ ...f, status }) };
