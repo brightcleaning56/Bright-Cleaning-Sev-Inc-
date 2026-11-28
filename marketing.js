@@ -165,6 +165,8 @@ function mount(app, ctx) {
   const page = (q) => ({ limit: Math.min(Math.max(Number(q.limit) || 50, 1), 200), offset: Math.max(Number(q.offset) || 0, 0) });
   const handle = (res, fn) => { try { fn(); } catch (e) { console.error('marketing:', e.message); res.status(500).json({ error: 'Marketing request failed.' }); } };
   const campaignOr404 = (id) => db.prepare('SELECT * FROM marketing_campaigns WHERE id=?').get(id);
+  // Google Ads and Meta connections: connect, callback, read-only spend sync (see marketing-providers.js).
+  require('./marketing-providers')(app, { db, auth, logAction, audit, now });
 
   // The page shell is served only to signed-in admins. Its data comes from the API above, which is also signed-in only.
   app.get('/admin/marketing', auth, (req, res) => res.sendFile(path.join(__dirname, 'admin-private', 'marketing.html')));
