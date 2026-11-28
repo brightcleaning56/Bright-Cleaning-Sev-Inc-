@@ -1,213 +1,38 @@
-// Marketing & Growth admin screens. Every number comes from /api/admin/marketing and shows its source.
-// Screens whose data needs a provider connection or AI generation say so; they do not show placeholder numbers.
-(function () {
-  'use strict';
-  var $ = function (s) { return document.querySelector(s); };
-  var view = $('#view'), titleEl = $('#page-title'), modeEl = $('#mode'), toastEl = $('#toast');
-  var screen = 'dashboard';
-  var labels = {
-    dashboard: 'Growth dashboard', campaigns: 'Campaign manager', studio: 'AI marketing studio', keywords: 'Keyword intelligence',
-    calendar: 'Content calendar', publishing: 'Social publishing', google: 'Google Ads', meta: 'Meta Ads',
-    seo: 'Local SEO and service areas', attribution: 'Lead attribution', roi: 'Performance and ROI', settings: 'Marketing settings'
-  };
-  var CHANNELS = ['google_ads', 'meta_ads', 'google_business_profile', 'facebook', 'instagram', 'email', 'organic', 'referral', 'other'];
-
-  function esc(v) {
-    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-  function money(n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-  function toast(msg) {
-    toastEl.textContent = msg; toastEl.classList.add('show');
-    setTimeout(function () { toastEl.classList.remove('show'); }, 2800);
-  }
-  // Signed-in admins use the HttpOnly session cookie. Writes must send the CSRF header, as the rest of the admin does.
-  function api(path, opts) {
-    opts = opts || {};
-    var method = (opts.method || 'GET').toUpperCase();
-    var headers = { 'Accept': 'application/json' };
-    if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
-    if (method !== 'GET') headers['X-BC-CSRF'] = '1';
-    return fetch('/api/admin/marketing' + path, {
-      method: method, credentials: 'same-origin', headers: headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (data) {
-        if (!r.ok) { var e = new Error(data.error || ('Request failed (' + r.status + ')')); e.status = r.status; throw e; }
-        return data;
-      });
-    });
-  }
-  function notConnected(err) {
-    modeEl.textContent = 'Not connected';
-    view.innerHTML = '<div class="card"><h2>Marketing data could not load</h2><p>' + esc(err.message) + '</p><p>Sign in again, then press Refresh.</p></div>';
-  }
-  function notBuilt(title, why) {
-    return '<div class="card"><h2>' + esc(title) + '</h2><p><b>Not built yet.</b> ' + esc(why) + '</p><p class="muted">Nothing on this screen is live. No provider account is connected and no data is shown here.</p></div>';
-  }
-  function empty(msg) { return '<tr><td colspan="9" class="muted">' + esc(msg) + '</td></tr>'; }
-
-  function dashboard() {
-    return api('/summary').then(function (s) {
-      modeEl.textContent = 'Live data';
-      view.innerHTML =
-        '<div class="grid four">' +
-        card('Campaigns', s.campaigns.total, s.campaigns.active + ' active') +
-        card('Attributed leads', s.attributed_leads, 'Leads with a recorded campaign') +
-        card('Qualified leads', s.qualified_leads, s.definitions.qualified_leads) +
-        card('Imported spend', money(s.spend), s.definitions.spend) +
-        '</div>' +
-        '<div class="card"><h2>Revenue, cash and profit</h2><p><b>Not reconciled yet.</b> Revenue and profit appear only after invoice, payment and project-cost records are joined to each lead. Until then, no ROI is shown.</p></div>';
-    });
-  }
-
-  function campaigns() {
-    return api('/campaigns').then(function (d) {
-      var rows = d.campaigns.map(function (c) {
-        return '<tr><td>' + esc(c.name) + '</td><td>' + esc(c.channel) + '</td><td>' + esc(c.status) + '</td><td>' + esc(c.approval_status) + '</td><td>' + money(c.budget_amount) + ' ' + esc(c.budget_period) + '</td><td>' + c.attributed_leads + '</td><td>' + money(c.spend) + '</td>' +
-          '<td class="row-actions">' +
-          '<button class="btn small" data-act="approve" data-id="' + c.id + '">Approve</button> ' +
-          (c.status === 'active' ? '<button class="btn small" data-act="pause" data-id="' + c.id + '">Pause</button>' : '<button class="btn small" data-act="activate" data-id="' + c.id + '">Activate</button>') +
-          ' <button class="btn small" data-act="budget" data-id="' + c.id + '">Budget</button></td></tr>';
-      }).join('') || empty('No campaigns yet. Create the first one above.');
-      view.innerHTML =
-        '<div class="card"><h2>New campaign (draft)</h2>' +
-        '<form id="campaignForm" class="form-grid">' +
-        '<label>Name<input name="name" maxlength="160" required></label>' +
-        '<label>Channel<select name="channel">' + CHANNELS.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('') + '</select></label>' +
-        '<label>Service<input name="service_label" maxlength="160"></label>' +
-        '<label>Monthly budget (USD)<input name="budget_amount" type="number" min="0" step="0.01" value="0"></label>' +
-        '<label>Landing page (site path)<input name="landing_path" maxlength="300" placeholder="/commercial-cleaning.html"></label>' +
-        '<label>Audience notes<input name="audience" maxlength="1000"></label>' +
-        '<div><button class="btn primary" type="submit">Save draft</button></div></form>' +
-        '<p class="muted">Creating a draft starts nothing. Approval, activation and budget changes are owner actions, and activation only changes Bright Clean\'s internal status.</p></div>' +
-        '<div class="card"><h2>Campaigns (' + d.total + ')</h2><div class="table-wrap"><table><thead><tr><th>Name</th><th>Channel</th><th>Status</th><th>Approval</th><th>Budget</th><th>Attributed leads</th><th>Imported spend</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
-      $('#campaignForm').addEventListener('submit', submitCampaign);
-      view.querySelectorAll('[data-act]').forEach(function (b) { b.addEventListener('click', campaignAction); });
-    });
-  }
-  function submitCampaign(e) {
-    e.preventDefault();
-    var f = new FormData(e.target), body = {};
-    f.forEach(function (v, k) { body[k] = v; });
-    body.budget_amount = Number(body.budget_amount || 0);
-    api('/campaigns', { method: 'POST', body: body }).then(function () { toast('Draft campaign saved'); render(); })
-      .catch(function (err) { toast(err.message); });
-  }
-  function campaignAction(e) {
-    var act = e.currentTarget.dataset.act, id = e.currentTarget.dataset.id;
-    if (act === 'approve') return api('/campaigns/' + id + '/approve', { method: 'POST', body: {} }).then(function () { toast('Approved'); render(); }).catch(function (x) { toast(x.message); });
-    if (act === 'budget') {
-      var v = window.prompt('New monthly budget in USD (owner only)');
-      if (v === null) return;
-      return api('/campaigns/' + id + '/budget', { method: 'POST', body: { budget_amount: Number(v) } }).then(function () { toast('Budget saved'); render(); }).catch(function (x) { toast(x.message); });
-    }
-    var next = act === 'pause' ? 'paused' : 'active';
-    if (next === 'active' && !window.confirm('Activate this campaign inside Bright Clean? This does not start any ad account.')) return;
-    api('/campaigns/' + id + '/status', { method: 'POST', body: { status: next } }).then(function () { toast('Status changed (internal only)'); render(); }).catch(function (x) { toast(x.message); });
-  }
-
-  function attribution() {
-    return api('/leads?limit=100').then(function (d) {
-      var rows = d.leads.map(function (l) {
-        return '<tr data-lead="' + l.id + '" class="clickable"><td>#' + l.id + ' ' + esc(l.contact_name || l.company || 'Lead') + '</td><td>' + esc(l.status) + '</td><td>' + esc(l.first_source || '') + ' / ' + esc(l.first_campaign || '') + '</td><td>' + esc(l.latest_source || '') + ' / ' + esc(l.latest_campaign || '') + '</td><td>' + esc(String(l.first_touch_at || '').slice(0, 10)) + '</td></tr>';
-      }).join('') || empty('No attributed leads yet. Leads appear here when a campaign link is used on the bid or contact form.');
-      view.innerHTML = '<div class="card"><h2>Attributed leads (' + d.total + ')</h2><p class="muted">First touch is fixed when the lead arrives. Latest touch moves with each new visit. Click a lead to see its touch history.</p><div class="table-wrap"><table><thead><tr><th>Lead</th><th>Status</th><th>First touch</th><th>Latest touch</th><th>First seen</th></tr></thead><tbody>' + rows + '</tbody></table></div><div id="touchHost"></div></div>';
-      view.querySelectorAll('tr[data-lead]').forEach(function (tr) {
-        tr.addEventListener('click', function () {
-          api('/leads/' + tr.dataset.lead + '/attribution').then(function (a) {
-            $('#touchHost').innerHTML = '<h3>Touch history for lead #' + tr.dataset.lead + '</h3><ul>' + a.touchpoints.map(function (t) {
-              return '<li>' + esc(String(t.occurred_at).slice(0, 16).replace('T', ' ')) + ' · ' + esc(t.source || 'direct') + ' / ' + esc(t.campaign_name || '') + ' · ' + esc(t.landing_path || '') + '</li>';
-            }).join('') + '</ul><p class="muted">Model: ' + esc(a.model) + '. Revenue is not shown here.</p>';
-          }).catch(function (x) { toast(x.message); });
-        });
-      });
-    });
-  }
-
-  function content() {
-    return api('/content').then(function (d) {
-      var rows = d.content.map(function (c) {
-        return '<tr><td>' + esc(c.title) + '</td><td>' + esc(c.channel) + '</td><td>' + esc(c.status) + '</td><td>' + esc(String(c.created_at).slice(0, 10)) + '</td>' +
-          '<td>' + (c.status === 'draft' ? '<button class="btn small" data-approve="' + c.id + '">Approve (owner)</button>' : '') + '</td></tr>';
-      }).join('') || empty('No content drafts yet.');
-      view.innerHTML =
-        '<div class="card"><h2>New content draft</h2><form id="contentForm" class="form-grid">' +
-        '<label>Title<input name="title" maxlength="180" required></label>' +
-        '<label>Channel<input name="channel" maxlength="50" value="facebook"></label>' +
-        '<label class="full">Body<textarea name="body" rows="4" maxlength="20000" required></textarea></label>' +
-        '<div><button class="btn primary" type="submit">Save draft</button></div></form>' +
-        '<p class="muted">Drafts are not published. Publishing to social accounts is not built.</p></div>' +
-        '<div class="card"><h2>Content</h2><div class="table-wrap"><table><thead><tr><th>Title</th><th>Channel</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
-      $('#contentForm').addEventListener('submit', function (e) {
-        e.preventDefault(); var f = new FormData(e.target), body = {}; f.forEach(function (v, k) { body[k] = v; });
-        api('/content', { method: 'POST', body: body }).then(function () { toast('Draft saved'); render(); }).catch(function (x) { toast(x.message); });
-      });
-      view.querySelectorAll('[data-approve]').forEach(function (b) {
-        b.addEventListener('click', function () { api('/content/' + b.dataset.approve + '/approve', { method: 'POST', body: {} }).then(function () { toast('Approved. Nothing was published.'); render(); }).catch(function (x) { toast(x.message); }); });
-      });
-    });
-  }
-
-  function roi() {
-    return api('/campaigns?limit=200').then(function (d) {
-      var opts = d.campaigns.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }).join('');
-      view.innerHTML = '<div class="card"><h2>Performance and ROI</h2>' +
-        (d.campaigns.length ? '<label>Campaign <select id="roiPick">' + opts + '</select></label><div id="roiOut"></div>' : '<p class="muted">Create a campaign first.</p>') +
-        '<p><b>Revenue, cash collected, direct cost and gross profit are not reconciled yet.</b> This screen shows spend and lead counts only.</p></div>';
-      var pick = $('#roiPick');
-      if (pick) { pick.addEventListener('change', loadRoi); loadRoi(); }
-    });
-  }
-  function loadRoi() {
-    var id = $('#roiPick').value;
-    api('/campaigns/' + id + '/metrics').then(function (m) {
-      $('#roiOut').innerHTML = '<div class="grid three">' + card('Imported spend', money(m.spend), 'Provider import rows') + card('Attributed leads', m.attributed_leads, 'First-touch model') + card('Financials', 'Not reconciled', 'Revenue needs verified joins') + '</div>';
-    }).catch(function (x) { toast(x.message); });
-  }
-
-  function settings() {
-    return Promise.all([api('/connections'), api('/events/exceptions').catch(function () { return null; })]).then(function (r) {
-      var conns = r[0].connections;
-      var ex = r[1];
-      view.innerHTML =
-        '<div class="card"><h2>Provider connections</h2>' +
-        (conns.length ? '<ul>' + conns.map(function (c) { return '<li>' + esc(c.provider) + ' · ' + esc(c.status) + '</li>'; }).join('') + '</ul>' : '<p>No ad or social accounts are connected. Connecting Google, Meta and Google Business Profile is not built yet.</p>') +
-        '</div>' +
-        '<div class="card"><h2>Unresolved lifecycle events</h2>' +
-        (ex === null ? '<p class="muted">Owners only.</p>' : (ex.events.length ? '<p>' + ex.events.length + ' event(s) could not be linked to a lead. They are not attached to any lead.</p>' : '<p>None.</p>')) +
-        '</div>';
-    });
-  }
-
-  function card(label, value, note) {
-    return '<div class="card kpi"><div class="kpi-label">' + esc(label) + '</div><div class="kpi-value">' + esc(value) + '</div><div class="muted">' + esc(note) + '</div></div>';
-  }
-
-  var renderers = {
-    dashboard: dashboard, campaigns: campaigns, attribution: attribution, calendar: content, roi: roi, settings: settings,
-    studio: function () { view.innerHTML = notBuilt('AI marketing studio', 'Copy generation is not connected. It will draft from approved service and service-area data and never publish on its own.'); },
-    keywords: function () { view.innerHTML = notBuilt('Keyword intelligence', 'Needs a keyword-data provider account. No search-volume numbers are shown until one is connected.'); },
-    publishing: function () { view.innerHTML = notBuilt('Social publishing', 'Needs approved provider apps and OAuth. Nothing is posted from here.'); },
-    google: function () { view.innerHTML = notBuilt('Google Ads manager', 'Needs a Google Ads account, API approval and OAuth. Spend can be imported by hand in the meantime.'); },
-    meta: function () { view.innerHTML = notBuilt('Meta Ads manager', 'Needs a Meta business app, app review and OAuth. Spend can be imported by hand in the meantime.'); },
-    seo: function () { view.innerHTML = notBuilt('Local SEO and service areas', 'Needs Google Business Profile access. Service-area data is not yet connected.'); }
-  };
-
-  function render() {
-    titleEl.textContent = labels[screen];
-    document.querySelectorAll('#nav button').forEach(function (b) { b.classList.toggle('active', b.dataset.screen === screen); });
-    view.innerHTML = '<div class="card muted">Loading…</div>';
-    var out = renderers[screen]();
-    if (out && out.catch) out.catch(notConnected);
-  }
-
-  $('#nav').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-screen]');
-    if (b) { screen = b.dataset.screen; render(); }
-  });
-  $('#refresh').addEventListener('click', render);
-  $('#create').addEventListener('click', function () { screen = 'campaigns'; render(); });
-  render();
+/* Bright Clean Marketing UI. Existing API-backed views use real endpoints. Provider/AI views clearly identify unavailable integrations. */
+(function(){'use strict';
+const $=s=>document.querySelector(s), view=$('#view'), title=$('#page-title'), desc=$('#page-description'), crumb=$('#crumb'), mode=$('#mode'), toastEl=$('#toast');
+let screen='dashboard';
+const screens={dashboard:['Marketing overview','A single view of demand generation, CRM outcomes and verified business performance.'],campaigns:['Campaign manager','Plan campaigns around Bright Clean services, customers, locations and available operating capacity.'],studio:['AI marketing studio','Create consistent, service-specific marketing assets using approved Bright Clean information.'],keywords:['Keyword intelligence','Find search demand by service and market, then connect search terms to qualified opportunities.'],calendar:['Content calendar','Coordinate content drafts, approvals and publishing schedules across channels.'],publishing:['Social publishing','Manage approved publishing workflows and see exactly what has and has not been published.'],google:['Google Ads','Connect paid search activity to real Bright Clean leads and downstream sales outcomes.'],meta:['Meta Ads','Manage Facebook and Instagram advertising with campaign-to-CRM attribution.'],seo:['Local SEO & service areas','Manage service-area content and local visibility without creating duplicate or inaccurate location pages.'],attribution:['Lead attribution','Trace the first interaction, subsequent touchpoints and sales outcomes for each existing CRM lead.'],roi:['Performance & ROI','Evaluate marketing against qualified leads, signed work, invoicing, cash collection and actual project costs.'],settings:['Settings & connections','Control provider connections, access, consent, attribution, approvals and integration health.']};
+const channels=['google_ads','meta_ads','google_business_profile','facebook','instagram','email','organic','referral','other'];
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function money(v){return '$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function toast(s){toastEl.textContent=s;toastEl.classList.add('show');setTimeout(()=>toastEl.classList.remove('show'),2600);}
+function api(path,opts={}){const method=(opts.method||'GET').toUpperCase(),headers={'Accept':'application/json'};if(opts.body!==undefined)headers['Content-Type']='application/json';if(method!=='GET')headers['X-BC-CSRF']='1';return fetch('/api/admin/marketing'+path,{method,credentials:'same-origin',headers,body:opts.body===undefined?undefined:JSON.stringify(opts.body)}).then(async r=>{let d={};try{d=await r.json();}catch(_){}if(!r.ok){let e=new Error(d.error||`Request failed (${r.status})`);e.status=r.status;throw e;}return d;});}
+function panel(h,sub,body,action=''){return `<section class="panel"><div class="panel-head"><div><h2 class="panel-title">${h}</h2>${sub?`<p class="panel-subtitle">${sub}</p>`:''}</div>${action}</div><div class="panel-body">${body}</div></section>`;}
+function metric(label,value,note,icon='•',kind=''){return `<div class="metric"><div class="metric-top"><span>${esc(label)}</span><span class="metric-icon">${icon}</span></div><div class="metric-value">${esc(value)}</div><div class="metric-note ${kind}">${esc(note)}</div></div>`;}
+function notice(text,kind=''){return `<div class="notice ${kind}">${text}</div>`;}
+function empty(titleText,body,action=''){return `<div class="empty-state"><div class="empty-icon">✦</div><h3>${esc(titleText)}</h3><p>${esc(body)}</p>${action}</div>`;}
+function status(s){let c=['active','approved','published','connected','complete','paid'].includes(String(s).toLowerCase())?'green':['pending','scheduled','review','draft'].includes(String(s).toLowerCase())?'amber':'gray';return `<span class="status ${c}">${esc(s||'Unknown')}</span>`;}
+function table(headers,rows,emptyMsg){return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows||`<tr><td colspan="${headers.length}" class="muted">${esc(emptyMsg)}</td></tr>`}</tbody></table></div>`;}
+function nav(){document.querySelectorAll('[data-screen]').forEach(b=>b.classList.toggle('active',b.dataset.screen===screen));title.textContent=screens[screen][0];desc.textContent=screens[screen][1];crumb.textContent=screens[screen][0];}
+function render(){nav();view.innerHTML='<div class="loading-panel">Loading…</div>';const fn=views[screen];Promise.resolve().then(fn).catch(err=>{mode.textContent='Data unavailable';mode.classList.remove('live');view.innerHTML=panel('Unable to load this workspace','The application did not return the requested marketing data.',notice(`${esc(err.message)}. Check your admin session and try Refresh.`,'warning'));});}
+function dashboard(){return api('/summary').then(s=>{mode.textContent='Connected to Bright Clean';mode.classList.add('live');const campaign=s.campaigns||{};let funnel=[['Inquiries',s.attributed_leads,'Attribution records'],['Qualified',s.qualified_leads,'Current CRM status rule'],['Proposals','—','Lifecycle event not yet wired'],['Won','—','Lifecycle event not yet wired'],['Collected','—','Financial reconciliation pending']];view.innerHTML=`<div class="metrics">${metric('Campaigns',campaign.total??'—',`${campaign.active??0} internally active`,'◫')}${metric('Attributed leads',s.attributed_leads??'—','Recorded marketing attribution','◎')}${metric('Qualified leads',s.qualified_leads??'—',s.definitions?.qualified_leads||'Definition requires owner approval','✓')}${metric('Imported ad spend',money(s.spend),'Imported provider spend only','＄')}</div><div class="dashboard-grid">${panel('Lead-to-revenue journey','Marketing performance must follow the same lead through Bright Clean.',`<div class="funnel">${funnel.map(x=>`<div class="funnel-step"><strong>${x[1]}</strong><span>${x[0]}</span><small>${x[2]}</small></div>`).join('')}</div>${notice('<strong>Reporting integrity:</strong> proposals, won contracts, invoices, cash and profit are not presented as live metrics until their lifecycle joins and accounting definitions are verified.','warning')}`)}${panel('Growth recommendations','Recommendations based on verified data only.',`<div class="alert-box"><strong>Complete lifecycle tracking</strong>Wire lead qualification, estimate, proposal, project completion and invoice events before using campaign ROI to move budget.</div><div class="alert-box"><strong>Connect provider accounts</strong>Google and Meta integrations are not active. No external ads are being changed.</div><div class="alert-box"><strong>Protect operating capacity</strong>Campaign expansion should consider crew availability and service-area coverage.</div>`)}</div><div class="dashboard-grid">${panel('Campaign activity','Current internal campaign records.',`<div id="dashCampaigns" class="muted">Loading campaign records…</div>`)}${panel('Attribution coverage','Lead source capture and known gaps.',`<div class="source-list"><div class="source-row"><span>Website forms</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><b>Wired</b></div><div class="source-row"><span>Phone intake</span><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><b>Pending</b></div><div class="source-row"><span>External webhook</span><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><b>Pending</b></div><div class="source-row"><span>Customer portal</span><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><b>Pending</b></div></div>`)}</div>`;return api('/campaigns?limit=5').then(d=>{const rows=(d.campaigns||[]).slice(0,5).map(c=>`<div class="integration-card"><div class="integration-logo">${esc((c.channel||'M').slice(0,1).toUpperCase())}</div><div class="integration-info"><strong>${esc(c.name)}</strong><span>${esc(c.channel)} · ${Number(c.attributed_leads||0)} attributed leads</span></div>${status(c.status)}</div>`).join('');$('#dashCampaigns').innerHTML=rows||empty('No campaigns yet','Create a campaign draft to begin organizing Bright Clean marketing activity.');});});}
+function campaigns(){return api('/campaigns?limit=200').then(d=>{const rows=(d.campaigns||[]).map(c=>`<tr><td><span class="primary-cell">${esc(c.name)}</span><br><span class="muted">${esc(c.service_label||'Service not assigned')}</span></td><td>${esc(c.channel)}</td><td>${status(c.status)}</td><td>${status(c.approval_status)}</td><td>${money(c.budget_amount)} / ${esc(c.budget_period)}</td><td>${Number(c.attributed_leads||0)}</td><td>${money(c.spend)}</td><td><button class="button-small" data-campaign-action="approve" data-id="${c.id}">Approve</button> <button class="button-small" data-campaign-action="${c.status==='active'?'pause':'activate'}" data-id="${c.id}">${c.status==='active'?'Pause':'Activate internally'}</button></td></tr>`).join('');view.innerHTML=`<div class="screen-grid"><div class="stack">${panel(`Campaigns (${d.total||0})`,'Drafts and internal campaign status. Activation here does not launch an external ad.',`<div class="toolbar"><input class="toolbar-input" id="campaignSearch" placeholder="Search campaigns…"><select class="toolbar-input" id="campaignFilter"><option value="">All statuses</option><option>draft</option><option>active</option><option>paused</option></select></div>${table(['Campaign','Channel','Status','Approval','Budget','Leads','Spend','Actions'],rows,'No campaigns created yet.')}`)}</div><div class="stack">${panel('Create campaign draft','Campaign setup is internal until external provider activation is implemented.',`<form id="campaignForm" class="form-grid"><div class="field full"><label>Campaign name *</label><input name="name" maxlength="160" required placeholder="Iowa multifamily common-area cleaning"></div><div class="field"><label>Channel *</label><select name="channel">${channels.map(x=>`<option value="${x}">${x.replaceAll('_',' ')}</option>`).join('')}</select></div><div class="field"><label>Objective</label><select name="objective"><option value="lead_generation">Lead generation</option><option value="brand_awareness">Brand awareness</option><option value="retention">Customer retention</option></select></div><div class="field"><label>Bright Clean service</label><input name="service_label" placeholder="Final construction cleaning"></div><div class="field"><label>Monthly budget (USD)</label><input name="budget_amount" type="number" min="0" step="0.01" value="0"></div><div class="field full"><label>Landing page path</label><input name="landing_path" placeholder="/construction-final-cleaning"></div><div class="field full"><label>Target audience / location notes</label><textarea name="audience" rows="3" placeholder="General contractors in central Iowa"></textarea></div><div class="field full"><button class="button button-primary" type="submit">Save campaign draft</button></div></form><p class="help">Approval and budget changes remain permission-controlled. No ad account is activated by saving a draft.</p>`)}</div></div>`;$('#campaignForm').addEventListener('submit',saveCampaign);view.querySelectorAll('[data-campaign-action]').forEach(b=>b.addEventListener('click',campaignAction));$('#campaignSearch').addEventListener('input',filterCampaigns);$('#campaignFilter').addEventListener('change',filterCampaigns);});}
+function filterCampaigns(){const q=$('#campaignSearch').value.toLowerCase(),f=$('#campaignFilter').value;view.querySelectorAll('tbody tr').forEach(r=>{const t=r.textContent.toLowerCase();r.hidden=!(t.includes(q)&&(!f||t.includes(f)));});}
+function saveCampaign(e){e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));b.budget_amount=Number(b.budget_amount||0);api('/campaigns',{method:'POST',body:b}).then(()=>{toast('Campaign draft saved');render();}).catch(e=>toast(e.message));}
+function campaignAction(e){const b=e.currentTarget,id=b.dataset.id,a=b.dataset.campaignAction;let path,body={};if(a==='approve')path=`/campaigns/${id}/approve`;else if(a==='pause'||a==='activate'){path=`/campaigns/${id}/status`;body.status=a==='pause'?'paused':'active';if(a==='activate'&&!confirm('Activate this campaign inside Bright Clean? This does not launch external advertising.'))return;}else return;api(path,{method:'POST',body}).then(()=>{toast('Campaign updated');render();}).catch(e=>toast(e.message));}
+function attribution(){return api('/leads?limit=200').then(d=>{const rows=(d.leads||[]).map(l=>`<tr class="lead-row" data-lead="${l.id}"><td><span class="primary-cell">#${l.id} ${esc(l.contact_name||l.company||'Lead')}</span></td><td>${status(l.status)}</td><td>${esc(l.first_source||'—')}<br><span class="muted">${esc(l.first_campaign||'')}</span></td><td>${esc(l.latest_source||'—')}<br><span class="muted">${esc(l.latest_campaign||'')}</span></td><td>${esc(String(l.first_touch_at||'').slice(0,10)||'—')}</td><td><button class="button-small" data-open-lead="${l.id}">Journey</button></td></tr>`).join('');view.innerHTML=`${panel(`Lead attribution · ${d.total||0} records`,'These are existing Bright Clean leads, not a separate marketing contact database.',`<div class="toolbar"><input class="toolbar-input" id="leadSearch" placeholder="Search lead, source or campaign"><span class="status blue">First touch retained</span><span class="status">Latest touch updated</span></div>${table(['Existing CRM lead','Lead status','Original source','Latest source','First seen','Details'],rows,'No attributed leads found. Campaign form submissions appear here when attribution is captured.')}`)}<div id="leadJourney" style="margin-top:14px"></div>`;$('#leadSearch').addEventListener('input',e=>view.querySelectorAll('.lead-row').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(e.target.value.toLowerCase())));view.querySelectorAll('[data-open-lead]').forEach(b=>b.addEventListener('click',()=>loadJourney(b.dataset.openLead)));});}
+function loadJourney(id){api(`/leads/${id}/attribution`).then(a=>{$('#leadJourney').innerHTML=panel(`Marketing journey · Lead #${id}`,'Touch history recorded against the canonical CRM lead.',`<div class="timeline">${(a.touchpoints||[]).map(t=>`<div class="timeline-item"><div class="timeline-dot">•</div><div><strong>${esc(t.source||'Direct')} · ${esc(t.campaign_name||'No campaign')}</strong><span>${esc(String(t.occurred_at||'').replace('T',' ').slice(0,16))} · ${esc(t.landing_path||'')}</span></div></div>`).join('')||'<span class="muted">No touchpoints available.</span>'}</div><p class="help">Model: ${esc(a.model||'First and latest touch')}. This view does not calculate revenue or profit.</p>`);}).catch(e=>toast(e.message));}
+function content(){return api('/content').then(d=>{const rows=(d.content||[]).map(c=>`<tr><td><span class="primary-cell">${esc(c.title)}</span></td><td>${esc(c.channel)}</td><td>${esc(c.content_type||'Post')}</td><td>${status(c.status)}</td><td>${esc(String(c.scheduled_at||c.created_at||'').slice(0,16).replace('T',' '))}</td><td>${c.status==='draft'?`<button class="button-small" data-content-approve="${c.id}">Approve</button>`:'—'}</td></tr>`).join('');view.innerHTML=`<div class="screen-grid"><div class="stack">${panel('Publishing calendar','Scheduled items are displayed only from saved content records.',`<div class="calendar-grid">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="calendar-weekday">${x}</div>`).join('')}${Array.from({length:35},(_,i)=>`<div class="calendar-day"><b>${i%31+1}</b></div>`).join('')}</div><p class="help">Calendar dates are a layout preview. Actual scheduled items appear in the content table below; no post is assumed published.</p>`) }${panel('Content queue','Drafts and approvals.',table(['Content','Channel','Type','Status','Schedule / created','Action'],rows,'No content drafts yet.'))}</div><div class="stack">${panel('Create content draft','Save an asset for review. Publishing is a separate provider integration.',`<form id="contentForm" class="form-grid"><div class="field full"><label>Content title *</label><input name="title" maxlength="180" required></div><div class="field"><label>Channel</label><select name="channel"><option>facebook</option><option>instagram</option><option>google_business_profile</option><option>email</option></select></div><div class="field"><label>Content type</label><select name="content_type"><option value="post">Social post</option><option value="promotion">Promotion</option><option value="service_update">Service update</option></select></div><div class="field full"><label>Post copy *</label><textarea name="body" rows="7" maxlength="20000" required></textarea></div><div class="field full"><button class="button button-primary">Save draft for review</button></div></form>`)}</div></div>`;$('#contentForm').addEventListener('submit',e=>{e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));api('/content',{method:'POST',body:b}).then(()=>{toast('Content draft saved');render();}).catch(e=>toast(e.message));});view.querySelectorAll('[data-content-approve]').forEach(b=>b.addEventListener('click',()=>api(`/content/${b.dataset.contentApprove}/approve`,{method:'POST',body:{}}).then(()=>{toast('Approved internally; not published');render();}).catch(e=>toast(e.message))));});}
+function studio(){view.innerHTML=`<div class="screen-grid"><div class="stack">${panel('Campaign brief','AI generation must use approved Bright Clean services, service areas and brand language.',`<form id="studioBrief" class="form-grid"><div class="field full"><label>What are we promoting?</label><select name="service"><option>Post-construction final cleaning</option><option>Commercial cleaning</option><option>Apartment common-area cleaning</option><option>Window cleaning</option><option>Power washing</option><option>Parking lot maintenance</option><option>Valet trash</option></select></div><div class="field"><label>Target market</label><select name="audience"><option>General contractors</option><option>Property managers</option><option>Multifamily operators</option><option>Commercial facilities</option><option>Residential customers</option></select></div><div class="field"><label>Target service area</label><input name="location" placeholder="Des Moines, Iowa"></div><div class="field"><label>Asset to create</label><select name="asset"><option>Google search ad</option><option>Facebook / Instagram post</option><option>Landing page</option><option>Email campaign</option><option>Campaign brief</option></select></div><div class="field"><label>Primary objective</label><select name="objective"><option>Generate qualified quote requests</option><option>Book site walkthroughs</option><option>Promote recurring service</option><option>Re-engage existing customers</option></select></div><div class="field full"><label>Offer, proof points or instructions</label><textarea name="brief" rows="4" placeholder="Include approved offer, project examples or key differentiators."></textarea></div><div class="field full"><button class="button button-primary" type="button" disabled>AI generation connection required</button><span class="help">The form defines the intended workflow. No AI output is fabricated while the generation endpoint is unavailable.</span></div></form>`)}</div><div class="stack">${panel('Generated asset workspace','The intended review and production stages.',`<div class="timeline"><div class="timeline-item"><div class="timeline-dot">1</div><div><strong>Brief validated</strong><span>Service, market, offer and destination checked against Bright Clean data</span></div></div><div class="timeline-item"><div class="timeline-dot">2</div><div><strong>Draft generated</strong><span>Copy, creative direction, CTA and landing-page recommendation</span></div></div><div class="timeline-item"><div class="timeline-dot">3</div><div><strong>Human review</strong><span>Brand, claims, pricing, service area and compliance approval</span></div></div><div class="timeline-item"><div class="timeline-dot">4</div><div><strong>Saved to campaign</strong><span>Versioned content asset with owner and approval history</span></div></div><div class="timeline-item"><div class="timeline-dot">5</div><div><strong>Publish or launch</strong><span>Only through connected provider APIs and explicit authorization</span></div></div></div>${notice('<strong>Not connected:</strong> AI provider configuration and generation API are not present in the uploaded feature branch.','warning')}`)}</div></div>`;}
+function keywords(){view.innerHTML=`<div class="metrics">${metric('Tracked keywords','—','Provider data not connected','⌕')}${metric('Search volume','—','No verified volume source','▥')}${metric('Local ranking','—','No rank tracking configured','◎')}${metric('Qualified lead terms','—','Requires CRM keyword attribution','✓')}</div><div class="screen-grid">${panel('Keyword research workspace','Research should be segmented by Bright Clean service, customer type and service area.',`<div class="form-grid"><div class="field"><label>Service</label><select><option>Construction final cleaning</option><option>Commercial cleaning</option><option>Apartment cleaning</option><option>Window cleaning</option><option>Power washing</option></select></div><div class="field"><label>Market</label><select><option>Des Moines, Iowa</option><option>Dallas–Fort Worth, Texas</option><option>Fargo, North Dakota</option><option>Kansas City</option><option>Minnesota</option></select></div><div class="field full"><label>Seed keyword</label><input placeholder="post construction cleaning contractor"></div></div><div style="margin-top:12px"><button class="button button-primary" disabled>Connect keyword data provider</button></div>`) }${panel('Required keyword outputs','Do not display estimated search volume or competition as provider facts.',`<div class="stack"><div class="alert-box"><strong>Opportunity keywords</strong>Relevant terms grouped by service intent and target geography.</div><div class="alert-box"><strong>Negative keywords</strong>Irrelevant searches that waste budget or attract non-service inquiries.</div><div class="alert-box"><strong>Lead quality</strong>Terms that produce qualified leads, walkthroughs and won contracts.</div><div class="alert-box"><strong>Landing-page mapping</strong>One relevant page per service intent, avoiding duplicate thin pages.</div></div>${notice('Keyword provider integration and rank tracking are not implemented.','warning')}`)}</div>`;}
+function publishing(){view.innerHTML=`<div class="screen-grid"><div class="stack">${panel('Connected publishing destinations','Only authorized business accounts can publish. Personal profiles must not be used.',`<div class="integration-list">${[['Google Business Profile','GBP','Business profile posts and local updates'],['Facebook Page','f','Approved business Page content'],['Instagram Business','◎','Eligible professional account publishing'],['Email provider','✉','Consent-based customer campaigns']].map(x=>`<div class="integration-card"><div class="integration-logo">${x[1]}</div><div class="integration-info"><strong>${x[0]}</strong><span>${x[2]}</span></div><span class="integration-status">Not connected</span><button class="button-small" disabled>Connect</button></div>`).join('')}</div>`)}</div><div class="stack">${panel('Publishing safeguards','Required before a post can leave Bright Clean.',`<div class="timeline"><div class="timeline-item"><div class="timeline-dot">1</div><div><strong>Content approved</strong><span>Authorized approver signs off on exact content and media</span></div></div><div class="timeline-item"><div class="timeline-dot">2</div><div><strong>Destination validated</strong><span>Account, permissions, media format and provider limits checked</span></div></div><div class="timeline-item"><div class="timeline-dot">3</div><div><strong>Scheduled job created</strong><span>Idempotency key, retry limit and scheduled time stored</span></div></div><div class="timeline-item"><div class="timeline-dot">4</div><div><strong>Provider response recorded</strong><span>Post ID, URL, timestamp or actionable failure retained</span></div></div></div>${notice('Publishing APIs and OAuth are not implemented in the branch. This screen intentionally does not pretend posts are connected.','warning')}`)}</div></div>`;}
+function google(){providerScreen('Google Ads','Google Ads API','Search campaigns, ad groups, keywords, search terms, conversion actions, budget pacing and provider spend.','Google Ads developer token, OAuth consent, customer account authorization, conversion mapping and API policy review.');}
+function meta(){providerScreen('Meta Ads','Meta Marketing API','Campaigns, ad sets, creatives, audiences, lead forms, delivery status, spend and conversion events.','Meta business app, app review, business portfolio permissions, Page/ad account authorization and conversion event mapping.');}
+function providerScreen(name,apiName,features,requirements){view.innerHTML=`<div class="metrics">${metric('Account status','Not connected','No provider credentials configured','◉')}${metric('Active campaigns','—','Provider sync unavailable','◫')}${metric('Spend','—','No provider spend sync','＄')}${metric('Conversions','—','No conversion sync','✓')}</div><div class="screen-grid">${panel(`${name} workspace`,features,empty(`${apiName} connection required`,'Connect the official provider integration before displaying campaign data or enabling account actions.',`<button class="button button-primary" disabled>Connection setup not implemented</button>`))}${panel('Developer prerequisites','Owner approval and provider-side setup required.',`<div class="notice warning">${esc(requirements)}</div><p class="help">OAuth, token encryption, scope validation, account selection, webhook verification, sync jobs and provider error handling are not implemented in this branch.</p>`)}</div>`;}
+function seo(){view.innerHTML=`<div class="metrics">${metric('Service areas','—','No authoritative location records connected','⌖')}${metric('Published location pages','—','CMS integration pending','▤')}${metric('Index coverage','—','Search Console integration pending','◎')}${metric('Profile health','—','Google Business Profile not connected','G')}</div><div class="screen-grid">${panel('Service-area management','Use approved operating territories and capacity—not arbitrary city-page generation.',`<div class="notice warning">Service-area records must be sourced from Bright Clean's approved service coverage and operating capacity. The current branch does not connect a service-area registry.</div><div class="integration-list" style="margin-top:12px">${['Des Moines, Iowa','Texas markets','North Dakota','Kansas City','Minnesota'].map(x=>`<div class="integration-card"><div class="integration-info"><strong>${x}</strong><span>Requires approved coverage and page owner</span></div>${status('Not configured')}</div>`).join('')}</div>`) }${panel('Local SEO controls','Quality gates for every page and profile.',`<div class="stack"><div class="alert-box"><strong>Unique useful content</strong>Each page must contain accurate service details, local proof and a real conversion path.</div><div class="alert-box"><strong>Consistent business information</strong>Approved company name, phone, address/service area and business hours.</div><div class="alert-box"><strong>Indexing and canonical rules</strong>No thin, duplicate or doorway pages.</div><div class="alert-box"><strong>Lead tracking</strong>Forms and calls must route into the existing Lead Portal with attribution.</div></div>${notice('Local SEO publishing and Google Business Profile integration are not implemented.','warning')}`)}</div>`;}
+function roi(){return api('/campaigns?limit=200').then(d=>{const opts=(d.campaigns||[]).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');view.innerHTML=`<div class="metrics">${metric('Imported spend','—','Campaign-level data only','＄')}${metric('Cost per qualified lead','—','Requires signed-off qualification definition','◎')}${metric('Collected revenue','—','Invoice/payment reconciliation pending','▤')}${metric('Gross profit','—','Direct project-cost allocation pending','↗')}</div><div class="screen-grid">${panel('Campaign financial performance','Do not treat signed contract value, invoiced revenue and cash collected as the same measure.',opts?`<div class="field" style="max-width:340px"><label>Select campaign</label><select id="roiCampaign">${opts}</select></div><div id="roiMetrics" style="margin-top:14px"></div>`:empty('No campaign records','Create a campaign before reviewing its performance.'))}${panel('Financial definitions required','Accounting must approve these definitions before ROI is reported.',`<div class="stack"><div class="alert-box"><strong>Advertising spend</strong>Provider-reported or reconciled spend, with import source and date.</div><div class="alert-box"><strong>Attributed contract value</strong>Signed contract amount, separately identified from recognized revenue.</div><div class="alert-box"><strong>Invoiced and collected</strong>Invoices issued and payments received, net of refunds and adjustments.</div><div class="alert-box"><strong>Gross profit</strong>Verified revenue less allocated direct labor, materials, subcontractors and other direct costs.</div></div>${notice('The feature branch explicitly states that revenue, cash, direct costs and gross profit are not reconciled. No ROI multiple is calculated.','warning')}`)}</div>`;if($('#roiCampaign')){const load=()=>api(`/campaigns/${$('#roiCampaign').value}/metrics`).then(m=>$('#roiMetrics').innerHTML=`<div class="metrics">${metric('Imported spend',money(m.spend),'Provider import rows','＄')}${metric('Attributed leads',m.attributed_leads,'First-touch model','◎')}${metric('Revenue','Not reconciled','Accounting join pending','▤')}${metric('Profit','Not reconciled','Direct cost join pending','↗')}</div>`).catch(e=>toast(e.message));$('#roiCampaign').addEventListener('change',load);load();}});}
+function settings(){return Promise.all([api('/connections'),api('/events/exceptions').catch(()=>null)]).then(([c,e])=>{const conns=(c.connections||[]).map(x=>`<div class="integration-card"><div class="integration-logo">${esc((x.provider||'?').slice(0,1).toUpperCase())}</div><div class="integration-info"><strong>${esc(x.provider)}</strong><span>${esc(x.account_label||x.account_external_id||'No account label')}</span></div>${status(x.status)}</div>`).join('');view.innerHTML=`<div class="screen-grid"><div class="stack">${panel('Provider connections','Connection state is read from the backend; no secrets are shown in the browser.',`<div class="integration-list">${conns||'<div class="empty-state"><h3>No provider connections</h3><p>Google, Meta and publishing OAuth have not been configured.</p></div>'}</div>`)}${panel('Attribution and privacy controls','Owner and counsel decisions required before production tracking.',`<div class="alert-box"><strong>Consent and tracking</strong>Do Not Track is respected in the current implementation. Consent state remains unknown until a consent source is configured.</div><div class="alert-box"><strong>Retention</strong>Touchpoint retention period is not defined. Current attribution records cascade with lead deletion.</div><div class="alert-box"><strong>Attribution model</strong>First touch is reported and latest touch retained. Attribution window still requires owner approval.</div>`)}</div><div class="stack">${panel('Lifecycle exceptions','Unresolved events must be reviewed by an authorized owner.',e?`${(e.events||[]).length?`<p>${e.events.length} event(s) could not be linked to a lead.</p>`:'<p class="muted">No unresolved events reported.</p>'}`:'<p class="muted">Exception details are restricted to owner access.</p>')}${panel('Access and approvals','The branch uses existing Bright Clean role rules.',`<div class="alert-box"><strong>Owner</strong>Campaign approval, budget changes, activation, spend import, content approval and exception review.</div><div class="alert-box"><strong>Manager</strong>Operational campaign and content workflows within assigned permissions.</div><div class="alert-box"><strong>Staff</strong>No access to restricted Marketing controls unless explicitly granted.</div>${notice('Confirm role matrix against the main admin navigation and real signed-in MFA session before release.','warning')}`)}</div></div>`;});}
+const views={dashboard,campaigns,studio,keywords,calendar:content,publishing,google,meta,seo,attribution,roi,settings};
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-screen]');if(!b)return;screen=b.dataset.screen;$('#sidebar').classList.remove('open');render();});$('#refresh').addEventListener('click',render);$('#createCampaign').addEventListener('click',()=>{screen='campaigns';render();});$('#viewLeads').addEventListener('click',()=>location.assign('/admin#leads'));$('#menuToggle').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));render();
 })();
