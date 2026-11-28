@@ -91,6 +91,9 @@ function mountProviders(app, ctx) {
   // Finds the account the connection will read. First account only in this release; the label is shown on the screen.
   async function pickAccount(p, token) {
     if (p === 'google_ads') {
+      // An owner can choose the account in Render (GOOGLE_ADS_CUSTOMER_ID) instead of taking the first one Google lists.
+      const pinned = googleCustomerOverride();
+      if (pinned) return { id: pinned, label: 'Google Ads customer ' + pinned };
       const c = creds(p);
       const j = await call(`${PROVIDERS.google_ads.api()}/customers:listAccessibleCustomers`, { headers: googleHeaders(c, token) });
       const first = (j.resourceNames || [])[0];
@@ -103,6 +106,7 @@ function mountProviders(app, ctx) {
     if (!first) throw new Error('No Meta ad accounts are available to this sign-in.');
     return { id: 'act_' + first.account_id, label: first.name || ('Ad account ' + first.account_id) };
   }
+  const googleCustomerOverride = () => { const d = String(process.env.GOOGLE_ADS_CUSTOMER_ID || '').replace(/\D/g, ''); return d.length === 10 ? d : null; };
   const googleHeaders = (c, token) => ({ Authorization: 'Bearer ' + token.access_token, 'developer-token': c.devToken, ...(c.loginCustomer ? { 'login-customer-id': c.loginCustomer.replace(/-/g, '') } : {}) });
 
   // ----- Status (no secrets) -----
@@ -192,7 +196,8 @@ function mountProviders(app, ctx) {
     if (p === 'google_ads') {
       const c = creds(p);
       const q = 'SELECT campaign.id, segments.date, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_30_DAYS';
-      const batches = await call(`${PROVIDERS.google_ads.api()}/customers/${conn.account_external_id}/googleAds:searchStream`, { method: 'POST', headers: { ...googleHeaders(c, token), 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) });
+      const customerId = googleCustomerOverride() || conn.account_external_id;
+      const batches = await call(`${PROVIDERS.google_ads.api()}/customers/${customerId}/googleAds:searchStream`, { method: 'POST', headers: { ...googleHeaders(c, token), 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) });
       for (const batch of Array.isArray(batches) ? batches : []) for (const r of batch.results || []) rows.push({ campaign: String(r.campaign.id), date: r.segments.date, amount: Number(r.metrics.costMicros || 0) / 1e6 });
     } else {
       let url = `${PROVIDERS.meta_ads.api()}/${conn.account_external_id}/insights?` + new URLSearchParams({ level: 'campaign', time_increment: '1', date_preset: 'last_30d', fields: 'campaign_id,spend,date_start', limit: '500', access_token: token.access_token });

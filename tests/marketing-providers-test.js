@@ -59,7 +59,7 @@ function mockProvider() {
   const env = { ...process.env, PORT: String(PORT), NODE_ENV: 'staging', JWT_SECRET: crypto.randomBytes(32).toString('hex'), ADMIN_EMAIL: OWNER, ADMIN_PASSWORD_HASH: await bcrypt.hash(PW, 8),
     DATA_DIR: path.join(work, 'data'), UPLOAD_DIR: path.join(work, 'up'), PUBLIC_BASE_URL: 'https://brightclean.net', TWILIO_FORWARD_TO: '+15155550199', TWILIO_ACCOUNT_SID: 'AC' + 'a'.repeat(32), TWILIO_NUMBER: '+15153033024', TWILIO_AUTH_TOKEN: 'tw-prov-token', FROM_EMAIL: 'info@brightclean.net', NOTIFY_EMAIL: 'info@brightclean.net',
     MARKETING_TOKEN_KEY: crypto.randomBytes(24).toString('hex'),
-    GOOGLE_ADS_CLIENT_ID: 'google-client-id.test', GOOGLE_ADS_CLIENT_SECRET: 'google-client-secret', GOOGLE_ADS_DEVELOPER_TOKEN: 'dev-token-test',
+    GOOGLE_ADS_CLIENT_ID: 'google-client-id.test', GOOGLE_ADS_CLIENT_SECRET: 'google-client-secret', GOOGLE_ADS_DEVELOPER_TOKEN: 'dev-token-test', GOOGLE_ADS_CUSTOMER_ID: '123-456-7890',
     GOOGLE_ADS_AUTHORIZE_URL: mock.base + '/authorize', GOOGLE_ADS_TOKEN_URL: mock.base + '/token', GOOGLE_ADS_API_BASE: mock.base + '/v26',
     META_APP_ID: 'meta-app-id-test', META_APP_SECRET: 'meta-app-secret', META_AUTHORIZE_URL: mock.base + '/authorize-meta', META_API_BASE: mock.base + '/v23' };
   delete env.SMTP_HOST; delete env.POSTMARK_TOKEN;
