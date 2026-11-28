@@ -278,6 +278,15 @@ function mountProviders(app, ctx) {
     return out;
   }
 
+  // Turns Google's reason codes into what the owner should do next. Unknown reasons keep Google's text.
+  function plainGoogleReason(raw) {
+    const text = raw.slice(0, 300);
+    if (/CUSTOMER_NOT_ENABLED/.test(text)) return 'This Google Ads account is not enabled yet. Finish its setup in Google Ads (accept the terms and add billing), then try again.';
+    if (/USER_PERMISSION_DENIED/.test(text)) return 'This sign-in cannot read that account. Check that it is linked to the manager account, then try again.';
+    if (/DEVELOPER_TOKEN|NOT_ADS_USER/.test(text)) return 'The Google Ads developer token is not approved for this account yet. ' + text;
+    return text;
+  }
+
   // Reads one client account through the connected manager login. Returns { id, name } or null.
   async function verifiedClient(conn, id, why) {
     let token = open(conn.token_ciphertext); if (!token) return null;
@@ -289,7 +298,10 @@ function mountProviders(app, ctx) {
       const first = (Array.isArray(r) ? r : []).flatMap(b => b.results || [])[0];
       if (!first || !first.customer || String(first.customer.id) !== id) return null;
       return { id, name: first.customer.descriptiveName || null };
-    } catch (e) { if (why) why.reason = String(e.message || '').slice(0, 300); return null; }
+    } catch (e) {
+      if (why) why.reason = plainGoogleReason(String(e.message || ''));
+      return null;
+    }
   }
 
   app.get('/api/admin/marketing/providers/google_ads/accounts', auth, async (req, res) => {
