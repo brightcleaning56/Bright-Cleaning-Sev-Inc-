@@ -28,8 +28,8 @@ function mockProvider() {
         if (f.get('grant_type') === 'refresh_token' && f.get('refresh_token') === GOOGLE_REFRESH) return json(200, { access_token: GOOGLE_TOKEN + '-r', expires_in: 3600 });
         return json(400, { error: 'invalid_grant', error_description: 'bad code' });
       }
-      if (u.pathname === '/v21/customers:listAccessibleCustomers') return json(200, { resourceNames: ['customers/1234567890'] });
-      if (u.pathname === '/v21/customers/1234567890/googleAds:searchStream') {
+      if (u.pathname === '/v26/customers:listAccessibleCustomers') return json(200, { resourceNames: ['customers/1234567890'] });
+      if (u.pathname === '/v26/customers/1234567890/googleAds:searchStream') {
         if (!req.headers['developer-token']) return json(401, { error: { message: 'developer token missing' } });
         if (!/cost_micros/.test(JSON.parse(body).query)) return json(400, { error: { message: 'bad query' } });
         return json(200, [{ results: [
@@ -60,7 +60,7 @@ function mockProvider() {
     DATA_DIR: path.join(work, 'data'), UPLOAD_DIR: path.join(work, 'up'), PUBLIC_BASE_URL: 'https://brightclean.net', TWILIO_FORWARD_TO: '+15155550199', TWILIO_ACCOUNT_SID: 'AC' + 'a'.repeat(32), TWILIO_NUMBER: '+15153033024', TWILIO_AUTH_TOKEN: 'tw-prov-token', FROM_EMAIL: 'info@brightclean.net', NOTIFY_EMAIL: 'info@brightclean.net',
     MARKETING_TOKEN_KEY: crypto.randomBytes(24).toString('hex'),
     GOOGLE_ADS_CLIENT_ID: 'google-client-id.test', GOOGLE_ADS_CLIENT_SECRET: 'google-client-secret', GOOGLE_ADS_DEVELOPER_TOKEN: 'dev-token-test',
-    GOOGLE_ADS_AUTHORIZE_URL: mock.base + '/authorize', GOOGLE_ADS_TOKEN_URL: mock.base + '/token', GOOGLE_ADS_API_BASE: mock.base + '/v21',
+    GOOGLE_ADS_AUTHORIZE_URL: mock.base + '/authorize', GOOGLE_ADS_TOKEN_URL: mock.base + '/token', GOOGLE_ADS_API_BASE: mock.base + '/v26',
     META_APP_ID: 'meta-app-id-test', META_APP_SECRET: 'meta-app-secret', META_AUTHORIZE_URL: mock.base + '/authorize-meta', META_API_BASE: mock.base + '/v23' };
   delete env.SMTP_HOST; delete env.POSTMARK_TOKEN;
   const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
