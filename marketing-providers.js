@@ -56,9 +56,12 @@ function mountProviders(app, ctx) {
 
   async function call(url, opts = {}) {
     const r = await fetch(url, opts);
-    const j = await r.json().catch(() => ({}));
+    const text = await r.text().catch(() => '');
+    let j = {}; try { j = text ? JSON.parse(text) : {}; } catch { j = {}; }
     if (!r.ok) {
-      const m = (j.error && (j.error.message || j.error)) || (j.error_description) || ('provider returned ' + r.status);
+      // When the body is not a provider error object, keep a short piece of it so the owner can see what came back.
+      const snippet = !j.error && !j.error_description && text ? ' body: ' + text.replace(/\s+/g, ' ').slice(0, 160) : '';
+      const m = (j.error && (j.error.message || j.error)) || (j.error_description) || ('provider returned ' + r.status + snippet);
       // Google Ads puts the specific reason (for example DEVELOPER_TOKEN_NOT_APPROVED) in error details.
       const codes = [];
       try { for (const d of (j.error && j.error.details) || []) for (const e of d.errors || []) { const c = e.errorCode || {}; for (const k of Object.keys(c)) codes.push(k + '=' + c[k]); } } catch { /* keep the message */ }
