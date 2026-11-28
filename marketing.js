@@ -33,6 +33,11 @@ function money(v) {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 && n < 1e9 ? Math.round(n * 100) / 100 : null;
 }
+// Strict form for required amounts: a missing, blank or boolean value is refused, never read as zero.
+function requiredAmount(v) {
+  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return null;
+  return money(v);
+}
 function isDate(v) {
   return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z'));
 }
@@ -168,8 +173,14 @@ function mount(app, ctx) {
     const attributed = db.prepare('SELECT COUNT(*) n FROM marketing_attribution').get().n;
     const qualified = db.prepare(`SELECT COUNT(*) n FROM marketing_attribution a JOIN leads l ON l.id=a.lead_id WHERE l.status IN (${QUALIFIED_STATUSES.map(() => '?').join(',')})`).get(...QUALIFIED_STATUSES).n;
     const spend = db.prepare('SELECT COALESCE(SUM(amount),0) amount FROM marketing_spend').get().amount;
+    // Count-only context for the funnel: every CRM lead (not just attributed ones), and lifecycle events that resolved to a lead.
+    const crmLeads = db.prepare('SELECT COUNT(*) n FROM leads').get().n;
+    const contractsCreated = db.prepare("SELECT COUNT(DISTINCT lead_id) n FROM marketing_events WHERE event_type='contract_created' AND lead_id IS NOT NULL").get().n;
+    const paymentsRecorded = db.prepare("SELECT COALESCE(SUM(value_amount),0) amount, COUNT(*) n FROM marketing_events WHERE event_type='payment_received' AND lead_id IS NOT NULL").get();
     res.json({
       campaigns, attributed_leads: attributed, qualified_leads: qualified, spend,
+      crm_leads: crmLeads, unattributed_leads: Math.max(0, crmLeads - attributed),
+      contracts_created: contractsCreated, payments_recorded: { count: paymentsRecorded.n, amount: paymentsRecorded.amount },
       definitions: { qualified_leads: 'Attributed leads whose lead status is ' + QUALIFIED_STATUSES.join(', ') + '.', spend: 'Imported provider spend (not yet reconciled to provider invoices).' },
       financials: 'not_reconciled',
     });
@@ -240,7 +251,7 @@ function mount(app, ctx) {
     const id = positiveId(req.params.id);
     const c = id && campaignOr404(id);
     if (!c) return res.status(404).json({ error: 'Campaign not found' });
-    const amount = money((req.body || {}).budget_amount);
+    const amount = requiredAmount((req.body || {}).budget_amount);
     if (amount === null) return res.status(400).json({ error: 'Budget must be a non-negative number' });
     db.prepare('UPDATE marketing_campaigns SET budget_amount=?, updated_at=? WHERE id=?').run(amount, now(), id);
     audit(req, 'budget changed', 'campaign', id, { from: c.budget_amount, to: amount });
@@ -343,7 +354,7 @@ function mount(app, ctx) {
     for (let i = 0; i < rows.length; i++) {
       const x = rows[i] || {};
       const campaignId = positiveId(x.campaign_id);
-      const amount = money(x.amount);
+      const amount = requiredAmount(x.amount);
       let problem = null;
       if (!campaignId || !campaignOr404(campaignId)) problem = 'campaign not found';
       else if (amount === null) problem = 'amount must be a non-negative number';

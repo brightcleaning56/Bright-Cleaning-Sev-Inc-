@@ -41,3 +41,19 @@
 /* Calendar scrolls inside its panel on narrow screens instead of widening the page. */
 .panel-body:has(.calendar-grid){overflow-x:auto}
 .calendar-grid{min-width:560px}
+
+/* Screen components used by the redesigned Marketing screens. */
+.kpis-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:760px){.kpis-3{grid-template-columns:1fr}}
+.tabs-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.tab{border:0;border-bottom:2px solid transparent;background:none;padding:6px 10px;font:inherit;font-weight:600;color:#4b5b72;cursor:pointer}
+.tab.on{color:#0b5bd3;border-bottom-color:#0b5bd3}
+.tab:disabled{color:#9aa7ba;cursor:not-allowed}
+tr.selected td{background:#eef5ff}
+.row-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.cal-title{font-weight:800;color:#101b31;min-width:160px;text-align:center}
+.calendar-day{text-align:left;min-height:72px;border:1px solid #dbe3ef;border-radius:10px;background:#fff;padding:6px;font:inherit;cursor:pointer;display:grid;gap:3px;align-content:start;min-width:0;overflow:hidden}
+.calendar-day.empty{background:#f6f8fb;border-style:dashed;cursor:default}
+.calendar-day.selected{outline:2px solid #0b5bd3}
+.cal-chip{font-size:11px;background:#eaf2ff;color:#173a7a;border-radius:6px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -194,9 +194,26 @@ function inProcess() {
       assert(r.status === 400, 'got ' + r.status);
       return '400';
     });
+    await check('Spend import: a missing or blank amount is refused, never recorded as zero', async () => {
+      const before = (await api('GET', '/api/admin/marketing/summary', null, T)).data.spend;
+      for (const amount of [null, '', undefined]) {
+        const r = await api('POST', '/api/admin/marketing/spend/import', { provider: 'google_ads', rows: [{ campaign_id: campaignId, spend_date: '2026-11-13', amount, provider_record_id: 'BLANK-' + String(amount) }] }, T);
+        assert(r.status === 400, 'amount ' + String(amount) + ' got ' + r.status);
+      }
+      const after = (await api('GET', '/api/admin/marketing/summary', null, T)).data.spend;
+      assert(after === before, 'spend changed after refused rows');
+      return 'refused';
+    });
+    await check('Budget: a missing budget is refused, not saved as zero', async () => {
+      const r = await api('POST', `/api/admin/marketing/campaigns/${campaignId}/budget`, {}, T);
+      assert(r.status === 400, 'got ' + r.status);
+      return '400';
+    });
     await check('Summary reports spend and qualified leads with their definitions, and no revenue figure', async () => {
       const r = await api('GET', '/api/admin/marketing/summary', null, T);
       assert(r.status === 200 && r.data.financials === 'not_reconciled', 'financials flag');
+      assert(Number.isInteger(r.data.crm_leads) && r.data.crm_leads >= r.data.attributed_leads, 'CRM lead count must include attributed leads');
+      assert(r.data.unattributed_leads === r.data.crm_leads - r.data.attributed_leads, 'unattributed = CRM - attributed');
       assert(!('revenue' in r.data) && !('profit' in r.data) && !('roi' in r.data), 'revenue-like field present');
       assert(r.data.definitions.qualified_leads.length > 10, 'definition missing');
       return 'spend ' + r.data.spend;
