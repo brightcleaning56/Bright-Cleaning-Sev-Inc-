@@ -57,7 +57,13 @@ function mountProviders(app, ctx) {
   async function call(url, opts = {}) {
     const r = await fetch(url, opts);
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { const m = (j.error && (j.error.message || j.error)) || (j.error_description) || ('provider returned ' + r.status); throw new Error(String(typeof m === 'object' ? JSON.stringify(m) : m).slice(0, 300)); }
+    if (!r.ok) {
+      const m = (j.error && (j.error.message || j.error)) || (j.error_description) || ('provider returned ' + r.status);
+      // Google Ads puts the specific reason (for example DEVELOPER_TOKEN_NOT_APPROVED) in error details.
+      const codes = [];
+      try { for (const d of (j.error && j.error.details) || []) for (const e of d.errors || []) { const c = e.errorCode || {}; for (const k of Object.keys(c)) codes.push(k + '=' + c[k]); } } catch { /* keep the message */ }
+      throw new Error((String(typeof m === 'object' ? JSON.stringify(m) : m) + (codes.length ? ' [' + codes.join(', ') + ']' : '')).slice(0, 300));
+    }
     return j;
   }
 
